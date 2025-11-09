@@ -68,8 +68,10 @@ func loadConfig() config {
 		model = "gpt-realtime"
 	}
 
-	transcription := os.Getenv("OPENAI_TRANSCRIPTION_MODEL")
-	if transcription == "" {
+	var transcription string
+	if value, ok := os.LookupEnv("OPENAI_TRANSCRIPTION_MODEL"); ok {
+		transcription = strings.TrimSpace(value)
+	} else {
 		transcription = "gpt-4o-transcribe"
 	}
 

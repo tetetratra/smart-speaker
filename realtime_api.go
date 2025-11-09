@@ -70,55 +70,58 @@ func (api *RealtimeAPI) Run() {
 
 func (api *RealtimeAPI) sendSessionUpdate() error {
 	instructions := loadSystemPrompt()
-	payload := wsMessage{
-		"type": "session.update",
-		"session": map[string]any{
-			"instructions":       instructions,
-			"modalities":         []string{"text"},
-			"input_audio_format": "pcm16",
-			// MEMO: この文字起こしがAIに渡るわけではないが、精度はマシなので、いったんこっちを挟むのもあり
-			"input_audio_transcription": map[string]any{
-				"model":    api.config.TranscriptionModel,
-				"language": "ja",
-				"prompt":   "web系のITエンジニアが話しており、専門用語が来ることを想定してください。日本語で短い応答を心がけてください",
-			},
-			"turn_detection": map[string]any{
-				"type":                "server_vad",
-				"threshold":           0.65,
-				"silence_duration_ms": 800,
-				"interrupt_response":  false,
-			},
-			"tools": []any{
-				map[string]any{
-					"type":        "function",
-					"name":        "get_current_time",
-					"description": "現在の日時を ISO8601 形式で返します。timezone が無い場合はシステムローカルを使用します。",
-					"parameters": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"timezone": map[string]any{
-								"type":        "string",
-								"description": "IANA time zone identifier (例: Asia/Tokyo)",
-							},
+	session := map[string]any{
+		"instructions":       instructions,
+		"modalities":         []string{"text"},
+		"input_audio_format": "pcm16",
+		"turn_detection": map[string]any{
+			"type":                "server_vad",
+			"threshold":           0.65,
+			"silence_duration_ms": 800,
+			"interrupt_response":  false,
+		},
+		"tools": []any{
+			map[string]any{
+				"type":        "function",
+				"name":        "get_current_time",
+				"description": "現在の日時を ISO8601 形式で返します。timezone が無い場合はシステムローカルを使用します。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"timezone": map[string]any{
+							"type":        "string",
+							"description": "IANA time zone identifier (例: Asia/Tokyo)",
 						},
 					},
 				},
-				map[string]any{
-					"type":        "function",
-					"name":        "get_weather",
-					"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。",
-					"parameters": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"location": map[string]any{
-								"type":        "string",
-								"description": "都市や地域の名前",
-							},
+			},
+			map[string]any{
+				"type":        "function",
+				"name":        "get_weather",
+				"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"location": map[string]any{
+							"type":        "string",
+							"description": "都市や地域の名前",
 						},
 					},
 				},
 			},
 		},
+	}
+	if api.config.TranscriptionModel != "" {
+		// MEMO: この文字起こしがAIに渡るわけではないが、精度はマシなので、いったんこっちを挟むのもあり
+		session["input_audio_transcription"] = map[string]any{
+			"model":    api.config.TranscriptionModel,
+			"language": "ja",
+			"prompt":   "web系のITエンジニアが話しており、専門用語が来ることを想定してください。日本語で短い応答を心がけてください",
+		}
+	}
+	payload := wsMessage{
+		"type":    "session.update",
+		"session": session,
 	}
 	return api.send(payload)
 }
