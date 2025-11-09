@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 type (
-	wsMessage  map[string]any
+	wsMessage map[string]any
+
 	OutputLine struct {
 		Role string
 		Text string
@@ -19,23 +22,27 @@ type (
 		Model              string
 		TranscriptionModel string
 	}
+
+	VoiceSource interface {
+		Run()
+		Close()
+	}
 )
 
 func main() {
 	log.SetFlags(0)
 
 	cfg := loadConfig()
-
 	ctx := context.Background()
 
 	userVoiceStream := make(chan string, 16)
 	responseTextStream := make(chan OutputLine, 16)
 
+	voice := newVoiceSource(ctx, userVoiceStream)
 	api, err := NewRealtimeAPI(ctx, cfg, userVoiceStream, responseTextStream)
 	if err != nil {
 		log.Fatalf("failed to connect realtime api: %v", err)
 	}
-	voice := NewVoiceListener(ctx, userVoiceStream)
 	printer := NewResponsePrinter(ctx, responseTextStream)
 
 	voice.Run()
@@ -47,7 +54,6 @@ func main() {
 	defer printer.Close()
 
 	fmt.Println("🎙 音声ストリーミングを開始しました。Ctrl+C で終了します。")
-
 	select {}
 }
 
@@ -62,11 +68,9 @@ func loadConfig() config {
 		model = "gpt-realtime"
 	}
 
-	// MEMO: この文字起こしがAIに渡るわけではない
 	transcription := os.Getenv("OPENAI_TRANSCRIPTION_MODEL")
 	if transcription == "" {
-		// transcription = "gpt-4o-transcribe"
-		transcription = "whisper-1"
+		transcription = "gpt-4o-transcribe"
 	}
 
 	return config{
@@ -74,4 +78,24 @@ func loadConfig() config {
 		Model:              model,
 		TranscriptionModel: transcription,
 	}
+}
+
+func newVoiceSource(ctx context.Context, out chan<- string) VoiceSource {
+	path := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
+	if path == "" {
+		return NewMicVoiceListener(ctx, out)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		log.Fatalf("failed to resolve INPUT_VOICE path: %v", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		log.Fatalf("INPUT_VOICE file not found: %v", err)
+	}
+	if info.IsDir() {
+		log.Fatal("INPUT_VOICE must point to a file")
+	}
+	log.Printf("Using INPUT_VOICE file: %s", abs)
+	return NewFileVoiceReader(ctx, out, abs)
 }

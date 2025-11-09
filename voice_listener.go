@@ -16,25 +16,25 @@ const (
 	chunkMillis = 300
 )
 
-type VoiceListener struct {
+type MicVoiceListener struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	out    chan<- string
 	once   sync.Once
 }
 
-func NewVoiceListener(ctx context.Context, out chan<- string) *VoiceListener {
+func NewMicVoiceListener(ctx context.Context, out chan<- string) *MicVoiceListener {
 	runCtx, cancel := context.WithCancel(ctx)
-	return &VoiceListener{ctx: runCtx, cancel: cancel, out: out}
+	return &MicVoiceListener{ctx: runCtx, cancel: cancel, out: out}
 }
 
-func (v *VoiceListener) Run() {
+func (v *MicVoiceListener) Run() {
 	v.once.Do(func() {
 		go v.loop()
 	})
 }
 
-func (v *VoiceListener) loop() {
+func (v *MicVoiceListener) loop() {
 	if err := portaudio.Initialize(); err != nil {
 		log.Fatalf("portaudio initialize failed: %v", err)
 	}
@@ -80,6 +80,6 @@ func (v *VoiceListener) loop() {
 	}
 }
 
-func (v *VoiceListener) Close() {
+func (v *MicVoiceListener) Close() {
 	v.cancel()
 }
