@@ -6,3 +6,5 @@ require (
 	github.com/gordonklaus/portaudio v0.0.0-20250206071425-98a94950218b
 	nhooyr.io/websocket v1.8.10
 )
+
+require github.com/google/uuid v1.6.0 // indirect

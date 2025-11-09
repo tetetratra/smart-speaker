@@ -10,19 +10,24 @@ import (
 	"sync"
 	"time"
 
+	toolsvc "smart-speaker/tools"
+
 	"nhooyr.io/websocket"
 )
 
 type RealtimeAPI struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	conn        *websocket.Conn
-	config      config
-	voiceIn     <-chan string
-	responseOut chan<- OutputLine
-	once        sync.Once
-	toolMu      sync.Mutex
-	toolStates  map[string]*toolCallState
+	ctx          context.Context
+	cancel       context.CancelFunc
+	conn         *websocket.Conn
+	config       config
+	voiceIn      <-chan string
+	responseOut  chan<- OutputLine
+	once         sync.Once
+	toolMu       sync.Mutex
+	toolStates   map[string]*toolCallState
+	switchBotMu  sync.Once
+	switchBot    *toolsvc.SwitchBotClient
+	switchBotErr error
 }
 
 func NewRealtimeAPI(ctx context.Context, cfg config, voice <-chan string, responses chan<- OutputLine) (*RealtimeAPI, error) {
@@ -90,6 +95,37 @@ func (api *RealtimeAPI) sendSessionUpdate() error {
 				"type":        "function",
 				"name":        "get_weather",
 				"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。引数は受け付けません。",
+			},
+			map[string]any{
+				"type":        "function",
+				"name":        "switchbot_control_device",
+				"description": "SwitchBot API を使ってデバイスを操作します。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"device_id": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot デバイスの ID",
+						},
+						"device": map[string]any{
+							"type":        "string",
+							"description": "環境変数 SWITCHBOT_DEVICE_MAP で定義したエイリアス名",
+						},
+						"command": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot API の command (例: turnOn, turnOff, press)",
+						},
+						"parameter": map[string]any{
+							"type":        "string",
+							"description": "必要に応じて command に渡す parameter。不要なら default。",
+						},
+						"command_type": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot API の commandType。省略時は command。",
+						},
+					},
+					"required": []string{"command"},
+				},
 			},
 		},
 	}

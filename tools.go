@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	toolsvc "smart-speaker/tools"
 )
 
 type toolCallState struct {
@@ -36,47 +38,6 @@ func (api *RealtimeAPI) handleToolMessage(msg wsMessage) bool {
 	default:
 		return false
 	}
-}
-
-func (api *RealtimeAPI) handleFunctionCallDelta(msg wsMessage) {
-	responseID := asString(msg["response_id"])
-	callID := asString(msg["call_id"])
-	if callID == "" {
-		return
-	}
-	state := api.ensureToolState(responseID, callID)
-	if name := asString(msg["name"]); name != "" {
-		state.Name = name
-	}
-	if delta := asString(msg["delta"]); delta != "" {
-		state.Buffer.WriteString(delta)
-	}
-}
-
-func (api *RealtimeAPI) handleFunctionCallDone(msg wsMessage) {
-	responseID := asString(msg["response_id"])
-	callID := asString(msg["call_id"])
-	if callID == "" {
-		return
-	}
-	state := api.popToolState(callID)
-	if state == nil {
-		state = &toolCallState{
-			ResponseID: responseID,
-			ToolCallID: callID,
-		}
-	}
-	if state.ResponseID == "" {
-		state.ResponseID = responseID
-	}
-	if name := asString(msg["name"]); name != "" {
-		state.Name = name
-	}
-	if args := asString(msg["arguments"]); args != "" {
-		state.Buffer.Reset()
-		state.Buffer.WriteString(args)
-	}
-	go api.executeTool(state)
 }
 
 func (api *RealtimeAPI) recordToolCalls(msg wsMessage) {
@@ -134,6 +95,47 @@ func (api *RealtimeAPI) completeToolCalls(msg wsMessage) {
 		}
 		go api.executeTool(state)
 	}
+}
+
+func (api *RealtimeAPI) handleFunctionCallDelta(msg wsMessage) {
+	responseID := asString(msg["response_id"])
+	callID := asString(msg["call_id"])
+	if callID == "" {
+		return
+	}
+	state := api.ensureToolState(responseID, callID)
+	if name := asString(msg["name"]); name != "" {
+		state.Name = name
+	}
+	if delta := asString(msg["delta"]); delta != "" {
+		state.Buffer.WriteString(delta)
+	}
+}
+
+func (api *RealtimeAPI) handleFunctionCallDone(msg wsMessage) {
+	responseID := asString(msg["response_id"])
+	callID := asString(msg["call_id"])
+	if callID == "" {
+		return
+	}
+	state := api.popToolState(callID)
+	if state == nil {
+		state = &toolCallState{
+			ResponseID: responseID,
+			ToolCallID: callID,
+		}
+	}
+	if state.ResponseID == "" {
+		state.ResponseID = responseID
+	}
+	if name := asString(msg["name"]); name != "" {
+		state.Name = name
+	}
+	if args := asString(msg["arguments"]); args != "" {
+		state.Buffer.Reset()
+		state.Buffer.WriteString(args)
+	}
+	go api.executeTool(state)
 }
 
 func (api *RealtimeAPI) updateToolState(responseID string, call map[string]any) {
@@ -200,6 +202,8 @@ func (api *RealtimeAPI) executeTool(state *toolCallState) {
 		result = runCurrentTimeTool(payload)
 	case "get_weather":
 		result = runWeatherTool(payload)
+	case "switchbot_control_device":
+		result = api.runSwitchBotTool(payload)
 	default:
 		result = map[string]any{
 			"error": fmt.Sprintf("unknown function: %s", state.Name),
@@ -263,11 +267,41 @@ func runWeatherTool(args map[string]any) map[string]any {
 	}
 }
 
+func (api *RealtimeAPI) runSwitchBotTool(args map[string]any) map[string]any {
+	client, err := api.ensureSwitchBotClient()
+	if err != nil {
+		return map[string]any{
+			"error": err.Error(),
+		}
+	}
+	command := toolsvc.SwitchBotCommand{
+		DeviceAlias: strings.TrimSpace(asString(args["device"])),
+		DeviceID:    strings.TrimSpace(asString(args["device_id"])),
+		Command:     strings.TrimSpace(asString(args["command"])),
+		Parameter:   strings.TrimSpace(asString(args["parameter"])),
+		CommandType: strings.TrimSpace(asString(args["command_type"])),
+	}
+	result, execErr := client.Execute(api.ctx, command)
+	if execErr != nil {
+		return map[string]any{
+			"error": execErr.Error(),
+		}
+	}
+	return result
+}
+
 func asString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
 	return ""
+}
+
+func (api *RealtimeAPI) ensureSwitchBotClient() (*toolsvc.SwitchBotClient, error) {
+	api.switchBotMu.Do(func() {
+		api.switchBot, api.switchBotErr = toolsvc.NewSwitchBotClientFromEnv()
+	})
+	return api.switchBot, api.switchBotErr
 }
 
 func hasArguments(args map[string]any) bool {
