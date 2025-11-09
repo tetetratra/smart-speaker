@@ -238,25 +238,24 @@ func (api *RealtimeAPI) executeTool(state *toolCallState) {
 }
 
 func runCurrentTimeTool(args map[string]any) map[string]any {
-	tz := asString(args["timezone"])
-	now := time.Now()
-	if tz != "" {
-		if loc, err := time.LoadLocation(tz); err == nil {
-			now = now.In(loc)
+	if hasArguments(args) {
+		return map[string]any{
+			"error": "get_current_time は引数を受け付けません",
 		}
 	}
+	now := time.Now()
 	return map[string]any{
-		"iso8601": now.Format(time.RFC3339),
-		"timezone": func() string {
-			if tz != "" {
-				return tz
-			}
-			return now.Location().String()
-		}(),
+		"iso8601":  now.Format(time.RFC3339),
+		"timezone": now.Location().String(),
 	}
 }
 
 func runWeatherTool(args map[string]any) map[string]any {
+	if hasArguments(args) {
+		return map[string]any{
+			"error": "get_weather は引数を受け付けません",
+		}
+	}
 	time.Sleep(5 * time.Second)
 	return map[string]any{
 		"forecast":    "晴れ",
@@ -269,4 +268,22 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func hasArguments(args map[string]any) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for _, v := range args {
+		if v == nil {
+			continue
+		}
+		if str, ok := v.(string); ok {
+			if strings.TrimSpace(str) == "" {
+				continue
+			}
+		}
+		return true
+	}
+	return false
 }

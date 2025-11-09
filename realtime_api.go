@@ -84,30 +84,12 @@ func (api *RealtimeAPI) sendSessionUpdate() error {
 			map[string]any{
 				"type":        "function",
 				"name":        "get_current_time",
-				"description": "現在の日時を ISO8601 形式で返します。timezone が無い場合はシステムローカルを使用します。",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"timezone": map[string]any{
-							"type":        "string",
-							"description": "IANA time zone identifier (例: Asia/Tokyo)",
-						},
-					},
-				},
+				"description": "現在の日時を ISO8601 形式で返します。引数は受け付けません。",
 			},
 			map[string]any{
 				"type":        "function",
 				"name":        "get_weather",
-				"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"location": map[string]any{
-							"type":        "string",
-							"description": "都市や地域の名前",
-						},
-					},
-				},
+				"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。引数は受け付けません。",
 			},
 		},
 	}

@@ -45,6 +45,9 @@ func (p *ResponsePrinter) loop() {
 				return
 			}
 			label := renderRoleLabel(line.Role)
+			if label == "" {
+				continue
+			}
 			if label != "" {
 				fmt.Fprintf(p.writer, "%s: %s\n", label, line.Text)
 			} else {
@@ -70,7 +73,7 @@ func renderRoleLabel(role string) string {
 	case "assistant":
 		return "Assistant"
 	case "user":
-		return "You"
+		return ""
 	case "error":
 		return strings.Title(role)
 	default:
