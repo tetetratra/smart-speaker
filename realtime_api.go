@@ -21,6 +21,8 @@ type RealtimeAPI struct {
 	voiceIn     <-chan string
 	responseOut chan<- OutputLine
 	once        sync.Once
+	toolMu      sync.Mutex
+	toolStates  map[string]*toolCallState
 }
 
 func NewRealtimeAPI(ctx context.Context, cfg config, voice <-chan string, responses chan<- OutputLine) (*RealtimeAPI, error) {
@@ -46,6 +48,7 @@ func NewRealtimeAPI(ctx context.Context, cfg config, voice <-chan string, respon
 		config:      cfg,
 		voiceIn:     voice,
 		responseOut: responses,
+		toolStates:  make(map[string]*toolCallState),
 	}
 
 	if err := api.sendSessionUpdate(); err != nil {
@@ -84,6 +87,36 @@ func (api *RealtimeAPI) sendSessionUpdate() error {
 				"threshold":           0.65,
 				"silence_duration_ms": 800,
 				"interrupt_response":  false,
+			},
+			"tools": []any{
+				map[string]any{
+					"type":        "function",
+					"name":        "get_current_time",
+					"description": "現在の日時を ISO8601 形式で返します。timezone が無い場合はシステムローカルを使用します。",
+					"parameters": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"timezone": map[string]any{
+								"type":        "string",
+								"description": "IANA time zone identifier (例: Asia/Tokyo)",
+							},
+						},
+					},
+				},
+				map[string]any{
+					"type":        "function",
+					"name":        "get_weather",
+					"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。",
+					"parameters": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"location": map[string]any{
+								"type":        "string",
+								"description": "都市や地域の名前",
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -136,6 +169,10 @@ func (api *RealtimeAPI) receiveLoop() {
 		var msg wsMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("unmarshal error: %v", err)
+			continue
+		}
+
+		if api.handleToolMessage(msg) {
 			continue
 		}
 
