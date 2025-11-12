@@ -1,15 +1,15 @@
-package main
+package realtimeapi
 
 import (
 	"encoding/json"
 	"log"
+
+	types "smart-speaker/internal/types"
 )
 
 const debugDumpResponses = false
 
-var responseDeltaSeen = make(map[string]bool)
-
-func parseMessageForLines(msg wsMessage) []OutputLine {
+func (c *Client) parseMessageForLines(msg wsMessage) []types.OutputLine {
 	if debugDumpResponses {
 		if data, err := json.MarshalIndent(msg, "", "  "); err == nil {
 			log.Println(string(data))
@@ -18,41 +18,41 @@ func parseMessageForLines(msg wsMessage) []OutputLine {
 	switch msgType := msg["type"].(string); msgType {
 	case "conversation.item.input_audio_transcription.delta":
 		if transcript, ok := msg["transcript"].(string); ok {
-			return []OutputLine{{Role: "user", Text: transcript}}
+			return []types.OutputLine{{Role: "user", Text: transcript}}
 		}
 	case "conversation.item.input_audio_transcription.completed":
 		if transcript, ok := msg["transcript"].(string); ok {
-			return []OutputLine{{Role: "user", Text: transcript}}
+			return []types.OutputLine{{Role: "user", Text: transcript}}
 		}
 	case "response.output_text.delta":
 		if delta, ok := msg["delta"].(string); ok {
 			if id, ok := msg["response_id"].(string); ok && id != "" {
-				responseDeltaSeen[id] = true
+				c.responseDeltaSeen[id] = true
 			}
-			return []OutputLine{{Role: "assistant", Text: delta}}
+			return []types.OutputLine{{Role: "assistant", Text: delta}}
 		}
 	case "response.output_text":
 		if text, ok := msg["text"].(string); ok {
 			if id, ok := msg["response_id"].(string); ok && id != "" {
-				responseDeltaSeen[id] = true
+				c.responseDeltaSeen[id] = true
 			}
-			return []OutputLine{{Role: "assistant", Text: text}}
+			return []types.OutputLine{{Role: "assistant", Text: text}}
 		}
 	case "response.delta":
-		return extractLinesFromResponse(msgType, msg)
+		return c.extractLinesFromResponse(msgType, msg)
 	case "response.done":
-		return extractLinesFromResponse(msgType, msg)
+		return c.extractLinesFromResponse(msgType, msg)
 	case "error", "response.error":
 		if detail, ok := msg["error"].(map[string]any); ok {
 			if message, ok := detail["message"].(string); ok {
-				return []OutputLine{{Role: "error", Text: message}}
+				return []types.OutputLine{{Role: "error", Text: message}}
 			}
 		}
 	}
 	return nil
 }
 
-func extractLinesFromResponse(msgType string, msg wsMessage) []OutputLine {
+func (c *Client) extractLinesFromResponse(msgType string, msg wsMessage) []types.OutputLine {
 	resp, ok := msg["response"].(map[string]any)
 	if !ok {
 		return nil
@@ -60,8 +60,8 @@ func extractLinesFromResponse(msgType string, msg wsMessage) []OutputLine {
 
 	respID, _ := resp["id"].(string)
 	if respID != "" && msgType == "response.done" {
-		if responseDeltaSeen[respID] {
-			delete(responseDeltaSeen, respID)
+		if c.responseDeltaSeen[respID] {
+			delete(c.responseDeltaSeen, respID)
 			return nil
 		}
 	}
@@ -71,7 +71,7 @@ func extractLinesFromResponse(msgType string, msg wsMessage) []OutputLine {
 		return nil
 	}
 
-	var lines []OutputLine
+	var lines []types.OutputLine
 	hasAssistant := false
 	for _, entry := range output {
 		item, ok := entry.(map[string]any)
@@ -88,18 +88,18 @@ func extractLinesFromResponse(msgType string, msg wsMessage) []OutputLine {
 		}
 	}
 	if respID != "" && msgType == "response.delta" && hasAssistant {
-		responseDeltaSeen[respID] = true
+		c.responseDeltaSeen[respID] = true
 	}
 	return lines
 }
 
-func collectContentLines(role string, item map[string]any) []OutputLine {
+func collectContentLines(role string, item map[string]any) []types.OutputLine {
 	content, ok := item["content"].([]any)
 	if !ok {
 		return nil
 	}
 
-	var lines []OutputLine
+	var lines []types.OutputLine
 	for _, part := range content {
 		partMap, ok := part.(map[string]any)
 		if !ok {
@@ -111,9 +111,9 @@ func collectContentLines(role string, item map[string]any) []OutputLine {
 		}
 		switch partMap["type"].(string) {
 		case "text":
-			lines = append(lines, OutputLine{Role: roleOrDefault(role, "assistant"), Text: text})
+			lines = append(lines, types.OutputLine{Role: roleOrDefault(role, "assistant"), Text: text})
 		case "input_text":
-			lines = append(lines, OutputLine{Role: roleOrDefault(role, "user"), Text: text})
+			lines = append(lines, types.OutputLine{Role: roleOrDefault(role, "user"), Text: text})
 		}
 	}
 	return lines

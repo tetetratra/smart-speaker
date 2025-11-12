@@ -1,4 +1,4 @@
-package tools
+package switchbot
 
 import (
 	"bytes"
@@ -18,18 +18,18 @@ import (
 	"github.com/google/uuid"
 )
 
-const switchBotBaseURL = "https://api.switch-bot.com"
+const baseURL = "https://api.switch-bot.com"
 
-// SwitchBotClient knows how to talk to the SwitchBot Open API.
-type SwitchBotClient struct {
+// Client knows how to talk to the SwitchBot Open API.
+type Client struct {
 	token     string
 	secret    string
 	http      *http.Client
 	deviceMap map[string]string
 }
 
-// SwitchBotCommand declares the payload expected from the function call arguments.
-type SwitchBotCommand struct {
+// Command declares the payload expected from the function call arguments.
+type Command struct {
 	DeviceAlias string
 	DeviceID    string
 	Command     string
@@ -37,8 +37,8 @@ type SwitchBotCommand struct {
 	Parameter   string
 }
 
-// NewSwitchBotClientFromEnv builds a client using environment variables.
-func NewSwitchBotClientFromEnv() (*SwitchBotClient, error) {
+// NewFromEnv builds a client using environment variables.
+func NewFromEnv() (*Client, error) {
 	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
 	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
 	if token == "" || secret == "" {
@@ -50,19 +50,17 @@ func NewSwitchBotClientFromEnv() (*SwitchBotClient, error) {
 		return nil, err
 	}
 
-	client := &SwitchBotClient{
-		token:  token,
-		secret: secret,
-		http: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+	client := &Client{
+		token:     token,
+		secret:    secret,
+		http:      &http.Client{Timeout: 10 * time.Second},
 		deviceMap: deviceMap,
 	}
 	return client, nil
 }
 
 // Execute sends a command to the SwitchBot API and returns the raw response body as a map.
-func (c *SwitchBotClient) Execute(ctx context.Context, cmd SwitchBotCommand) (map[string]any, error) {
+func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, error) {
 	deviceID := strings.TrimSpace(cmd.DeviceID)
 	if deviceID == "" && cmd.DeviceAlias != "" {
 		var ok bool
@@ -100,7 +98,7 @@ func (c *SwitchBotClient) Execute(ctx context.Context, cmd SwitchBotCommand) (ma
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", switchBotBaseURL, deviceID)
+	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", baseURL, deviceID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -134,7 +132,7 @@ func (c *SwitchBotClient) Execute(ctx context.Context, cmd SwitchBotCommand) (ma
 	return out, nil
 }
 
-func (c *SwitchBotClient) signPayload(timestamp, nonce string) (string, error) {
+func (c *Client) signPayload(timestamp, nonce string) (string, error) {
 	mac := hmac.New(sha256.New, []byte(c.secret))
 	if _, err := mac.Write([]byte(c.token + timestamp + nonce)); err != nil {
 		return "", err

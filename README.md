@@ -4,6 +4,12 @@
 brew install portaudio
 ```
 
+## 実行方法
+
+```sh
+go run ./cmd/smart-speaker
+```
+
 ## SwitchBot 連携設定
 
 SwitchBot のクラウド API を使う場合は以下の環境変数を設定してください。
