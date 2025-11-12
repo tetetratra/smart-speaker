@@ -8,8 +8,10 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
+	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
-	"smart-speaker/internal/pipeline"
+	"smart-speaker/internal/components/voice"
+	"smart-speaker/internal/graph"
 )
 
 func main() {
@@ -20,30 +22,35 @@ func main() {
 
 	cfg := app.LoadConfig("system_prompt.txt")
 
-	voiceStage, err := pipeline.NewVoiceStage(cfg.InputVoicePath)
+	voiceStage, err := voice.NewStage(cfg.InputVoicePath)
 	if err != nil {
-		log.Fatalf("failed to initialize voice stage: %v", err)
+		log.Fatalf("failed to init voice stage: %v", err)
 	}
+	defer voiceStage.Close()
 
-	realtimeStage, err := pipeline.NewRealtimeStage(ctx, realtimeapi.Config{
+	realtimeStage, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
 		APIKey:             cfg.APIKey,
 		Model:              cfg.Model,
 		TranscriptionModel: cfg.TranscriptionModel,
 		Instructions:       cfg.SystemPrompt,
 	})
 	if err != nil {
-		log.Fatalf("failed to initialize realtime stage: %v", err)
+		log.Fatalf("failed to init realtime stage: %v", err)
 	}
+	defer realtimeStage.Close()
 
-	printerStage := pipeline.NewPrinterStage()
+	printerStage := printer.NewStage()
+	defer printerStage.Close()
 
-	pipe := pipeline.New(voiceStage, realtimeStage, printerStage)
-	defer pipe.Close()
+	g := graph.New()
+	g.Add(voiceStage)
+	g.Add(realtimeStage)
+	g.Add(printerStage)
 
-	if err := pipe.Run(ctx); err != nil {
-		log.Fatalf("pipeline run error: %v", err)
+	if err := g.Run(ctx); err != nil {
+		log.Fatalf("graph run error: %v", err)
 	}
 
 	fmt.Println("🎙 音声ストリーミングを開始しました。Ctrl+C で終了します。")
-	<-ctx.Done()
+	g.Close()
 }
