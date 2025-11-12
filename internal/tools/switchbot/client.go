@@ -20,7 +20,7 @@ import (
 
 const baseURL = "https://api.switch-bot.com"
 
-// Client knows how to talk to the SwitchBot Open API.
+// SwitchBot Open API との通信を担当する
 type Client struct {
 	token     string
 	secret    string
@@ -28,7 +28,7 @@ type Client struct {
 	deviceMap map[string]string
 }
 
-// Command declares the payload expected from the function call arguments.
+// function calling から受け取るパラメータの構造
 type Command struct {
 	DeviceAlias string
 	DeviceID    string
@@ -37,7 +37,7 @@ type Command struct {
 	Parameter   string
 }
 
-// NewFromEnv builds a client using environment variables.
+// 環境変数に基づいてクライアントを初期化する
 func NewFromEnv() (*Client, error) {
 	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
 	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
@@ -59,7 +59,7 @@ func NewFromEnv() (*Client, error) {
 	return client, nil
 }
 
-// Execute sends a command to the SwitchBot API and returns the raw response body as a map.
+// SwitchBot API にコマンドを送りレスポンスを返す
 func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, error) {
 	deviceID := strings.TrimSpace(cmd.DeviceID)
 	if deviceID == "" && cmd.DeviceAlias != "" {

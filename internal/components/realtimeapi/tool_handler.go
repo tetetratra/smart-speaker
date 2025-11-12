@@ -3,8 +3,12 @@ package realtimeapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
+	"time"
+
+	"smart-speaker/internal/tools/switchbot"
 )
 
 type toolCallState struct {
@@ -188,7 +192,19 @@ func (c *Client) executeTool(ctx context.Context, state *toolCallState) {
 		payload = map[string]any{}
 	}
 
-	result := c.executor.Execute(ctx, state.Name, payload)
+	var result map[string]any
+	switch state.Name {
+	case "get_current_time":
+		result = runCurrentTimeTool(payload)
+	case "get_weather":
+		result = runWeatherTool(payload)
+	case "switchbot_control_device":
+		result = c.runSwitchBotTool(ctx, payload)
+	default:
+		result = map[string]any{
+			"error": fmt.Sprintf("unknown function: %s", state.Name),
+		}
+	}
 	outputBytes, err := json.Marshal(result)
 	if err != nil {
 		log.Printf("tool result marshal error: %v", err)
@@ -225,4 +241,65 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func runCurrentTimeTool(args map[string]any) map[string]any {
+	if hasArguments(args) {
+		return map[string]any{"error": "get_current_time は引数を受け付けません"}
+	}
+	now := time.Now()
+	return map[string]any{
+		"iso8601":  now.Format(time.RFC3339),
+		"timezone": now.Location().String(),
+	}
+}
+
+func runWeatherTool(args map[string]any) map[string]any {
+	if hasArguments(args) {
+		return map[string]any{"error": "get_weather は引数を受け付けません"}
+	}
+	time.Sleep(5 * time.Second)
+	return map[string]any{
+		"forecast":    "晴れ",
+		"temperature": 23.5,
+	}
+}
+
+func (c *Client) runSwitchBotTool(ctx context.Context, args map[string]any) map[string]any {
+	if c.switchBotClient == nil {
+		if c.switchBotInitErr != nil {
+			return map[string]any{"error": c.switchBotInitErr.Error()}
+		}
+		return map[string]any{"error": "SwitchBot が設定されていません"}
+	}
+	command := switchbot.Command{
+		DeviceAlias: strings.TrimSpace(asString(args["device"])),
+		DeviceID:    strings.TrimSpace(asString(args["device_id"])),
+		Command:     strings.TrimSpace(asString(args["command"])),
+		Parameter:   strings.TrimSpace(asString(args["parameter"])),
+		CommandType: strings.TrimSpace(asString(args["command_type"])),
+	}
+	result, err := c.switchBotClient.Execute(ctx, command)
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	return result
+}
+
+func hasArguments(args map[string]any) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for _, v := range args {
+		if v == nil {
+			continue
+		}
+		if str, ok := v.(string); ok {
+			if strings.TrimSpace(str) == "" {
+				continue
+			}
+		}
+		return true
+	}
+	return false
 }

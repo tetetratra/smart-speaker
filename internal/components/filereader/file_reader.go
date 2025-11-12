@@ -24,10 +24,10 @@ const (
 	flushSilence    = 5
 )
 
-// Ensure interface compliance.
+// Reader がインターフェースを満たしているか確認する
 var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
 
-// Reader replays audio from a WAV file.
+// WAV ファイルを擬似リアルタイムで再生する
 type Reader struct {
 	file          *os.File
 	pcmBytes      []byte
@@ -39,7 +39,7 @@ type Reader struct {
 	closed        bool
 }
 
-// New validates the WAV file and prepares buffers.
+// WAV ファイルの形式を確認しつつバッファを初期化する
 func New(path string) (*Reader, error) {
 	abs, err := resolvePath(path)
 	if err != nil {
@@ -74,7 +74,7 @@ func New(path string) (*Reader, error) {
 	}, nil
 }
 
-// Read returns the next chunk, replaying real-time pacing.
+// 次のチャンクを読み込みリアルタイム間隔で返す
 func (r *Reader) Read(ctx context.Context) (types.AudioChunk, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -115,7 +115,7 @@ func (r *Reader) emitSilence() types.AudioChunk {
 	return types.AudioChunk(string(r.encoded))
 }
 
-// Close closes the underlying file.
+// 開いているファイルを閉じる
 func (r *Reader) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

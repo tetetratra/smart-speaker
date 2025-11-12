@@ -19,10 +19,10 @@ const (
 	chunkMillis = 300
 )
 
-// Ensure interface compliance.
+// Reader がインターフェースを満たしているか確認する
 var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
 
-// Reader captures microphone input synchronously.
+// マイク入力を同期的に取得する
 type Reader struct {
 	stream     *portaudio.Stream
 	audioChunk []int16
@@ -31,7 +31,7 @@ type Reader struct {
 	closeOnce  sync.Once
 }
 
-// New initializes PortAudio and opens the default input stream.
+// PortAudio を初期化してデフォルト入力ストリームを開く
 func New() (*Reader, error) {
 	if err := portaudio.Initialize(); err != nil {
 		return nil, fmt.Errorf("portaudio initialize failed: %w", err)
@@ -61,7 +61,7 @@ func New() (*Reader, error) {
 	}, nil
 }
 
-// Read captures the next PCM chunk, base64-encodes it, and returns it.
+// 次の PCM チャンクを取得し Base64 で返す
 func (r *Reader) Read(ctx context.Context) (types.AudioChunk, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -79,7 +79,7 @@ func (r *Reader) Read(ctx context.Context) (types.AudioChunk, error) {
 	return types.AudioChunk(string(r.encoded)), nil
 }
 
-// Close stops and closes the PortAudio stream.
+// PortAudio のストリームを停止して解放する
 func (r *Reader) Close() error {
 	var err error
 	r.closeOnce.Do(func() {

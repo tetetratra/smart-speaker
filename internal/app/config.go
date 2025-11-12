@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Config aggregates environment-driven settings.
+// 環境変数などから集めた設定値を保持する
 type Config struct {
 	APIKey             string
 	Model              string
@@ -16,7 +16,7 @@ type Config struct {
 	SystemPrompt       string
 }
 
-// LoadConfig reads environment variables and system prompt file.
+// 環境変数とシステムプロンプトファイルを読み込む
 func LoadConfig(promptPath string) Config {
 	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if apiKey == "" {
@@ -28,12 +28,9 @@ func LoadConfig(promptPath string) Config {
 		model = "gpt-realtime"
 	}
 
-	var transcription string
-	if value, ok := os.LookupEnv("OPENAI_TRANSCRIPTION_MODEL"); ok {
-		transcription = strings.TrimSpace(value)
-	} else {
-		transcription = "gpt-4o-transcribe"
-	}
+	transcription := strings.TrimSpace(os.Getenv("OPENAI_TRANSCRIPTION_MODEL"))
+
+	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
 
 	prompt := readSystemPrompt(promptPath)
 
@@ -41,7 +38,7 @@ func LoadConfig(promptPath string) Config {
 		APIKey:             apiKey,
 		Model:              model,
 		TranscriptionModel: transcription,
-		InputVoicePath:     strings.TrimSpace(os.Getenv("INPUT_VOICE")),
+		InputVoicePath:     inputVoicePath,
 		SystemPrompt:       prompt,
 	}
 }

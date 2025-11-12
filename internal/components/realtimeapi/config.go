@@ -1,6 +1,6 @@
 package realtimeapi
 
-// Config contains the options required to talk to the OpenAI Realtime API.
+// OpenAI Realtime API と通信するための設定値
 type Config struct {
 	APIKey             string
 	Model              string

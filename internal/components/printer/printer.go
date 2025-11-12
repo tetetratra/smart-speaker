@@ -15,18 +15,18 @@ import (
 
 var _ interfaces.Processor[types.OutputLine] = (*Printer)(nil)
 
-// Printer writes output lines to stdout.
+// 出力行を標準出力へ書き出す
 type Printer struct {
 	writer *bufio.Writer
 	mu     sync.Mutex
 }
 
-// New constructs a Printer.
+// Printer を生成する
 func New() *Printer {
 	return &Printer{writer: bufio.NewWriter(os.Stdout)}
 }
 
-// Process prints a single line.
+// 1 行分の出力を描画する
 func (p *Printer) Process(ctx context.Context, line types.OutputLine) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -43,7 +43,7 @@ func (p *Printer) Process(ctx context.Context, line types.OutputLine) error {
 	return p.writer.Flush()
 }
 
-// Close flushes any buffered output.
+// バッファの内容をフラッシュする
 func (p *Printer) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

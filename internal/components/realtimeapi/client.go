@@ -12,7 +12,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"smart-speaker/internal/interfaces"
-	"smart-speaker/internal/tools"
+	"smart-speaker/internal/tools/switchbot"
 	types "smart-speaker/internal/types"
 )
 
@@ -21,12 +21,13 @@ var (
 	_ interfaces.Reader[types.OutputLine]    = (*Client)(nil)
 )
 
-// Client provides synchronous access to the OpenAI Realtime API.
+// OpenAI Realtime API への同期的なアクセスをまとめる
 type Client struct {
-	ctx      context.Context
-	conn     *websocket.Conn
-	config   Config
-	executor *tools.Executor
+	ctx              context.Context
+	conn             *websocket.Conn
+	config           Config
+	switchBotClient  *switchbot.Client
+	switchBotInitErr error
 
 	toolStates map[string]*toolCallState
 	toolMu     sync.Mutex
@@ -37,8 +38,8 @@ type Client struct {
 	closeOnce sync.Once
 }
 
-// NewClient connects to the realtime endpoint and performs session initialization.
-func NewClient(ctx context.Context, cfg Config, executor *tools.Executor) (*Client, error) {
+// Realtime エンドポイントに接続してセッションを初期化する
+func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	wsURL := fmt.Sprintf("wss://api.openai.com/v1/realtime?model=%s", cfg.Model)
 
 	header := http.Header{}
@@ -50,11 +51,13 @@ func NewClient(ctx context.Context, cfg Config, executor *tools.Executor) (*Clie
 		return nil, err
 	}
 
+	switchBotClient, switchBotInitErr := switchbot.NewFromEnv()
 	client := &Client{
 		ctx:               ctx,
 		conn:              conn,
 		config:            cfg,
-		executor:          executor,
+		switchBotClient:   switchBotClient,
+		switchBotInitErr:  switchBotInitErr,
 		toolStates:        make(map[string]*toolCallState),
 		responseDeltaSeen: make(map[string]bool),
 	}
@@ -68,7 +71,7 @@ func NewClient(ctx context.Context, cfg Config, executor *tools.Executor) (*Clie
 	return client, nil
 }
 
-// Process sends a single audio chunk to the API.
+// 音声チャンクを API に送信する
 func (c *Client) Process(ctx context.Context, chunk types.AudioChunk) error {
 	payload := wsMessage{
 		"type":  "input_audio_buffer.append",
@@ -77,7 +80,7 @@ func (c *Client) Process(ctx context.Context, chunk types.AudioChunk) error {
 	return c.send(payload)
 }
 
-// Read returns the next output line emitted by the API.
+// API から受信した出力行を 1 件ずつ返す
 func (c *Client) Read(ctx context.Context) (types.OutputLine, error) {
 	for {
 		if len(c.buffer) > 0 {
@@ -113,7 +116,7 @@ func (c *Client) Read(ctx context.Context) (types.OutputLine, error) {
 	}
 }
 
-// Close shuts down the websocket connection.
+// WebSocket 接続を閉じる
 func (c *Client) Close() error {
 	var err error
 	c.closeOnce.Do(func() {

@@ -1,9 +1,9 @@
 package types
 
-// AudioChunk represents a base64 encoded PCM chunk.
+// Base64 で表現された PCM チャンク
 type AudioChunk string
 
-// OutputLine represents a single output entry from the assistant or user.
+// アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
 	Role string
 	Text string
