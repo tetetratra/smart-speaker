@@ -181,10 +181,11 @@ func (s *Stage) produce() {
 			log.Printf("filereader stage read error: %v", err)
 			return
 		}
+		evt := types.Event{Kind: types.EventAudioChunk, Payload: chunk}
 		select {
 		case <-s.ctx.Done():
 			return
-		case s.downstream <- chunk:
+		case s.downstream <- evt:
 		}
 	}
 }

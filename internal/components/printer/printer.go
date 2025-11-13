@@ -43,9 +43,17 @@ func (p *Printer) run() {
 			if !ok {
 				return
 			}
-			line, ok := data.(types.OutputLine)
+			evt, ok := data.(types.Event)
 			if !ok {
 				log.Printf("unexpected upstream data type: %T", data)
+				continue
+			}
+			if evt.Kind != types.EventRealtimeOutput {
+				continue
+			}
+			line, ok := evt.Payload.(types.OutputLine)
+			if !ok {
+				log.Printf("unexpected event payload type: %T", evt.Payload)
 				continue
 			}
 			if err := p.Process(p.ctx, line); err != nil {

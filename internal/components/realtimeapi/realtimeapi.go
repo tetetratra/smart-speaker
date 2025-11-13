@@ -49,17 +49,34 @@ func (s *Stage) runSender() {
 			if !ok {
 				return
 			}
-			chunk, ok := data.(types.AudioChunk)
+			evt, ok := data.(types.Event)
 			if !ok {
-				log.Printf("unexpected upstream data type: %T", data)
+				log.Printf("realtime sender: unexpected upstream type %T", data)
 				continue
 			}
-			if err := s.client.Process(s.ctx, chunk); err != nil {
-				if errors.Is(err, context.Canceled) {
+			switch evt.Kind {
+			case types.EventAudioChunk:
+				chunk, ok := evt.Payload.(types.AudioChunk)
+				if !ok {
+					log.Printf("realtime sender: unexpected audio payload type %T", evt.Payload)
+					continue
+				}
+				if err := s.client.Process(s.ctx, chunk); err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					log.Printf("realtime send error: %v", err)
 					return
 				}
-				log.Printf("realtime send error: %v", err)
-				return
+			case types.EventToolResponse:
+				resp, ok := evt.Payload.(types.ToolResponse)
+				if !ok {
+					log.Printf("realtime sender: unexpected tool response payload %T", evt.Payload)
+					continue
+				}
+				if err := s.sendToolResponse(resp); err != nil {
+					log.Printf("realtime tool response error: %v", err)
+				}
 			}
 		}
 	}
@@ -68,7 +85,7 @@ func (s *Stage) runSender() {
 func (s *Stage) runReceiver() {
 	defer close(s.downstream)
 	for {
-		line, err := s.client.Read(s.ctx)
+		evt, err := s.client.NextEvent(s.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -79,7 +96,7 @@ func (s *Stage) runReceiver() {
 		select {
 		case <-s.ctx.Done():
 			return
-		case s.downstream <- line:
+		case s.downstream <- evt:
 		}
 	}
 }
@@ -97,6 +114,27 @@ func (s *Stage) Close() error {
 		err = s.client.Close()
 	})
 	return err
+}
+
+func (s *Stage) sendToolResponse(resp types.ToolResponse) error {
+	toolOutput := wsMessage{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type":    "function_call_output",
+			"call_id": resp.ToolCallID,
+			"output":  string(resp.Output),
+		},
+	}
+	if err := s.client.send(toolOutput); err != nil {
+		return err
+	}
+	return s.client.send(wsMessage{
+		"type": "response.create",
+		"response": map[string]any{
+			"modalities":   []string{"text"},
+			"instructions": "Use the latest tool output to continue responding in Japanese.",
+		},
+	})
 }
 
 var _ graph.Stage = (*Stage)(nil)

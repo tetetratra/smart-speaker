@@ -11,26 +11,17 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"smart-speaker/internal/interfaces"
-	"smart-speaker/internal/tools/switchbot"
 	types "smart-speaker/internal/types"
-)
-
-var (
-	_ interfaces.Processor[types.AudioChunk] = (*Client)(nil)
-	_ interfaces.Reader[types.OutputLine]    = (*Client)(nil)
 )
 
 // OpenAI Realtime API への同期的なアクセスをまとめる
 type Client struct {
-	ctx              context.Context
-	conn             *websocket.Conn
-	config           Config
-	switchBotClient  *switchbot.Client
-	switchBotInitErr error
-
+	ctx        context.Context
+	conn       *websocket.Conn
+	config     Config
 	toolStates map[string]*toolCallState
 	toolMu     sync.Mutex
+	toolQueue  []types.ToolRequest
 
 	responseDeltaSeen map[string]bool
 	buffer            []types.OutputLine
@@ -51,13 +42,10 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	switchBotClient, switchBotInitErr := switchbot.NewFromEnv()
 	client := &Client{
 		ctx:               ctx,
 		conn:              conn,
 		config:            cfg,
-		switchBotClient:   switchBotClient,
-		switchBotInitErr:  switchBotInitErr,
 		toolStates:        make(map[string]*toolCallState),
 		responseDeltaSeen: make(map[string]bool),
 	}
@@ -81,21 +69,24 @@ func (c *Client) Process(ctx context.Context, chunk types.AudioChunk) error {
 }
 
 // API から受信した出力行を 1 件ずつ返す
-func (c *Client) Read(ctx context.Context) (types.OutputLine, error) {
+func (c *Client) NextEvent(ctx context.Context) (types.Event, error) {
 	for {
+		if evt, ok := c.popToolRequest(); ok {
+			return evt, nil
+		}
 		if len(c.buffer) > 0 {
 			line := c.buffer[0]
 			c.buffer = c.buffer[1:]
-			return line, nil
+			return types.Event{Kind: types.EventRealtimeOutput, Payload: line}, nil
 		}
 
 		if err := ctx.Err(); err != nil {
-			return types.OutputLine{}, err
+			return types.Event{}, err
 		}
 
 		_, data, err := c.conn.Read(ctx)
 		if err != nil {
-			return types.OutputLine{}, err
+			return types.Event{}, err
 		}
 
 		var msg wsMessage
@@ -104,7 +95,7 @@ func (c *Client) Read(ctx context.Context) (types.OutputLine, error) {
 			continue
 		}
 
-		if c.handleToolMessage(ctx, msg) {
+		if c.handleToolMessage(msg) {
 			continue
 		}
 
@@ -125,6 +116,23 @@ func (c *Client) Close() error {
 		}
 	})
 	return err
+}
+
+func (c *Client) enqueueToolRequest(req types.ToolRequest) {
+	c.toolMu.Lock()
+	defer c.toolMu.Unlock()
+	c.toolQueue = append(c.toolQueue, req)
+}
+
+func (c *Client) popToolRequest() (types.Event, bool) {
+	c.toolMu.Lock()
+	defer c.toolMu.Unlock()
+	if len(c.toolQueue) == 0 {
+		return types.Event{}, false
+	}
+	req := c.toolQueue[0]
+	c.toolQueue = c.toolQueue[1:]
+	return types.Event{Kind: types.EventToolRequest, Payload: req}, true
 }
 
 func (c *Client) send(payload any) error {

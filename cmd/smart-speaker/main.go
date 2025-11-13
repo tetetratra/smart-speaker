@@ -12,6 +12,7 @@ import (
 	"smart-speaker/internal/components/micreader"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
+	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/graph"
 )
 
@@ -23,18 +24,21 @@ func main() {
 
 	cfg := app.LoadConfig("system_prompt.txt")
 
-	var voiceStage graph.Stage
+	var inputStage graph.Stage
 	if cfg.InputVoicePath != "" {
 		stage, err := filereader.NewStage(cfg.InputVoicePath)
 		if err != nil {
 			log.Fatalf("failed to init file reader stage: %v", err)
 		}
-		voiceStage = stage
+		inputStage = stage
+	} else {
+		stage, err := micreader.NewStage()
+		if err != nil {
+			log.Fatalf("failed to init mic reader stage: %v", err)
+		}
+		inputStage = stage
 	}
-	micStage, err := micreader.NewStage()
-	if err != nil {
-		log.Fatalf("failed to init mic reader stage: %v", err)
-	}
+	defer inputStage.Close()
 
 	realtimeStage, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
 		APIKey:             cfg.APIKey,
@@ -48,22 +52,21 @@ func main() {
 	defer realtimeStage.Close()
 
 	printerStage := printer.NewPrinter()
+	defer printerStage.Close()
+	toolStage := toolcaller.NewStage()
+	defer toolStage.Close()
 
 	g := graph.New()
 	defer g.Close()
-	var voiceNode *graph.Node
-	if voiceStage != nil {
-		voiceNode = g.AddNode(voiceStage)
-	}
-	micNode := g.AddNode(micStage)
+	inputNode := g.AddNode(inputStage)
 	realtimeNode := g.AddNode(realtimeStage)
 	printerNode := g.AddNode(printerStage)
+	toolNode := g.AddNode(toolStage)
 
-	if voiceNode != nil {
-		g.Connect(voiceNode, realtimeNode)
-	}
-	g.Connect(micNode, realtimeNode)
+	g.Connect(inputNode, realtimeNode)
 	g.Connect(realtimeNode, printerNode)
+	g.Connect(realtimeNode, toolNode)
+	g.Connect(toolNode, realtimeNode)
 
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
