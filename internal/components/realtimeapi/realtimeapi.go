@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 
 	"smart-speaker/internal/graph"
@@ -79,6 +80,15 @@ func (s *Stage) runSender() {
 				if err := s.sendToolResponse(resp); err != nil {
 					log.Printf("realtime tool response error: %v", err)
 				}
+			case types.EventTextInput:
+				line, ok := evt.Payload.(types.OutputLine)
+				if !ok {
+					log.Printf("realtime sender: unexpected text payload type %T", evt.Payload)
+					continue
+				}
+				if err := s.sendTextInput(line); err != nil {
+					log.Printf("realtime text input error: %v", err)
+				}
 			}
 		}
 	}
@@ -135,6 +145,39 @@ func (s *Stage) sendToolResponse(resp types.ToolResponse) error {
 		"response": map[string]any{
 			"modalities":   []string{"text"},
 			"instructions": "Use the latest tool output to continue responding in Japanese.",
+		},
+	})
+}
+
+func (s *Stage) sendTextInput(line types.OutputLine) error {
+	text := strings.TrimSpace(line.Text)
+	if text == "" {
+		return nil
+	}
+	role := line.Role
+	if role == "" {
+		role = "user"
+	}
+	msg := wsMessage{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "message",
+			"role": role,
+			"content": []any{
+				map[string]any{
+					"type": "input_text",
+					"text": text,
+				},
+			},
+		},
+	}
+	if err := s.client.Send(msg); err != nil {
+		return err
+	}
+	return s.client.Send(wsMessage{
+		"type": "response.create",
+		"response": map[string]any{
+			"modalities": []string{"text"},
 		},
 	})
 }

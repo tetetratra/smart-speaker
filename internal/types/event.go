@@ -7,6 +7,7 @@ type EventKind int
 
 const (
 	EventAudioChunk EventKind = iota
+	EventTextInput
 	EventRealtimeOutput
 	EventToolRequest
 	EventToolResponse

@@ -12,6 +12,7 @@ import (
 	"smart-speaker/internal/components/micreader"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
+	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/graph"
 )
@@ -44,6 +45,7 @@ func main() {
 
 type stages struct {
 	input    graph.Stage
+	text     graph.Stage
 	realtime graph.Stage
 	printer  graph.Stage
 	tool     graph.Stage
@@ -52,6 +54,9 @@ type stages struct {
 func (s stages) close() {
 	if s.input != nil {
 		s.input.Close()
+	}
+	if s.text != nil {
+		s.text.Close()
 	}
 	if s.realtime != nil {
 		s.realtime.Close()
@@ -69,6 +74,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init input stage: %w", err)
 	}
+	text := textinput.NewStage(ctx)
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
 		APIKey:             cfg.APIKey,
 		Model:              cfg.Model,
@@ -83,6 +89,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	tool := toolcaller.NewStage()
 	return stages{
 		input:    input,
+		text:     text,
 		realtime: realtime,
 		printer:  printer,
 		tool:     tool,
@@ -98,11 +105,13 @@ func buildInputStage(cfg app.Config) (graph.Stage, error) {
 
 func wireGraph(g *graph.Graph, st stages) {
 	inputNode := g.AddNode(st.input)
+	textNode := g.AddNode(st.text)
 	realtimeNode := g.AddNode(st.realtime)
 	printerNode := g.AddNode(st.printer)
 	toolNode := g.AddNode(st.tool)
 
 	g.Connect(inputNode, realtimeNode)
+	g.Connect(textNode, realtimeNode)
 	g.Connect(realtimeNode, printerNode)
 	g.Connect(realtimeNode, toolNode)
 	g.Connect(toolNode, realtimeNode)
