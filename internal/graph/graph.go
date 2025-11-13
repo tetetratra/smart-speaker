@@ -43,15 +43,24 @@ func (g *Graph) Connect(from, to *Node) {
 
 // Run は各エッジごとに goroutine を起動し、Stage 間のチャネル転送を行う。
 func (g *Graph) Run(ctx context.Context) error {
-	var wg sync.WaitGroup
+	adj := make(map[*Node][]Stage, len(g.nodes))
 	for _, edge := range g.edges {
-		from := edge.From.Stage
-		to := edge.To.Stage
+		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
+	}
+
+	var wg sync.WaitGroup
+	for _, node := range g.nodes {
+		downstreams := adj[node]
+		if len(downstreams) == 0 {
+			continue
+		}
+		out := node.Stage.Downstream()
+		if out == nil {
+			continue
+		}
 		wg.Add(1)
-		go func(from Stage, to Stage) {
+		go func(out <-chan interface{}, downstreams []Stage) {
 			defer wg.Done()
-			out := from.Downstream()
-			in := to.Upstream()
 			for {
 				select {
 				case <-ctx.Done():
@@ -60,14 +69,17 @@ func (g *Graph) Run(ctx context.Context) error {
 					if !ok {
 						return
 					}
-					select {
-					case <-ctx.Done():
-						return
-					case in <- val:
+					for _, dst := range downstreams {
+						in := dst.Upstream()
+						select {
+						case <-ctx.Done():
+							return
+						case in <- val:
+						}
 					}
 				}
 			}
-		}(from, to)
+		}(out, downstreams)
 	}
 
 	wg.Wait()
