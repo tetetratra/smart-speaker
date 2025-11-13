@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"smart-speaker/internal/graph"
 	"smart-speaker/internal/interfaces"
 	types "smart-speaker/internal/types"
 )
@@ -26,6 +28,7 @@ const (
 
 // Reader がインターフェースを満たしているか確認する
 var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
+var _ graph.Stage = (*Stage)(nil)
 
 // WAV ファイルを擬似リアルタイムで再生する
 type Reader struct {
@@ -124,6 +127,80 @@ func (r *Reader) Close() error {
 	}
 	r.closed = true
 	return r.file.Close()
+}
+
+// Stage streams file chunks into the graph Stage interface.
+type Stage struct {
+	reader     *Reader
+	upstream   chan interface{}
+	downstream chan interface{}
+	ctx        context.Context
+	cancel     context.CancelFunc
+	once       sync.Once
+}
+
+func NewStage(path string) (*Stage, error) {
+	reader, err := New(path)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Stage{
+		reader:     reader,
+		upstream:   make(chan interface{}),
+		downstream: make(chan interface{}),
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+	go s.drainUpstream()
+	go s.produce()
+	return s, nil
+}
+
+func (s *Stage) drainUpstream() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case _, ok := <-s.upstream:
+			if !ok {
+				return
+			}
+		}
+	}
+}
+
+func (s *Stage) produce() {
+	defer close(s.downstream)
+	for {
+		chunk, err := s.reader.Read(s.ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return
+			}
+			log.Printf("filereader stage read error: %v", err)
+			return
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case s.downstream <- chunk:
+		}
+	}
+}
+
+func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+
+func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+
+func (s *Stage) Close() error {
+	var err error
+	s.once.Do(func() {
+		s.cancel()
+		close(s.upstream)
+		err = s.reader.Close()
+	})
+	return err
 }
 
 type wavMeta struct {
