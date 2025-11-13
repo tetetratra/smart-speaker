@@ -4,19 +4,22 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
-// 環境変数などから集めた設定値を保持する
+// Config holds runtime settings.
 type Config struct {
 	APIKey             string
 	Model              string
 	TranscriptionModel string
 	InputVoicePath     string
 	SystemPrompt       string
+	AutoPromptInterval time.Duration
+	AutoPromptMessage  string
 }
 
-// 環境変数とシステムプロンプトファイルを読み込む
 func LoadConfig(promptPath string) Config {
 	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if apiKey == "" {
@@ -29,10 +32,19 @@ func LoadConfig(promptPath string) Config {
 	}
 
 	transcription := strings.TrimSpace(os.Getenv("OPENAI_TRANSCRIPTION_MODEL"))
-
 	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
-
 	prompt := readSystemPrompt(promptPath)
+
+	interval := time.Minute * 10
+	if raw := strings.TrimSpace(os.Getenv("AUTO_PROMPT_INTERVAL")); raw != "" {
+		if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+			interval = time.Duration(secs) * time.Second
+		}
+	}
+	message := strings.TrimSpace(os.Getenv("AUTO_PROMPT_MESSAGE"))
+	if message == "" {
+		message = "(system: ユーザーに状況を尋ねてください)"
+	}
 
 	return Config{
 		APIKey:             apiKey,
@@ -40,6 +52,8 @@ func LoadConfig(promptPath string) Config {
 		TranscriptionModel: transcription,
 		InputVoicePath:     inputVoicePath,
 		SystemPrompt:       prompt,
+		AutoPromptInterval: interval,
+		AutoPromptMessage:  message,
 	}
 }
 

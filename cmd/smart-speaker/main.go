@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
+	"smart-speaker/internal/components/conversationstarter"
 	"smart-speaker/internal/components/filereader"
 	"smart-speaker/internal/components/micreader"
 	"smart-speaker/internal/components/printer"
@@ -46,6 +47,7 @@ func main() {
 type stages struct {
 	input    graph.Stage
 	text     graph.Stage
+	starter  graph.Stage
 	realtime graph.Stage
 	printer  graph.Stage
 	tool     graph.Stage
@@ -57,6 +59,9 @@ func (s stages) close() {
 	}
 	if s.text != nil {
 		s.text.Close()
+	}
+	if s.starter != nil {
+		s.starter.Close()
 	}
 	if s.realtime != nil {
 		s.realtime.Close()
@@ -87,9 +92,17 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	}
 	printer := printer.NewPrinter()
 	tool := toolcaller.NewStage()
+	var starter graph.Stage
+	if cfg.AutoPromptInterval > 0 {
+		starter = conversationstarter.NewStage(ctx, conversationstarter.Config{
+			Interval: cfg.AutoPromptInterval,
+			Prompt:   cfg.AutoPromptMessage,
+		})
+	}
 	return stages{
 		input:    input,
 		text:     text,
+		starter:  starter,
 		realtime: realtime,
 		printer:  printer,
 		tool:     tool,
@@ -104,15 +117,32 @@ func buildInputStage(cfg app.Config) (graph.Stage, error) {
 }
 
 func wireGraph(g *graph.Graph, st stages) {
-	inputNode := g.AddNode(st.input)
-	textNode := g.AddNode(st.text)
-	realtimeNode := g.AddNode(st.realtime)
-	printerNode := g.AddNode(st.printer)
-	toolNode := g.AddNode(st.tool)
+	add := func(stage graph.Stage) *graph.Node {
+		if stage == nil {
+			return nil
+		}
+		return g.AddNode(stage)
+	}
 
-	g.Connect(inputNode, realtimeNode)
-	g.Connect(textNode, realtimeNode)
-	g.Connect(realtimeNode, printerNode)
-	g.Connect(realtimeNode, toolNode)
-	g.Connect(toolNode, realtimeNode)
+	realtimeNode := add(st.realtime)
+	if realtimeNode == nil {
+		return
+	}
+	if node := add(st.input); node != nil {
+		g.Connect(node, realtimeNode)
+	}
+	if node := add(st.text); node != nil {
+		g.Connect(node, realtimeNode)
+	}
+	if node := add(st.starter); node != nil {
+		g.Connect(node, realtimeNode)
+	}
+	if node := add(st.printer); node != nil {
+		g.Connect(realtimeNode, node)
+	}
+	if node := add(st.tool); node != nil {
+		toolNode := node
+		g.Connect(realtimeNode, toolNode)
+		g.Connect(toolNode, realtimeNode)
+	}
 }
