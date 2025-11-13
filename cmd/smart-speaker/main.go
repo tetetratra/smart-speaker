@@ -23,19 +23,17 @@ func main() {
 
 	cfg := app.LoadConfig("system_prompt.txt")
 
-	var inputStage graph.Stage
+	var voiceStage graph.Stage
 	if cfg.InputVoicePath != "" {
 		stage, err := filereader.NewStage(cfg.InputVoicePath)
 		if err != nil {
 			log.Fatalf("failed to init file reader stage: %v", err)
 		}
-		inputStage = stage
-	} else {
-		stage, err := micreader.NewStage()
-		if err != nil {
-			log.Fatalf("failed to init mic reader stage: %v", err)
-		}
-		inputStage = stage
+		voiceStage = stage
+	}
+	micStage, err := micreader.NewStage()
+	if err != nil {
+		log.Fatalf("failed to init mic reader stage: %v", err)
 	}
 
 	realtimeStage, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
@@ -53,11 +51,18 @@ func main() {
 
 	g := graph.New()
 	defer g.Close()
-	inputNode := g.AddNode(inputStage)
+	var voiceNode *graph.Node
+	if voiceStage != nil {
+		voiceNode = g.AddNode(voiceStage)
+	}
+	micNode := g.AddNode(micStage)
 	realtimeNode := g.AddNode(realtimeStage)
 	printerNode := g.AddNode(printerStage)
 
-	g.Connect(inputNode, realtimeNode)
+	if voiceNode != nil {
+		g.Connect(voiceNode, realtimeNode)
+	}
+	g.Connect(micNode, realtimeNode)
 	g.Connect(realtimeNode, printerNode)
 
 	if err := g.Run(ctx); err != nil {
