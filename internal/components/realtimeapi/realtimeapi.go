@@ -13,6 +13,7 @@ import (
 // Stage wraps the Realtime API client into the new graph.Stage interface.
 type Stage struct {
 	client     *Client
+	stream     *EventStream
 	upstream   chan interface{}
 	downstream chan interface{}
 	ctx        context.Context
@@ -30,6 +31,7 @@ func NewStage(ctx context.Context, cfg Config) (*Stage, error) {
 	}
 	s := &Stage{
 		client:     client,
+		stream:     NewEventStream(client),
 		upstream:   make(chan interface{}),
 		downstream: make(chan interface{}),
 		ctx:        stageCtx,
@@ -85,7 +87,7 @@ func (s *Stage) runSender() {
 func (s *Stage) runReceiver() {
 	defer close(s.downstream)
 	for {
-		evt, err := s.client.NextEvent(s.ctx)
+		evt, err := s.stream.Next(s.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -125,10 +127,10 @@ func (s *Stage) sendToolResponse(resp types.ToolResponse) error {
 			"output":  string(resp.Output),
 		},
 	}
-	if err := s.client.send(toolOutput); err != nil {
+	if err := s.client.Send(toolOutput); err != nil {
 		return err
 	}
-	return s.client.send(wsMessage{
+	return s.client.Send(wsMessage{
 		"type": "response.create",
 		"response": map[string]any{
 			"modalities":   []string{"text"},

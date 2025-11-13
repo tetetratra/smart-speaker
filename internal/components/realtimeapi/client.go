@@ -16,16 +16,9 @@ import (
 
 // OpenAI Realtime API への同期的なアクセスをまとめる
 type Client struct {
-	ctx        context.Context
-	conn       *websocket.Conn
-	config     Config
-	toolStates map[string]*toolCallState
-	toolMu     sync.Mutex
-	toolQueue  []types.ToolRequest
-
-	responseDeltaSeen map[string]bool
-	buffer            []types.OutputLine
-
+	ctx       context.Context
+	conn      *websocket.Conn
+	config    Config
 	closeOnce sync.Once
 }
 
@@ -42,13 +35,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{
-		ctx:               ctx,
-		conn:              conn,
-		config:            cfg,
-		toolStates:        make(map[string]*toolCallState),
-		responseDeltaSeen: make(map[string]bool),
-	}
+	client := &Client{ctx: ctx, conn: conn, config: cfg}
 
 	if err := client.sendSessionUpdate(); err != nil {
 		conn.Close(websocket.StatusInternalError, "session init failed")
@@ -69,42 +56,9 @@ func (c *Client) Process(ctx context.Context, chunk types.AudioChunk) error {
 }
 
 // API から受信した出力行を 1 件ずつ返す
-func (c *Client) NextEvent(ctx context.Context) (types.Event, error) {
-	for {
-		if evt, ok := c.popToolRequest(); ok {
-			return evt, nil
-		}
-		if len(c.buffer) > 0 {
-			line := c.buffer[0]
-			c.buffer = c.buffer[1:]
-			return types.Event{Kind: types.EventRealtimeOutput, Payload: line}, nil
-		}
-
-		if err := ctx.Err(); err != nil {
-			return types.Event{}, err
-		}
-
-		_, data, err := c.conn.Read(ctx)
-		if err != nil {
-			return types.Event{}, err
-		}
-
-		var msg wsMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("unmarshal error: %v", err)
-			continue
-		}
-
-		if c.handleToolMessage(msg) {
-			continue
-		}
-
-		lines := c.parseMessageForLines(msg)
-		if len(lines) == 0 {
-			continue
-		}
-		c.buffer = append(c.buffer, lines...)
-	}
+func (c *Client) Read(ctx context.Context) ([]byte, error) {
+	_, data, err := c.conn.Read(ctx)
+	return data, err
 }
 
 // WebSocket 接続を閉じる
@@ -118,23 +72,6 @@ func (c *Client) Close() error {
 	return err
 }
 
-func (c *Client) enqueueToolRequest(req types.ToolRequest) {
-	c.toolMu.Lock()
-	defer c.toolMu.Unlock()
-	c.toolQueue = append(c.toolQueue, req)
-}
-
-func (c *Client) popToolRequest() (types.Event, bool) {
-	c.toolMu.Lock()
-	defer c.toolMu.Unlock()
-	if len(c.toolQueue) == 0 {
-		return types.Event{}, false
-	}
-	req := c.toolQueue[0]
-	c.toolQueue = c.toolQueue[1:]
-	return types.Event{Kind: types.EventToolRequest, Payload: req}, true
-}
-
 func (c *Client) send(payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -143,6 +80,10 @@ func (c *Client) send(payload any) error {
 	writeCtx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
 	return c.conn.Write(writeCtx, websocket.MessageText, data)
+}
+
+func (c *Client) Send(payload any) error {
+	return c.send(payload)
 }
 
 func (c *Client) sendSessionUpdate() error {
@@ -157,16 +98,6 @@ func (c *Client) sendSessionUpdate() error {
 			"interrupt_response":  false,
 		},
 		"tools": []any{
-			map[string]any{
-				"type":        "function",
-				"name":        "get_current_time",
-				"description": "現在の日時を ISO8601 形式で返します。引数は受け付けません。",
-			},
-			map[string]any{
-				"type":        "function",
-				"name":        "get_weather",
-				"description": "現在の天気を返します。レスポンスは数秒遅れて到着します。引数は受け付けません。",
-			},
 			map[string]any{
 				"type":        "function",
 				"name":        "switchbot_control_device",

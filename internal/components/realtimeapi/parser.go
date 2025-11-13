@@ -9,7 +9,15 @@ import (
 
 const debugDumpResponses = false
 
-func (c *Client) parseMessageForLines(msg wsMessage) []types.OutputLine {
+type MessageParser struct {
+	responseDeltaSeen map[string]bool
+}
+
+func NewMessageParser() *MessageParser {
+	return &MessageParser{responseDeltaSeen: make(map[string]bool)}
+}
+
+func (p *MessageParser) Parse(msg wsMessage) []types.OutputLine {
 	if debugDumpResponses {
 		if data, err := json.MarshalIndent(msg, "", "  "); err == nil {
 			log.Println(string(data))
@@ -27,21 +35,21 @@ func (c *Client) parseMessageForLines(msg wsMessage) []types.OutputLine {
 	case "response.output_text.delta":
 		if delta, ok := msg["delta"].(string); ok {
 			if id, ok := msg["response_id"].(string); ok && id != "" {
-				c.responseDeltaSeen[id] = true
+				p.responseDeltaSeen[id] = true
 			}
 			return []types.OutputLine{{Role: "assistant", Text: delta}}
 		}
 	case "response.output_text":
 		if text, ok := msg["text"].(string); ok {
 			if id, ok := msg["response_id"].(string); ok && id != "" {
-				c.responseDeltaSeen[id] = true
+				p.responseDeltaSeen[id] = true
 			}
 			return []types.OutputLine{{Role: "assistant", Text: text}}
 		}
 	case "response.delta":
-		return c.extractLinesFromResponse(msgType, msg)
+		return p.extractLinesFromResponse(msgType, msg)
 	case "response.done":
-		return c.extractLinesFromResponse(msgType, msg)
+		return p.extractLinesFromResponse(msgType, msg)
 	case "error", "response.error":
 		if detail, ok := msg["error"].(map[string]any); ok {
 			if message, ok := detail["message"].(string); ok {
@@ -52,7 +60,7 @@ func (c *Client) parseMessageForLines(msg wsMessage) []types.OutputLine {
 	return nil
 }
 
-func (c *Client) extractLinesFromResponse(msgType string, msg wsMessage) []types.OutputLine {
+func (p *MessageParser) extractLinesFromResponse(msgType string, msg wsMessage) []types.OutputLine {
 	resp, ok := msg["response"].(map[string]any)
 	if !ok {
 		return nil
@@ -60,8 +68,8 @@ func (c *Client) extractLinesFromResponse(msgType string, msg wsMessage) []types
 
 	respID, _ := resp["id"].(string)
 	if respID != "" && msgType == "response.done" {
-		if c.responseDeltaSeen[respID] {
-			delete(c.responseDeltaSeen, respID)
+		if p.responseDeltaSeen[respID] {
+			delete(p.responseDeltaSeen, respID)
 			return nil
 		}
 	}
@@ -88,7 +96,7 @@ func (c *Client) extractLinesFromResponse(msgType string, msg wsMessage) []types
 		}
 	}
 	if respID != "" && msgType == "response.delta" && hasAssistant {
-		c.responseDeltaSeen[respID] = true
+		p.responseDeltaSeen[respID] = true
 	}
 	return lines
 }

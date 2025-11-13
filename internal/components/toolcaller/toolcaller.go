@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"smart-speaker/internal/graph"
 	"smart-speaker/internal/tools/switchbot"
@@ -83,10 +82,6 @@ func (s *Stage) executeTool(req types.ToolRequest) types.ToolResponse {
 	}
 	var result map[string]any
 	switch req.Name {
-	case "get_current_time":
-		result = runCurrentTimeTool(args)
-	case "get_weather":
-		result = runWeatherTool(args)
 	case "switchbot_control_device":
 		result = s.runSwitchBotTool(args)
 	default:
@@ -114,28 +109,6 @@ func (s *Stage) Close() error {
 	return nil
 }
 
-func runCurrentTimeTool(args map[string]any) map[string]any {
-	if hasArguments(args) {
-		return map[string]any{"error": "get_current_time は引数を受け付けません"}
-	}
-	now := time.Now()
-	return map[string]any{
-		"iso8601":  now.Format(time.RFC3339),
-		"timezone": now.Location().String(),
-	}
-}
-
-func runWeatherTool(args map[string]any) map[string]any {
-	if hasArguments(args) {
-		return map[string]any{"error": "get_weather は引数を受け付けません"}
-	}
-	time.Sleep(5 * time.Second)
-	return map[string]any{
-		"forecast":    "晴れ",
-		"temperature": 23.5,
-	}
-}
-
 func (s *Stage) runSwitchBotTool(args map[string]any) map[string]any {
 	if s.switchClient == nil {
 		if s.switchInitErr != nil {
@@ -155,24 +128,6 @@ func (s *Stage) runSwitchBotTool(args map[string]any) map[string]any {
 		return map[string]any{"error": err.Error()}
 	}
 	return result
-}
-
-func hasArguments(args map[string]any) bool {
-	if len(args) == 0 {
-		return false
-	}
-	for _, v := range args {
-		if v == nil {
-			continue
-		}
-		if str, ok := v.(string); ok {
-			if strings.TrimSpace(str) == "" {
-				continue
-			}
-		}
-		return true
-	}
-	return false
 }
 
 func asString(v any) string {
