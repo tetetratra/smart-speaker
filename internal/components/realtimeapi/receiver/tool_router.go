@@ -1,4 +1,4 @@
-package realtimeapi
+package receiver
 
 import (
 	"encoding/json"

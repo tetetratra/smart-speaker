@@ -1,4 +1,4 @@
-package realtimeapi
+package receiver
 
 import (
 	"context"
@@ -8,16 +8,20 @@ import (
 	types "smart-speaker/internal/types"
 )
 
+type reader interface {
+	Read(context.Context) ([]byte, error)
+}
+
 // EventStream pulls messages from Client, parses assistant lines,
 // and routes tool call requests.
 type EventStream struct {
-	client *Client
+	client reader
 	parser *MessageParser
 	router *ToolRouter
 	buffer []types.OutputLine
 }
 
-func NewEventStream(client *Client) *EventStream {
+func NewEventStream(client reader) *EventStream {
 	return &EventStream{
 		client: client,
 		parser: NewMessageParser(),

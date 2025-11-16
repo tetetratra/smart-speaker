@@ -1,4 +1,4 @@
-package realtimeapi
+package receiver
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 
 	types "smart-speaker/internal/types"
 )
+
+type wsMessage map[string]any
 
 const debugDumpResponses = false
 

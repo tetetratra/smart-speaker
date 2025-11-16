@@ -7,13 +7,14 @@ import (
 	"strings"
 	"sync"
 
+	"smart-speaker/internal/components/realtimeapi/receiver"
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
 )
 
 type realtimeAPI struct {
 	client     *Client
-	stream     *EventStream
+	stream     *receiver.EventStream
 	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
@@ -32,7 +33,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 	}
 	s := &realtimeAPI{
 		client:     client,
-		stream:     NewEventStream(client),
+		stream:     receiver.NewEventStream(client),
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
 		ctx:        stageCtx,
