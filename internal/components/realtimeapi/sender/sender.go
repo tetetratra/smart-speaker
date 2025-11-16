@@ -20,10 +20,11 @@ type Runner struct {
 	ctx      context.Context
 	client   Client
 	upstream <-chan types.Event
+	voice    string
 }
 
-func NewRunner(ctx context.Context, client Client, upstream <-chan types.Event) *Runner {
-	return &Runner{ctx: ctx, client: client, upstream: upstream}
+func NewRunner(ctx context.Context, client Client, upstream <-chan types.Event, voice string) *Runner {
+	return &Runner{ctx: ctx, client: client, upstream: upstream, voice: voice}
 }
 
 func (r *Runner) Run() {
@@ -121,12 +122,16 @@ func (r *Runner) sendTextInput(line types.OutputLine) error {
 	if err := r.client.Send(msg); err != nil {
 		return err
 	}
-	return r.client.Send(wsMessage{
+	response := wsMessage{
 		"type": "response.create",
 		"response": map[string]any{
 			"modalities": []string{"text", "audio"},
 		},
-	})
+	}
+	if r.voice != "" {
+		response["response"].(map[string]any)["voice"] = r.voice
+	}
+	return r.client.Send(response)
 }
 
 type wsMessage map[string]any

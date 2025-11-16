@@ -20,6 +20,7 @@ type Config struct {
 	Model              string
 	TranscriptionModel string
 	Instructions       string
+	Voice              string
 }
 
 // OpenAI Realtime API への同期的なアクセスをまとめる
@@ -139,6 +140,9 @@ func (c *Client) sendSessionUpdate() error {
 				},
 			},
 		},
+	}
+	if c.config.Voice != "" {
+		session["voice"] = c.config.Voice
 	}
 	if c.config.TranscriptionModel != "" {
 		session["input_audio_transcription"] = map[string]any{

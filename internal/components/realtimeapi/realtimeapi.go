@@ -21,6 +21,7 @@ type realtimeAPI struct {
 	cancel     context.CancelFunc
 	once       sync.Once
 	lineWG     sync.WaitGroup
+	voice      string
 }
 
 // NewStage constructs a realtime stage with the given config.
@@ -38,6 +39,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 		downstream: make(chan types.Event),
 		ctx:        stageCtx,
 		cancel:     cancel,
+		voice:      cfg.Voice,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -49,7 +51,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 
 func (s *realtimeAPI) run(context.Context) {
 	s.lineWG.Add(2)
-	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream)
+	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
 	go func() {
 		defer s.lineWG.Done()
 		senderRunner.Run()

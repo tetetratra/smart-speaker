@@ -72,6 +72,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		Model:              cfg.Model,
 		TranscriptionModel: cfg.TranscriptionModel,
 		Instructions:       cfg.SystemPrompt,
+		Voice:              cfg.Voice,
 	})
 	if err != nil {
 		input.Close()

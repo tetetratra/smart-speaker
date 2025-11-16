@@ -18,6 +18,7 @@ type Config struct {
 	SystemPrompt       string
 	AutoPromptInterval time.Duration
 	AutoPromptMessage  string
+	Voice              string
 }
 
 func LoadConfig(promptPath string) Config {
@@ -29,6 +30,11 @@ func LoadConfig(promptPath string) Config {
 	model := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_MODEL"))
 	if model == "" {
 		model = "gpt-realtime"
+	}
+
+	voice := strings.TrimSpace(os.Getenv("OPENAI_VOICE"))
+	if voice == "" {
+		voice = "marin"
 	}
 
 	transcription := strings.TrimSpace(os.Getenv("OPENAI_TRANSCRIPTION_MODEL"))
@@ -54,6 +60,7 @@ func LoadConfig(promptPath string) Config {
 		SystemPrompt:       prompt,
 		AutoPromptInterval: interval,
 		AutoPromptMessage:  message,
+		Voice:              voice,
 	}
 }
 
