@@ -8,30 +8,6 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Stage はグラフに接続される処理ノードのチャネルとライフサイクルフック。
-type Stage struct {
-	Upstream   chan types.Event
-	Downstream chan types.Event
-	Run        func(context.Context)
-	CloseFn    func() error
-	closeOnce  sync.Once
-}
-
-func (s *Stage) Close() error {
-	if s == nil {
-		return nil
-	}
-	var err error
-	s.closeOnce.Do(func() {
-		if s.CloseFn != nil {
-			err = s.CloseFn()
-		} else if s.Upstream != nil {
-			close(s.Upstream)
-		}
-	})
-	return err
-}
-
 type Node struct {
 	Stage *Stage
 }
