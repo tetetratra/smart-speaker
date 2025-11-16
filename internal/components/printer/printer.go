@@ -17,7 +17,7 @@ import (
 // Printer は graph.Stage と interfaces.Processor を兼ねる出力シンク。
 type Printer struct {
 	writer   *bufio.Writer
-	upstream chan interface{}
+	upstream chan types.Event
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -26,7 +26,7 @@ func NewPrinter() *Printer {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Printer{
 		writer:   bufio.NewWriter(os.Stdout),
-		upstream: make(chan interface{}),
+		upstream: make(chan types.Event),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
@@ -39,14 +39,9 @@ func (p *Printer) run() {
 		select {
 		case <-p.ctx.Done():
 			return
-		case data, ok := <-p.upstream:
+		case evt, ok := <-p.upstream:
 			if !ok {
 				return
-			}
-			evt, ok := data.(types.Event)
-			if !ok {
-				log.Printf("unexpected upstream data type: %T", data)
-				continue
 			}
 			if evt.Kind != types.EventRealtimeOutput {
 				continue
@@ -67,9 +62,9 @@ func (p *Printer) run() {
 	}
 }
 
-func (p *Printer) Upstream() chan<- interface{} { return p.upstream }
+func (p *Printer) Upstream() chan<- types.Event { return p.upstream }
 
-func (p *Printer) Downstream() <-chan interface{} { return nil }
+func (p *Printer) Downstream() <-chan types.Event { return nil }
 
 func (p *Printer) Close() error {
 	p.cancel()

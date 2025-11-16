@@ -104,8 +104,8 @@ func (r *Reader) Close() error {
 // Stage exposes microphone reader as graph.Stage.
 type Stage struct {
 	reader     *Reader
-	upstream   chan interface{}
-	downstream chan interface{}
+	upstream   chan types.Event
+	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
@@ -119,8 +119,8 @@ func NewStage() (*Stage, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Stage{
 		reader:     reader,
-		upstream:   make(chan interface{}),
-		downstream: make(chan interface{}),
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -162,9 +162,9 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
 
-func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
 
 func (s *Stage) Close() error {
 	var err error

@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	types "smart-speaker/internal/types"
 )
 
 // Stage は自身でチャネルを生成・管理し、その参照をメソッド経由で
 // 露出する。Go のインターフェースではフィールドを直接要求できないため、
 // Upstream/Downstream の getter がチャネルを渡す役割を担う。
 type Stage interface {
-	Upstream() chan<- interface{}
-	Downstream() <-chan interface{}
+	Upstream() chan<- types.Event
+	Downstream() <-chan types.Event
 	Close() error
 }
 
@@ -59,7 +61,7 @@ func (g *Graph) Run(ctx context.Context) error {
 			continue
 		}
 		wg.Add(1)
-		go func(out <-chan interface{}, downstreams []Stage) {
+		go func(out <-chan types.Event, downstreams []Stage) {
 			defer wg.Done()
 			for {
 				select {

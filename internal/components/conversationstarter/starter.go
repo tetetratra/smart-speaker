@@ -18,8 +18,8 @@ type Config struct {
 // Stage emits system EventTextInput at configured intervals.
 type Stage struct {
 	cfg        Config
-	upstream   chan interface{}
-	downstream chan interface{}
+	upstream   chan types.Event
+	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
@@ -28,8 +28,8 @@ func NewStage(ctx context.Context, cfg Config) *Stage {
 	cctx, cancel := context.WithCancel(ctx)
 	s := &Stage{
 		cfg:        cfg,
-		upstream:   make(chan interface{}),
-		downstream: make(chan interface{}),
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
 		ctx:        cctx,
 		cancel:     cancel,
 	}
@@ -80,9 +80,9 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
 
-func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
 
 func (s *Stage) Close() error {
 	s.cancel()

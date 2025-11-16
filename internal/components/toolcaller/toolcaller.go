@@ -13,8 +13,8 @@ import (
 )
 
 type Stage struct {
-	upstream   chan interface{}
-	downstream chan interface{}
+	upstream   chan types.Event
+	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
@@ -27,8 +27,8 @@ func NewStage() *Stage {
 	ctx, cancel := context.WithCancel(context.Background())
 	sbClient, sbErr := switchbot.NewFromEnv()
 	s := &Stage{
-		upstream:      make(chan interface{}),
-		downstream:    make(chan interface{}),
+		upstream:      make(chan types.Event),
+		downstream:    make(chan types.Event),
 		ctx:           ctx,
 		cancel:        cancel,
 		switchClient:  sbClient,
@@ -44,29 +44,26 @@ func (s *Stage) run() {
 		select {
 		case <-s.ctx.Done():
 			return
-		case data, ok := <-s.upstream:
+		case evt, ok := <-s.upstream:
 			if !ok {
 				return
 			}
-			evt, ok := data.(types.Event)
-			if !ok {
-				log.Printf("toolcaller: unexpected upstream type %T", data)
-				continue
-			}
-			if evt.Kind != types.EventToolRequest {
-				continue
-			}
-			req, ok := evt.Payload.(types.ToolRequest)
-			if !ok {
-				log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
-				continue
-			}
-			resp := s.executeTool(req)
-			outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
-			select {
-			case <-s.ctx.Done():
-				return
-			case s.downstream <- outEvt:
+			switch evt.Kind {
+			case types.EventToolRequest:
+				req, ok := evt.Payload.(types.ToolRequest)
+				if !ok {
+					log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
+					continue
+				}
+				resp := s.executeTool(req)
+				outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
+				select {
+				case <-s.ctx.Done():
+					return
+				case s.downstream <- outEvt:
+				}
+			default:
+				// 他種イベントは無視
 			}
 		}
 	}
@@ -97,9 +94,9 @@ func (s *Stage) executeTool(req types.ToolRequest) types.ToolResponse {
 	return types.ToolResponse{ToolCallID: req.ToolCallID, Output: output}
 }
 
-func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
 
-func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
 
 func (s *Stage) Close() error {
 	s.once.Do(func() {

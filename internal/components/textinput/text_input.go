@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
@@ -13,17 +14,18 @@ import (
 
 // Stage reads text from STDIN and emits EventTextInput events.
 type Stage struct {
-	upstream   chan interface{}
-	downstream chan interface{}
+	upstream   chan types.Event
+	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
+	once       sync.Once
 }
 
 func NewStage(parent context.Context) *Stage {
 	ctx, cancel := context.WithCancel(parent)
 	s := &Stage{
-		upstream:   make(chan interface{}),
-		downstream: make(chan interface{}),
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -73,13 +75,15 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
 
-func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
 
 func (s *Stage) Close() error {
-	s.cancel()
-	close(s.upstream)
+	s.once.Do(func() {
+		s.cancel()
+		close(s.upstream)
+	})
 	return nil
 }
 

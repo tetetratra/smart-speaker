@@ -15,8 +15,8 @@ import (
 type Stage struct {
 	client     *Client
 	stream     *EventStream
-	upstream   chan interface{}
-	downstream chan interface{}
+	upstream   chan types.Event
+	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
@@ -33,8 +33,8 @@ func NewStage(ctx context.Context, cfg Config) (*Stage, error) {
 	s := &Stage{
 		client:     client,
 		stream:     NewEventStream(client),
-		upstream:   make(chan interface{}),
-		downstream: make(chan interface{}),
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
 		ctx:        stageCtx,
 		cancel:     cancel,
 	}
@@ -48,14 +48,9 @@ func (s *Stage) runSender() {
 		select {
 		case <-s.ctx.Done():
 			return
-		case data, ok := <-s.upstream:
+		case evt, ok := <-s.upstream:
 			if !ok {
 				return
-			}
-			evt, ok := data.(types.Event)
-			if !ok {
-				log.Printf("realtime sender: unexpected upstream type %T", data)
-				continue
 			}
 			switch evt.Kind {
 			case types.EventAudioChunk:
@@ -113,9 +108,9 @@ func (s *Stage) runReceiver() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- interface{} { return s.upstream }
+func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
 
-func (s *Stage) Downstream() <-chan interface{} { return s.downstream }
+func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
 
 // Close closes the underlying client and owned channels.
 func (s *Stage) Close() error {
