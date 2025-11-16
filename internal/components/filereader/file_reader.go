@@ -128,7 +128,7 @@ func (r *Reader) Close() error {
 	return r.file.Close()
 }
 
-type stage struct {
+type fileReader struct {
 	reader     *Reader
 	upstream   chan types.Event
 	downstream chan types.Event
@@ -144,7 +144,7 @@ func NewStage(path string) (*graph.Stage, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &stage{
+	s := &fileReader{
 		reader:     reader,
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
@@ -157,7 +157,7 @@ func NewStage(path string) (*graph.Stage, error) {
 	}, nil
 }
 
-func (s *stage) run(parent context.Context) {
+func (s *fileReader) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
@@ -172,7 +172,7 @@ func (s *stage) run(parent context.Context) {
 	}()
 }
 
-func (s *stage) drainUpstream() {
+func (s *fileReader) drainUpstream() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -185,7 +185,7 @@ func (s *stage) drainUpstream() {
 	}
 }
 
-func (s *stage) produce() {
+func (s *fileReader) produce() {
 	defer close(s.downstream)
 	for {
 		chunk, err := s.reader.Read(s.ctx)
@@ -205,7 +205,7 @@ func (s *stage) produce() {
 	}
 }
 
-func (s *stage) Close() error {
+func (s *fileReader) Close() error {
 	var err error
 	s.once.Do(func() {
 		if s.cancel != nil {

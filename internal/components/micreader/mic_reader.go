@@ -100,7 +100,7 @@ func (r *Reader) Close() error {
 	return err
 }
 
-type stage struct {
+type micReader struct {
 	reader     *Reader
 	upstream   chan types.Event
 	downstream chan types.Event
@@ -116,7 +116,7 @@ func NewStage() (*graph.Stage, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &stage{
+	s := &micReader{
 		reader:     reader,
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
@@ -129,7 +129,7 @@ func NewStage() (*graph.Stage, error) {
 	}, nil
 }
 
-func (s *stage) run(parent context.Context) {
+func (s *micReader) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
@@ -145,7 +145,7 @@ func (s *stage) run(parent context.Context) {
 	}()
 }
 
-func (s *stage) drainUpstream() {
+func (s *micReader) drainUpstream() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -158,7 +158,7 @@ func (s *stage) drainUpstream() {
 	}
 }
 
-func (s *stage) produce() {
+func (s *micReader) produce() {
 	defer close(s.downstream)
 	for {
 		chunk, err := s.reader.Read(s.ctx)
@@ -178,7 +178,7 @@ func (s *stage) produce() {
 	}
 }
 
-func (s *stage) Close() error {
+func (s *micReader) Close() error {
 	var err error
 	s.once.Do(func() {
 		if s.cancel != nil {

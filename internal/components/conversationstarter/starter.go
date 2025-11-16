@@ -18,7 +18,7 @@ type Config struct {
 }
 
 // Stage emits system EventTextInput at configured intervals.
-type stage struct {
+type conversationStarter struct {
 	cfg        Config
 	downstream chan types.Event
 	ctx        context.Context
@@ -27,7 +27,7 @@ type stage struct {
 }
 
 func NewStage(cfg Config) *graph.Stage {
-	s := &stage{
+	s := &conversationStarter{
 		cfg:        cfg,
 		downstream: make(chan types.Event),
 	}
@@ -38,7 +38,7 @@ func NewStage(cfg Config) *graph.Stage {
 	}
 }
 
-func (s *stage) run(parent context.Context) {
+func (s *conversationStarter) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
@@ -49,7 +49,7 @@ func (s *stage) run(parent context.Context) {
 	}()
 }
 
-func (s *stage) produce() {
+func (s *conversationStarter) produce() {
 	defer close(s.downstream)
 	ticker := time.NewTicker(s.cfg.Interval)
 	defer ticker.Stop()
@@ -78,7 +78,7 @@ func (s *stage) produce() {
 	}
 }
 
-func (s *stage) Close() error {
+func (s *conversationStarter) Close() error {
 	if s.cancel != nil {
 		s.cancel()
 	}

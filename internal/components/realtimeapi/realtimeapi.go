@@ -11,7 +11,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-type stage struct {
+type realtimeAPI struct {
 	client     *Client
 	stream     *EventStream
 	upstream   chan types.Event
@@ -30,7 +30,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 		cancel()
 		return nil, err
 	}
-	s := &stage{
+	s := &realtimeAPI{
 		client:     client,
 		stream:     NewEventStream(client),
 		upstream:   make(chan types.Event),
@@ -46,7 +46,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 	}, nil
 }
 
-func (s *stage) run(context.Context) {
+func (s *realtimeAPI) run(context.Context) {
 	s.lineWG.Add(2)
 	go func() {
 		defer s.lineWG.Done()
@@ -58,7 +58,7 @@ func (s *stage) run(context.Context) {
 	}()
 }
 
-func (s *stage) runSender() {
+func (s *realtimeAPI) runSender() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -104,7 +104,7 @@ func (s *stage) runSender() {
 	}
 }
 
-func (s *stage) runReceiver() {
+func (s *realtimeAPI) runReceiver() {
 	defer close(s.downstream)
 	for {
 		evt, err := s.stream.Next(s.ctx)
@@ -124,7 +124,7 @@ func (s *stage) runReceiver() {
 }
 
 // Close closes the underlying client and owned channels.
-func (s *stage) Close() error {
+func (s *realtimeAPI) Close() error {
 	var err error
 	s.once.Do(func() {
 		s.cancel()
@@ -136,7 +136,7 @@ func (s *stage) Close() error {
 	return err
 }
 
-func (s *stage) sendToolResponse(resp types.ToolResponse) error {
+func (s *realtimeAPI) sendToolResponse(resp types.ToolResponse) error {
 	toolOutput := wsMessage{
 		"type": "conversation.item.create",
 		"item": map[string]any{
@@ -157,7 +157,7 @@ func (s *stage) sendToolResponse(resp types.ToolResponse) error {
 	})
 }
 
-func (s *stage) sendTextInput(line types.OutputLine) error {
+func (s *realtimeAPI) sendTextInput(line types.OutputLine) error {
 	text := strings.TrimSpace(line.Text)
 	if text == "" {
 		return nil

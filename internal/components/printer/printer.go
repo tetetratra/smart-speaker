@@ -14,7 +14,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-type stage struct {
+type printerSink struct {
 	writer    *bufio.Writer
 	upstream  chan types.Event
 	ctx       context.Context
@@ -25,7 +25,7 @@ type stage struct {
 
 // NewStage builds a printer sink for the graph.
 func NewStage() *graph.Stage {
-	s := &stage{
+	s := &printerSink{
 		writer:   bufio.NewWriter(os.Stdout),
 		upstream: make(chan types.Event),
 	}
@@ -36,7 +36,7 @@ func NewStage() *graph.Stage {
 	}
 }
 
-func (s *stage) run(parent context.Context) {
+func (s *printerSink) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
@@ -71,7 +71,7 @@ func (s *stage) run(parent context.Context) {
 	}()
 }
 
-func (s *stage) Close() error {
+func (s *printerSink) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		if s.cancel != nil {
@@ -88,7 +88,7 @@ func (s *stage) Close() error {
 	return err
 }
 
-func (s *stage) process(line types.OutputLine) error {
+func (s *printerSink) process(line types.OutputLine) error {
 	if err := s.ctx.Err(); err != nil {
 		return err
 	}

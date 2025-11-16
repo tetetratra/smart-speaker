@@ -12,7 +12,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-type stage struct {
+type toolCaller struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
@@ -26,7 +26,7 @@ type stage struct {
 
 func NewStage() *graph.Stage {
 	sbClient, sbErr := switchbot.NewFromEnv()
-	s := &stage{
+	s := &toolCaller{
 		upstream:      make(chan types.Event),
 		downstream:    make(chan types.Event),
 		switchClient:  sbClient,
@@ -40,7 +40,7 @@ func NewStage() *graph.Stage {
 	}
 }
 
-func (s *stage) run(parent context.Context) {
+func (s *toolCaller) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
@@ -78,7 +78,7 @@ func (s *stage) run(parent context.Context) {
 	}()
 }
 
-func (s *stage) executeTool(req types.ToolRequest) types.ToolResponse {
+func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 	args := map[string]any{}
 	if len(req.Arguments) > 0 {
 		if err := json.Unmarshal(req.Arguments, &args); err != nil {
@@ -103,7 +103,7 @@ func (s *stage) executeTool(req types.ToolRequest) types.ToolResponse {
 	return types.ToolResponse{ToolCallID: req.ToolCallID, Output: output}
 }
 
-func (s *stage) Close() error {
+func (s *toolCaller) Close() error {
 	s.once.Do(func() {
 		if s.cancel != nil {
 			s.cancel()
@@ -115,7 +115,7 @@ func (s *stage) Close() error {
 	return nil
 }
 
-func (s *stage) runSwitchBotTool(args map[string]any) map[string]any {
+func (s *toolCaller) runSwitchBotTool(args map[string]any) map[string]any {
 	if s.switchClient == nil {
 		if s.switchInitErr != nil {
 			return map[string]any{"error": s.switchInitErr.Error()}
