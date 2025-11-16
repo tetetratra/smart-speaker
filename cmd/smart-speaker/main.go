@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
+	"smart-speaker/internal/components/audioplayer"
 	"smart-speaker/internal/components/conversationstarter"
 	"smart-speaker/internal/components/filereader"
 	"smart-speaker/internal/components/micreader"
@@ -48,11 +49,12 @@ type stages struct {
 	starter  *graph.Stage
 	realtime *graph.Stage
 	printer  *graph.Stage
+	player   *graph.Stage
 	tool     *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tool} {
 		if st != nil {
 			st.Close()
 		}
@@ -76,8 +78,19 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
 	}
 	printerStage := printer.NewStage()
-	toolStage := toolcaller.NewStage()
 	var starter *graph.Stage
+	playerStage, err := audioplayer.NewStage()
+	if err != nil {
+		input.Close()
+		text.Close()
+		if starter != nil {
+			starter.Close()
+		}
+		realtime.Close()
+		printerStage.Close()
+		return stages{}, fmt.Errorf("failed to init audio player stage: %w", err)
+	}
+	toolStage := toolcaller.NewStage()
 	if cfg.AutoPromptInterval > 0 {
 		starter = conversationstarter.NewStage(conversationstarter.Config{
 			Interval: cfg.AutoPromptInterval,
@@ -90,6 +103,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		starter:  starter,
 		realtime: realtime,
 		printer:  printerStage,
+		player:   playerStage,
 		tool:     toolStage,
 	}, nil
 }
@@ -123,6 +137,9 @@ func wireGraph(g *graph.Graph, st stages) {
 		g.Connect(node, realtimeNode)
 	}
 	if node := add(st.printer); node != nil {
+		g.Connect(realtimeNode, node)
+	}
+	if node := add(st.player); node != nil {
 		g.Connect(realtimeNode, node)
 	}
 	if node := add(st.tool); node != nil {

@@ -14,6 +14,7 @@ import (
 
 	"smart-speaker/internal/graph"
 	"smart-speaker/internal/interfaces"
+	"smart-speaker/internal/portaudioext"
 	types "smart-speaker/internal/types"
 )
 
@@ -33,11 +34,12 @@ type Reader struct {
 	pcmBytes   []byte
 	encoded    []byte
 	closeOnce  sync.Once
+	paAcquired bool
 }
 
 // PortAudio を初期化してデフォルト入力ストリームを開く
 func New() (*Reader, error) {
-	if err := portaudio.Initialize(); err != nil {
+	if err := portaudioext.Acquire(); err != nil {
 		return nil, fmt.Errorf("portaudio initialize failed: %w", err)
 	}
 
@@ -48,12 +50,12 @@ func New() (*Reader, error) {
 
 	stream, err := portaudio.OpenDefaultStream(channels, 0, float64(sampleRate), len(audioChunk), audioChunk)
 	if err != nil {
-		portaudio.Terminate()
+		portaudioext.Release()
 		return nil, fmt.Errorf("open audio stream: %w", err)
 	}
 	if err := stream.Start(); err != nil {
 		stream.Close()
-		portaudio.Terminate()
+		portaudioext.Release()
 		return nil, fmt.Errorf("start audio stream: %w", err)
 	}
 
@@ -62,6 +64,7 @@ func New() (*Reader, error) {
 		audioChunk: audioChunk,
 		pcmBytes:   pcmBytes,
 		encoded:    encoded,
+		paAcquired: true,
 	}, nil
 }
 
@@ -95,7 +98,12 @@ func (r *Reader) Close() error {
 				err = closeErr
 			}
 		}
-		portaudio.Terminate()
+		if r.paAcquired {
+			if relErr := portaudioext.Release(); relErr != nil && err == nil {
+				err = relErr
+			}
+			r.paAcquired = false
+		}
 	})
 	return err
 }

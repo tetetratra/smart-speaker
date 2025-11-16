@@ -9,7 +9,7 @@ import (
 
 type wsMessage map[string]any
 
-const debugPrintMsgType = false
+const debugPrintMsgType = true
 const debugDumpResponses = false
 
 type MessageParser struct {
@@ -56,17 +56,22 @@ func (p *MessageParser) Parse(msg wsMessage) []types.Event {
 			}
 			return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: text}}}
 		}
-	// response.output_audio.delta: アシスタント音声応答の差分（Base64等）。
+	// response.output_audio.delta: 旧来の音声差分。
 	case "response.output_audio.delta":
 		if delta, ok := msg["delta"].(string); ok && delta != "" {
 			return []types.Event{{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: delta}}}
 		}
+	// response.audio.delta: 現行仕様の音声差分イベント。
+	case "response.audio.delta":
+		if delta, ok := msg["delta"].(string); ok && delta != "" {
+			return []types.Event{{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: delta}}}
+		}
 	case "response.audio_transcript.delta":
-		if transcript, ok := msg["transcript"].(string); ok {
+		if transcript := extractTranscript(msg); transcript != "" {
 			return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: transcript}}}
 		}
 	case "response.audio_transcript.done":
-		if transcript, ok := msg["transcript"].(string); ok {
+		if transcript := extractTranscript(msg); transcript != "" {
 			return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: transcript}}}
 		}
 	// response.delta: response.* の複合イベント（途中段階）。
@@ -170,6 +175,21 @@ func collectContentEvents(role string, item map[string]any) []types.Event {
 		}
 	}
 	return events
+}
+
+func extractTranscript(msg wsMessage) string {
+	if transcript, ok := msg["transcript"].(string); ok && transcript != "" {
+		return transcript
+	}
+	if delta, ok := msg["delta"].(map[string]any); ok {
+		if transcript, ok := delta["transcript"].(string); ok && transcript != "" {
+			return transcript
+		}
+		if text, ok := delta["text"].(string); ok && text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func roleOrDefault(role, fallback string) string {
