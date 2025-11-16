@@ -56,7 +56,6 @@ func (s *printerSink) run(parent context.Context) {
 				}
 				line, ok := evt.Payload.(types.OutputLine)
 				if !ok {
-					log.Printf("unexpected event payload type: %T", evt.Payload)
 					continue
 				}
 				if err := s.process(line); err != nil {
