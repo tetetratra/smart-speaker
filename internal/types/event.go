@@ -9,6 +9,7 @@ const (
 	EventAudioChunk EventKind = iota
 	EventTextInput
 	EventRealtimeOutput
+	EventRealtimeAudio
 	EventToolRequest
 	EventToolResponse
 )

@@ -124,7 +124,7 @@ func (r *Runner) sendTextInput(line types.OutputLine) error {
 	return r.client.Send(wsMessage{
 		"type": "response.create",
 		"response": map[string]any{
-			"modalities": []string{"text"},
+			"modalities": []string{"text", "audio"},
 		},
 	})
 }

@@ -18,7 +18,7 @@ type EventStream struct {
 	client reader
 	parser *MessageParser
 	router *ToolRouter
-	buffer []types.OutputLine
+	buffer []types.Event
 }
 
 func NewEventStream(client reader) *EventStream {
@@ -35,9 +35,9 @@ func (s *EventStream) Next(ctx context.Context) (types.Event, error) {
 			return evt, nil
 		}
 		if len(s.buffer) > 0 {
-			line := s.buffer[0]
+			ev := s.buffer[0]
 			s.buffer = s.buffer[1:]
-			return types.Event{Kind: types.EventRealtimeOutput, Payload: line}, nil
+			return ev, nil
 		}
 		if err := ctx.Err(); err != nil {
 			return types.Event{}, err
@@ -54,10 +54,10 @@ func (s *EventStream) Next(ctx context.Context) (types.Event, error) {
 		if s.router.Handle(msg) {
 			continue
 		}
-		lines := s.parser.Parse(msg)
-		if len(lines) == 0 {
+		events := s.parser.Parse(msg)
+		if len(events) == 0 {
 			continue
 		}
-		s.buffer = append(s.buffer, lines...)
+		s.buffer = append(s.buffer, events...)
 	}
 }

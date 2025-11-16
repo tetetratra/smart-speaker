@@ -42,6 +42,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetReadLimit(4 * 1024 * 1024)
 
 	client := &Client{ctx: ctx, conn: conn, config: cfg}
 
@@ -97,7 +98,7 @@ func (c *Client) Send(payload any) error {
 func (c *Client) sendSessionUpdate() error {
 	session := wsMessage{
 		"instructions":       c.config.Instructions,
-		"modalities":         []string{"text"},
+		"modalities":         []string{"text", "audio"},
 		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
 			"type":                "server_vad",
