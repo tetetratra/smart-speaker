@@ -187,6 +187,7 @@ func (s *stage) Close() error {
 		s.lineWG.Wait()
 		close(s.upstream)
 		err = s.reader.Close()
+		log.Println("micreader: stage closed")
 	})
 	return err
 }

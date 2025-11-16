@@ -131,6 +131,7 @@ func (s *stage) Close() error {
 		close(s.upstream)
 		s.lineWG.Wait()
 		err = s.client.Close()
+		log.Println("realtimeapi: stage closed")
 	})
 	return err
 }

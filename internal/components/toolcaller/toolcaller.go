@@ -110,6 +110,7 @@ func (s *stage) Close() error {
 		}
 		s.lineWG.Wait()
 		close(s.upstream)
+		log.Println("toolcaller: stage closed")
 	})
 	return nil
 }

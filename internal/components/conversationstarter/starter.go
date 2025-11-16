@@ -2,6 +2,7 @@ package conversationstarter
 
 import (
 	"context"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -82,5 +83,6 @@ func (s *stage) Close() error {
 		s.cancel()
 	}
 	s.lineWG.Wait()
+	log.Println("conversationstarter: stage closed")
 	return nil
 }

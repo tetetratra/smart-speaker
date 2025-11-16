@@ -98,6 +98,7 @@ func (s *stage) Close() error {
 		}
 		s.lineWG.Wait()
 		close(s.upstream)
+		log.Println("textinput: stage closed")
 	})
 	return nil
 }

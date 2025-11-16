@@ -83,6 +83,7 @@ func (s *stage) Close() error {
 			log.Printf("flush error: %v", flushErr)
 			err = flushErr
 		}
+		log.Println("printer: stage closed")
 	})
 	return err
 }
