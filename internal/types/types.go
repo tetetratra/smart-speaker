@@ -8,3 +8,9 @@ type OutputLine struct {
 	Role string
 	Text string
 }
+
+// OutputAudio represents an assistant audio response chunk.
+type OutputAudio struct {
+	Role  string
+	Audio string
+}
