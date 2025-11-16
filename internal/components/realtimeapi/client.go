@@ -14,6 +14,14 @@ import (
 	types "smart-speaker/internal/types"
 )
 
+// Config holds connection settings for the OpenAI Realtime API.
+type Config struct {
+	APIKey             string
+	Model              string
+	TranscriptionModel string
+	Instructions       string
+}
+
 // OpenAI Realtime API への同期的なアクセスをまとめる
 type Client struct {
 	ctx       context.Context
@@ -145,3 +153,5 @@ func (c *Client) sendSessionUpdate() error {
 	}
 	return c.send(payload)
 }
+
+type wsMessage map[string]any
