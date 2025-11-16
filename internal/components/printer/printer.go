@@ -8,90 +8,98 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/interfaces"
 	types "smart-speaker/internal/types"
 )
 
-// Printer は graph.Stage と interfaces.Processor を兼ねる出力シンク。
-type Printer struct {
-	writer   *bufio.Writer
-	upstream chan types.Event
-	ctx      context.Context
-	cancel   context.CancelFunc
+type stage struct {
+	writer    *bufio.Writer
+	upstream  chan types.Event
+	ctx       context.Context
+	cancel    context.CancelFunc
+	lineWG    sync.WaitGroup
+	closeOnce sync.Once
 }
 
-func NewPrinter() *Printer {
-	ctx, cancel := context.WithCancel(context.Background())
-	p := &Printer{
+// NewStage builds a printer sink for the graph.
+func NewStage() *graph.Stage {
+	s := &stage{
 		writer:   bufio.NewWriter(os.Stdout),
 		upstream: make(chan types.Event),
-		ctx:      ctx,
-		cancel:   cancel,
 	}
-	go p.run()
-	return p
+	return &graph.Stage{
+		Upstream: s.upstream,
+		Run:      s.run,
+		CloseFn:  s.Close,
+	}
 }
 
-func (p *Printer) run() {
-	for {
-		select {
-		case <-p.ctx.Done():
-			return
-		case evt, ok := <-p.upstream:
-			if !ok {
+func (s *stage) run(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.lineWG.Add(1)
+	go func() {
+		defer s.lineWG.Done()
+		for {
+			select {
+			case <-s.ctx.Done():
 				return
-			}
-			if evt.Kind != types.EventRealtimeOutput {
-				continue
-			}
-			line, ok := evt.Payload.(types.OutputLine)
-			if !ok {
-				log.Printf("unexpected event payload type: %T", evt.Payload)
-				continue
-			}
-			if err := p.Process(p.ctx, line); err != nil {
-				if errors.Is(err, context.Canceled) {
+			case evt, ok := <-s.upstream:
+				if !ok {
 					return
 				}
-				log.Printf("printer stage error: %v", err)
-				return
+				if evt.Kind != types.EventRealtimeOutput {
+					continue
+				}
+				line, ok := evt.Payload.(types.OutputLine)
+				if !ok {
+					log.Printf("unexpected event payload type: %T", evt.Payload)
+					continue
+				}
+				if err := s.process(line); err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					log.Printf("printer stage error: %v", err)
+					return
+				}
 			}
 		}
-	}
+	}()
 }
 
-func (p *Printer) Upstream() chan<- types.Event { return p.upstream }
-
-func (p *Printer) Downstream() <-chan types.Event { return nil }
-
-func (p *Printer) Close() error {
-	p.cancel()
-	close(p.upstream)
-	if err := p.writer.Flush(); err != nil {
-		log.Printf("flush error: %v", err)
-	}
-	return nil
+func (s *stage) Close() error {
+	var err error
+	s.closeOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.lineWG.Wait()
+		close(s.upstream)
+		if flushErr := s.writer.Flush(); flushErr != nil {
+			log.Printf("flush error: %v", flushErr)
+			err = flushErr
+		}
+	})
+	return err
 }
 
-func (p *Printer) Process(ctx context.Context, line types.OutputLine) error {
-	if err := ctx.Err(); err != nil {
+func (s *stage) process(line types.OutputLine) error {
+	if err := s.ctx.Err(); err != nil {
 		return err
 	}
 	label := renderRoleLabel(line.Role)
 	if label == "" {
 		return nil
 	}
-	if _, err := fmt.Fprintf(p.writer, "%s: %s\n", label, line.Text); err != nil {
+	if _, err := fmt.Fprintf(s.writer, "%s: %s\n", label, line.Text); err != nil {
 		return err
 	}
-	return p.writer.Flush()
+	return s.writer.Flush()
 }
-
-// コンパイル時にインターフェース実装漏れを検出するためのダミー代入。
-var _ graph.Stage = (*Printer)(nil)
-var _ interfaces.Processor[types.OutputLine] = (*Printer)(nil)
 
 func renderRoleLabel(role string) string {
 	switch role {

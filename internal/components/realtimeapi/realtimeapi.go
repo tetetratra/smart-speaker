@@ -11,8 +11,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Stage wraps the Realtime API client into the new graph.Stage interface.
-type Stage struct {
+type stage struct {
 	client     *Client
 	stream     *EventStream
 	upstream   chan types.Event
@@ -20,17 +19,18 @@ type Stage struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
+	lineWG     sync.WaitGroup
 }
 
 // NewStage constructs a realtime stage with the given config.
-func NewStage(ctx context.Context, cfg Config) (*Stage, error) {
+func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 	stageCtx, cancel := context.WithCancel(ctx)
 	client, err := NewClient(stageCtx, cfg)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	s := &Stage{
+	s := &stage{
 		client:     client,
 		stream:     NewEventStream(client),
 		upstream:   make(chan types.Event),
@@ -38,12 +38,27 @@ func NewStage(ctx context.Context, cfg Config) (*Stage, error) {
 		ctx:        stageCtx,
 		cancel:     cancel,
 	}
-	go s.runSender()
-	go s.runReceiver()
-	return s, nil
+	return &graph.Stage{
+		Upstream:   s.upstream,
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.Close,
+	}, nil
 }
 
-func (s *Stage) runSender() {
+func (s *stage) run(context.Context) {
+	s.lineWG.Add(2)
+	go func() {
+		defer s.lineWG.Done()
+		s.runSender()
+	}()
+	go func() {
+		defer s.lineWG.Done()
+		s.runReceiver()
+	}()
+}
+
+func (s *stage) runSender() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -89,7 +104,7 @@ func (s *Stage) runSender() {
 	}
 }
 
-func (s *Stage) runReceiver() {
+func (s *stage) runReceiver() {
 	defer close(s.downstream)
 	for {
 		evt, err := s.stream.Next(s.ctx)
@@ -108,22 +123,19 @@ func (s *Stage) runReceiver() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
-
-func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
-
 // Close closes the underlying client and owned channels.
-func (s *Stage) Close() error {
+func (s *stage) Close() error {
 	var err error
 	s.once.Do(func() {
 		s.cancel()
 		close(s.upstream)
+		s.lineWG.Wait()
 		err = s.client.Close()
 	})
 	return err
 }
 
-func (s *Stage) sendToolResponse(resp types.ToolResponse) error {
+func (s *stage) sendToolResponse(resp types.ToolResponse) error {
 	toolOutput := wsMessage{
 		"type": "conversation.item.create",
 		"item": map[string]any{
@@ -144,7 +156,7 @@ func (s *Stage) sendToolResponse(resp types.ToolResponse) error {
 	})
 }
 
-func (s *Stage) sendTextInput(line types.OutputLine) error {
+func (s *stage) sendTextInput(line types.OutputLine) error {
 	text := strings.TrimSpace(line.Text)
 	if text == "" {
 		return nil
@@ -176,5 +188,3 @@ func (s *Stage) sendTextInput(line types.OutputLine) error {
 		},
 	})
 }
-
-var _ graph.Stage = (*Stage)(nil)

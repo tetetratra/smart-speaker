@@ -3,6 +3,7 @@ package conversationstarter
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"smart-speaker/internal/graph"
@@ -16,42 +17,38 @@ type Config struct {
 }
 
 // Stage emits system EventTextInput at configured intervals.
-type Stage struct {
+type stage struct {
 	cfg        Config
-	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
+	lineWG     sync.WaitGroup
 }
 
-func NewStage(ctx context.Context, cfg Config) *Stage {
-	cctx, cancel := context.WithCancel(ctx)
-	s := &Stage{
+func NewStage(cfg Config) *graph.Stage {
+	s := &stage{
 		cfg:        cfg,
-		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
-		ctx:        cctx,
-		cancel:     cancel,
 	}
-	go s.drainUpstream()
-	go s.produce()
-	return s
-}
-
-func (s *Stage) drainUpstream() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case _, ok := <-s.upstream:
-			if !ok {
-				return
-			}
-		}
+	return &graph.Stage{
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.Close,
 	}
 }
 
-func (s *Stage) produce() {
+func (s *stage) run(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.lineWG.Add(1)
+	go func() {
+		defer s.lineWG.Done()
+		s.produce()
+	}()
+}
+
+func (s *stage) produce() {
 	defer close(s.downstream)
 	ticker := time.NewTicker(s.cfg.Interval)
 	defer ticker.Stop()
@@ -80,14 +77,10 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
-
-func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
-
-func (s *Stage) Close() error {
-	s.cancel()
-	close(s.upstream)
+func (s *stage) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.lineWG.Wait()
 	return nil
 }
-
-var _ graph.Stage = (*Stage)(nil)

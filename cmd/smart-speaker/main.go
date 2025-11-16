@@ -45,32 +45,19 @@ func main() {
 }
 
 type stages struct {
-	input    graph.Stage
-	text     graph.Stage
-	starter  graph.Stage
-	realtime graph.Stage
-	printer  graph.Stage
-	tool     graph.Stage
+	input    *graph.Stage
+	text     *graph.Stage
+	starter  *graph.Stage
+	realtime *graph.Stage
+	printer  *graph.Stage
+	tool     *graph.Stage
 }
 
 func (s stages) close() {
-	if s.input != nil {
-		s.input.Close()
-	}
-	if s.text != nil {
-		s.text.Close()
-	}
-	if s.starter != nil {
-		s.starter.Close()
-	}
-	if s.realtime != nil {
-		s.realtime.Close()
-	}
-	if s.printer != nil {
-		s.printer.Close()
-	}
-	if s.tool != nil {
-		s.tool.Close()
+	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.tool} {
+		if st != nil {
+			st.Close()
+		}
 	}
 }
 
@@ -79,7 +66,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init input stage: %w", err)
 	}
-	text := textinput.NewStage(ctx)
+	text := textinput.NewStage()
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
 		APIKey:             cfg.APIKey,
 		Model:              cfg.Model,
@@ -90,11 +77,11 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		input.Close()
 		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
 	}
-	printer := printer.NewPrinter()
-	tool := toolcaller.NewStage()
-	var starter graph.Stage
+	printerStage := printer.NewStage()
+	toolStage := toolcaller.NewStage()
+	var starter *graph.Stage
 	if cfg.AutoPromptInterval > 0 {
-		starter = conversationstarter.NewStage(ctx, conversationstarter.Config{
+		starter = conversationstarter.NewStage(conversationstarter.Config{
 			Interval: cfg.AutoPromptInterval,
 			Prompt:   cfg.AutoPromptMessage,
 		})
@@ -104,12 +91,12 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		text:     text,
 		starter:  starter,
 		realtime: realtime,
-		printer:  printer,
-		tool:     tool,
+		printer:  printerStage,
+		tool:     toolStage,
 	}, nil
 }
 
-func buildInputStage(cfg app.Config) (graph.Stage, error) {
+func buildInputStage(cfg app.Config) (*graph.Stage, error) {
 	if cfg.InputVoicePath != "" {
 		return filereader.NewStage(cfg.InputVoicePath)
 	}
@@ -117,7 +104,7 @@ func buildInputStage(cfg app.Config) (graph.Stage, error) {
 }
 
 func wireGraph(g *graph.Graph, st stages) {
-	add := func(stage graph.Stage) *graph.Node {
+	add := func(stage *graph.Stage) *graph.Node {
 		if stage == nil {
 			return nil
 		}

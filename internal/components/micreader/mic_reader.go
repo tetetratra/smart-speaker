@@ -25,7 +25,6 @@ const (
 
 // Reader がインターフェースを満たしているか確認する
 var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
-var _ graph.Stage = (*Stage)(nil)
 
 // マイク入力を同期的に取得する
 type Reader struct {
@@ -101,35 +100,51 @@ func (r *Reader) Close() error {
 	return err
 }
 
-// Stage exposes microphone reader as graph.Stage.
-type Stage struct {
+type stage struct {
 	reader     *Reader
 	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
+	lineWG     sync.WaitGroup
 }
 
-func NewStage() (*Stage, error) {
+// NewStage exposes microphone reader as graph.Stage.
+func NewStage() (*graph.Stage, error) {
 	reader, err := New()
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s := &Stage{
+	s := &stage{
 		reader:     reader,
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
-		ctx:        ctx,
-		cancel:     cancel,
 	}
-	go s.drainUpstream()
-	go s.produce()
-	return s, nil
+	return &graph.Stage{
+		Upstream:   s.upstream,
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.Close,
+	}, nil
 }
 
-func (s *Stage) drainUpstream() {
+func (s *stage) run(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.lineWG.Add(2)
+	go func() {
+		defer s.lineWG.Done()
+		s.drainUpstream()
+	}()
+	go func() {
+		defer s.lineWG.Done()
+		s.produce()
+	}()
+}
+
+func (s *stage) drainUpstream() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -142,7 +157,7 @@ func (s *Stage) drainUpstream() {
 	}
 }
 
-func (s *Stage) produce() {
+func (s *stage) produce() {
 	defer close(s.downstream)
 	for {
 		chunk, err := s.reader.Read(s.ctx)
@@ -162,14 +177,13 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
-
-func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
-
-func (s *Stage) Close() error {
+func (s *stage) Close() error {
 	var err error
 	s.once.Do(func() {
-		s.cancel()
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.lineWG.Wait()
 		close(s.upstream)
 		err = s.reader.Close()
 	})

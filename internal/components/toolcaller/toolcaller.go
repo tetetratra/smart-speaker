@@ -12,64 +12,73 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-type Stage struct {
+type stage struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
+	lineWG     sync.WaitGroup
 
 	switchClient  *switchbot.Client
 	switchInitErr error
 }
 
-func NewStage() *Stage {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewStage() *graph.Stage {
 	sbClient, sbErr := switchbot.NewFromEnv()
-	s := &Stage{
+	s := &stage{
 		upstream:      make(chan types.Event),
 		downstream:    make(chan types.Event),
-		ctx:           ctx,
-		cancel:        cancel,
 		switchClient:  sbClient,
 		switchInitErr: sbErr,
 	}
-	go s.run()
-	return s
-}
-
-func (s *Stage) run() {
-	defer close(s.downstream)
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case evt, ok := <-s.upstream:
-			if !ok {
-				return
-			}
-			switch evt.Kind {
-			case types.EventToolRequest:
-				req, ok := evt.Payload.(types.ToolRequest)
-				if !ok {
-					log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
-					continue
-				}
-				resp := s.executeTool(req)
-				outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
-				select {
-				case <-s.ctx.Done():
-					return
-				case s.downstream <- outEvt:
-				}
-			default:
-				// 他種イベントは無視
-			}
-		}
+	return &graph.Stage{
+		Upstream:   s.upstream,
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.Close,
 	}
 }
 
-func (s *Stage) executeTool(req types.ToolRequest) types.ToolResponse {
+func (s *stage) run(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.lineWG.Add(1)
+	go func() {
+		defer s.lineWG.Done()
+		defer close(s.downstream)
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case evt, ok := <-s.upstream:
+				if !ok {
+					return
+				}
+				switch evt.Kind {
+				case types.EventToolRequest:
+					req, ok := evt.Payload.(types.ToolRequest)
+					if !ok {
+						log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
+						continue
+					}
+					resp := s.executeTool(req)
+					outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
+					select {
+					case <-s.ctx.Done():
+						return
+					case s.downstream <- outEvt:
+					}
+				default:
+					// ignore
+				}
+			}
+		}
+	}()
+}
+
+func (s *stage) executeTool(req types.ToolRequest) types.ToolResponse {
 	args := map[string]any{}
 	if len(req.Arguments) > 0 {
 		if err := json.Unmarshal(req.Arguments, &args); err != nil {
@@ -94,19 +103,18 @@ func (s *Stage) executeTool(req types.ToolRequest) types.ToolResponse {
 	return types.ToolResponse{ToolCallID: req.ToolCallID, Output: output}
 }
 
-func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
-
-func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
-
-func (s *Stage) Close() error {
+func (s *stage) Close() error {
 	s.once.Do(func() {
-		s.cancel()
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.lineWG.Wait()
 		close(s.upstream)
 	})
 	return nil
 }
 
-func (s *Stage) runSwitchBotTool(args map[string]any) map[string]any {
+func (s *stage) runSwitchBotTool(args map[string]any) map[string]any {
 	if s.switchClient == nil {
 		if s.switchInitErr != nil {
 			return map[string]any{"error": s.switchInitErr.Error()}
@@ -136,5 +144,3 @@ func asString(v any) string {
 	}
 	return ""
 }
-
-var _ graph.Stage = (*Stage)(nil)

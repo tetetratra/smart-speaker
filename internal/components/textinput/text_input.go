@@ -12,29 +12,45 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Stage reads text from STDIN and emits EventTextInput events.
-type Stage struct {
+type stage struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
 	once       sync.Once
+	lineWG     sync.WaitGroup
 }
 
-func NewStage(parent context.Context) *Stage {
-	ctx, cancel := context.WithCancel(parent)
-	s := &Stage{
+// NewStage reads text from STDIN and emits EventTextInput events.
+func NewStage() *graph.Stage {
+	s := &stage{
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
-		ctx:        ctx,
-		cancel:     cancel,
 	}
-	go s.drainUpstream()
-	go s.produce()
-	return s
+	return &graph.Stage{
+		Upstream:   s.upstream,
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.Close,
+	}
 }
 
-func (s *Stage) drainUpstream() {
+func (s *stage) run(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.lineWG.Add(2)
+	go func() {
+		defer s.lineWG.Done()
+		s.drainUpstream()
+	}()
+	go func() {
+		defer s.lineWG.Done()
+		s.produce()
+	}()
+}
+
+func (s *stage) drainUpstream() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -47,7 +63,7 @@ func (s *Stage) drainUpstream() {
 	}
 }
 
-func (s *Stage) produce() {
+func (s *stage) produce() {
 	defer close(s.downstream)
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -75,16 +91,13 @@ func (s *Stage) produce() {
 	}
 }
 
-func (s *Stage) Upstream() chan<- types.Event { return s.upstream }
-
-func (s *Stage) Downstream() <-chan types.Event { return s.downstream }
-
-func (s *Stage) Close() error {
+func (s *stage) Close() error {
 	s.once.Do(func() {
-		s.cancel()
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.lineWG.Wait()
 		close(s.upstream)
 	})
 	return nil
 }
-
-var _ graph.Stage = (*Stage)(nil)

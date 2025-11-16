@@ -8,17 +8,32 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Stage は自身でチャネルを生成・管理し、その参照をメソッド経由で
-// 露出する。Go のインターフェースではフィールドを直接要求できないため、
-// Upstream/Downstream の getter がチャネルを渡す役割を担う。
-type Stage interface {
-	Upstream() chan<- types.Event
-	Downstream() <-chan types.Event
-	Close() error
+// Stage はグラフに接続される処理ノードのチャネルとライフサイクルフック。
+type Stage struct {
+	Upstream   chan types.Event
+	Downstream chan types.Event
+	Run        func(context.Context)
+	CloseFn    func() error
+	closeOnce  sync.Once
+}
+
+func (s *Stage) Close() error {
+	if s == nil {
+		return nil
+	}
+	var err error
+	s.closeOnce.Do(func() {
+		if s.CloseFn != nil {
+			err = s.CloseFn()
+		} else if s.Upstream != nil {
+			close(s.Upstream)
+		}
+	})
+	return err
 }
 
 type Node struct {
-	Stage Stage
+	Stage *Stage
 }
 
 type Edge struct {
@@ -33,7 +48,10 @@ type Graph struct {
 
 func New() *Graph { return &Graph{} }
 
-func (g *Graph) AddNode(stage Stage) *Node {
+func (g *Graph) AddNode(stage *Stage) *Node {
+	if stage == nil {
+		return nil
+	}
 	n := &Node{Stage: stage}
 	g.nodes = append(g.nodes, n)
 	return n
@@ -45,23 +63,41 @@ func (g *Graph) Connect(from, to *Node) {
 
 // Run は各エッジごとに goroutine を起動し、Stage 間のチャネル転送を行う。
 func (g *Graph) Run(ctx context.Context) error {
-	adj := make(map[*Node][]Stage, len(g.nodes))
+	adj := make(map[*Node][]*Stage, len(g.nodes))
 	for _, edge := range g.edges {
+		if edge.From == nil || edge.To == nil {
+			continue
+		}
 		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
+	}
+
+	var stageWG sync.WaitGroup
+	for _, node := range g.nodes {
+		if node == nil || node.Stage == nil || node.Stage.Run == nil {
+			continue
+		}
+		stageWG.Add(1)
+		go func(st *Stage) {
+			defer stageWG.Done()
+			st.Run(ctx)
+		}(node.Stage)
 	}
 
 	var wg sync.WaitGroup
 	for _, node := range g.nodes {
+		if node == nil {
+			continue
+		}
 		downstreams := adj[node]
 		if len(downstreams) == 0 {
 			continue
 		}
-		out := node.Stage.Downstream()
+		out := (<-chan types.Event)(node.Stage.Downstream)
 		if out == nil {
 			continue
 		}
 		wg.Add(1)
-		go func(out <-chan types.Event, downstreams []Stage) {
+		go func(out <-chan types.Event, downstreams []*Stage) {
 			defer wg.Done()
 			for {
 				select {
@@ -72,7 +108,10 @@ func (g *Graph) Run(ctx context.Context) error {
 						return
 					}
 					for _, dst := range downstreams {
-						in := dst.Upstream()
+						if dst == nil || dst.Upstream == nil {
+							continue
+						}
+						in := (chan<- types.Event)(dst.Upstream)
 						select {
 						case <-ctx.Done():
 							return
@@ -85,6 +124,7 @@ func (g *Graph) Run(ctx context.Context) error {
 	}
 
 	wg.Wait()
+	stageWG.Wait()
 	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
@@ -94,7 +134,11 @@ func (g *Graph) Run(ctx context.Context) error {
 func (g *Graph) Close() error {
 	var firstErr error
 	for i := len(g.nodes) - 1; i >= 0; i-- {
-		if err := g.nodes[i].Stage.Close(); err != nil && firstErr == nil {
+		node := g.nodes[i]
+		if node == nil || node.Stage == nil {
+			continue
+		}
+		if err := node.Stage.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
