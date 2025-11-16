@@ -40,8 +40,6 @@ func main() {
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
 	}
-
-	fmt.Println("🎙 音声ストリーミングを開始しました。Ctrl+C で終了します。")
 }
 
 type stages struct {

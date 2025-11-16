@@ -133,6 +133,7 @@ func (s *stage) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
+	log.Println("🎙 マイク入力を待機しています。CTRL+Cで終了します。")
 	s.lineWG.Add(2)
 	go func() {
 		defer s.lineWG.Done()
