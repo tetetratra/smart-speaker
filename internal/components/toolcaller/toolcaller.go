@@ -13,12 +13,12 @@ import (
 )
 
 type toolCaller struct {
-	upstream   chan types.Event
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	once       sync.Once
-	lineWG     sync.WaitGroup
+	upstream        chan types.Event
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
 
 	switchClient  *switchbot.Client
 	switchInitErr error
@@ -44,9 +44,9 @@ func (s *toolCaller) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.lineWG.Add(1)
+	s.closerWaitGroup.Add(1)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		defer close(s.downstream)
 		for {
 			select {
@@ -108,7 +108,7 @@ func (s *toolCaller) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		close(s.upstream)
 		log.Println("toolcaller: stage closed")
 	})

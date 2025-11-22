@@ -129,13 +129,13 @@ func (r *Reader) Close() error {
 }
 
 type fileReader struct {
-	reader     *Reader
-	upstream   chan types.Event
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	once       sync.Once
-	lineWG     sync.WaitGroup
+	reader          *Reader
+	upstream        chan types.Event
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
 }
 
 // NewStage wires the file reader into the graph.Stage contract.
@@ -161,13 +161,13 @@ func (s *fileReader) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.lineWG.Add(2)
+	s.closerWaitGroup.Add(2)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.drainUpstream()
 	}()
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.produce()
 	}()
 }
@@ -211,7 +211,7 @@ func (s *fileReader) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		close(s.upstream)
 		err = s.reader.Close()
 		log.Println("filereader: stage closed")

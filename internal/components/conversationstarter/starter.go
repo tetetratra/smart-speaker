@@ -19,11 +19,11 @@ type Config struct {
 
 // Stage emits system EventTextInput at configured intervals.
 type conversationStarter struct {
-	cfg        Config
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	lineWG     sync.WaitGroup
+	cfg             Config
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	closerWaitGroup sync.WaitGroup
 }
 
 func NewStage(cfg Config) *graph.Stage {
@@ -42,9 +42,9 @@ func (s *conversationStarter) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.lineWG.Add(1)
+	s.closerWaitGroup.Add(1)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.produce()
 	}()
 }
@@ -82,7 +82,7 @@ func (s *conversationStarter) Close() error {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	s.lineWG.Wait()
+	s.closerWaitGroup.Wait()
 	log.Println("conversationstarter: stage closed")
 	return nil
 }

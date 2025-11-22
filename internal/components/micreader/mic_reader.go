@@ -109,13 +109,13 @@ func (r *Reader) Close() error {
 }
 
 type micReader struct {
-	reader     *Reader
-	upstream   chan types.Event
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	once       sync.Once
-	lineWG     sync.WaitGroup
+	reader          *Reader
+	upstream        chan types.Event
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
 }
 
 // NewStage exposes microphone reader as graph.Stage.
@@ -142,13 +142,13 @@ func (s *micReader) run(parent context.Context) {
 	s.ctx = ctx
 	s.cancel = cancel
 	log.Println("🎙 マイク入力を待機しています。CTRL+Cで終了します。")
-	s.lineWG.Add(2)
+	s.closerWaitGroup.Add(2)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.drainUpstream()
 	}()
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.produce()
 	}()
 }
@@ -192,7 +192,7 @@ func (s *micReader) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		close(s.upstream)
 		err = s.reader.Close()
 		log.Println("micreader: stage closed")

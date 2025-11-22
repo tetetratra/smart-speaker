@@ -13,15 +13,15 @@ import (
 )
 
 type realtimeAPI struct {
-	client     *Client
-	stream     *receiver.EventStream
-	upstream   chan types.Event
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	once       sync.Once
-	lineWG     sync.WaitGroup
-	voice      string
+	client          *Client
+	stream          *receiver.EventStream
+	upstream        chan types.Event
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
+	voice           string
 }
 
 // NewStage constructs a realtime stage with the given config.
@@ -50,14 +50,14 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 }
 
 func (s *realtimeAPI) run(context.Context) {
-	s.lineWG.Add(2)
+	s.closerWaitGroup.Add(2)
 	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		senderRunner.Run()
 	}()
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.runReceiver()
 	}()
 }
@@ -87,7 +87,7 @@ func (s *realtimeAPI) Close() error {
 	s.once.Do(func() {
 		s.cancel()
 		close(s.upstream)
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		err = s.client.Close()
 		log.Println("realtimeapi: stage closed")
 	})

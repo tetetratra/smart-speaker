@@ -15,12 +15,12 @@ import (
 )
 
 type printerSink struct {
-	writer    *bufio.Writer
-	upstream  chan types.Event
-	ctx       context.Context
-	cancel    context.CancelFunc
-	lineWG    sync.WaitGroup
-	closeOnce sync.Once
+	writer          *bufio.Writer
+	upstream        chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	closerWaitGroup sync.WaitGroup
+	closeOnce       sync.Once
 }
 
 // NewStage builds a printer sink for the graph.
@@ -40,9 +40,9 @@ func (s *printerSink) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.lineWG.Add(1)
+	s.closerWaitGroup.Add(1)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		for {
 			select {
 			case <-s.ctx.Done():
@@ -76,7 +76,7 @@ func (s *printerSink) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		close(s.upstream)
 		if flushErr := s.writer.Flush(); flushErr != nil {
 			log.Printf("flush error: %v", flushErr)

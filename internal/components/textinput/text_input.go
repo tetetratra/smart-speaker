@@ -13,12 +13,12 @@ import (
 )
 
 type textInput struct {
-	upstream   chan types.Event
-	downstream chan types.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	once       sync.Once
-	lineWG     sync.WaitGroup
+	upstream        chan types.Event
+	downstream      chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
 }
 
 // NewStage reads text from STDIN and emits EventTextInput events.
@@ -39,13 +39,13 @@ func (s *textInput) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.lineWG.Add(2)
+	s.closerWaitGroup.Add(2)
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.drainUpstream()
 	}()
 	go func() {
-		defer s.lineWG.Done()
+		defer s.closerWaitGroup.Done()
 		s.produce()
 	}()
 }
@@ -96,7 +96,7 @@ func (s *textInput) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.lineWG.Wait()
+		s.closerWaitGroup.Wait()
 		close(s.upstream)
 		log.Println("textinput: stage closed")
 	})

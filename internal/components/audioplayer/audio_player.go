@@ -23,13 +23,13 @@ const (
 )
 
 type player struct {
-	upstream chan types.Event
-	ctx      context.Context
-	cancel   context.CancelFunc
-	stream   *portaudio.Stream
-	once     sync.Once
-	lineWG   sync.WaitGroup
-	paOwned  bool
+	upstream        chan types.Event
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stream          *portaudio.Stream
+	once            sync.Once
+	closerWaitGroup sync.WaitGroup
+	paOwned         bool
 
 	mu      sync.Mutex
 	pending []int16
@@ -70,9 +70,9 @@ func (p *player) run(parent context.Context) {
 	p.ctx = ctx
 	p.cancel = cancel
 	log.Println("🔊 音声応答を再生します。CTRL+Cで終了します。")
-	p.lineWG.Add(1)
+	p.closerWaitGroup.Add(1)
 	go func() {
-		defer p.lineWG.Done()
+		defer p.closerWaitGroup.Done()
 		p.consume()
 	}()
 }
@@ -159,7 +159,7 @@ func (p *player) Close() error {
 			p.cancel()
 		}
 		close(p.upstream)
-		p.lineWG.Wait()
+		p.closerWaitGroup.Wait()
 		close(p.chunks)
 		if p.stream != nil {
 			if stopErr := p.stream.Stop(); stopErr != nil && err == nil {
