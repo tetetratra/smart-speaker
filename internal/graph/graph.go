@@ -25,9 +25,6 @@ type Graph struct {
 func New() *Graph { return &Graph{} }
 
 func (g *Graph) AddNode(stage *Stage) *Node {
-	if stage == nil {
-		return nil
-	}
 	n := &Node{Stage: stage}
 	g.nodes = append(g.nodes, n)
 	return n
@@ -41,24 +38,15 @@ func (g *Graph) Connect(from, to *Node) {
 func (g *Graph) Run(ctx context.Context) error {
 	adj := make(map[*Node][]*Stage, len(g.nodes))
 	for _, edge := range g.edges {
-		if edge.From == nil || edge.To == nil {
-			continue
-		}
 		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
 	}
 
 	for _, node := range g.nodes {
-		if node == nil || node.Stage == nil || node.Stage.Run == nil {
-			continue
-		}
 		node.Stage.Run(ctx)
 	}
 
 	var wg sync.WaitGroup
 	for _, node := range g.nodes {
-		if node == nil {
-			continue
-		}
 		downstreams := adj[node]
 		if len(downstreams) == 0 {
 			continue
@@ -105,9 +93,6 @@ func (g *Graph) Close() error {
 	var firstErr error
 	for i := len(g.nodes) - 1; i >= 0; i-- {
 		node := g.nodes[i]
-		if node == nil || node.Stage == nil {
-			continue
-		}
 		if err := node.Stage.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
