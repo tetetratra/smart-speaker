@@ -47,16 +47,11 @@ func (g *Graph) Run(ctx context.Context) error {
 		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
 	}
 
-	var stageWG sync.WaitGroup
 	for _, node := range g.nodes {
 		if node == nil || node.Stage == nil || node.Stage.Run == nil {
 			continue
 		}
-		stageWG.Add(1)
-		go func(st *Stage) {
-			defer stageWG.Done()
-			st.Run(ctx)
-		}(node.Stage)
+		node.Stage.Run(ctx)
 	}
 
 	var wg sync.WaitGroup
@@ -100,7 +95,6 @@ func (g *Graph) Run(ctx context.Context) error {
 	}
 
 	wg.Wait()
-	stageWG.Wait()
 	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
