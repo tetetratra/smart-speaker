@@ -48,9 +48,6 @@ func (g *Graph) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	for _, node := range g.nodes {
 		downstreams := adj[node]
-		if len(downstreams) == 0 {
-			continue
-		}
 		out := (<-chan types.Event)(node.Stage.Downstream)
 		if out == nil {
 			continue
@@ -71,11 +68,7 @@ func (g *Graph) Run(ctx context.Context) error {
 							continue
 						}
 						in := (chan<- types.Event)(dst.Upstream)
-						select {
-						case <-ctx.Done():
-							return
-						case in <- val:
-						}
+						in <- val
 					}
 				}
 			}
