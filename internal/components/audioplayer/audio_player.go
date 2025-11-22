@@ -61,7 +61,7 @@ func NewStage() (*graph.Stage, error) {
 	return &graph.Stage{
 		Upstream: p.upstream,
 		Run:      p.run,
-		CloseFn:  p.Close,
+		CloseFn:  p.close,
 	}, nil
 }
 
@@ -152,7 +152,7 @@ func (p *player) fill(out []int16) {
 	}
 }
 
-func (p *player) Close() error {
+func (p *player) close() error {
 	var err error
 	p.once.Do(func() {
 		if p.cancel != nil {

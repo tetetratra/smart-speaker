@@ -153,7 +153,7 @@ func NewStage(path string) (*graph.Stage, error) {
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}, nil
 }
 
@@ -205,7 +205,7 @@ func (s *fileReader) produce() {
 	}
 }
 
-func (s *fileReader) Close() error {
+func (s *fileReader) close() error {
 	var err error
 	s.once.Do(func() {
 		if s.cancel != nil {

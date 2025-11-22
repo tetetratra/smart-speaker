@@ -31,7 +31,7 @@ func NewStage() *graph.Stage {
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}
 }
 
@@ -91,7 +91,7 @@ func (s *textInput) produce() {
 	}
 }
 
-func (s *textInput) Close() error {
+func (s *textInput) close() error {
 	s.once.Do(func() {
 		if s.cancel != nil {
 			s.cancel()

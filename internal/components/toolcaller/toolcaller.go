@@ -36,7 +36,7 @@ func NewStage() *graph.Stage {
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}
 }
 
@@ -103,7 +103,7 @@ func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 	return types.ToolResponse{ToolCallID: req.ToolCallID, Output: output}
 }
 
-func (s *toolCaller) Close() error {
+func (s *toolCaller) close() error {
 	s.once.Do(func() {
 		if s.cancel != nil {
 			s.cancel()

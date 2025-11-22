@@ -45,7 +45,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}, nil
 }
 
@@ -82,7 +82,7 @@ func (s *realtimeAPI) runReceiver() {
 }
 
 // Close closes the underlying client and owned channels.
-func (s *realtimeAPI) Close() error {
+func (s *realtimeAPI) close() error {
 	var err error
 	s.once.Do(func() {
 		s.cancel()

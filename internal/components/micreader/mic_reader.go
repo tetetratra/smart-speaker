@@ -133,7 +133,7 @@ func NewStage() (*graph.Stage, error) {
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}, nil
 }
 
@@ -186,7 +186,7 @@ func (s *micReader) produce() {
 	}
 }
 
-func (s *micReader) Close() error {
+func (s *micReader) close() error {
 	var err error
 	s.once.Do(func() {
 		if s.cancel != nil {

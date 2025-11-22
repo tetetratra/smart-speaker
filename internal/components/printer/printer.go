@@ -32,7 +32,7 @@ func NewStage() *graph.Stage {
 	return &graph.Stage{
 		Upstream: s.upstream,
 		Run:      s.run,
-		CloseFn:  s.Close,
+		CloseFn:  s.close,
 	}
 }
 
@@ -70,7 +70,7 @@ func (s *printerSink) run(parent context.Context) {
 	}()
 }
 
-func (s *printerSink) Close() error {
+func (s *printerSink) close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		if s.cancel != nil {
