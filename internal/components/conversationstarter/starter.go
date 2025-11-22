@@ -32,7 +32,7 @@ func NewStage(interval time.Duration, prompt string) *graph.Stage {
 	return &graph.Stage{
 		Downstream: s.downstream,
 		Run:        s.run,
-		CloseFn:    s.Close,
+		CloseFn:    s.close,
 	}
 }
 
@@ -72,10 +72,8 @@ func (s *conversationStarter) produce() {
 	}
 }
 
-func (s *conversationStarter) Close() error {
-	if s.cancel != nil {
-		s.cancel()
-	}
+func (s *conversationStarter) close() error {
+	s.cancel()
 	s.closerWaitGroup.Wait()
 	log.Println("conversationstarter: stage closed")
 	return nil
