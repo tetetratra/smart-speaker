@@ -31,6 +31,12 @@ func (g *Graph) AddNode(stage *Stage) *Node {
 }
 
 func (g *Graph) Connect(from, to *Node) {
+	if from.Stage.Downstream == nil {
+		panic("graph: from stage must have downstream")
+	}
+	if to.Stage.Upstream == nil {
+		panic("graph: to stage must have upstream")
+	}
 	g.edges = append(g.edges, &Edge{From: from, To: to})
 }
 
@@ -49,9 +55,6 @@ func (g *Graph) Run(ctx context.Context) error {
 	for _, node := range g.nodes {
 		downstreams := adj[node]
 		out := (<-chan types.Event)(node.Stage.Downstream)
-		if out == nil {
-			continue
-		}
 		wg.Add(1)
 		go func(out <-chan types.Event, downstreams []*Stage) {
 			defer wg.Done()
@@ -64,9 +67,6 @@ func (g *Graph) Run(ctx context.Context) error {
 						return
 					}
 					for _, dst := range downstreams {
-						if dst == nil || dst.Upstream == nil {
-							continue
-						}
 						in := (chan<- types.Event)(dst.Upstream)
 						in <- val
 					}
