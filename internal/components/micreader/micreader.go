@@ -24,9 +24,6 @@ const (
 	chunkMillis = 300
 )
 
-// Reader がインターフェースを満たしているか確認する
-var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
-
 // マイク入力を同期的に取得する
 type Reader struct {
 	stream     *portaudio.Stream

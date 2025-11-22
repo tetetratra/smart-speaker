@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/interfaces"
 	types "smart-speaker/internal/types"
 )
 
@@ -25,9 +24,6 @@ const (
 	fileChunkMillis = 300
 	flushSilence    = 5
 )
-
-// Reader がインターフェースを満たしているか確認する
-var _ interfaces.Reader[types.AudioChunk] = (*Reader)(nil)
 
 // WAV ファイルを擬似リアルタイムで再生する
 type Reader struct {
