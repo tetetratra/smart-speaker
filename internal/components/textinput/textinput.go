@@ -13,7 +13,6 @@ import (
 )
 
 type textInput struct {
-	upstream        chan types.Event
 	downstream      chan types.Event
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -24,11 +23,10 @@ type textInput struct {
 // NewStage reads text from STDIN and emits EventTextInput events.
 func NewStage() *graph.Stage {
 	s := &textInput{
-		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
 	}
 	return &graph.Stage{
-		Upstream:   s.upstream,
+		Upstream:   nil,
 		Downstream: s.downstream,
 		Run:        s.run,
 		CloseFn:    s.close,
@@ -39,28 +37,11 @@ func (s *textInput) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	s.closerWaitGroup.Add(2)
-	go func() {
-		defer s.closerWaitGroup.Done()
-		s.drainUpstream()
-	}()
+	s.closerWaitGroup.Add(1)
 	go func() {
 		defer s.closerWaitGroup.Done()
 		s.produce()
 	}()
-}
-
-func (s *textInput) drainUpstream() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case _, ok := <-s.upstream:
-			if !ok {
-				return
-			}
-		}
-	}
 }
 
 func (s *textInput) produce() {
@@ -97,7 +78,6 @@ func (s *textInput) close() error {
 			s.cancel()
 		}
 		s.closerWaitGroup.Wait()
-		close(s.upstream)
 		log.Println("textinput: stage closed")
 	})
 	return nil
