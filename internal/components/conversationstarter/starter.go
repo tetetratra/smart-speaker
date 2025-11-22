@@ -11,24 +11,20 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Config defines how ConversationStarter triggers proactive prompts.
-type Config struct {
-	Interval time.Duration
-	Prompt   string
-}
-
 // Stage emits system EventTextInput at configured intervals.
 type conversationStarter struct {
-	cfg             Config
+	interval        time.Duration
+	prompt          string
 	downstream      chan types.Event
 	ctx             context.Context
 	cancel          context.CancelFunc
 	closerWaitGroup sync.WaitGroup
 }
 
-func NewStage(cfg Config) *graph.Stage {
+func NewStage(interval time.Duration, prompt string) *graph.Stage {
 	s := &conversationStarter{
-		cfg:        cfg,
+		interval:   interval,
+		prompt:     prompt,
 		downstream: make(chan types.Event),
 	}
 	return &graph.Stage{
@@ -51,14 +47,14 @@ func (s *conversationStarter) run(parent context.Context) {
 
 func (s *conversationStarter) produce() {
 	defer close(s.downstream)
-	ticker := time.NewTicker(s.cfg.Interval)
+	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			text := strings.TrimSpace(s.cfg.Prompt)
+			text := strings.TrimSpace(s.prompt)
 			if text == "" {
 				continue
 			}

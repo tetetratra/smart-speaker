@@ -93,10 +93,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	}
 	toolStage := toolcaller.NewStage()
 	if cfg.AutoPromptInterval > 0 {
-		starter = conversationstarter.NewStage(conversationstarter.Config{
-			Interval: cfg.AutoPromptInterval,
-			Prompt:   cfg.AutoPromptMessage,
-		})
+		starter = conversationstarter.NewStage(cfg.AutoPromptInterval, cfg.AutoPromptMessage)
 	}
 	return stages{
 		input:    input,
