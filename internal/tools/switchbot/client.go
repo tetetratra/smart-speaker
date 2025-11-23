@@ -38,17 +38,14 @@ type Command struct {
 }
 
 // 環境変数に基づいてクライアントを初期化する
-func NewFromEnv() (*Client, error) {
+func NewFromEnv() *Client {
 	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
 	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
 	if token == "" || secret == "" {
-		return nil, errors.New("SWITCHBOT_TOKEN と SWITCHBOT_SECRET を設定してください")
+		panic("SWITCHBOT_TOKEN と SWITCHBOT_SECRET を設定してください")
 	}
 
-	deviceMap, err := parseDeviceMap(os.Getenv("SWITCHBOT_DEVICE_MAP"))
-	if err != nil {
-		return nil, err
-	}
+	deviceMap := parseDeviceMap(os.Getenv("SWITCHBOT_DEVICE_MAP"))
 
 	client := &Client{
 		token:     token,
@@ -56,7 +53,7 @@ func NewFromEnv() (*Client, error) {
 		http:      &http.Client{Timeout: 10 * time.Second},
 		deviceMap: deviceMap,
 	}
-	return client, nil
+	return client
 }
 
 // SwitchBot API にコマンドを送りレスポンスを返す
@@ -141,18 +138,18 @@ func (c *Client) signPayload(timestamp, nonce string) (string, error) {
 	return sig, nil
 }
 
-func parseDeviceMap(raw string) (map[string]string, error) {
+func parseDeviceMap(raw string) map[string]string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return map[string]string{}, nil
+		return map[string]string{}
 	}
 	var tmp map[string]string
 	if err := json.Unmarshal([]byte(raw), &tmp); err != nil {
-		return nil, fmt.Errorf("SWITCHBOT_DEVICE_MAP は JSON オブジェクトで指定してください: %w", err)
+		panic("SWITCHBOT_DEVICE_MAP は JSON オブジェクトで指定してください")
 	}
 	normalized := make(map[string]string, len(tmp))
 	for k, v := range tmp {
 		normalized[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
 	}
-	return normalized, nil
+	return normalized
 }

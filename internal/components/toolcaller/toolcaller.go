@@ -20,17 +20,15 @@ type toolCaller struct {
 	once            sync.Once
 	closerWaitGroup sync.WaitGroup
 
-	switchClient  *switchbot.Client
-	switchInitErr error
+	switchClient *switchbot.Client
 }
 
 func NewStage() *graph.Stage {
-	sbClient, sbErr := switchbot.NewFromEnv()
+	sbClient := switchbot.NewFromEnv()
 	s := &toolCaller{
-		upstream:      make(chan types.Event),
-		downstream:    make(chan types.Event),
-		switchClient:  sbClient,
-		switchInitErr: sbErr,
+		upstream:     make(chan types.Event),
+		downstream:   make(chan types.Event),
+		switchClient: sbClient,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -65,11 +63,7 @@ func (s *toolCaller) run(parent context.Context) {
 					}
 					resp := s.executeTool(req)
 					outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
-					select {
-					case <-s.ctx.Done():
-						return
-					case s.downstream <- outEvt:
-					}
+					s.downstream <- outEvt
 				default:
 					// ignore
 				}
@@ -117,9 +111,6 @@ func (s *toolCaller) close() error {
 
 func (s *toolCaller) runSwitchBotTool(args map[string]any) map[string]any {
 	if s.switchClient == nil {
-		if s.switchInitErr != nil {
-			return map[string]any{"error": s.switchInitErr.Error()}
-		}
 		return map[string]any{"error": "SwitchBot が設定されていません"}
 	}
 	command := switchbot.Command{
