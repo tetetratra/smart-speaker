@@ -4,18 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"strings"
 	"sync"
 
 	"smart-speaker/internal/graph"
-	switchbot "smart-speaker/internal/tools/switchbot"
 	types "smart-speaker/internal/types"
 )
 
-type Config struct {
-	Token     string
-	Secret    string
-	DeviceMap string
+// Tool は function calling から呼び出されるツールの抽象
+type Tool interface {
+	Name() string
+	Run(args map[string]any) (map[string]any, error)
+}
+
+// ContextAwareTool は stage 管理の context を受け取れるツールが実装する
+type ContextAwareTool interface {
+	SetContext(ctx context.Context)
 }
 
 type toolCaller struct {
@@ -26,15 +29,17 @@ type toolCaller struct {
 	once            sync.Once
 	closerWaitGroup sync.WaitGroup
 
-	switchClient *switchbot.Client
+	tools map[string]Tool
 }
 
-func NewStage(cfg Config) *graph.Stage {
-	sbClient := switchbot.NewSwitchbotClient(cfg.Token, cfg.Secret, cfg.DeviceMap)
+func NewStage(tools map[string]Tool) *graph.Stage {
+	if tools == nil {
+		tools = map[string]Tool{}
+	}
 	s := &toolCaller{
-		upstream:     make(chan types.Event),
-		downstream:   make(chan types.Event),
-		switchClient: sbClient,
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
+		tools:      tools,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -48,6 +53,11 @@ func (s *toolCaller) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
+	for _, tool := range s.tools {
+		if ctxTool, ok := tool.(ContextAwareTool); ok {
+			ctxTool.SetContext(ctx)
+		}
+	}
 	s.closerWaitGroup.Add(1)
 	go func() {
 		defer s.closerWaitGroup.Done()
@@ -86,13 +96,18 @@ func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 			args = map[string]any{}
 		}
 	}
+	tool, ok := s.tools[req.Name]
 	var result map[string]any
-	switch req.Name {
-	case "switchbot_control_device":
-		result = s.runSwitchBotTool(args)
-	default:
+	if !ok {
 		result = map[string]any{
 			"error": "unknown function: " + req.Name,
+		}
+	} else {
+		out, err := tool.Run(args)
+		if err != nil {
+			result = map[string]any{"error": err.Error()}
+		} else {
+			result = out
 		}
 	}
 	output, err := json.Marshal(result)
@@ -113,32 +128,4 @@ func (s *toolCaller) close() error {
 		log.Println("toolcaller: stage closed")
 	})
 	return nil
-}
-
-func (s *toolCaller) runSwitchBotTool(args map[string]any) map[string]any {
-	if s.switchClient == nil {
-		return map[string]any{"error": "SwitchBot が設定されていません"}
-	}
-	command := switchbot.Command{
-		DeviceAlias: strings.TrimSpace(asString(args["device"])),
-		DeviceID:    strings.TrimSpace(asString(args["device_id"])),
-		Command:     strings.TrimSpace(asString(args["command"])),
-		Parameter:   strings.TrimSpace(asString(args["parameter"])),
-		CommandType: strings.TrimSpace(asString(args["command_type"])),
-	}
-	result, err := s.switchClient.Execute(s.ctx, command)
-	if err != nil {
-		return map[string]any{"error": err.Error()}
-	}
-	return result
-}
-
-func asString(v any) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
 }
