@@ -8,9 +8,15 @@ import (
 	"sync"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/tools/switchbot"
+	switchbot "smart-speaker/internal/tools"
 	types "smart-speaker/internal/types"
 )
+
+type Config struct {
+	Token     string
+	Secret    string
+	DeviceMap string
+}
 
 type toolCaller struct {
 	upstream        chan types.Event
@@ -23,8 +29,8 @@ type toolCaller struct {
 	switchClient *switchbot.Client
 }
 
-func NewStage() *graph.Stage {
-	sbClient := switchbot.NewFromEnv()
+func NewStage(cfg Config) *graph.Stage {
+	sbClient := switchbot.NewSwitchbotClient(cfg.Token, cfg.Secret, cfg.DeviceMap)
 	s := &toolCaller{
 		upstream:     make(chan types.Event),
 		downstream:   make(chan types.Event),

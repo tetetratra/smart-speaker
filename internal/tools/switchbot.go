@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -37,15 +36,15 @@ type Command struct {
 	Parameter   string
 }
 
-// 環境変数に基づいてクライアントを初期化する
-func NewFromEnv() *Client {
-	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
-	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
+// 設定値に基づいてクライアントを初期化する
+func NewSwitchbotClient(token, secret, deviceMapRaw string) *Client {
+	token = strings.TrimSpace(token)
+	secret = strings.TrimSpace(secret)
 	if token == "" || secret == "" {
-		panic("SWITCHBOT_TOKEN と SWITCHBOT_SECRET を設定してください")
+		panic("SwitchBot token and secret must be provided")
 	}
 
-	deviceMap := parseDeviceMap(os.Getenv("SWITCHBOT_DEVICE_MAP"))
+	deviceMap := parseDeviceMap(deviceMapRaw)
 
 	client := &Client{
 		token:     token,

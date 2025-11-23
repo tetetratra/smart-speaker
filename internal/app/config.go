@@ -19,6 +19,13 @@ type Config struct {
 	AutoPromptInterval time.Duration
 	AutoPromptMessage  string
 	Voice              string
+	SwitchBot          SwitchBotConfig
+}
+
+type SwitchBotConfig struct {
+	Token     string
+	Secret    string
+	DeviceMap string
 }
 
 func LoadConfig(promptPath string) Config {
@@ -52,6 +59,12 @@ func LoadConfig(promptPath string) Config {
 		message = "(system: ユーザーに状況を尋ねてください)"
 	}
 
+	switchCfg := SwitchBotConfig{
+		Token:     os.Getenv("SWITCHBOT_TOKEN"),
+		Secret:    os.Getenv("SWITCHBOT_SECRET"),
+		DeviceMap: os.Getenv("SWITCHBOT_DEVICE_MAP"),
+	}
+
 	return Config{
 		APIKey:             apiKey,
 		Model:              model,
@@ -61,6 +74,7 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptInterval: interval,
 		AutoPromptMessage:  message,
 		Voice:              voice,
+		SwitchBot:          switchCfg,
 	}
 }
 

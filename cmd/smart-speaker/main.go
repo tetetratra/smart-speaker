@@ -91,7 +91,11 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		printerStage.Close()
 		return stages{}, fmt.Errorf("failed to init audio player stage: %w", err)
 	}
-	toolStage := toolcaller.NewStage()
+	toolStage := toolcaller.NewStage(toolcaller.Config{
+		Token:     cfg.SwitchBot.Token,
+		Secret:    cfg.SwitchBot.Secret,
+		DeviceMap: cfg.SwitchBot.DeviceMap,
+	})
 	if cfg.AutoPromptInterval > 0 {
 		starter = conversationstarter.NewStage(cfg.AutoPromptInterval, cfg.AutoPromptMessage)
 	}
