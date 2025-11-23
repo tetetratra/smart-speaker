@@ -19,7 +19,7 @@ import (
 const (
 	sampleRate = 24000 // https://community.openai.com/t/low-and-slow-audio-from-realtime-api-how-to-properly-audio-format/1011061
 	channels   = 1
-	chunkQueue = 32
+	chunkQueue = 256
 )
 
 type player struct {
