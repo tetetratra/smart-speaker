@@ -12,7 +12,7 @@ import (
 	"github.com/gordonklaus/portaudio"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/portaudioext"
+	"smart-speaker/internal/tools/portaudioext"
 	types "smart-speaker/internal/types"
 )
 

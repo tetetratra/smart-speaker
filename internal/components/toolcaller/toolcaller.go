@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"smart-speaker/internal/graph"
-	switchbot "smart-speaker/internal/tools"
+	switchbot "smart-speaker/internal/tools/switchbot"
 	types "smart-speaker/internal/types"
 )
 
