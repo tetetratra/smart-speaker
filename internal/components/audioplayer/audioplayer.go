@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	sampleRate = 24000 // https://community.openai.com/t/low-and-slow-audio-from-realtime-api-how-to-properly-audio-format/1011061
-	channels   = 1
-	chunkQueue = 256
+	inputSampleRate  = 24000 // Realtime API のオーディオ出力は 24kHz PCM16: https://community.openai.com/t/low-and-slow-audio-from-realtime-api-how-to-properly-audio-format/1011061
+	outputSampleRate = 48000
+	channels         = 1
+	chunkQueue       = 256
 	// PortAudio のコールバックはサンプルを要求し続けるため、即ゼロ埋めせず
 	// 少しだけチャンク到着を待ってから判断する
 	chunkWaitTimeout = 35 * time.Millisecond
@@ -57,7 +58,7 @@ func NewStage() (*graph.Stage, error) {
 		chunks:   make(chan []int16, chunkQueue),
 		paOwned:  true,
 	}
-	stream, err := portaudio.OpenDefaultStream(0, channels, float64(sampleRate), 0, func(out []int16) {
+	stream, err := portaudio.OpenDefaultStream(0, channels, float64(outputSampleRate), 0, func(out []int16) {
 		p.fill(out)
 	})
 	if err != nil {
@@ -128,8 +129,15 @@ func (p *player) enqueue(chunk types.OutputAudio) error {
 	for i := 0; i < samples; i++ {
 		buf[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
 	}
+	// macOS など多くの出力デバイスは 48kHz が既定なので、24kHz のまま渡すと
+	// PortAudio の内部リサンプラ任せになり歪みが発生しやすい。明示的にソフト側で
+	// 48kHz へ変換してから再生キューへ渡すことでノイズを抑える。
+	upsampled := resample24kTo48k(buf)
+	if len(upsampled) == 0 {
+		return nil
+	}
 	select {
-	case p.chunks <- buf:
+	case p.chunks <- upsampled:
 	default:
 		return errors.New("audio buffer overflow")
 	}
@@ -185,6 +193,23 @@ func (p *player) waitForChunk() ([]int16, chunkResult) {
 	case <-t.C:
 		return nil, chunkResultTimeout
 	}
+}
+
+func resample24kTo48k(samples []int16) []int16 {
+	if len(samples) == 0 {
+		return nil
+	}
+	out := make([]int16, len(samples)*2)
+	last := len(samples) - 1
+	for i := 0; i < last; i++ {
+		s := int32(samples[i])
+		next := int32(samples[i+1])
+		out[2*i] = samples[i]
+		out[2*i+1] = int16((s + next) / 2)
+	}
+	out[2*last] = samples[last]
+	out[2*last+1] = samples[last]
+	return out
 }
 
 func (p *player) close() error {
