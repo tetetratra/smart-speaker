@@ -21,7 +21,7 @@ const (
 	inputSampleRate  = 24000 // Realtime API のオーディオ出力は 24kHz PCM16: https://community.openai.com/t/low-and-slow-audio-from-realtime-api-how-to-properly-audio-format/1011061
 	outputSampleRate = 48000
 	channels         = 1
-	chunkQueue       = 256
+	chunkQueue       = 1024
 	// PortAudio のコールバックはサンプルを要求し続けるため、即ゼロ埋めせず
 	// 少しだけチャンク到着を待ってから判断する
 	chunkWaitTimeout = 35 * time.Millisecond
