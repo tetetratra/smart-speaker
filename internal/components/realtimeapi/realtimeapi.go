@@ -2,7 +2,6 @@ package realtimeapi
 
 import (
 	"context"
-	"errors"
 	"log"
 	"sync"
 
@@ -52,33 +51,15 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 func (s *realtimeAPI) run(context.Context) {
 	s.closerWaitGroup.Add(2)
 	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
+	receiverRunner := receiver.NewRunner(s.ctx, s.stream, s.downstream)
 	go func() {
 		defer s.closerWaitGroup.Done()
 		senderRunner.Run()
 	}()
 	go func() {
 		defer s.closerWaitGroup.Done()
-		s.runReceiver()
+		receiverRunner.Run()
 	}()
-}
-
-func (s *realtimeAPI) runReceiver() {
-	defer close(s.downstream)
-	for {
-		evt, err := s.stream.Next(s.ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			log.Printf("realtime read error: %v", err)
-			return
-		}
-		select {
-		case <-s.ctx.Done():
-			return
-		case s.downstream <- evt:
-		}
-	}
 }
 
 // Close closes the underlying client and owned channels.
