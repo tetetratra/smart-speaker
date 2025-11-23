@@ -7,6 +7,8 @@ import (
 	types "smart-speaker/internal/types"
 )
 
+const DefaultChannelBufferSize = 64
+
 // Stage represents an executable node in the graph with upstream/downstream channels.
 type Stage struct {
 	Upstream   chan types.Event

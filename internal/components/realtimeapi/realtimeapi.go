@@ -34,8 +34,8 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 	s := &realtimeAPI{
 		client:     client,
 		stream:     receiver.NewEventStream(client),
-		upstream:   make(chan types.Event),
-		downstream: make(chan types.Event),
+		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		ctx:        stageCtx,
 		cancel:     cancel,
 		voice:      cfg.Voice,

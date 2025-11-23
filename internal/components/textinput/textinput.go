@@ -23,7 +23,7 @@ type textInput struct {
 // NewStage reads text from STDIN and emits EventTextInput events.
 func NewStage() *graph.Stage {
 	s := &textInput{
-		downstream: make(chan types.Event),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
 		Upstream:   nil,

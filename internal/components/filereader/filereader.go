@@ -28,7 +28,7 @@ func NewStage(path string) (*graph.Stage, error) {
 	}
 	s := &fileReader{
 		source:     source,
-		downstream: make(chan types.Event),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
 		Upstream:   nil,

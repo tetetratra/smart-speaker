@@ -41,7 +41,7 @@ func NewStage() (*graph.Stage, error) {
 		return nil, err
 	}
 	p := &player{
-		upstream: make(chan types.Event),
+		upstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		chunks:   make(chan []int16, chunkQueue),
 		paOwned:  true,
 	}

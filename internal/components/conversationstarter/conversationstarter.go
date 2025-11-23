@@ -21,13 +21,11 @@ type conversationStarter struct {
 	closerWaitGroup sync.WaitGroup
 }
 
-const downstreamBuffer = 16
-
 func NewStage(interval time.Duration, prompt string) *graph.Stage {
 	s := &conversationStarter{
 		interval:   interval,
 		prompt:     prompt,
-		downstream: make(chan types.Event, downstreamBuffer),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
 		Downstream: s.downstream,

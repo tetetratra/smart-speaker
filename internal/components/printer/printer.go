@@ -27,7 +27,7 @@ type printerSink struct {
 func NewStage() *graph.Stage {
 	s := &printerSink{
 		writer:   bufio.NewWriter(os.Stdout),
-		upstream: make(chan types.Event),
+		upstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
 		Upstream: s.upstream,

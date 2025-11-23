@@ -37,8 +37,8 @@ func NewStage(tools map[string]Tool) *graph.Stage {
 		tools = map[string]Tool{}
 	}
 	s := &toolCaller{
-		upstream:   make(chan types.Event),
-		downstream: make(chan types.Event),
+		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      tools,
 	}
 	return &graph.Stage{
