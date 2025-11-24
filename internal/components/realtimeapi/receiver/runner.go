@@ -13,7 +13,7 @@ type wsMessage map[string]any
 
 const (
 	debugPrintMsgType  = true
-	debugDumpResponses = false
+	debugDumpResponses = true
 )
 
 type responseTracker struct {
@@ -116,15 +116,13 @@ func (r *Runner) readNextMessage() error {
 		log.Printf("unmarshal error: %v", err)
 		return nil
 	}
-	if debugDumpResponses {
-		if dump, err := json.MarshalIndent(msg, "", "  "); err == nil {
-			log.Println(string(dump))
-		}
-	}
 	if debugPrintMsgType {
 		if msgType := asString(msg["type"]); msgType != "" {
 			log.Println(msgType)
 		}
+	}
+	if debugDumpResponses {
+		r.dumpMessage(msg)
 	}
 	for _, handler := range r.handlers {
 		if events := handler.Handle(msg); len(events) > 0 {
@@ -132,4 +130,44 @@ func (r *Runner) readNextMessage() error {
 		}
 	}
 	return nil
+}
+
+func (r *Runner) dumpMessage(msg wsMessage) {
+	pruned := truncateValue(msg)
+	dump, err := json.MarshalIndent(pruned, "", "  ")
+	if err != nil {
+		log.Printf("marshal dump error: %v", err)
+		return
+	}
+	log.Println(string(dump))
+}
+
+func truncateValue(v any) any {
+	switch val := v.(type) {
+	case wsMessage:
+		res := make(wsMessage, len(val))
+		for k, item := range val {
+			res[k] = truncateValue(item)
+		}
+		return res
+	case string:
+		if len(val) <= 80 {
+			return val
+		}
+		return val[:80] + "..."
+	case []any:
+		res := make([]any, len(val))
+		for i, item := range val {
+			res[i] = truncateValue(item)
+		}
+		return res
+	case map[string]any:
+		res := make(map[string]any, len(val))
+		for k, item := range val {
+			res[k] = truncateValue(item)
+		}
+		return res
+	default:
+		return val
+	}
 }
