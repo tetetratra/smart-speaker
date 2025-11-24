@@ -20,6 +20,7 @@ type realtimeAPI struct {
 	once            sync.Once
 	closerWaitGroup sync.WaitGroup
 	voice           string
+	receiverOpts    receiver.RunnerOptions
 }
 
 // NewStage constructs a realtime stage with the given config.
@@ -37,6 +38,10 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 		ctx:        stageCtx,
 		cancel:     cancel,
 		voice:      cfg.Voice,
+		receiverOpts: receiver.RunnerOptions{
+			DebugPrintMsgType:  cfg.DebugPrintMsgType,
+			DebugDumpResponses: cfg.DebugDumpResponses,
+		},
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -49,7 +54,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 func (s *realtimeAPI) run(context.Context) {
 	s.closerWaitGroup.Add(2)
 	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
-	receiverRunner := receiver.NewRunner(s.ctx, s.client, s.downstream)
+	receiverRunner := receiver.NewRunner(s.ctx, s.client, s.downstream, s.receiverOpts)
 	go func() {
 		defer s.closerWaitGroup.Done()
 		senderRunner.Run()

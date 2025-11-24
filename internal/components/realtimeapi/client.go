@@ -21,6 +21,8 @@ type Config struct {
 	TranscriptionModel string
 	Instructions       string
 	Voice              string
+	DebugPrintMsgType  bool
+	DebugDumpResponses bool
 }
 
 // OpenAI Realtime API への同期的なアクセスをまとめる

@@ -20,12 +20,18 @@ type Config struct {
 	AutoPromptMessage  string
 	Voice              string
 	SwitchBot          SwitchBotConfig
+	Debug              DebugConfig
 }
 
 type SwitchBotConfig struct {
 	Token     string
 	Secret    string
 	DeviceMap string
+}
+
+type DebugConfig struct {
+	PrintMsgType  bool
+	DumpResponses bool
 }
 
 func LoadConfig(promptPath string) Config {
@@ -75,6 +81,23 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		Voice:              voice,
 		SwitchBot:          switchCfg,
+		Debug: DebugConfig{
+			PrintMsgType:  envBool("SMART_SPEAKER_DEBUG_PRINT_MSG_TYPE"),
+			DumpResponses: envBool("SMART_SPEAKER_DEBUG_DUMP_RESPONSES"),
+		},
+	}
+}
+
+func envBool(name string) bool {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return false
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	default:
+		return false
 	}
 }
 

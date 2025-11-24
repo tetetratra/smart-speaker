@@ -11,10 +11,10 @@ import (
 
 type wsMessage map[string]any
 
-const (
-	debugPrintMsgType  = true
-	debugDumpResponses = true
-)
+type RunnerOptions struct {
+	DebugPrintMsgType  bool
+	DebugDumpResponses bool
+}
 
 type responseTracker struct {
 	seen map[string]bool
@@ -59,14 +59,16 @@ type messageHandler interface {
 
 // Runner pulls messages from the realtime client and sends parsed events downstream.
 type Runner struct {
-	ctx        context.Context
-	client     reader
-	downstream chan<- types.Event
-	handlers   []messageHandler
-	buffer     []types.Event
+	ctx                context.Context
+	client             reader
+	downstream         chan<- types.Event
+	handlers           []messageHandler
+	buffer             []types.Event
+	debugPrintMsgType  bool
+	debugDumpResponses bool
 }
 
-func NewRunner(ctx context.Context, client reader, downstream chan<- types.Event) *Runner {
+func NewRunner(ctx context.Context, client reader, downstream chan<- types.Event, opts RunnerOptions) *Runner {
 	tracker := newResponseTracker()
 	return &Runner{
 		ctx:        ctx,
@@ -77,6 +79,8 @@ func NewRunner(ctx context.Context, client reader, downstream chan<- types.Event
 			newAudioMessageHandler(tracker),
 			newTextMessageHandler(tracker),
 		},
+		debugPrintMsgType:  opts.DebugPrintMsgType,
+		debugDumpResponses: opts.DebugDumpResponses,
 	}
 }
 
@@ -116,12 +120,12 @@ func (r *Runner) readNextMessage() error {
 		log.Printf("unmarshal error: %v", err)
 		return nil
 	}
-	if debugPrintMsgType {
+	if r.debugPrintMsgType {
 		if msgType := asString(msg["type"]); msgType != "" {
 			log.Println(msgType)
 		}
 	}
-	if debugDumpResponses {
+	if r.debugDumpResponses {
 		r.dumpMessage(msg)
 	}
 	for _, handler := range r.handlers {
