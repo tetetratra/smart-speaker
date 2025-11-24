@@ -13,7 +13,6 @@ import (
 
 type realtimeAPI struct {
 	client          *Client
-	stream          *receiver.EventStream
 	upstream        chan types.Event
 	downstream      chan types.Event
 	ctx             context.Context
@@ -33,7 +32,6 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 	}
 	s := &realtimeAPI{
 		client:     client,
-		stream:     receiver.NewEventStream(client),
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		ctx:        stageCtx,
@@ -51,7 +49,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 func (s *realtimeAPI) run(context.Context) {
 	s.closerWaitGroup.Add(2)
 	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
-	receiverRunner := receiver.NewRunner(s.ctx, s.stream, s.downstream)
+	receiverRunner := receiver.NewRunner(s.ctx, s.client, s.downstream)
 	go func() {
 		defer s.closerWaitGroup.Done()
 		senderRunner.Run()
