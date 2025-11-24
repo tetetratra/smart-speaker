@@ -19,7 +19,7 @@ type realtimeAPI struct {
 	cancel          context.CancelFunc
 	once            sync.Once
 	closerWaitGroup sync.WaitGroup
-	voice           string
+	sessionInfo     sender.SessionConfig
 	receiverOpts    receiver.RunnerOptions
 }
 
@@ -37,7 +37,11 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		ctx:        stageCtx,
 		cancel:     cancel,
-		voice:      cfg.Voice,
+		sessionInfo: sender.SessionConfig{
+			Instructions:       cfg.Instructions,
+			Voice:              cfg.Voice,
+			TranscriptionModel: cfg.TranscriptionModel,
+		},
 		receiverOpts: receiver.RunnerOptions{
 			DebugPrintMsgType:  cfg.DebugPrintMsgType,
 			DebugDumpResponses: cfg.DebugDumpResponses,
@@ -53,7 +57,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 
 func (s *realtimeAPI) run(context.Context) {
 	s.closerWaitGroup.Add(2)
-	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.voice)
+	senderRunner := sender.NewRunner(s.ctx, s.client, s.upstream, s.sessionInfo)
 	receiverRunner := receiver.NewRunner(s.ctx, s.client, s.downstream, s.receiverOpts)
 	go func() {
 		defer s.closerWaitGroup.Done()

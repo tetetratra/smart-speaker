@@ -37,7 +37,11 @@ func (h *EventHandler) handleAudioChunk(payload any) {
 		log.Printf("realtime sender: unexpected audio payload type %T", payload)
 		return
 	}
-	if err := h.client.Process(h.ctx, chunk); err != nil {
+	msg := map[string]any{
+		"type":  "input_audio_buffer.append",
+		"audio": string(chunk),
+	}
+	if err := h.client.Send(msg); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
 		}
@@ -68,7 +72,7 @@ func (h *EventHandler) handleTextInput(payload any) {
 }
 
 func (h *EventHandler) sendToolResponse(resp types.ToolResponse) error {
-	toolOutput := wsMessage{
+	toolOutput := map[string]any{
 		"type": "conversation.item.create",
 		"item": map[string]any{
 			"type":    "function_call_output",
@@ -79,7 +83,7 @@ func (h *EventHandler) sendToolResponse(resp types.ToolResponse) error {
 	if err := h.client.Send(toolOutput); err != nil {
 		return err
 	}
-	return h.client.Send(wsMessage{
+	return h.client.Send(map[string]any{
 		"type": "response.create",
 		"response": map[string]any{
 			"modalities":   []string{"text"},
@@ -97,7 +101,7 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	if role == "" {
 		role = "user"
 	}
-	msg := wsMessage{
+	msg := map[string]any{
 		"type": "conversation.item.create",
 		"item": map[string]any{
 			"type": "message",
@@ -113,7 +117,7 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	if err := h.client.Send(msg); err != nil {
 		return err
 	}
-	response := wsMessage{
+	response := map[string]any{
 		"type": "response.create",
 		"response": map[string]any{
 			"modalities": []string{"text", "audio"},
@@ -124,5 +128,3 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	}
 	return h.client.Send(response)
 }
-
-type wsMessage map[string]any

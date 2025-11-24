@@ -2,32 +2,44 @@ package sender
 
 import (
 	"context"
+	"log"
 
 	types "smart-speaker/internal/types"
 )
 
 // Client defines the methods required by the sender runner.
 type Client interface {
-	Process(context.Context, types.AudioChunk) error
 	Send(any) error
+}
+
+// SessionConfig holds values required to build the initial session update payload.
+type SessionConfig struct {
+	Instructions       string
+	Voice              string
+	TranscriptionModel string
 }
 
 // Runner pulls events from the upstream channel and forwards them to the Realtime API.
 type Runner struct {
-	ctx      context.Context
-	upstream <-chan types.Event
-	handler  *EventHandler
+	ctx         context.Context
+	upstream    <-chan types.Event
+	handler     *EventHandler
+	sessionInfo SessionConfig
 }
 
-func NewRunner(ctx context.Context, client Client, upstream <-chan types.Event, voice string) *Runner {
+func NewRunner(ctx context.Context, client Client, upstream <-chan types.Event, sessionInfo SessionConfig) *Runner {
 	return &Runner{
-		ctx:      ctx,
-		upstream: upstream,
-		handler:  NewEventHandler(ctx, client, voice),
+		ctx:         ctx,
+		upstream:    upstream,
+		handler:     NewEventHandler(ctx, client, sessionInfo.Voice),
+		sessionInfo: sessionInfo,
 	}
 }
 
 func (r *Runner) Run() {
+	if err := sendSessionUpdate(r.handler.client, r.sessionInfo); err != nil {
+		log.Printf("realtime session update error: %v", err)
+	}
 	for {
 		select {
 		case <-r.ctx.Done():
@@ -39,4 +51,65 @@ func (r *Runner) Run() {
 			r.handler.Handle(evt)
 		}
 	}
+}
+
+func sendSessionUpdate(client Client, cfg SessionConfig) error {
+	session := map[string]any{
+		"instructions":       cfg.Instructions,
+		"modalities":         []string{"text", "audio"},
+		"input_audio_format": "pcm16",
+		"turn_detection": map[string]any{
+			"type":                "server_vad",
+			"threshold":           0.65,
+			"silence_duration_ms": 800,
+			"interrupt_response":  false,
+		},
+		"tools": []any{
+			map[string]any{
+				"type":        "function",
+				"name":        "switchbot_control_device",
+				"description": "SwitchBot API を使ってデバイスを操作します。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"device_id": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot デバイスの ID",
+						},
+						"device": map[string]any{
+							"type":        "string",
+							"description": "環境変数 SWITCHBOT_DEVICE_MAP で定義したエイリアス名",
+						},
+						"command": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot API の command (例: turnOn, turnOff, press)",
+						},
+						"parameter": map[string]any{
+							"type":        "string",
+							"description": "必要に応じて command に渡す parameter。不要なら default。",
+						},
+						"command_type": map[string]any{
+							"type":        "string",
+							"description": "SwitchBot API の commandType。省略時は command。",
+						},
+					},
+					"required": []string{"command"},
+				},
+			},
+		},
+	}
+	if cfg.Voice != "" {
+		session["voice"] = cfg.Voice
+	}
+	if cfg.TranscriptionModel != "" {
+		session["input_audio_transcription"] = map[string]any{
+			"model":    cfg.TranscriptionModel,
+			"language": "ja",
+			"prompt":   "web系のITエンジニアが話しており、専門用語が来ることを想定してください。日本語で短い応答を心がけてください",
+		}
+	}
+	return client.Send(map[string]any{
+		"type":    "session.update",
+		"session": session,
+	})
 }
