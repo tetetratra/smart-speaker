@@ -28,6 +28,7 @@ type toolCaller struct {
 	cancel          context.CancelFunc
 	once            sync.Once
 	closerWaitGroup sync.WaitGroup
+	taskGroup       sync.WaitGroup
 
 	tools map[string]Tool
 }
@@ -61,7 +62,10 @@ func (s *toolCaller) run(parent context.Context) {
 	s.closerWaitGroup.Add(1)
 	go func() {
 		defer s.closerWaitGroup.Done()
-		defer close(s.downstream)
+		defer func() {
+			s.taskGroup.Wait()
+			close(s.downstream)
+		}()
 		for {
 			select {
 			case <-s.ctx.Done():
@@ -77,13 +81,24 @@ func (s *toolCaller) run(parent context.Context) {
 						log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
 						continue
 					}
-					resp := s.executeTool(req)
-					outEvt := types.Event{Kind: types.EventToolResponse, Payload: resp}
-					s.downstream <- outEvt
+					s.dispatchTool(req)
 				default:
 					// ignore
 				}
 			}
+		}
+	}()
+}
+
+func (s *toolCaller) dispatchTool(req types.ToolRequest) {
+	s.taskGroup.Add(1)
+	go func() {
+		defer s.taskGroup.Done()
+		resp := s.executeTool(req)
+		select {
+		case <-s.ctx.Done():
+			return
+		case s.downstream <- types.Event{Kind: types.EventToolResponse, Payload: resp}:
 		}
 	}()
 }
