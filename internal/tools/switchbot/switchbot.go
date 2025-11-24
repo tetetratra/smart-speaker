@@ -19,6 +19,8 @@ import (
 
 const baseURL = "https://api.switch-bot.com"
 
+// API仕様書: https://github.com/OpenWonderLabs/SwitchBotAPI
+
 // SwitchBot Open API との通信を担当する
 type Client struct {
 	token     string
