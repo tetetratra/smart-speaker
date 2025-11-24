@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/gordonklaus/portaudio"
 
@@ -22,9 +21,6 @@ const (
 	outputSampleRate = 48000
 	channels         = 1
 	chunkQueue       = 1024
-	// PortAudio のコールバックはサンプルを要求し続けるため、即ゼロ埋めせず
-	// 少しだけチャンク到着を待ってから判断する
-	chunkWaitTimeout = 35 * time.Millisecond
 )
 
 type player struct {
@@ -40,14 +36,6 @@ type player struct {
 	pending []int16
 	chunks  chan []int16
 }
-
-type chunkResult int
-
-const (
-	chunkResultOK chunkResult = iota
-	chunkResultTimeout
-	chunkResultClosed
-)
 
 func NewStage() (*graph.Stage, error) {
 	if err := portaudioext.Acquire(); err != nil {
@@ -150,12 +138,16 @@ func (p *player) fill(out []int16) {
 	copied := 0
 	for copied < len(out) {
 		if len(p.pending) == 0 {
-			chunk, result := p.waitForChunk()
-			switch result {
-			case chunkResultOK:
+			select {
+			case chunk, ok := <-p.chunks:
+				if !ok {
+					for i := copied; i < len(out); i++ {
+						out[i] = 0
+					}
+					return
+				}
 				p.pending = chunk
-				continue
-			case chunkResultClosed, chunkResultTimeout:
+			default:
 				for i := copied; i < len(out); i++ {
 					out[i] = 0
 				}
@@ -165,33 +157,6 @@ func (p *player) fill(out []int16) {
 		n := copy(out[copied:], p.pending)
 		copied += n
 		p.pending = p.pending[n:]
-	}
-}
-
-func (p *player) waitForChunk() ([]int16, chunkResult) {
-	if p.ctx == nil {
-		select {
-		case chunk, ok := <-p.chunks:
-			if !ok {
-				return nil, chunkResultClosed
-			}
-			return chunk, chunkResultOK
-		default:
-			return nil, chunkResultTimeout
-		}
-	}
-	t := time.NewTimer(chunkWaitTimeout)
-	defer t.Stop()
-	select {
-	case chunk, ok := <-p.chunks:
-		if !ok {
-			return nil, chunkResultClosed
-		}
-		return chunk, chunkResultOK
-	case <-p.ctx.Done():
-		return nil, chunkResultClosed
-	case <-t.C:
-		return nil, chunkResultTimeout
 	}
 }
 
