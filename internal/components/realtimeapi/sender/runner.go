@@ -96,6 +96,21 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 					"required": []string{"command"},
 				},
 			},
+			map[string]any{
+				"type":        "function",
+				"name":        "web_fetch",
+				"description": "指定した URL にアクセスし、ステータスコードと本文を返します。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"url": map[string]any{
+							"type":        "string",
+							"description": "HTTP GET する URL",
+						},
+					},
+					"required": []string{"url"},
+				},
+			},
 		},
 	}
 	if cfg.Voice != "" {

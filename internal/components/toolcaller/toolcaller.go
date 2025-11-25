@@ -37,6 +37,9 @@ func NewStage(tools map[string]Tool) *graph.Stage {
 	if tools == nil {
 		tools = map[string]Tool{}
 	}
+	if _, ok := tools["web_fetch"]; !ok {
+		tools["web_fetch"] = NewWebFetchTool()
+	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
