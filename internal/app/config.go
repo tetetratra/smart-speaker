@@ -61,9 +61,6 @@ func LoadConfig(promptPath string) Config {
 		}
 	}
 	message := strings.TrimSpace(os.Getenv("AUTO_PROMPT_MESSAGE"))
-	if message == "" {
-		message = "(system: ユーザーに状況を尋ねてください)"
-	}
 
 	switchCfg := SwitchBotConfig{
 		Token:     os.Getenv("SWITCHBOT_TOKEN"),
