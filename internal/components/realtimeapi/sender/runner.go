@@ -57,7 +57,7 @@ func (r *Runner) Run() {
 func sendSessionUpdate(client Client, cfg SessionConfig) error {
 	session := map[string]any{
 		"instructions": cfg.Instructions,
-		"modalities":   defaultModalities(cfg.Modalities),
+		"modalities":   []string{"text", "audio"},
 		// 音声入力は常に PCM16 を送るためフォーマット指定
 		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
@@ -115,7 +115,10 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			},
 		},
 	}
-	// テキストのみ運用のため output_audio_format と voice は送らない
+	session["output_audio_format"] = "pcm16"
+	if cfg.Voice != "" {
+		session["voice"] = cfg.Voice
+	}
 	if cfg.TranscriptionModel != "" {
 		session["input_audio_transcription"] = map[string]any{
 			"model":    cfg.TranscriptionModel,
@@ -130,10 +133,7 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 }
 
 func defaultModalities(modalities []string) []string {
-	if len(modalities) == 0 {
-		return []string{"text"}
-	}
-	return modalities
+	return []string{"text", "audio"}
 }
 
 func hasAudio(modalities []string) bool {
