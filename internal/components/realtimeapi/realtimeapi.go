@@ -41,6 +41,7 @@ func NewStage(ctx context.Context, cfg Config) (*graph.Stage, error) {
 			Instructions:       cfg.Instructions,
 			Voice:              cfg.Voice,
 			TranscriptionModel: cfg.TranscriptionModel,
+			Modalities:         cfg.Modalities,
 		},
 		receiverOpts: receiver.RunnerOptions{
 			DebugPrintMsgType:  cfg.DebugPrintMsgType,

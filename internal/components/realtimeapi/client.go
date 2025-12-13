@@ -19,6 +19,7 @@ type Config struct {
 	TranscriptionModel string
 	Instructions       string
 	Voice              string
+	Modalities         []string
 	DebugPrintMsgType  bool
 	DebugDumpResponses bool
 }

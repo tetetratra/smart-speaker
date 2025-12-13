@@ -16,6 +16,7 @@ type Client interface {
 type SessionConfig struct {
 	Instructions       string
 	Voice              string
+	Modalities         []string
 	TranscriptionModel string
 }
 
@@ -55,9 +56,8 @@ func (r *Runner) Run() {
 
 func sendSessionUpdate(client Client, cfg SessionConfig) error {
 	session := map[string]any{
-		"instructions":       cfg.Instructions,
-		"modalities":         []string{"text", "audio"},
-		"input_audio_format": "pcm16",
+		"instructions": cfg.Instructions,
+		"modalities":   defaultModalities(cfg.Modalities),
 		"turn_detection": map[string]any{
 			"type":                "server_vad",
 			"threshold":           0.65,
@@ -113,6 +113,10 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			},
 		},
 	}
+	if hasAudio(cfg.Modalities) {
+		session["input_audio_format"] = "pcm16"
+		session["output_audio_format"] = "pcm16"
+	}
 	if cfg.Voice != "" {
 		session["voice"] = cfg.Voice
 	}
@@ -127,4 +131,20 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		"type":    "session.update",
 		"session": session,
 	})
+}
+
+func defaultModalities(modalities []string) []string {
+	if len(modalities) == 0 {
+		return []string{"text"}
+	}
+	return modalities
+}
+
+func hasAudio(modalities []string) bool {
+	for _, m := range modalities {
+		if m == "audio" {
+			return true
+		}
+	}
+	return false
 }
