@@ -47,18 +47,14 @@ func LoadConfig(promptPath string) Config {
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY is not set")
 	}
-
-	model := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_MODEL"))
-	if model == "" {
-		model = "gpt-realtime"
-	}
+	model := "gpt-realtime"
 
 	voice := strings.TrimSpace(os.Getenv("OPENAI_VOICE"))
 	if voice == "" {
 		voice = "marin"
 	}
 
-	transcription := strings.TrimSpace(os.Getenv("OPENAI_TRANSCRIPTION_MODEL"))
+	transcription := "gpt-4o-mini-transcribe"
 	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
 	prompt := readSystemPrompt(promptPath)
 
