@@ -45,11 +45,30 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
 
   toBase64(int16Arr) {
     const buf = new Uint8Array(int16Arr.buffer);
-    let binary = '';
-    for (let i = 0; i < buf.byteLength; i++) {
-      binary += String.fromCharCode(buf[i]);
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let out = '';
+    let i = 0;
+    for (; i + 2 < buf.length; i += 3) {
+      const n = (buf[i] << 16) | (buf[i + 1] << 8) | buf[i + 2];
+      out += chars[(n >> 18) & 63];
+      out += chars[(n >> 12) & 63];
+      out += chars[(n >> 6) & 63];
+      out += chars[n & 63];
     }
-    return btoa(binary);
+    const remaining = buf.length - i;
+    if (remaining === 1) {
+      const n = buf[i] << 16;
+      out += chars[(n >> 18) & 63];
+      out += chars[(n >> 12) & 63];
+      out += '==';
+    } else if (remaining === 2) {
+      const n = (buf[i] << 16) | (buf[i + 1] << 8);
+      out += chars[(n >> 18) & 63];
+      out += chars[(n >> 12) & 63];
+      out += chars[(n >> 6) & 63];
+      out += '=';
+    }
+    return out;
   }
 }
 
