@@ -8,14 +8,13 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
-	"smart-speaker/internal/components/audioplayer"
 	"smart-speaker/internal/components/conversationstarter"
-	"smart-speaker/internal/components/filereader"
-	"smart-speaker/internal/components/micreader"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
 	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
+	"smart-speaker/internal/components/wsinput"
+	"smart-speaker/internal/components/wsoutput"
 	"smart-speaker/internal/graph"
 )
 
@@ -62,9 +61,9 @@ func (s stages) close() {
 }
 
 func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
-	input, err := buildInputStage(cfg)
+	inStage, outStage, err := buildWSStages(cfg)
 	if err != nil {
-		return stages{}, fmt.Errorf("failed to init input stage: %w", err)
+		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
 	text := textinput.NewStage()
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
@@ -77,22 +76,12 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		DebugDumpResponses: cfg.Debug.DumpResponses,
 	})
 	if err != nil {
-		input.Close()
+		inStage.Close()
+		outStage.Close()
 		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
 	}
 	printerStage := printer.NewStage()
 	var starter *graph.Stage
-	playerStage, err := audioplayer.NewStage()
-	if err != nil {
-		input.Close()
-		text.Close()
-		if starter != nil {
-			starter.Close()
-		}
-		realtime.Close()
-		printerStage.Close()
-		return stages{}, fmt.Errorf("failed to init audio player stage: %w", err)
-	}
 	switchBotTool := toolcaller.NewSwitchBotTool(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
 	tools := map[string]toolcaller.Tool{
 		switchBotTool.Name(): switchBotTool,
@@ -102,21 +91,20 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		starter = conversationstarter.NewStage(cfg.AutoPromptInterval, cfg.AutoPromptMessage)
 	}
 	return stages{
-		input:    input,
+		input:    inStage,
 		text:     text,
 		starter:  starter,
 		realtime: realtime,
 		printer:  printerStage,
-		player:   playerStage,
+		player:   outStage,
 		tool:     toolStage,
 	}, nil
 }
 
-func buildInputStage(cfg app.Config) (*graph.Stage, error) {
-	if cfg.InputVoicePath != "" {
-		return filereader.NewStage(cfg.InputVoicePath)
-	}
-	return micreader.NewStage()
+func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
+	in := wsinput.NewStage(cfg.WSAddr)
+	out := wsoutput.NewStage(cfg.WSAddr)
+	return in, out, nil
 }
 
 func wireGraph(g *graph.Graph, st stages) {

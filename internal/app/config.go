@@ -21,6 +21,7 @@ type Config struct {
 	Voice              string
 	SwitchBot          SwitchBotConfig
 	Debug              DebugConfig
+	WSAddr             string
 }
 
 type SwitchBotConfig struct {
@@ -54,6 +55,11 @@ func LoadConfig(promptPath string) Config {
 	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
 	prompt := readSystemPrompt(promptPath)
 
+	wsAddr := strings.TrimSpace(os.Getenv("WS_ADDR"))
+	if wsAddr == "" {
+		wsAddr = ":8081"
+	}
+
 	interval := time.Minute * 10
 	if raw := strings.TrimSpace(os.Getenv("AUTO_PROMPT_INTERVAL")); raw != "" {
 		if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
@@ -78,6 +84,7 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		Voice:              voice,
 		SwitchBot:          switchCfg,
+		WSAddr:             wsAddr,
 		Debug: DebugConfig{
 			PrintMsgType:  envBool("SMART_SPEAKER_DEBUG_PRINT_MSG_TYPE"),
 			DumpResponses: envBool("SMART_SPEAKER_DEBUG_DUMP_RESPONSES"),
