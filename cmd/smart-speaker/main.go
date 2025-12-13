@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"smart-speaker/internal/app"
@@ -102,8 +104,14 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 }
 
 func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
-	in := wsinput.NewStage(cfg.WSAddr)
-	out := wsoutput.NewStage(cfg.WSAddr)
+	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:    cfg.WSAddr,
+		Handler: mux,
+	}
+	clients := &sync.Map{}
+	in := wsinput.NewStage(server, mux, clients)
+	out := wsoutput.NewStage(clients)
 	return in, out, nil
 }
 

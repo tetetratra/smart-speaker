@@ -18,6 +18,7 @@ import (
 type WSInput struct {
 	downstream chan types.Event
 	server     *http.Server
+	clients    *sync.Map
 	once       sync.Once
 }
 
@@ -29,16 +30,13 @@ type Message struct {
 }
 
 // NewStage は指定アドレスで WS サーバーを立て、受信音声を downstream に流す Stage を返す。
-func NewStage(addr string) *graph.Stage {
+func NewStage(server *http.Server, mux *http.ServeMux, clients *sync.Map) *graph.Stage {
 	w := &WSInput{
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		server:     server,
+		clients:    clients,
 	}
-	mux := http.NewServeMux()
 	mux.HandleFunc("/ws/audio", w.handleWS)
-	w.server = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
 	return &graph.Stage{
 		Downstream: w.downstream,
 		Run:        w.run,
@@ -61,6 +59,13 @@ func (w *WSInput) close() error {
 		if w.server != nil {
 			err = w.server.Close()
 		}
+		if w.clients != nil {
+			w.clients.Range(func(key, _ any) bool {
+				conn := key.(*websocket.Conn)
+				conn.Close(websocket.StatusNormalClosure, "bye")
+				return true
+			})
+		}
 	})
 	return err
 }
@@ -73,7 +78,9 @@ func (w *WSInput) handleWS(rw http.ResponseWriter, r *http.Request) {
 		log.Printf("ws accept error: %v", err)
 		return
 	}
+	w.clients.Store(c, struct{}{})
 	defer c.Close(websocket.StatusNormalClosure, "bye")
+	defer w.clients.Delete(c)
 
 	for {
 		_, data, err := c.Read(r.Context())
