@@ -19,7 +19,6 @@ type Config struct {
 	AutoPromptInterval time.Duration
 	AutoPromptMessage  string
 	Voice              string
-	Modalities         []string
 	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
 	Debug              DebugConfig
@@ -58,8 +57,6 @@ func LoadConfig(promptPath string) Config {
 	if voice == "" {
 		voice = "marin"
 	}
-
-	modalities := parseModalities(os.Getenv("OPENAI_MODALITIES"))
 
 	transcription := strings.TrimSpace(os.Getenv("OPENAI_TRANSCRIPTION_MODEL"))
 	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
@@ -102,10 +99,10 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptInterval: interval,
 		AutoPromptMessage:  message,
 		Voice:              voice,
-		Modalities:         modalities,
-		ElevenLabs:         elv,
-		SwitchBot:          switchCfg,
-		WSAddr:             wsAddr,
+		// モダリティはデフォルトで text のみ。変更したい場合はコード側で書き換える。
+		ElevenLabs: elv,
+		SwitchBot:  switchCfg,
+		WSAddr:     wsAddr,
 		Debug: DebugConfig{
 			PrintMsgType:  envBool("SMART_SPEAKER_DEBUG_PRINT_MSG_TYPE"),
 			DumpResponses: envBool("SMART_SPEAKER_DEBUG_DUMP_RESPONSES"),
@@ -124,31 +121,6 @@ func envBool(name string) bool {
 	default:
 		return false
 	}
-}
-
-func parseModalities(raw string) []string {
-	// デフォルトはテキストのみ
-	if strings.TrimSpace(raw) == "" {
-		return []string{"text"}
-	}
-	parts := strings.Split(raw, ",")
-	var out []string
-	seen := make(map[string]struct{})
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		out = append(out, p)
-	}
-	if len(out) == 0 {
-		return []string{"text"}
-	}
-	return out
 }
 
 func readSystemPrompt(path string) string {

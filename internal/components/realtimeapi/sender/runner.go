@@ -58,6 +58,8 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 	session := map[string]any{
 		"instructions": cfg.Instructions,
 		"modalities":   defaultModalities(cfg.Modalities),
+		// 音声入力は常に PCM16 を送るためフォーマット指定
+		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
 			"type":                "server_vad",
 			"threshold":           0.65,
@@ -114,7 +116,6 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		},
 	}
 	if hasAudio(cfg.Modalities) {
-		session["input_audio_format"] = "pcm16"
 		session["output_audio_format"] = "pcm16"
 	}
 	if cfg.Voice != "" {

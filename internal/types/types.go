@@ -5,8 +5,10 @@ type AudioChunk string
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
-	Role string
-	Text string
+	Role       string
+	Text       string
+	ResponseID string
+	Final      bool
 }
 
 // OutputAudio represents an assistant audio response chunk.

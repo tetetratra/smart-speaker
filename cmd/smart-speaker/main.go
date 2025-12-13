@@ -69,18 +69,15 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
-	var ttsStage *graph.Stage
-	if !hasAudioModality(cfg.Modalities) {
-		ttsStage, err = tts.NewStage(tts.Config{
-			APIKey: cfg.ElevenLabs.APIKey,
-			Voice:  cfg.ElevenLabs.VoiceID,
-			Model:  cfg.ElevenLabs.Model,
-		})
-		if err != nil {
-			inStage.Close()
-			outStage.Close()
-			return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
-		}
+	ttsStage, err := tts.NewStage(tts.Config{
+		APIKey: cfg.ElevenLabs.APIKey,
+		Voice:  cfg.ElevenLabs.VoiceID,
+		Model:  cfg.ElevenLabs.Model,
+	})
+	if err != nil {
+		inStage.Close()
+		outStage.Close()
+		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
 	text := textinput.NewStage()
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
@@ -89,7 +86,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		TranscriptionModel: cfg.TranscriptionModel,
 		Instructions:       cfg.SystemPrompt,
 		Voice:              cfg.Voice,
-		Modalities:         cfg.Modalities,
+		Modalities:         []string{"text"}, // 必要ならコードで書き換える
 		DebugPrintMsgType:  cfg.Debug.PrintMsgType,
 		DebugDumpResponses: cfg.Debug.DumpResponses,
 	})
@@ -159,16 +156,10 @@ func wireGraph(g *graph.Graph, st stages) {
 	if node := add(st.printer); node != nil {
 		g.Connect(realtimeNode, node)
 	}
-	if st.tts != nil {
-		if node := add(st.tts); node != nil {
-			g.Connect(realtimeNode, node)
-			if player := add(st.player); player != nil {
-				g.Connect(node, player)
-			}
-		}
-	} else {
-		if node := add(st.player); node != nil {
-			g.Connect(realtimeNode, node)
+	if node := add(st.tts); node != nil {
+		g.Connect(realtimeNode, node)
+		if player := add(st.player); player != nil {
+			g.Connect(node, player)
 		}
 	}
 	if node := add(st.tool); node != nil {
@@ -176,13 +167,4 @@ func wireGraph(g *graph.Graph, st stages) {
 		g.Connect(realtimeNode, toolNode)
 		g.Connect(toolNode, realtimeNode)
 	}
-}
-
-func hasAudioModality(modalities []string) bool {
-	for _, m := range modalities {
-		if m == "audio" {
-			return true
-		}
-	}
-	return false
 }

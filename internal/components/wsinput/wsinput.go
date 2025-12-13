@@ -101,8 +101,8 @@ func (w *WSInput) handleWS(rw http.ResponseWriter, r *http.Request) {
 		evt := types.Event{Kind: types.EventAudioChunk, Payload: types.AudioChunk(msg.Audio)}
 		select {
 		case w.downstream <- evt:
-		default:
-			log.Printf("wsinput: downstream buffer full, dropping chunk")
+		case <-r.Context().Done():
+			return
 		}
 	}
 }

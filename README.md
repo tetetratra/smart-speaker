@@ -7,9 +7,8 @@
 
 ## 環境変数
 - `OPENAI_API_KEY`（必須）
-- `OPENAI_MODALITIES`（任意。デフォルトは `text` で音声出力なし。音声も返す場合は `text,audio`）
-- `OPENAI_VOICE`（音声モードのときのみ有効）
-- `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（必須: ElevenLabs TTS を使う場合、デフォルトでテキストのみなので要設定）
+- `OPENAI_VOICE`（音声モードを使う場合のみ）
+- `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
 - SwitchBot を使う場合: `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` / `SWITCHBOT_DEVICE_MAP`
@@ -18,10 +17,7 @@
 ```sh
 go run ./cmd/smart-speaker
 ```
-デフォルトで `WS_ADDR=:8081` で `/ws/audio` を開きます。
-- `OPENAI_MODALITIES=text`（デフォルト）の場合: OpenAI からテキストのみ受信し、ElevenLabs TTS で音声生成→ `audio.play` で返送  
-  （`ELEVENLABS_API_KEY` と `ELEVENLABS_VOICE_ID` が未設定なら起動時にエラー）
-- `OPENAI_MODALITIES=text,audio` の場合: OpenAI の音声出力をそのまま `audio.play` で返送
+デフォルトで `WS_ADDR=:8081` で `/ws/audio` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ `audio.play` で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
 
 ## フロント（Web）開発
 初回のみ依存インストール:
