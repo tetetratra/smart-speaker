@@ -5,6 +5,8 @@ export interface AudioSender {
   stop: () => void
 }
 
+const SAMPLE_RATE = 24000
+
 export interface AudioReceiver {
   play: (b64pcm: string) => void
 }
@@ -51,15 +53,18 @@ export async function createAudioSender(onChunk: (audio: string) => void): Promi
 
 export function createAudioReceiver(): AudioReceiver {
   const ctx = new AudioContext()
+  let playhead = 0
   return {
     play: (b64pcm: string) => {
       try {
         const pcm = base64ToInt16(b64pcm)
-        const audioBuf = int16ToAudioBuffer(ctx, pcm, 16000)
+        const audioBuf = int16ToAudioBuffer(ctx, pcm, SAMPLE_RATE)
         const src = ctx.createBufferSource()
         src.buffer = audioBuf
         src.connect(ctx.destination)
-        src.start()
+        const startAt = Math.max(ctx.currentTime, playhead)
+        src.start(startAt)
+        playhead = startAt + audioBuf.duration
       } catch (e) {
         log('audio play error: ' + (e as any)?.message)
       }

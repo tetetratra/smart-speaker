@@ -2,11 +2,11 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buffer = [];
-    this.sampleRate = 16000; // target
+    this.sampleRate = 24000; // target sample rate to match Realtime API output
     this.accumulated = [];
   }
 
-  // resample to 16k by simple downsample (assumes input <= 48k)
+  // resample to target rate by simple downsample (assumes input <= 48k)
   downsample(input, inRate, outRate) {
     if (inRate === outRate) return input;
     const ratio = inRate / outRate;
@@ -26,10 +26,10 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
     const channelData = input[0]; // mono
     const inRate = sampleRate; // AudioWorklet global
     const pcm16 = this.downsample(channelData, inRate, this.sampleRate);
-    // accumulate ~300ms chunks: 16kHz * 0.3s = 4800 samples
+    // accumulate ~300ms chunks: 24kHz * 0.3s = 7200 samples
     this.accumulated.push(pcm16);
     const total = this.accumulated.reduce((acc, a) => acc + a.length, 0);
-    if (total >= 4800) {
+    if (total >= 7200) {
       const merged = new Int16Array(total);
       let offset = 0;
       for (const part of this.accumulated) {
