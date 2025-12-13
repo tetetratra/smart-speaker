@@ -20,6 +20,7 @@ type Config struct {
 	AutoPromptMessage  string
 	Voice              string
 	Modalities         []string
+	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
 	Debug              DebugConfig
 	WSAddr             string
@@ -29,6 +30,12 @@ type SwitchBotConfig struct {
 	Token     string
 	Secret    string
 	DeviceMap string
+}
+
+type ElevenLabsConfig struct {
+	APIKey  string
+	VoiceID string
+	Model   string
 }
 
 type DebugConfig struct {
@@ -77,6 +84,15 @@ func LoadConfig(promptPath string) Config {
 		DeviceMap: os.Getenv("SWITCHBOT_DEVICE_MAP"),
 	}
 
+	elv := ElevenLabsConfig{
+		APIKey:  strings.TrimSpace(os.Getenv("ELEVENLABS_API_KEY")),
+		VoiceID: strings.TrimSpace(os.Getenv("ELEVENLABS_VOICE_ID")),
+		Model:   strings.TrimSpace(os.Getenv("ELEVENLABS_MODEL_ID")),
+	}
+	if elv.Model == "" {
+		elv.Model = "eleven_multilingual_v2"
+	}
+
 	return Config{
 		APIKey:             apiKey,
 		Model:              model,
@@ -87,6 +103,7 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		Voice:              voice,
 		Modalities:         modalities,
+		ElevenLabs:         elv,
 		SwitchBot:          switchCfg,
 		WSAddr:             wsAddr,
 		Debug: DebugConfig{

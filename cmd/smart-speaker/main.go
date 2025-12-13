@@ -15,6 +15,7 @@ import (
 	"smart-speaker/internal/components/realtimeapi"
 	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
+	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wsinput"
 	"smart-speaker/internal/components/wsoutput"
 	"smart-speaker/internal/graph"
@@ -51,11 +52,12 @@ type stages struct {
 	realtime *graph.Stage
 	printer  *graph.Stage
 	player   *graph.Stage
+	tts      *graph.Stage
 	tool     *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tts, s.tool} {
 		if st != nil {
 			st.Close()
 		}
@@ -66,6 +68,19 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	inStage, outStage, err := buildWSStages(cfg)
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
+	}
+	var ttsStage *graph.Stage
+	if !hasAudioModality(cfg.Modalities) {
+		ttsStage, err = tts.NewStage(tts.Config{
+			APIKey: cfg.ElevenLabs.APIKey,
+			Voice:  cfg.ElevenLabs.VoiceID,
+			Model:  cfg.ElevenLabs.Model,
+		})
+		if err != nil {
+			inStage.Close()
+			outStage.Close()
+			return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
+		}
 	}
 	text := textinput.NewStage()
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
@@ -81,6 +96,9 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	if err != nil {
 		inStage.Close()
 		outStage.Close()
+		if ttsStage != nil {
+			ttsStage.Close()
+		}
 		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
 	}
 	printerStage := printer.NewStage()
@@ -100,6 +118,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		realtime: realtime,
 		printer:  printerStage,
 		player:   outStage,
+		tts:      ttsStage,
 		tool:     toolStage,
 	}, nil
 }
@@ -140,12 +159,30 @@ func wireGraph(g *graph.Graph, st stages) {
 	if node := add(st.printer); node != nil {
 		g.Connect(realtimeNode, node)
 	}
-	if node := add(st.player); node != nil {
-		g.Connect(realtimeNode, node)
+	if st.tts != nil {
+		if node := add(st.tts); node != nil {
+			g.Connect(realtimeNode, node)
+			if player := add(st.player); player != nil {
+				g.Connect(node, player)
+			}
+		}
+	} else {
+		if node := add(st.player); node != nil {
+			g.Connect(realtimeNode, node)
+		}
 	}
 	if node := add(st.tool); node != nil {
 		toolNode := node
 		g.Connect(realtimeNode, toolNode)
 		g.Connect(toolNode, realtimeNode)
 	}
+}
+
+func hasAudioModality(modalities []string) bool {
+	for _, m := range modalities {
+		if m == "audio" {
+			return true
+		}
+	}
+	return false
 }

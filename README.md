@@ -7,6 +7,10 @@
 
 ## 環境変数
 - `OPENAI_API_KEY`（必須）
+- `OPENAI_MODALITIES`（任意。デフォルトは `text` で音声出力なし。音声も返す場合は `text,audio`）
+- `OPENAI_VOICE`（音声モードのときのみ有効）
+- `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（必須: ElevenLabs TTS を使う場合、デフォルトでテキストのみなので要設定）
+- `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
 - SwitchBot を使う場合: `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` / `SWITCHBOT_DEVICE_MAP`
 
@@ -14,7 +18,10 @@
 ```sh
 go run ./cmd/smart-speaker
 ```
-デフォルトで `WS_ADDR=:8081` で `/ws/audio` を開き、ブラウザからの音声送信 `audio.append` を受け取り、`audio.play` を送信します。
+デフォルトで `WS_ADDR=:8081` で `/ws/audio` を開きます。
+- `OPENAI_MODALITIES=text`（デフォルト）の場合: OpenAI からテキストのみ受信し、ElevenLabs TTS で音声生成→ `audio.play` で返送  
+  （`ELEVENLABS_API_KEY` と `ELEVENLABS_VOICE_ID` が未設定なら起動時にエラー）
+- `OPENAI_MODALITIES=text,audio` の場合: OpenAI の音声出力をそのまま `audio.play` で返送
 
 ## フロント（Web）開発
 初回のみ依存インストール:
@@ -26,12 +33,12 @@ npm install
 npm run dev
 ```
 ブラウザで `http://localhost:5173/` を開いて接続します。  
-ブラウザは Web Audio + AudioWorklet でマイクを取得（`echoCancellation: true`）し、PCM16(16kHz) を WS `audio.append` で送信します。受信した `audio.play` を再生します。
+ブラウザは Web Audio + AudioWorklet でマイクを取得（`echoCancellation: true`）し、PCM16(24kHz) を WS `audio.append` で送信します。受信した `audio.play`（24kHz PCM16）を再生します。
 
 ## WebSocket プロトコル
 - エンドポイント: `ws://<WS_ADDR>/ws/audio` （デフォルト `ws://localhost:8081/ws/audio`）
-- 送信（ブラウザ→サーバー）: `{"type":"audio.append","audio":"<base64 pcm16>"}`  
-  チャンクは約300ms、16kHz/mono/PCM16 を想定
+- 送信（ブラウザ→サーバー）: `{"type":"audio.append","audio":"<base64 pcm16>"}`
+  チャンクは約300ms、24kHz/mono/PCM16 を想定
 - 受信（サーバー→ブラウザ）: `{"type":"audio.play","audio":"<base64 pcm16>","role":"assistant"}` を再生
 
 ## 備考

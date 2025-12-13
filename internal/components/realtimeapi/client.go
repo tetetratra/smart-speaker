@@ -22,6 +22,13 @@ type Config struct {
 	Modalities         []string
 	DebugPrintMsgType  bool
 	DebugDumpResponses bool
+	ElevenLabs         ElevenLabsConfig
+}
+
+type ElevenLabsConfig struct {
+	APIKey  string
+	VoiceID string
+	Model   string
 }
 
 // OpenAI Realtime API への同期的なアクセスをまとめる
