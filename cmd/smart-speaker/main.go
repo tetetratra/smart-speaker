@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"smart-speaker/internal/app"
@@ -39,6 +38,9 @@ func main() {
 	defer g.Close()
 
 	wireGraph(g, stages)
+
+	log.Printf("wsinput downstream nil? %v", stages.input.Downstream == nil)
+	log.Printf("realtime upstream nil? %v", stages.realtime.Upstream == nil)
 
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
@@ -126,9 +128,8 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	clients := &sync.Map{}
-	in := wsinput.NewStage(server, mux, clients)
-	out := wsoutput.NewStage(clients)
+	in := wsinput.NewStage(server, mux)
+	out := wsoutput.NewStage()
 	return in, out, nil
 }
 

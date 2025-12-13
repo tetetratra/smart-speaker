@@ -14,7 +14,7 @@ import (
 // WSOutput は EventRealtimeAudio を WebSocket クライアントに送り出す。
 type WSOutput struct {
 	upstream chan types.Event
-	clients  *sync.Map // map[*websocket.Conn]struct{}
+	conn     *websocket.Conn
 	once     sync.Once
 }
 
@@ -24,11 +24,10 @@ type OutMessage struct {
 	Role  string `json:"role,omitempty"`
 }
 
-// NewStage は指定アドレスで WS サーバーを立て、EventRealtimeAudio をクライアントへ送信する Stage を返す。
-func NewStage(clients *sync.Map) *graph.Stage {
+// NewStage は EventRealtimeAudio をクライアントへ送信する Stage を返す。
+func NewStage() *graph.Stage {
 	w := &WSOutput{
 		upstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		clients:  clients,
 	}
 	return &graph.Stage{
 		Upstream: w.upstream,
@@ -63,11 +62,9 @@ func (w *WSOutput) consume(ctx context.Context) {
 				Role:  audio.Role,
 			}
 			data, _ := json.Marshal(msg)
-			w.clients.Range(func(key, _ any) bool {
-				conn := key.(*websocket.Conn)
-				conn.Write(ctx, websocket.MessageText, data)
-				return true
-			})
+			if w.conn != nil {
+				w.conn.Write(ctx, websocket.MessageText, data)
+			}
 		}
 	}
 }
@@ -76,12 +73,9 @@ func (w *WSOutput) close() error {
 	var err error
 	w.once.Do(func() {
 		close(w.upstream)
-		if w.clients != nil {
-			w.clients.Range(func(key, _ any) bool {
-				conn := key.(*websocket.Conn)
-				conn.Close(websocket.StatusNormalClosure, "bye")
-				return true
-			})
+		if w.conn != nil {
+			w.conn.Close(websocket.StatusNormalClosure, "bye")
+			w.conn = nil
 		}
 	})
 	return err

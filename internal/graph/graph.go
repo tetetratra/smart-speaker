@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 
 	types "smart-speaker/internal/types"
@@ -42,6 +43,7 @@ func (g *Graph) Connect(from, to *Node) {
 
 // Run は各エッジごとに goroutine を起動し、Stage 間のチャネル転送を行う。
 func (g *Graph) Run(ctx context.Context) error {
+	log.Printf("graph nodes=%d edges=%d", len(g.nodes), len(g.edges))
 	adj := make(map[*Node][]*Stage, len(g.nodes))
 	for _, edge := range g.edges {
 		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
@@ -57,6 +59,7 @@ func (g *Graph) Run(ctx context.Context) error {
 		out := (<-chan types.Event)(node.Stage.Downstream)
 		wg.Add(1)
 		go func(out <-chan types.Event, downstreams []*Stage) {
+			log.Printf("graph pump start from %p to %d downstreams", out, len(downstreams))
 			defer wg.Done()
 			for {
 				select {
@@ -65,6 +68,10 @@ func (g *Graph) Run(ctx context.Context) error {
 				case val, ok := <-out:
 					if !ok {
 						return
+					}
+					// Debug: forward log
+					for _, dst := range downstreams {
+						log.Printf("graph forward %T -> %T", val, dst.Upstream)
 					}
 					for _, dst := range downstreams {
 						in := (chan<- types.Event)(dst.Upstream)

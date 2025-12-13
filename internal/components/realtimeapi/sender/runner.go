@@ -38,6 +38,7 @@ func NewRunner(ctx context.Context, client Client, upstream <-chan types.Event, 
 }
 
 func (r *Runner) Run() {
+	log.Printf("realtime sender started")
 	if err := sendSessionUpdate(r.handler.client, r.sessionInfo); err != nil {
 		log.Printf("realtime session update error: %v", err)
 	}
