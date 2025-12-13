@@ -98,6 +98,7 @@ func (w *WSInput) handleWS(rw http.ResponseWriter, r *http.Request) {
 		if msg.Type != "audio.append" || msg.Audio == "" {
 			continue
 		}
+		log.Printf("wsinput recv len=%d", len(msg.Audio))
 		evt := types.Event{Kind: types.EventAudioChunk, Payload: types.AudioChunk(msg.Audio)}
 		select {
 		case w.downstream <- evt:
