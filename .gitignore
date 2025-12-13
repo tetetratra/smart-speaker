@@ -3,3 +3,5 @@ tmp
 AGENTS.md
 system_prompt.txt
 smart-speaker
+node_modules
+package-lock.json
