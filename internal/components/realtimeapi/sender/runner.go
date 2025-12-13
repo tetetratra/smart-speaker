@@ -115,12 +115,7 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			},
 		},
 	}
-	if hasAudio(cfg.Modalities) {
-		session["output_audio_format"] = "pcm16"
-	}
-	if cfg.Voice != "" {
-		session["voice"] = cfg.Voice
-	}
+	// テキストのみ運用のため output_audio_format と voice は送らない
 	if cfg.TranscriptionModel != "" {
 		session["input_audio_transcription"] = map[string]any{
 			"model":    cfg.TranscriptionModel,
