@@ -41,6 +41,7 @@ func (h *EventHandler) handleAudioChunk(payload any) {
 		"type":  "input_audio_buffer.append",
 		"audio": string(chunk),
 	}
+	log.Printf("realtime send append len=%d", len(chunk))
 	if err := h.client.Send(msg); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
