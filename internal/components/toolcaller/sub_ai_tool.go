@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
-// SubAITool sends a query to a regular ChatCompletion and returns the text answer.
-// 実際のWeb検索は行わず、通常モデルでの深い思考/回答を返す。
+// SubAITool は Responses API + Web Search を使って調査・要約するツール。
 type SubAITool struct {
 	apiKey string
 	client *http.Client
@@ -46,27 +47,22 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("query must be a non-empty string")
 	}
 
-	content := "あなたは調査・要約エージェントです。\n" +
-		"- 回答に時間をかけすぎないでください\n" +
-		"- 必要ならインターネット検索を行い、最新で正確な情報を提供してください\n" +
-		"- 出力は簡潔にしてください"
+	content := `あなたは調査・要約エージェントです。
+- 回答に時間をかけすぎないでください
+- 必要ならインターネット検索を行い、最新で正確な情報を提供してください
+- 多くても3文以内にまとめてください
+- [重要] 音声で再生されることを意識して、構造化せず、改行も入れず、URL等も出力せずに説明してください`
 
 	reqBody := map[string]any{
-		"model": "gpt-4o-mini",
-		"messages": []map[string]any{
-			{
-				"role":    "system",
-				"content": content,
-			},
-			{
-				"role":    "user",
-				"content": query,
-			},
+		"model": "gpt-4.1",
+		"input": []map[string]any{
+			{"role": "system", "content": content},
+			{"role": "user", "content": query},
 		},
-		"temperature": 0.2,
-		"max_tokens":  400,
-		"top_p":       1,
-		"stream":      false,
+		"tools":             []map[string]any{{"type": "web_search"}},
+		"temperature":       0.2,
+		"max_output_tokens": 400,
+		"stream":            false,
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -74,7 +70,7 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/responses", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -87,41 +83,51 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai chat completion failed: %s", resp.Status)
+		msg, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("openai responses failed: %s: %s", resp.Status, string(msg))
 	}
-	var parsed struct {
-		Choices []struct {
-			Message struct {
-				Content any `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
+
+	var parsed map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return nil, err
 	}
-	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("openai chat completion returned no choices")
-	}
 
-	extract := func(v any) string {
-		switch val := v.(type) {
-		case string:
-			return val
-		case []any:
-			var buf bytes.Buffer
-			for _, part := range val {
-				if m, ok := part.(map[string]any); ok {
-					if s, ok := m["text"].(string); ok {
+	answer := extractResponseText(parsed)
+	if answer == "" {
+		return nil, fmt.Errorf("openai responses returned empty output")
+	}
+	return map[string]any{"answer": answer}, nil
+}
+
+// extractResponseText は Responses API の出力からテキストを抽出する。
+func extractResponseText(parsed map[string]any) string {
+	out, ok := parsed["output"].([]any)
+	if !ok {
+		return ""
+	}
+	var buf strings.Builder
+	for _, item := range out {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch m["type"] {
+		case "output_text":
+			if s, ok := m["text"].(string); ok {
+				buf.WriteString(s)
+			}
+		case "message":
+			contents, _ := m["content"].([]any)
+			for _, c := range contents {
+				if cm, ok := c.(map[string]any); ok {
+					if s, ok := cm["text"].(string); ok {
+						buf.WriteString(s)
+					} else if s, ok := cm["output_text"].(string); ok {
 						buf.WriteString(s)
 					}
 				}
 			}
-			return buf.String()
-		default:
-			return fmt.Sprint(v)
 		}
 	}
-
-	answer := extract(parsed.Choices[0].Message.Content)
-	return map[string]any{"answer": answer}, nil
+	return strings.TrimSpace(buf.String())
 }
