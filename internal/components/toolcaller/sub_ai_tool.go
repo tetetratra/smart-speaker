@@ -58,10 +58,10 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 				"content": query,
 			},
 		},
-		"temperature":       0.2,
-		"max_output_tokens": 400,
-		"top_p":             1,
-		"stream":            false,
+		"temperature": 0.2,
+		"max_tokens":  400,
+		"top_p":       1,
+		"stream":      false,
 	}
 
 	body, _ := json.Marshal(reqBody)
