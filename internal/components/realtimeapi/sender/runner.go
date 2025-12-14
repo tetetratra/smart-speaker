@@ -56,10 +56,9 @@ func (r *Runner) Run() {
 }
 
 func sendSessionUpdate(client Client, cfg SessionConfig) error {
-	modalities := defaultModalities(cfg.Modalities)
 	session := map[string]any{
 		"instructions": cfg.Instructions,
-		"modalities":   modalities,
+		"modalities":   []string{"text"},
 		// 音声入力は常に PCM16 を送るためフォーマット指定
 		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
@@ -132,18 +131,4 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		"type":    "session.update",
 		"session": session,
 	})
-}
-
-func defaultModalities(modalities []string) []string {
-	// return []string{"text", "audio"}
-	return []string{"text"}
-}
-
-func hasAudio(modalities []string) bool {
-	for _, m := range modalities {
-		if m == "audio" {
-			return true
-		}
-	}
-	return false
 }
