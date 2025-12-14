@@ -4,7 +4,7 @@ import { createAudioReceiver, createAudioSender } from './audio'
 import { createWS } from './ws'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'assistant'; text: string; responseId?: string; final?: boolean }
+  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean }
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
@@ -39,8 +39,9 @@ function App() {
         case 'message': {
           const text = typeof raw.text === 'string' ? raw.text : ''
           if (!text) return
-          let role: 'user' | 'assistant' = 'assistant'
+          let role: 'user' | 'assistant' | 'system' = 'assistant'
           if (raw.role === 'user') role = 'user'
+          else if (raw.role === 'system') role = 'system'
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({ id: nextId(), type: role, text: displayText, responseId: raw.response_id, final: raw.final })
           break
@@ -171,8 +172,15 @@ function App() {
               </div>
             )
           }
-          const color = m.type === 'user' ? '#2563eb' : '#16a34a'
-          const label = m.type === 'user' ? 'User' : 'Assistant'
+          let color = '#16a34a'
+          let label = 'Assistant'
+          if (m.type === 'user') {
+            color = '#2563eb'
+            label = 'User'
+          } else if (m.type === 'system') {
+            color = '#6b7280'
+            label = 'System'
+          }
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
               <strong style={{ color }}>{label}</strong>
