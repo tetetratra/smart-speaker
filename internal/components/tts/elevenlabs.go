@@ -31,6 +31,7 @@ type VoiceSettings struct {
 	Stability       float64
 	SimilarityBoost float64
 	Style           float64
+	Speed           float64
 	UseSpeakerBoost *bool
 }
 
@@ -261,8 +262,9 @@ func (t *streamTTS) close() error {
 func (t *streamTTS) buildVoiceSettings() map[string]any {
 	// デフォルト値（ハードコード）
 	defaultVS := VoiceSettings{
-		Stability:       0.5,
-		SimilarityBoost: 0.75,
+		Stability:       0.7,
+		SimilarityBoost: 0.5,
+		Speed:           0.8,
 		UseSpeakerBoost: ptrBool(false),
 	}
 
@@ -277,6 +279,9 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 		if t.cfg.VoiceSettings.Style != 0 {
 			vs.Style = t.cfg.VoiceSettings.Style
 		}
+		if t.cfg.VoiceSettings.Speed != 0 {
+			vs.Speed = t.cfg.VoiceSettings.Speed
+		}
 		if t.cfg.VoiceSettings.UseSpeakerBoost != nil {
 			vs.UseSpeakerBoost = t.cfg.VoiceSettings.UseSpeakerBoost
 		}
@@ -288,6 +293,9 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	}
 	if vs.Style != 0 {
 		settings["style"] = vs.Style
+	}
+	if vs.Speed != 0 {
+		settings["speed"] = vs.Speed
 	}
 	if vs.UseSpeakerBoost != nil {
 		settings["use_speaker_boost"] = *vs.UseSpeakerBoost
