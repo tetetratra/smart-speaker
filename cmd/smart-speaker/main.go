@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/conversationstarter"
