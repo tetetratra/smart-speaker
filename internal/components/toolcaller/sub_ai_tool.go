@@ -51,7 +51,7 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 		"messages": []map[string]any{
 			{
 				"role":    "system",
-				"content": "あなたは調査・要約エージェントです。外部検索は行わず、既存知識と論理で簡潔に答えてください。",
+				"content": "あなたは調査・要約エージェントです。回答に時間をかけすぎず、必要ならインターネット検索を行い最新で正確な情報を簡潔に答えてください。",
 			},
 			{
 				"role":    "user",
