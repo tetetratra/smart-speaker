@@ -38,9 +38,6 @@ func NewStage(tools map[string]Tool) *graph.Stage {
 	if tools == nil {
 		tools = map[string]Tool{}
 	}
-	if _, ok := tools["web_fetch"]; !ok {
-		tools["web_fetch"] = NewWebFetchTool()
-	}
 	if _, ok := tools["sub_ai"]; !ok {
 		if ws := NewSubAITool(os.Getenv("OPENAI_API_KEY")); ws != nil {
 			tools[ws.Name()] = ws
