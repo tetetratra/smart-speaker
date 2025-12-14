@@ -37,6 +37,41 @@ npm run dev
   チャンクは約300ms、24kHz/mono/PCM16 を想定
 - 受信（サーバー→ブラウザ）: `{"type":"audio.play","audio":"<base64 pcm16>","role":"assistant"}` を再生
 
+## 構成図（ステージ接続）
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    mic[Mic AudioWorklet\nPCM16] --> wsA[WS /ws/audio]
+    wsA --> spk[Audio play]
+    wsChat[WS /ws/chat] --> ui[React UI\nチャット表示]
+  end
+
+  subgraph Go Server
+    wsIn[ws_input\n/ws/audio] --> rt[realtimeapi\nOpenAI Realtime]
+    text[textinput] --> rt
+    starter[conversationstarter\nsystem prompt] --> rt
+    starter --> chat[ws_chat\n/ws/chat]
+    rt --> printer[printer\nログのみ]
+    rt <-->\n tool[toolcaller]
+    rt --> tts[TTS\nElevenLabs stream-input]
+    tts --> wsOut[ws_output\n/ws/audio]
+    rt --> chat
+    tool --> chat
+  end
+
+  wsOut --> wsA
+  wsChat <-- chat
+```
+
+### チャット用 WebSocket
+- エンドポイント: `ws://<WS_ADDR>/ws/chat`
+- 配信内容（例）:
+  - 人間/AI/System: `{"type":"message","role":"user|assistant|system","text":"...","response_id":"...","final":false}`
+  - Function Call: `{"type":"function_call","tool_call_id":"...","name":"...","arguments":{...}}`
+  - Function Result: `{"type":"function_result","tool_call_id":"...","output":{...}}`
+  - conversationstarter 由来の system 文言も `type: "message", role: "system"` として流れます
+
 ## 備考
 - 旧 PortAudio ベースのマイク/再生は WS 入出力に置き換え済みです
 - ハウリング対策は getUserMedia の `echoCancellation` ほかブラウザ/OS の AEC を利用します（マイクの AudioContext.destination への接続はしない実装です）
