@@ -16,6 +16,7 @@ function App() {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const idRef = useRef(0)
+  const chatRef = useRef<HTMLDivElement | null>(null)
 
   const receiver = useMemo(() => createAudioReceiver(), [])
 
@@ -118,6 +119,13 @@ function App() {
     }
   }, [disconnect])
 
+  useEffect(() => {
+    const el = chatRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [messages])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <h1>WS Audio Client</h1>
@@ -139,6 +147,7 @@ function App() {
           overflowY: 'auto',
           background: '#fafafa',
         }}
+        ref={chatRef}
       >
         {messages.map((m) => {
           if (m.type === 'function_call') {
