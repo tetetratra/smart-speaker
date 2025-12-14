@@ -101,17 +101,17 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			},
 			map[string]any{
 				"type":        "function",
-				"name":        "web_fetch",
-				"description": "指定した URL にアクセスし、ステータスコードと本文を返します。",
+				"name":        "sub_ai",
+				"description": "任意の文字列クエリを受け取り、サブAIに投げて調査・回答を得ます。",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"url": map[string]any{
+						"query": map[string]any{
 							"type":        "string",
-							"description": "HTTP GET する URL",
+							"description": "サブAIに渡す質問や調査依頼のテキスト",
 						},
 					},
-					"required": []string{"url"},
+					"required": []string{"query"},
 				},
 			},
 		},
