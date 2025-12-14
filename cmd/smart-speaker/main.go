@@ -177,5 +177,8 @@ func wireGraph(g *graph.Graph, st stages) {
 		if toolNode != nil {
 			g.Connect(toolNode, node)
 		}
+		if starterNode := add(st.starter); starterNode != nil {
+			g.Connect(starterNode, node)
+		}
 	}
 }

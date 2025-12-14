@@ -97,6 +97,16 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"response_id": line.ResponseID,
 			"final":       line.Final,
 		}
+	case types.EventTextInput:
+		line, ok := evt.Payload.(types.OutputLine)
+		if !ok {
+			return
+		}
+		msg = map[string]any{
+			"type": "message",
+			"role": line.Role,
+			"text": line.Text,
+		}
 	case types.EventToolRequest:
 		req, ok := evt.Payload.(types.ToolRequest)
 		if !ok {

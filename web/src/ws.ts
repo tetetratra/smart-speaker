@@ -1,5 +1,3 @@
-import { log } from './log'
-
 export function createWS(url: string) {
   let socket: WebSocket | null = null
 
@@ -18,7 +16,7 @@ export function createWS(url: string) {
             const msg = JSON.parse(ev.data)
             onMessage(msg)
           } catch (e) {
-            log('ws parse error: ' + (e as any)?.message)
+            console.warn('ws parse error:', (e as any)?.message)
           }
         }
       })
