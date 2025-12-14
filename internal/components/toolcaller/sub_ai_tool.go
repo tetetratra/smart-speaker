@@ -46,12 +46,17 @@ func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("query must be a non-empty string")
 	}
 
+	content := "あなたは調査・要約エージェントです。\n" +
+		"- 回答に時間をかけすぎないでください\n" +
+		"- 必要ならインターネット検索を行い、最新で正確な情報を提供してください\n" +
+		"- 出力は簡潔にしてください"
+
 	reqBody := map[string]any{
 		"model": "gpt-4o-mini",
 		"messages": []map[string]any{
 			{
 				"role":    "system",
-				"content": "あなたは調査・要約エージェントです。回答に時間をかけすぎず、必要ならインターネット検索を行い最新で正確な情報を簡潔に答えてください。",
+				"content": content,
 			},
 			{
 				"role":    "user",
