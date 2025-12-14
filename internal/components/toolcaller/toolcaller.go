@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"sync"
 
 	"smart-speaker/internal/graph"
@@ -39,6 +40,11 @@ func NewStage(tools map[string]Tool) *graph.Stage {
 	}
 	if _, ok := tools["web_fetch"]; !ok {
 		tools["web_fetch"] = NewWebFetchTool()
+	}
+	if _, ok := tools["web_search"]; !ok {
+		if ws := NewWebSearchTool(os.Getenv("OPENAI_API_KEY")); ws != nil {
+			tools[ws.Name()] = ws
+		}
 	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
