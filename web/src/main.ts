@@ -2,11 +2,10 @@ import { log } from './log'
 import { createAudioReceiver, createAudioSender } from './audio'
 import { createWS } from './ws'
 
-const sendBtn = document.getElementById('send') as HTMLButtonElement | null
 const connectBtn = document.getElementById('connect') as HTMLButtonElement | null
 const disconnectBtn = document.getElementById('disconnect') as HTMLButtonElement | null
 
-if (!sendBtn || !connectBtn || !disconnectBtn) {
+if (!connectBtn || !disconnectBtn) {
   throw new Error('UI要素が見つかりません')
 }
 
@@ -56,9 +55,4 @@ connectBtn.addEventListener('click', () => {
 
 disconnectBtn.addEventListener('click', () => {
   stop()
-})
-
-sendBtn.addEventListener('click', () => {
-  // いまは常時送信しているので何もしない（プレースホルダ）
-  log('送信開始（常時送信中）')
 })
