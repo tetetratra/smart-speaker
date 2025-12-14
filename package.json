@@ -8,7 +8,14 @@
     "build": "vite build --config web/vite.config.ts",
     "preview": "vite preview --config web/vite.config.ts"
   },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
   "devDependencies": {
+    "@types/react": "^18.3.6",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
     "typescript": "^5.4.5",
     "vite": "^5.2.8"
   }

@@ -6,14 +6,11 @@
     <title>WS Audio Client</title>
     <style>
       body { font-family: system-ui, sans-serif; margin: 16px; }
-      .log { white-space: pre-wrap; background: #f5f5f5; padding: 8px; height: 200px; overflow: auto; }
+      #root { min-height: 100vh; }
     </style>
   </head>
   <body>
-    <h1>WS Audio Client</h1>
-    <button id="connect">接続</button>
-    <button id="disconnect">切断</button>
-    <div class="log" id="log"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

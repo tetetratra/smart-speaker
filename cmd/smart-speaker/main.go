@@ -16,6 +16,7 @@ import (
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wsaudio"
+	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/graph"
 )
 
@@ -55,11 +56,12 @@ type stages struct {
 	printer  *graph.Stage
 	player   *graph.Stage
 	tts      *graph.Stage
+	chat     *graph.Stage
 	tool     *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tts, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tts, s.chat, s.tool} {
 		if st != nil {
 			st.Close()
 		}
@@ -67,7 +69,7 @@ func (s stages) close() {
 }
 
 func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
-	inStage, outStage, err := buildWSStages(cfg)
+	inStage, outStage, chatStage, err := buildWSStages(cfg)
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
@@ -118,18 +120,20 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		printer:  printerStage,
 		player:   outStage,
 		tts:      ttsStage,
+		chat:     chatStage,
 		tool:     toolStage,
 	}, nil
 }
 
-func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
+func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
 	in, out := wsaudio.NewStages(server, mux)
-	return in, out, nil
+	chat := wschat.NewStage(mux)
+	return in, out, chat, nil
 }
 
 func wireGraph(g *graph.Graph, st stages) {
@@ -162,9 +166,16 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(node, player)
 		}
 	}
+	var toolNode *graph.Node
 	if node := add(st.tool); node != nil {
-		toolNode := node
+		toolNode = node
 		g.Connect(realtimeNode, toolNode)
 		g.Connect(toolNode, realtimeNode)
+	}
+	if node := add(st.chat); node != nil {
+		g.Connect(realtimeNode, node)
+		if toolNode != nil {
+			g.Connect(toolNode, node)
+		}
 	}
 }

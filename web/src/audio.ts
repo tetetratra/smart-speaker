@@ -1,5 +1,3 @@
-import { log } from './log'
-
 export interface AudioSender {
   start: () => Promise<void>
   stop: () => void
@@ -66,7 +64,7 @@ export function createAudioReceiver(): AudioReceiver {
         src.start(startAt)
         playhead = startAt + audioBuf.duration
       } catch (e) {
-        log('audio play error: ' + (e as any)?.message)
+        console.warn('audio play error:', (e as any)?.message)
       }
     },
   }
