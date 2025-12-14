@@ -263,6 +263,7 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	defaultVS := VoiceSettings{
 		Stability:       0.5,
 		SimilarityBoost: 0.75,
+		UseSpeakerBoost: ptrBool(false),
 	}
 
 	vs := defaultVS
@@ -302,4 +303,8 @@ func mustJSON(v any) []byte {
 		return nil
 	}
 	return b
+}
+
+func ptrBool(v bool) *bool {
+	return &v
 }
