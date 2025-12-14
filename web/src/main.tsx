@@ -38,9 +38,11 @@ function App() {
       switch (raw.type) {
         case 'message': {
           const text = typeof raw.text === 'string' ? raw.text : ''
-          const role = raw.role === 'user' ? 'user' : 'assistant'
           if (!text) return
-          appendMessage({ id: nextId(), type: role, text, responseId: raw.response_id, final: raw.final })
+          let role: 'user' | 'assistant' = 'assistant'
+          if (raw.role === 'user') role = 'user'
+          const displayText = raw.role ? text : `(roleなし) ${text}`
+          appendMessage({ id: nextId(), type: role, text: displayText, responseId: raw.response_id, final: raw.final })
           break
         }
         case 'function_call': {
