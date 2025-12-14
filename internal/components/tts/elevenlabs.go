@@ -18,10 +18,20 @@ import (
 
 // Config defines settings for ElevenLabs stream-input TTS.
 type Config struct {
-	APIKey string
-	Voice  string
-	Model  string
+	APIKey        string
+	Voice         string
+	Model         string
+	VoiceSettings *VoiceSettings
 	// HTTP headers: xi-api-key is required
+}
+
+// VoiceSettings represents ElevenLabs voice_settings payload.
+// ゼロ値の場合はデフォルト値を適用する。
+type VoiceSettings struct {
+	Stability       float64
+	SimilarityBoost float64
+	Style           float64
+	UseSpeakerBoost *bool
 }
 
 // NewStage converts EventRealtimeOutput (assistant text) stream into EventRealtimeAudio
@@ -127,10 +137,9 @@ func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
 	init := map[string]any{
 		"text":     " ", // 空文字は終端扱いされるためスペースを送る
 		"model_id": t.cfg.Model,
-		"voice_settings": map[string]any{
-			"stability":        0.5,
-			"similarity_boost": 0.75,
-		},
+	}
+	if vs := t.buildVoiceSettings(); vs != nil {
+		init["voice_settings"] = vs
 	}
 	_ = conn.Write(ctx, websocket.MessageText, mustJSON(init))
 	conn.SetReadLimit(10 << 20)
@@ -247,6 +256,43 @@ func (t *streamTTS) close() error {
 	close(t.upstream)
 	close(t.downstream)
 	return nil
+}
+
+func (t *streamTTS) buildVoiceSettings() map[string]any {
+	// デフォルト値（ハードコード）
+	defaultVS := VoiceSettings{
+		Stability:       0.5,
+		SimilarityBoost: 0.75,
+	}
+
+	vs := defaultVS
+	if t.cfg.VoiceSettings != nil {
+		if t.cfg.VoiceSettings.Stability != 0 {
+			vs.Stability = t.cfg.VoiceSettings.Stability
+		}
+		if t.cfg.VoiceSettings.SimilarityBoost != 0 {
+			vs.SimilarityBoost = t.cfg.VoiceSettings.SimilarityBoost
+		}
+		if t.cfg.VoiceSettings.Style != 0 {
+			vs.Style = t.cfg.VoiceSettings.Style
+		}
+		if t.cfg.VoiceSettings.UseSpeakerBoost != nil {
+			vs.UseSpeakerBoost = t.cfg.VoiceSettings.UseSpeakerBoost
+		}
+	}
+
+	settings := map[string]any{
+		"stability":        vs.Stability,
+		"similarity_boost": vs.SimilarityBoost,
+	}
+	if vs.Style != 0 {
+		settings["style"] = vs.Style
+	}
+	if vs.UseSpeakerBoost != nil {
+		settings["use_speaker_boost"] = *vs.UseSpeakerBoost
+	}
+
+	return settings
 }
 
 func mustJSON(v any) []byte {
