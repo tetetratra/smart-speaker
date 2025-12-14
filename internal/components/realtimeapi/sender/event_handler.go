@@ -87,7 +87,8 @@ func (h *EventHandler) sendToolResponse(resp types.ToolResponse) error {
 	return h.client.Send(map[string]any{
 		"type": "response.create",
 		"response": map[string]any{
-			"modalities":   []string{"text", "audio"},
+			// "modalities":   []string{"text", "audio"},
+			"modalities":   []string{"text"},
 			"instructions": "Use the latest tool output to continue responding in Japanese.",
 		},
 	})
@@ -121,7 +122,8 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	response := map[string]any{
 		"type": "response.create",
 		"response": map[string]any{
-			"modalities": []string{"text", "audio"},
+			// "modalities": []string{"text", "audio"},
+			"modalities": []string{"text"},
 		},
 	}
 	if h.voice != "" {

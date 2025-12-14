@@ -88,7 +88,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		TranscriptionModel: cfg.TranscriptionModel,
 		Instructions:       cfg.SystemPrompt,
 		Voice:              cfg.Voice,
-		Modalities:         []string{"text", "audio"},
+		Modalities:         []string{"text"},
 		DebugPrintMsgType:  cfg.Debug.PrintMsgType,
 		DebugDumpResponses: cfg.Debug.DumpResponses,
 	})
