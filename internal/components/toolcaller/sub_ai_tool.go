@@ -8,34 +8,34 @@ import (
 	"net/http"
 )
 
-// WebSearchTool sends a query to a regular ChatCompletion and returns the text answer.
+// SubAITool sends a query to a regular ChatCompletion and returns the text answer.
 // 実際のWeb検索は行わず、通常モデルでの深い思考/回答を返す。
-type WebSearchTool struct {
+type SubAITool struct {
 	apiKey string
 	client *http.Client
 	ctx    context.Context
 }
 
-func NewWebSearchTool(apiKey string) *WebSearchTool {
+func NewSubAITool(apiKey string) *SubAITool {
 	if apiKey == "" {
 		return nil
 	}
-	return &WebSearchTool{
+	return &SubAITool{
 		apiKey: apiKey,
 		// Timeout 0 = no timeout (依頼に合わせて無制限相当)
 		client: &http.Client{Timeout: 0},
 	}
 }
 
-func (t *WebSearchTool) Name() string { return "web_search" }
+func (t *SubAITool) Name() string { return "sub_ai" }
 
-func (t *WebSearchTool) SetContext(ctx context.Context) {
+func (t *SubAITool) SetContext(ctx context.Context) {
 	t.ctx = ctx
 }
 
-func (t *WebSearchTool) Run(args map[string]any) (map[string]any, error) {
+func (t *SubAITool) Run(args map[string]any) (map[string]any, error) {
 	if t == nil {
-		return nil, fmt.Errorf("web_search tool not configured")
+		return nil, fmt.Errorf("sub_ai tool not configured")
 	}
 	raw, ok := args["query"]
 	if !ok {
