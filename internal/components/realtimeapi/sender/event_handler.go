@@ -102,21 +102,6 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	if role == "" {
 		role = "user"
 	}
-
-	sendNoResponseUpdate := func(max any) {
-		_ = h.client.Send(map[string]any{
-			"type": "session.update",
-			"session": map[string]any{
-				"max_response_output_tokens": max,
-			},
-		})
-	}
-
-	if line.NoResponse {
-		sendNoResponseUpdate(0)
-		defer sendNoResponseUpdate("inf")
-	}
-
 	msg := map[string]any{
 		"type": "conversation.item.create",
 		"item": map[string]any{

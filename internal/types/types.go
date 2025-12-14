@@ -9,7 +9,6 @@ type OutputLine struct {
 	Text       string
 	ResponseID string
 	Final      bool
-	NoResponse bool // optional: when true, request no assistant response
 }
 
 // OutputAudio represents an assistant audio response chunk.
