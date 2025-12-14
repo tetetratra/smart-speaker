@@ -50,7 +50,7 @@ func (g *Graph) Run(ctx context.Context) error {
 	}
 
 	for _, node := range g.nodes {
-		node.Stage.Run(ctx)
+		go node.Stage.Run(ctx)
 	}
 
 	var wg sync.WaitGroup

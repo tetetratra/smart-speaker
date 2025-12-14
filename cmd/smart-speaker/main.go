@@ -15,8 +15,7 @@ import (
 	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
-	"smart-speaker/internal/components/wsinput"
-	"smart-speaker/internal/components/wsoutput"
+	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/graph"
 )
 
@@ -41,6 +40,7 @@ func main() {
 
 	log.Printf("wsinput downstream nil? %v", stages.input.Downstream == nil)
 	log.Printf("realtime upstream nil? %v", stages.realtime.Upstream == nil)
+	log.Printf("main ctx err: %v", ctx.Err())
 
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
@@ -128,8 +128,7 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	in := wsinput.NewStage(server, mux)
-	out := wsoutput.NewStage()
+	in, out := wsaudio.NewStages(server, mux)
 	return in, out, nil
 }
 
