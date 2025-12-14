@@ -213,6 +213,7 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn) {
 				}
 				if resp.IsFinal {
 					log.Printf("elevenlabs: isFinal")
+					t.closeConn()
 					return
 				}
 			} else if len(data) > 0 {
