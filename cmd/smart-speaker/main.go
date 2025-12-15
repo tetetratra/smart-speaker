@@ -174,6 +174,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	}
 	if node := add(st.chat); node != nil {
 		g.Connect(realtimeNode, node)
+		g.Connect(node, realtimeNode)
 		if toolNode != nil {
 			g.Connect(toolNode, node)
 		}

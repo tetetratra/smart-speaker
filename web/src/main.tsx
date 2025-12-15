@@ -15,6 +15,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [input, setInput] = useState('')
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
 
@@ -129,6 +130,20 @@ function App() {
     }
   }, [messages])
 
+  const sendText = useCallback(() => {
+    const ws = wsChatRef.current
+    const text = input.trim()
+    if (!ws || !connected || !text) return
+    const msg = { type: 'message', role: 'user', text }
+    ws.send(msg)
+    // ローカルにも即時反映
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
+    ])
+    setInput('')
+  }, [connected, input])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <h1>WS Audio Client</h1>
@@ -188,6 +203,24 @@ function App() {
             </div>
           )
         })}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="テキストで話しかける"
+          style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ddd' }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              sendText()
+            }
+          }}
+        />
+        <button onClick={sendText} disabled={!connected || !input.trim()}>
+          送信
+        </button>
       </div>
     </div>
   )

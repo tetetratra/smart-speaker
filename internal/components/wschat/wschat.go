@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -14,18 +15,21 @@ import (
 )
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
-// pushes text/tool events to the connected client.
+// pushes text/tool events to the connected client, and also receives text
+// messages from the client to emit as EventTextInput.
 func NewStage(mux *http.ServeMux) *graph.Stage {
 	holder := &connHolder{}
 	c := &chatWS{
-		upstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		holder:   holder,
+		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		holder:     holder,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
 	return &graph.Stage{
-		Upstream: c.upstream,
-		Run:      c.run,
-		CloseFn:  c.close,
+		Upstream:   c.upstream,
+		Downstream: c.downstream,
+		Run:        c.run,
+		CloseFn:    c.close,
 	}
 }
 
@@ -59,13 +63,22 @@ func (h *connHolder) clear() {
 }
 
 type chatWS struct {
-	upstream chan types.Event
-	holder   *connHolder
-	once     sync.Once
+	upstream   chan types.Event
+	downstream chan types.Event
+	holder     *connHolder
+	once       sync.Once
+	ctx        context.Context
+	cancel     context.CancelFunc
+	closerWG   sync.WaitGroup
 }
 
 func (c *chatWS) run(ctx context.Context) {
-	go c.consume(ctx)
+	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.closerWG.Add(1)
+	go func() {
+		defer c.closerWG.Done()
+		c.consume(c.ctx)
+	}()
 }
 
 func (c *chatWS) consume(ctx context.Context) {
@@ -158,10 +171,38 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	for {
-		if _, _, err := conn.Read(r.Context()); err != nil {
+		_, data, err := conn.Read(r.Context())
+		if err != nil {
 			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 				log.Printf("wschat read error: %v", err)
 			}
+			return
+		}
+		var msg struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+			Role string `json:"role"`
+		}
+		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Printf("wschat client message parse error: %v", err)
+			continue
+		}
+		if msg.Type != "message" {
+			continue
+		}
+		text := strings.TrimSpace(msg.Text)
+		if text == "" {
+			continue
+		}
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			role = "user"
+		}
+		select {
+		case c.downstream <- types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{Role: role, Text: text}}:
+		case <-r.Context().Done():
+			return
+		case <-c.ctx.Done():
 			return
 		}
 	}
@@ -170,7 +211,12 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 func (c *chatWS) close() error {
 	var err error
 	c.once.Do(func() {
+		if c.cancel != nil {
+			c.cancel()
+		}
+		c.closerWG.Wait()
 		close(c.upstream)
+		close(c.downstream)
 		if c.holder != nil {
 			c.holder.clear()
 		}
