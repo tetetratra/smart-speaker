@@ -45,7 +45,9 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, fmt.Errorf("elevenlabs: voice id is required")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "eleven_multilingual_v2"
+		// cfg.Model = "eleven_multilingual_v2"
+		// cfg.Model = "eleven_ttv_v3"
+		cfg.Model = "eleven_v3"
 	}
 	t := &streamTTS{
 		cfg:        cfg,
