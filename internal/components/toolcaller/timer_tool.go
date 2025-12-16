@@ -1,0 +1,168 @@
+package toolcaller
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	types "smart-speaker/internal/types"
+)
+
+const timerToolName = "schedule_timer"
+
+// TimerTool は指定時刻にリマインドテキストを送る簡易スケジューラ。
+// リマインドは EventTextInput (role=system) として emit される。
+type TimerTool struct {
+	ctx     context.Context
+	emit    func(types.Event)
+	nowFunc func() time.Time
+}
+
+func NewTimerTool() *TimerTool {
+	return &TimerTool{nowFunc: time.Now}
+}
+
+func (t *TimerTool) Name() string { return timerToolName }
+
+func (t *TimerTool) SetContext(ctx context.Context) {
+	t.ctx = ctx
+}
+
+func (t *TimerTool) SetEventEmitter(emit func(types.Event)) {
+	t.emit = emit
+}
+
+func (t *TimerTool) Run(args map[string]any) (map[string]any, error) {
+	kind := toStr(args["type"])
+	desc := toStr(args["description"])
+	if desc == "" {
+		return nil, fmt.Errorf("description is required")
+	}
+	switch kind {
+	case "relative":
+		minutes, err := asInt(args["minutes"])
+		if err != nil || minutes <= 0 {
+			return nil, fmt.Errorf("minutes must be a positive integer")
+		}
+		delay := time.Duration(minutes) * time.Minute
+		target := t.now().Add(delay)
+		t.schedule(target, desc)
+		return map[string]any{
+			"scheduled_for": target.Format(time.RFC3339),
+			"type":          "relative",
+			"minutes":       minutes,
+		}, nil
+	case "absolute":
+		abs, err := parseAbsolute(args)
+		if err != nil {
+			return nil, err
+		}
+		target := time.Date(abs.year, time.Month(abs.month), abs.day, abs.hour, abs.minute, 0, 0, time.Local)
+		now := t.now()
+		if !target.After(now) {
+			return nil, fmt.Errorf("specified time is not in the future")
+		}
+		t.schedule(target, desc)
+		return map[string]any{
+			"scheduled_for": target.Format(time.RFC3339),
+			"type":          "absolute",
+		}, nil
+	default:
+		return nil, fmt.Errorf("type must be 'relative' or 'absolute'")
+	}
+}
+
+func (t *TimerTool) now() time.Time {
+	if t.nowFunc != nil {
+		return t.nowFunc()
+	}
+	return time.Now()
+}
+
+func (t *TimerTool) schedule(target time.Time, desc string) {
+	delay := time.Until(target)
+	if delay <= 0 {
+		return
+	}
+	ctx := t.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		text := fmt.Sprintf("タイマー: %s", desc)
+		if t.emit != nil {
+			t.emit(types.Event{
+				Kind: types.EventTextInput,
+				Payload: types.OutputLine{
+					Role: "system",
+					Text: text,
+				},
+			})
+		} else {
+			log.Printf("timer fired (no emitter): %s", text)
+		}
+	}()
+}
+
+type absoluteTime struct {
+	year   int
+	month  int
+	day    int
+	hour   int
+	minute int
+}
+
+func parseAbsolute(args map[string]any) (absoluteTime, error) {
+	year, err := asInt(args["year"])
+	if err != nil {
+		return absoluteTime{}, fmt.Errorf("year must be int")
+	}
+	month, err := asInt(args["month"])
+	if err != nil {
+		return absoluteTime{}, fmt.Errorf("month must be int")
+	}
+	day, err := asInt(args["day"])
+	if err != nil {
+		return absoluteTime{}, fmt.Errorf("day must be int")
+	}
+	hour, err := asInt(args["hour"])
+	if err != nil {
+		return absoluteTime{}, fmt.Errorf("hour must be int")
+	}
+	minute, err := asInt(args["minute"])
+	if err != nil {
+		return absoluteTime{}, fmt.Errorf("minute must be int")
+	}
+	if month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return absoluteTime{}, fmt.Errorf("invalid date/time range")
+	}
+	return absoluteTime{year: year, month: month, day: day, hour: hour, minute: minute}, nil
+}
+
+func toStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func asInt(v any) (int, error) {
+	switch val := v.(type) {
+	case float64:
+		return int(val), nil
+	case int:
+		return val, nil
+	case int32:
+		return int(val), nil
+	case int64:
+		return int(val), nil
+	default:
+		return 0, fmt.Errorf("not an integer")
+	}
+}
