@@ -131,7 +131,6 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		session["input_audio_transcription"] = map[string]any{
 			"model":    cfg.TranscriptionModel,
 			"language": "ja",
-			"prompt":   "web系のITエンジニアが話しており、専門用語が来ることを想定してください。日本語で短い応答を心がけてください",
 		}
 	}
 	return client.Send(map[string]any{
