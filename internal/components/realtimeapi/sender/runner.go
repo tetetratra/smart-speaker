@@ -100,8 +100,8 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 				},
 			},
 			map[string]any{
-				"type":        "function",
-				"name":        "sub_ai",
+				"type": "function",
+				"name": "sub_ai",
 				"description": `任意の文字列クエリを受け取り、サブAIに投げて調査・回答を得ます。
 				- ユーザーからの質問に対して、以下の状況の場合は積極的に活用してください
 				  - 自分が正確な回答を知らない場合
@@ -119,6 +119,50 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 						},
 					},
 					"required": []string{"query"},
+				},
+			},
+			map[string]any{
+				"type":        "function",
+				"name":        "schedule_timer",
+				"description": "指定時刻にリマインドをセットします。role=system のメッセージとして再度送ります。",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"type": map[string]any{
+							"type":        "string",
+							"enum":        []string{"absolute", "relative"},
+							"description": "absolute または relative を指定してください。",
+						},
+						"description": map[string]any{
+							"type":        "string",
+							"description": "その時間に知らせたい内容（短め）。",
+						},
+						"minutes": map[string]any{
+							"type":        "integer",
+							"description": "relative の場合、何分後か（整数）。",
+						},
+						"year": map[string]any{
+							"type":        "integer",
+							"description": "absolute の場合の年（西暦）。",
+						},
+						"month": map[string]any{
+							"type":        "integer",
+							"description": "absolute の場合の月（1-12）。",
+						},
+						"day": map[string]any{
+							"type":        "integer",
+							"description": "absolute の場合の日（1-31）。",
+						},
+						"hour": map[string]any{
+							"type":        "integer",
+							"description": "absolute の場合の時（0-23）。",
+						},
+						"minute": map[string]any{
+							"type":        "integer",
+							"description": "absolute の場合の分（0-59）。",
+						},
+					},
+					"required": []string{"type", "description"},
 				},
 			},
 		},

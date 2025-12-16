@@ -21,6 +21,11 @@ type ContextAwareTool interface {
 	SetContext(ctx context.Context)
 }
 
+// EventEmitterTool は、非同期にイベントを下流へ送れるよう emitter を受け取れるツールが実装する。
+type EventEmitterTool interface {
+	SetEventEmitter(func(types.Event))
+}
+
 type toolCaller struct {
 	upstream        chan types.Event
 	downstream      chan types.Event
@@ -57,6 +62,9 @@ func (s *toolCaller) run(parent context.Context) {
 	for _, tool := range s.tools {
 		if ctxTool, ok := tool.(ContextAwareTool); ok {
 			ctxTool.SetContext(ctx)
+		}
+		if emitterTool, ok := tool.(EventEmitterTool); ok {
+			emitterTool.SetEventEmitter(s.emit)
 		}
 	}
 	s.closerWaitGroup.Add(1)
@@ -143,4 +151,13 @@ func (s *toolCaller) close() error {
 		log.Println("toolcaller: stage closed")
 	})
 	return nil
+}
+
+// emit は ctx を尊重しつつ下流へイベントを送る。
+func (s *toolCaller) emit(evt types.Event) {
+	select {
+	case <-s.ctx.Done():
+		return
+	case s.downstream <- evt:
+	}
 }

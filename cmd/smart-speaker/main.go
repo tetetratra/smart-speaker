@@ -106,12 +106,16 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	var starter *graph.Stage
 	switchBotTool := toolcaller.NewSwitchBotTool(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
 	subAITool := toolcaller.NewSubAITool(cfg.APIKey)
+	timerTool := toolcaller.NewTimerTool()
 	tools := map[string]toolcaller.Tool{}
 	if switchBotTool != nil {
 		tools[switchBotTool.Name()] = switchBotTool
 	}
 	if subAITool != nil {
 		tools[subAITool.Name()] = subAITool
+	}
+	if timerTool != nil {
+		tools[timerTool.Name()] = timerTool
 	}
 	toolStage := toolcaller.NewStage(tools)
 	if cfg.AutoPromptInterval > 0 {
