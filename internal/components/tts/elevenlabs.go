@@ -267,7 +267,7 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	defaultVS := VoiceSettings{
 		Stability:       0.7,
 		SimilarityBoost: 0.5,
-		Speed:           0.8,
+		Speed:           0.9,
 		UseSpeakerBoost: ptrBool(false),
 	}
 

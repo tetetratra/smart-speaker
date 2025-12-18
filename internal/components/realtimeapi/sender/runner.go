@@ -65,7 +65,7 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			"type":                "server_vad",
 			"threshold":           0.65,
 			"silence_duration_ms": 800,
-			"interrupt_response":  false,
+			"interrupt_response":  true,
 		},
 		"tools": []any{
 			map[string]any{
