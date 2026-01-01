@@ -4,7 +4,7 @@ import { createAudioReceiver, createAudioSender } from './audio'
 import { createWS } from './ws'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean }
+  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
@@ -44,7 +44,14 @@ function App() {
           if (raw.role === 'user') role = 'user'
           else if (raw.role === 'system') role = 'system'
           const displayText = raw.role ? text : `(roleなし) ${text}`
-          appendMessage({ id: nextId(), type: role, text: displayText, responseId: raw.response_id, final: raw.final })
+          appendMessage({
+            id: nextId(),
+            type: role,
+            text: displayText,
+            responseId: raw.response_id,
+            final: raw.final,
+            source: typeof raw.source === 'string' ? raw.source : undefined,
+          })
           break
         }
         case 'function_call': {
@@ -196,9 +203,10 @@ function App() {
             color = '#6b7280'
             label = 'System'
           }
+          const sourceLabel = m.source ? ` (${m.source})` : ''
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
-              <strong style={{ color }}>{label}</strong>
+              <strong style={{ color }}>{label}{sourceLabel}</strong>
               <div>{m.text}</div>
             </div>
           )

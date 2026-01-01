@@ -80,8 +80,8 @@ func (r *runner) handleRequest(text string) {
 	if !resp.HasResponse {
 		return
 	}
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: resp.Text, ResponseID: resp.ResponseID}})
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: resp.ResponseID, Final: true}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: resp.Text, ResponseID: resp.ResponseID, Source: "responses"}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: resp.ResponseID, Final: true, Source: "responses"}})
 }
 
 func (r *runner) emit(evt types.Event) {

@@ -20,7 +20,7 @@ func (h *textMessageHandler) Handle(msg wsMessage) []types.Event {
 		if transcript == "" {
 			return nil
 		}
-		events := []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "user", Text: transcript}}}
+		events := []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "user", Text: transcript, Source: "realtime"}}}
 		if msgType == "conversation.item.input_audio_transcription.completed" {
 			events = append(events, types.Event{Kind: types.EventTranscriptFinal, Payload: types.TranscriptEvent{Text: transcript, Final: true}})
 		} else {
@@ -32,19 +32,19 @@ func (h *textMessageHandler) Handle(msg wsMessage) []types.Event {
 		if delta == "" {
 			return nil
 		}
-		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: delta, ResponseID: asString(msg["response_id"])}}}
+		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: delta, ResponseID: asString(msg["response_id"]), Source: "realtime"}}}
 	case "response.output_text":
 		text := asString(msg["text"])
 		if text == "" {
 			return nil
 		}
-		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: text, ResponseID: asString(msg["response_id"])}}}
+		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: text, ResponseID: asString(msg["response_id"]), Source: "realtime"}}}
 	case "response.audio_transcript.delta", "response.audio_transcript.done":
 		transcript := extractTranscript(msg)
 		if transcript == "" {
 			return nil
 		}
-		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: transcript, ResponseID: asString(msg["response_id"])}}}
+		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: transcript, ResponseID: asString(msg["response_id"]), Source: "realtime"}}}
 	case "response.delta", "response.done":
 		return h.handleResponseMessage(msgType, msg)
 	case "error", "response.error":
@@ -89,7 +89,7 @@ func (h *textMessageHandler) handleResponseMessage(msgType string, msg wsMessage
 		events = append(events, textEvents...)
 	}
 	if msgType == "response.done" {
-		events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respID, Final: true}})
+		events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respID, Final: true, Source: "realtime"}})
 	}
 	if len(events) == 0 {
 		return nil
@@ -118,7 +118,7 @@ func collectTextEvents(respID, role string, content []any) ([]types.Event, bool)
 			if actualRole == "" {
 				actualRole = "assistant"
 			}
-			events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: actualRole, Text: text, ResponseID: respID}})
+			events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: actualRole, Text: text, ResponseID: respID, Source: "realtime"}})
 			if actualRole == "assistant" {
 				assistantOutput = true
 			}
@@ -131,7 +131,7 @@ func collectTextEvents(respID, role string, content []any) ([]types.Event, bool)
 			if actualRole == "" {
 				actualRole = "user"
 			}
-			events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: actualRole, Text: text, ResponseID: respID}})
+			events = append(events, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: actualRole, Text: text, ResponseID: respID, Source: "realtime"}})
 		}
 	}
 	return events, assistantOutput

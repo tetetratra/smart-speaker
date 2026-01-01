@@ -9,6 +9,7 @@ type OutputLine struct {
 	Text       string
 	ResponseID string
 	Final      bool
+	Source     string
 }
 
 // OutputAudio represents an assistant audio response chunk.

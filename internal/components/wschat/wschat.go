@@ -110,6 +110,9 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"response_id": line.ResponseID,
 			"final":       line.Final,
 		}
+		if line.Source != "" {
+			msg["source"] = line.Source
+		}
 	case types.EventTextInput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
@@ -119,6 +122,9 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"type": "message",
 			"role": line.Role,
 			"text": line.Text,
+		}
+		if line.Source != "" {
+			msg["source"] = line.Source
 		}
 	case types.EventToolRequest:
 		req, ok := evt.Payload.(types.ToolRequest)
