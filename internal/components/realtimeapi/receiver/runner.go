@@ -75,6 +75,7 @@ func NewRunner(ctx context.Context, client reader, downstream chan<- types.Event
 		client:     client,
 		downstream: downstream,
 		handlers: []messageHandler{
+			newVADMessageHandler(),
 			newToolMessageHandler(),
 			newAudioMessageHandler(tracker),
 			newTextMessageHandler(tracker),

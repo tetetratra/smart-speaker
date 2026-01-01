@@ -20,7 +20,13 @@ func (h *textMessageHandler) Handle(msg wsMessage) []types.Event {
 		if transcript == "" {
 			return nil
 		}
-		return []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "user", Text: transcript}}}
+		events := []types.Event{{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "user", Text: transcript}}}
+		if msgType == "conversation.item.input_audio_transcription.completed" {
+			events = append(events, types.Event{Kind: types.EventTranscriptFinal, Payload: types.TranscriptEvent{Text: transcript, Final: true}})
+		} else {
+			events = append(events, types.Event{Kind: types.EventTranscriptPartial, Payload: types.TranscriptEvent{Text: transcript}})
+		}
+		return events
 	case "response.output_text.delta":
 		delta := asString(msg["delta"])
 		if delta == "" {
