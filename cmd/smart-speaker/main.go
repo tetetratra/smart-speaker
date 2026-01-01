@@ -12,9 +12,11 @@ import (
 	"smart-speaker/internal/components/conversationstarter"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
+	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
+	"smart-speaker/internal/components/turnmanager"
 	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/graph"
@@ -49,19 +51,21 @@ func main() {
 }
 
 type stages struct {
-	input    *graph.Stage
-	text     *graph.Stage
-	starter  *graph.Stage
-	realtime *graph.Stage
-	printer  *graph.Stage
-	player   *graph.Stage
-	tts      *graph.Stage
-	chat     *graph.Stage
-	tool     *graph.Stage
+	input     *graph.Stage
+	text      *graph.Stage
+	starter   *graph.Stage
+	realtime  *graph.Stage
+	turn      *graph.Stage
+	responses *graph.Stage
+	printer   *graph.Stage
+	player    *graph.Stage
+	tts       *graph.Stage
+	chat      *graph.Stage
+	tool      *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.printer, s.player, s.tts, s.chat, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool} {
 		if st != nil {
 			st.Close()
 		}
@@ -103,6 +107,21 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
 	}
 	printerStage := printer.NewStage()
+	turnStage := turnmanager.NewStage()
+	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
+		APIKey:       cfg.APIKey,
+		Model:        cfg.ResponsesModel,
+		Instructions: cfg.SystemPrompt,
+	})
+	if err != nil {
+		inStage.Close()
+		outStage.Close()
+		if ttsStage != nil {
+			ttsStage.Close()
+		}
+		realtime.Close()
+		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
+	}
 	var starter *graph.Stage
 	switchBotTool := toolcaller.NewSwitchBotTool(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
 	subAITool := toolcaller.NewSubAITool(cfg.APIKey)
@@ -122,15 +141,17 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		starter = conversationstarter.NewStage(cfg.AutoPromptInterval, cfg.AutoPromptMessage)
 	}
 	return stages{
-		input:    inStage,
-		text:     text,
-		starter:  starter,
-		realtime: realtime,
-		printer:  printerStage,
-		player:   outStage,
-		tts:      ttsStage,
-		chat:     chatStage,
-		tool:     toolStage,
+		input:     inStage,
+		text:      text,
+		starter:   starter,
+		realtime:  realtime,
+		turn:      turnStage,
+		responses: responsesStage,
+		printer:   printerStage,
+		player:    outStage,
+		tts:       ttsStage,
+		chat:      chatStage,
+		tool:      toolStage,
 	}, nil
 }
 
@@ -157,20 +178,37 @@ func wireGraph(g *graph.Graph, st stages) {
 	if realtimeNode == nil {
 		return
 	}
+	turnNode := add(st.turn)
+	responsesNode := add(st.responses)
 	if node := add(st.input); node != nil {
 		g.Connect(node, realtimeNode)
 	}
 	if node := add(st.text); node != nil {
-		g.Connect(node, realtimeNode)
+		if responsesNode != nil {
+			g.Connect(node, responsesNode)
+		} else {
+			g.Connect(node, realtimeNode)
+		}
 	}
 	if node := add(st.starter); node != nil {
 		g.Connect(node, realtimeNode)
 	}
 	if node := add(st.printer); node != nil {
 		g.Connect(realtimeNode, node)
+		if responsesNode != nil {
+			g.Connect(responsesNode, node)
+		}
+	}
+	if turnNode != nil {
+		g.Connect(realtimeNode, turnNode)
+	}
+	if responsesNode != nil && turnNode != nil {
+		g.Connect(turnNode, responsesNode)
 	}
 	if node := add(st.tts); node != nil {
-		g.Connect(realtimeNode, node)
+		if responsesNode != nil {
+			g.Connect(responsesNode, node)
+		}
 		if player := add(st.player); player != nil {
 			g.Connect(node, player)
 		}
@@ -178,12 +216,17 @@ func wireGraph(g *graph.Graph, st stages) {
 	var toolNode *graph.Node
 	if node := add(st.tool); node != nil {
 		toolNode = node
-		g.Connect(realtimeNode, toolNode)
-		g.Connect(toolNode, realtimeNode)
+		if responsesNode != nil {
+			g.Connect(responsesNode, toolNode)
+			g.Connect(toolNode, responsesNode)
+		}
 	}
 	if node := add(st.chat); node != nil {
 		g.Connect(realtimeNode, node)
-		g.Connect(node, realtimeNode)
+		if responsesNode != nil {
+			g.Connect(responsesNode, node)
+			g.Connect(node, responsesNode)
+		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)
 		}

@@ -13,6 +13,7 @@ import (
 type Config struct {
 	APIKey             string
 	Model              string
+	ResponsesModel     string
 	TranscriptionModel string
 	InputVoicePath     string
 	SystemPrompt       string
@@ -48,6 +49,10 @@ func LoadConfig(promptPath string) Config {
 		log.Fatal("OPENAI_API_KEY is not set")
 	}
 	model := "gpt-realtime"
+	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
+	if responsesModel == "" {
+		responsesModel = "gpt-4.1"
+	}
 
 	voice := strings.TrimSpace(os.Getenv("OPENAI_VOICE"))
 	if voice == "" {
@@ -89,6 +94,7 @@ func LoadConfig(promptPath string) Config {
 	return Config{
 		APIKey:             apiKey,
 		Model:              model,
+		ResponsesModel:     responsesModel,
 		TranscriptionModel: transcription,
 		InputVoicePath:     inputVoicePath,
 		SystemPrompt:       prompt,

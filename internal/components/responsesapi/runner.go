@@ -58,24 +58,37 @@ func (r *runner) consume() {
 			if !ok {
 				return
 			}
-			if evt.Kind != types.EventResponsesRequest {
-				continue
+			switch evt.Kind {
+			case types.EventResponsesRequest:
+				req, ok := evt.Payload.(types.ResponsesRequest)
+				if !ok {
+					continue
+				}
+				text := strings.TrimSpace(req.Text)
+				if text == "" {
+					continue
+				}
+				r.handleRequest(text)
+			case types.EventTextInput:
+				line, ok := evt.Payload.(types.OutputLine)
+				if !ok {
+					continue
+				}
+				if strings.TrimSpace(line.Role) == "system" {
+					continue
+				}
+				text := strings.TrimSpace(line.Text)
+				if text == "" {
+					continue
+				}
+				r.handleRequest(text)
+			case types.EventToolResponse:
+				resp, ok := evt.Payload.(types.ToolResponse)
+				if !ok {
+					continue
+				}
+				r.handleToolResponse(resp)
 			}
-			req, ok := evt.Payload.(types.ResponsesRequest)
-			if !ok {
-				continue
-			}
-			text := strings.TrimSpace(req.Text)
-			if text == "" {
-				continue
-			}
-			r.handleRequest(text)
-		case evt.Kind == types.EventToolResponse:
-			resp, ok := evt.Payload.(types.ToolResponse)
-			if !ok {
-				continue
-			}
-			r.handleToolResponse(resp)
 		}
 	}
 }
