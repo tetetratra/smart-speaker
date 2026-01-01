@@ -12,6 +12,12 @@ const (
 	EventRealtimeAudio
 	EventToolRequest
 	EventToolResponse
+	EventVadStart
+	EventVadStop
+	EventTranscriptPartial
+	EventTranscriptFinal
+	EventResponsesRequest
+	EventResponsesResponse
 )
 
 // Event is the common data structure passed between stages.
