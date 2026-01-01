@@ -81,16 +81,7 @@ func (h *EventHandler) sendToolResponse(resp types.ToolResponse) error {
 			"output":  string(resp.Output),
 		},
 	}
-	if err := h.client.Send(toolOutput); err != nil {
-		return err
-	}
-	return h.client.Send(map[string]any{
-		"type": "response.create",
-		"response": map[string]any{
-			"modalities":   []string{"text"},
-			"instructions": "Use the latest tool output to continue responding in Japanese.",
-		},
-	})
+	return h.client.Send(toolOutput)
 }
 
 func (h *EventHandler) sendTextInput(line types.OutputLine) error {
@@ -118,14 +109,5 @@ func (h *EventHandler) sendTextInput(line types.OutputLine) error {
 	if err := h.client.Send(msg); err != nil {
 		return err
 	}
-	response := map[string]any{
-		"type": "response.create",
-		"response": map[string]any{
-			"modalities": []string{"text"},
-		},
-	}
-	if h.voice != "" {
-		response["response"].(map[string]any)["voice"] = h.voice
-	}
-	return h.client.Send(response)
+	return nil
 }
