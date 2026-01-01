@@ -18,6 +18,9 @@ type runner struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	once   sync.Once
+
+	mu             sync.Mutex
+	toolResponseID map[string]string
 }
 
 // NewStage はResponses API呼び出しのステージを構築します。
@@ -27,9 +30,10 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, err
 	}
 	r := &runner{
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		client:     client,
+		upstream:       make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream:     make(chan types.Event, graph.DefaultChannelBufferSize),
+		client:         client,
+		toolResponseID: map[string]string{},
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -66,6 +70,12 @@ func (r *runner) consume() {
 				continue
 			}
 			r.handleRequest(text)
+		case evt.Kind == types.EventToolResponse:
+			resp, ok := evt.Payload.(types.ToolResponse)
+			if !ok {
+				continue
+			}
+			r.handleToolResponse(resp)
 		}
 	}
 }
@@ -76,7 +86,37 @@ func (r *runner) handleRequest(text string) {
 		log.Printf("responsesapi: request error: %v", err)
 		return
 	}
+	r.handleResponsesResponse(resp)
+}
+
+func (r *runner) handleToolResponse(resp types.ToolResponse) {
+	r.mu.Lock()
+	responseID := r.toolResponseID[resp.ToolCallID]
+	delete(r.toolResponseID, resp.ToolCallID)
+	r.mu.Unlock()
+	if responseID == "" {
+		log.Printf("responsesapi: missing response id for tool call %s", resp.ToolCallID)
+		return
+	}
+	out := strings.TrimSpace(string(resp.Output))
+	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, out)
+	if err != nil {
+		log.Printf("responsesapi: tool output error: %v", err)
+		return
+	}
+	r.handleResponsesResponse(next)
+}
+
+func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: resp})
+	if len(resp.ToolCalls) > 0 {
+		for _, call := range resp.ToolCalls {
+			r.mu.Lock()
+			r.toolResponseID[call.ToolCallID] = resp.ResponseID
+			r.mu.Unlock()
+			r.emit(types.Event{Kind: types.EventToolRequest, Payload: call})
+		}
+	}
 	if !resp.HasResponse {
 		return
 	}

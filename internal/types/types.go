@@ -39,4 +39,5 @@ type ResponsesResponse struct {
 	Text        string
 	ResponseID  string
 	HasResponse bool
+	ToolCalls   []ToolRequest
 }
