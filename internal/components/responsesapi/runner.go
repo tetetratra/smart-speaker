@@ -3,6 +3,8 @@ package responsesapi
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -36,6 +38,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		client:         client,
 		toolResponseID: map[string]string{},
 	}
+	r.loadResponseIDFromFile()
 	return &graph.Stage{
 		Upstream:   r.upstream,
 		Downstream: r.downstream,
@@ -95,6 +98,14 @@ func (r *runner) handleRequest(text string) {
 	prevID := r.currentResponseID()
 	resp, err := r.client.CreateResponse(r.ctx, appendOutputConstraint(text), prevID)
 	if err != nil {
+		if prevID != "" && isInvalidPreviousResponseID(err) {
+			r.clearResponseID()
+			resp, err = r.client.CreateResponse(r.ctx, appendOutputConstraint(text), "")
+			if err == nil {
+				r.handleResponsesResponse(resp)
+				return
+			}
+		}
 		log.Printf("responsesapi: request error: %v", err)
 		return
 	}
@@ -159,6 +170,7 @@ func (r *runner) setCurrentResponseID(responseID string) {
 	r.mu.Lock()
 	r.lastResponseID = responseID
 	r.mu.Unlock()
+	r.persistResponseID(responseID)
 }
 
 func (r *runner) emit(evt types.Event) {
@@ -167,6 +179,47 @@ func (r *runner) emit(evt types.Event) {
 		return
 	case r.downstream <- evt:
 	}
+}
+
+func (r *runner) loadResponseIDFromFile() {
+	data, err := os.ReadFile(responseIDFilePath())
+	if err != nil {
+		return
+	}
+	id := strings.TrimSpace(string(data))
+	if id == "" {
+		return
+	}
+	r.lastResponseID = id
+}
+
+func (r *runner) persistResponseID(responseID string) {
+	path := responseIDFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		log.Printf("responsesapi: failed to create tmp dir: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, []byte(responseID+"\n"), 0o644); err != nil {
+		log.Printf("responsesapi: failed to write response id: %v", err)
+	}
+}
+
+func (r *runner) clearResponseID() {
+	r.mu.Lock()
+	r.lastResponseID = ""
+	r.mu.Unlock()
+	if err := os.Remove(responseIDFilePath()); err != nil && !os.IsNotExist(err) {
+		log.Printf("responsesapi: failed to remove response id: %v", err)
+	}
+}
+
+func responseIDFilePath() string {
+	return filepath.Join("tmp", "response_id.txt")
+}
+
+func isInvalidPreviousResponseID(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "previous_response_id") || strings.Contains(msg, "response_id")
 }
 
 func (r *runner) close() error {
