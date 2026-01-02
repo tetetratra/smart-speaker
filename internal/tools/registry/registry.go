@@ -29,25 +29,15 @@ func New(cfg Config) *Registry {
 	var entries []entry
 
 	switchTool := switchbot.New(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	if switchTool != nil {
-		entries = append(entries, entry{
-			def:     switchTool.Definition(),
-			handler: switchTool,
-		})
-	}
-
 	timerTool := timer.New()
-	if timerTool != nil {
-		entries = append(entries, entry{
-			def:     timerTool.Definition(),
-			handler: timerTool,
-		})
+	toolEntries := []entry{
+		{def: switchTool.Definition(), handler: switchTool},
+		{def: timerTool.Definition(), handler: timerTool},
+		{def: websearch.Definition()},
 	}
-
-	entries = append(entries, entry{
-		def:     websearch.Definition(),
-		handler: nil,
-	})
+	for _, e := range toolEntries {
+		entries = append(entries, e)
+	}
 
 	return &Registry{entries: entries}
 }
