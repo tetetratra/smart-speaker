@@ -16,32 +16,6 @@ type RunnerOptions struct {
 	DebugDumpResponses bool
 }
 
-type responseTracker struct {
-	seen map[string]bool
-}
-
-func newResponseTracker() *responseTracker {
-	return &responseTracker{seen: make(map[string]bool)}
-}
-
-func (t *responseTracker) markDelta(respID string) {
-	if respID == "" {
-		return
-	}
-	t.seen[respID] = true
-}
-
-func (t *responseTracker) shouldSkipDone(respID string) bool {
-	if respID == "" {
-		return false
-	}
-	if t.seen[respID] {
-		delete(t.seen, respID)
-		return true
-	}
-	return false
-}
-
 func asString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -69,16 +43,13 @@ type Runner struct {
 }
 
 func NewRunner(ctx context.Context, client reader, downstream chan<- types.Event, opts RunnerOptions) *Runner {
-	tracker := newResponseTracker()
 	return &Runner{
 		ctx:        ctx,
 		client:     client,
 		downstream: downstream,
 		handlers: []messageHandler{
 			newVADMessageHandler(),
-			newToolMessageHandler(),
-			newAudioMessageHandler(tracker),
-			newTextMessageHandler(tracker),
+			newTextMessageHandler(),
 		},
 		debugPrintMsgType:  opts.DebugPrintMsgType,
 		debugDumpResponses: opts.DebugDumpResponses,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"strings"
 
 	types "smart-speaker/internal/types"
 )
@@ -13,21 +12,16 @@ import (
 type EventHandler struct {
 	ctx    context.Context
 	client Client
-	voice  string
 }
 
 func NewEventHandler(ctx context.Context, client Client, voice string) *EventHandler {
-	return &EventHandler{ctx: ctx, client: client, voice: voice}
+	return &EventHandler{ctx: ctx, client: client}
 }
 
 func (h *EventHandler) Handle(evt types.Event) {
 	switch evt.Kind {
 	case types.EventAudioChunk:
 		h.handleAudioChunk(evt.Payload)
-	case types.EventToolResponse:
-		h.handleToolResponse(evt.Payload)
-	case types.EventTextInput:
-		h.handleTextInput(evt.Payload)
 	}
 }
 
@@ -48,66 +42,4 @@ func (h *EventHandler) handleAudioChunk(payload any) {
 		}
 		log.Printf("realtime send error: %v", err)
 	}
-}
-
-func (h *EventHandler) handleToolResponse(payload any) {
-	resp, ok := payload.(types.ToolResponse)
-	if !ok {
-		log.Printf("realtime sender: unexpected tool response payload %T", payload)
-		return
-	}
-	if err := h.sendToolResponse(resp); err != nil {
-		log.Printf("realtime tool response error: %v", err)
-	}
-}
-
-func (h *EventHandler) handleTextInput(payload any) {
-	line, ok := payload.(types.OutputLine)
-	if !ok {
-		log.Printf("realtime sender: unexpected text payload type %T", payload)
-		return
-	}
-	if err := h.sendTextInput(line); err != nil {
-		log.Printf("realtime text input error: %v", err)
-	}
-}
-
-func (h *EventHandler) sendToolResponse(resp types.ToolResponse) error {
-	toolOutput := map[string]any{
-		"type": "conversation.item.create",
-		"item": map[string]any{
-			"type":    "function_call_output",
-			"call_id": resp.ToolCallID,
-			"output":  string(resp.Output),
-		},
-	}
-	return h.client.Send(toolOutput)
-}
-
-func (h *EventHandler) sendTextInput(line types.OutputLine) error {
-	text := strings.TrimSpace(line.Text)
-	if text == "" {
-		return nil
-	}
-	role := line.Role
-	if role == "" {
-		role = "user"
-	}
-	msg := map[string]any{
-		"type": "conversation.item.create",
-		"item": map[string]any{
-			"type": "message",
-			"role": role,
-			"content": []any{
-				map[string]any{
-					"type": "input_text",
-					"text": text,
-				},
-			},
-		},
-	}
-	if err := h.client.Send(msg); err != nil {
-		return err
-	}
-	return nil
 }
