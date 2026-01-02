@@ -18,6 +18,7 @@ import (
 	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/graph"
+	"smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/tools/registry"
 )
 
@@ -28,6 +29,8 @@ func main() {
 	defer cancel()
 
 	cfg := app.LoadConfig("system_prompt.txt")
+
+	ensureGoogleCalendarToken()
 
 	stages, err := buildStages(ctx, cfg)
 	if err != nil {
@@ -46,6 +49,16 @@ func main() {
 
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
+	}
+}
+
+func ensureGoogleCalendarToken() {
+	if _, err := googlecalendar.LoadToken(); err == nil {
+		return
+	}
+	log.Println("google oauth token not found. starting auth flow.")
+	if err := googlecalendar.StartAuthFlow(":3939"); err != nil {
+		log.Printf("google oauth flow failed: %v", err)
 	}
 }
 
