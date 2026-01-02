@@ -2,9 +2,8 @@ package registry
 
 import (
 	"smart-speaker/internal/tools"
-	"smart-speaker/internal/tools/switchbot"
-	"smart-speaker/internal/tools/timer"
-	"smart-speaker/internal/tools/websearch"
+	"smart-speaker/internal/tools/functions/switchbot"
+	"smart-speaker/internal/tools/functions/timer"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。
@@ -33,7 +32,7 @@ func New(cfg Config) *Registry {
 	toolEntries := []entry{
 		{def: switchTool.Definition(), handler: switchTool},
 		{def: timerTool.Definition(), handler: timerTool},
-		{def: websearch.Definition()},
+		{def: map[string]any{"type": "web_search_preview"}},
 	}
 	for _, e := range toolEntries {
 		entries = append(entries, e)
