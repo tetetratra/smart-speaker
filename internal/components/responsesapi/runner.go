@@ -94,7 +94,7 @@ func (r *runner) consume() {
 }
 
 func (r *runner) handleRequest(text string) {
-	resp, err := r.client.CreateResponse(r.ctx, text)
+	resp, err := r.client.CreateResponse(r.ctx, appendOutputConstraint(text))
 	if err != nil {
 		log.Printf("responsesapi: request error: %v", err)
 		return
@@ -112,12 +112,21 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		return
 	}
 	out := strings.TrimSpace(string(resp.Output))
-	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, out)
+	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint(out))
 	if err != nil {
 		log.Printf("responsesapi: tool output error: %v", err)
 		return
 	}
 	r.handleResponsesResponse(next)
+}
+
+func appendOutputConstraint(text string) string {
+	const suffix = "（マークダウン・記号・URLを使わず、1文程度で返答してください）"
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return trimmed
+	}
+	return trimmed + " " + suffix
 }
 
 func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
