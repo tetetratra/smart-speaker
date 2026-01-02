@@ -21,6 +21,7 @@ type runner struct {
 
 	mu             sync.Mutex
 	toolResponseID map[string]string
+	lastResponseID string
 }
 
 // NewStage はResponses API呼び出しのステージを構築します。
@@ -91,7 +92,8 @@ func (r *runner) consume() {
 }
 
 func (r *runner) handleRequest(text string) {
-	resp, err := r.client.CreateResponse(r.ctx, appendOutputConstraint(text))
+	prevID := r.currentResponseID()
+	resp, err := r.client.CreateResponse(r.ctx, appendOutputConstraint(text), prevID)
 	if err != nil {
 		log.Printf("responsesapi: request error: %v", err)
 		return
@@ -127,6 +129,7 @@ func appendOutputConstraint(text string) string {
 }
 
 func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
+	r.setCurrentResponseID(resp.ResponseID)
 	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: resp})
 	if len(resp.ToolCalls) > 0 {
 		for _, call := range resp.ToolCalls {
@@ -141,6 +144,21 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 	}
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: resp.Text, ResponseID: resp.ResponseID, Source: "responses"}})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: resp.ResponseID, Final: true, Source: "responses"}})
+}
+
+func (r *runner) currentResponseID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastResponseID
+}
+
+func (r *runner) setCurrentResponseID(responseID string) {
+	if strings.TrimSpace(responseID) == "" {
+		return
+	}
+	r.mu.Lock()
+	r.lastResponseID = responseID
+	r.mu.Unlock()
 }
 
 func (r *runner) emit(evt types.Event) {

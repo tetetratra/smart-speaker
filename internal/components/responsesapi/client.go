@@ -44,7 +44,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, text string) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, text, previousResponseID string) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(c.instr) != "" {
 		input = append(input, map[string]any{
@@ -60,6 +60,9 @@ func (c *Client) CreateResponse(ctx context.Context, text string) (types.Respons
 	payload := map[string]any{
 		"model": c.model,
 		"input": input,
+	}
+	if strings.TrimSpace(previousResponseID) != "" {
+		payload["previous_response_id"] = previousResponseID
 	}
 	if len(c.tools) > 0 {
 		payload["tools"] = c.tools
