@@ -9,11 +9,9 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
-	"smart-speaker/internal/components/conversationstarter"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/realtimeapi"
 	"smart-speaker/internal/components/responsesapi"
-	"smart-speaker/internal/components/textinput"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/turnmanager"
@@ -52,8 +50,6 @@ func main() {
 
 type stages struct {
 	input     *graph.Stage
-	text      *graph.Stage
-	starter   *graph.Stage
 	realtime  *graph.Stage
 	turn      *graph.Stage
 	responses *graph.Stage
@@ -65,7 +61,7 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.text, s.starter, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool} {
 		if st != nil {
 			st.Close()
 		}
@@ -87,7 +83,6 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		outStage.Close()
 		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
-	text := textinput.NewStage()
 	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
 		APIKey:             cfg.APIKey,
 		Model:              cfg.Model,
@@ -122,7 +117,6 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		realtime.Close()
 		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
 	}
-	var starter *graph.Stage
 	switchBotTool := toolcaller.NewSwitchBotTool(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
 	subAITool := toolcaller.NewSubAITool(cfg.APIKey)
 	timerTool := toolcaller.NewTimerTool()
@@ -137,13 +131,8 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		tools[timerTool.Name()] = timerTool
 	}
 	toolStage := toolcaller.NewStage(tools)
-	if cfg.AutoPromptInterval > 0 {
-		starter = conversationstarter.NewStage(cfg.AutoPromptInterval, cfg.AutoPromptMessage)
-	}
 	return stages{
 		input:     inStage,
-		text:      text,
-		starter:   starter,
 		realtime:  realtime,
 		turn:      turnStage,
 		responses: responsesStage,
@@ -183,16 +172,6 @@ func wireGraph(g *graph.Graph, st stages) {
 	if node := add(st.input); node != nil {
 		g.Connect(node, realtimeNode)
 	}
-	if node := add(st.text); node != nil {
-		if responsesNode != nil {
-			g.Connect(node, responsesNode)
-		} else {
-			g.Connect(node, realtimeNode)
-		}
-	}
-	if node := add(st.starter); node != nil {
-		g.Connect(node, realtimeNode)
-	}
 	if node := add(st.printer); node != nil {
 		g.Connect(realtimeNode, node)
 		if responsesNode != nil {
@@ -229,9 +208,6 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)
-		}
-		if starterNode := add(st.starter); starterNode != nil {
-			g.Connect(starterNode, node)
 		}
 	}
 }

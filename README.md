@@ -39,8 +39,6 @@ npm run dev
 
 ## 構成図（ステージ接続）
 - `ws_input (/ws/audio)` → `realtimeapi` → `tts(ElevenLabs)` → `ws_output (/ws/audio)`
-- `textinput` → `realtimeapi`
-- `conversationstarter` → `realtimeapi` ＋ `wschat (/ws/chat)`
 - `toolcaller` ↔ `realtimeapi` → `wschat (/ws/chat)` も通知
 - `printer` は `realtimeapi` のログ出力用（UIには流さない）
 
@@ -50,7 +48,6 @@ npm run dev
   - 人間/AI: `{"type":"message","role":"user|assistant|system","text":"...","response_id":"...","final":false}`
   - Function Call: `{"type":"function_call","tool_call_id":"...","name":"...","arguments":{...}}`
   - Function Result: `{"type":"function_result","tool_call_id":"...","output":{...}}`
-  - conversationstarter 由来の system 文言も `type: message, role: system` として流れます
 
 ## 備考
 - 旧 PortAudio ベースのマイク/再生は WS 入出力に置き換え済みです
