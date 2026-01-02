@@ -261,6 +261,9 @@ func asString(v any) string {
 func defaultTools() []any {
 	return []any{
 		map[string]any{
+			"type": "web_search_preview",
+		},
+		map[string]any{
 			"type":        "function",
 			"name":        "switchbot_control_device",
 			"description": "SwitchBot API を使ってデバイスを操作します。",
