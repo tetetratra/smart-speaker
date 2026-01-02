@@ -7,24 +7,9 @@ import (
 	"sync"
 
 	"smart-speaker/internal/graph"
+	"smart-speaker/internal/tools"
 	types "smart-speaker/internal/types"
 )
-
-// Tool は function calling から呼び出されるツールの抽象
-type Tool interface {
-	Name() string
-	Run(args map[string]any) (map[string]any, error)
-}
-
-// ContextAwareTool は stage 管理の context を受け取れるツールが実装する
-type ContextAwareTool interface {
-	SetContext(ctx context.Context)
-}
-
-// EventEmitterTool は、非同期にイベントを下流へ送れるよう emitter を受け取れるツールが実装する。
-type EventEmitterTool interface {
-	SetEventEmitter(func(types.Event))
-}
 
 type toolCaller struct {
 	upstream        chan types.Event
@@ -35,17 +20,17 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools map[string]Tool
+	tools map[string]tools.Handler
 }
 
-func NewStage(tools map[string]Tool) *graph.Stage {
-	if tools == nil {
-		tools = map[string]Tool{}
+func NewStage(handlers map[string]tools.Handler) *graph.Stage {
+	if handlers == nil {
+		handlers = map[string]tools.Handler{}
 	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		tools:      tools,
+		tools:      handlers,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -60,10 +45,10 @@ func (s *toolCaller) run(parent context.Context) {
 	s.ctx = ctx
 	s.cancel = cancel
 	for _, tool := range s.tools {
-		if ctxTool, ok := tool.(ContextAwareTool); ok {
+		if ctxTool, ok := tool.(tools.ContextAware); ok {
 			ctxTool.SetContext(ctx)
 		}
-		if emitterTool, ok := tool.(EventEmitterTool); ok {
+		if emitterTool, ok := tool.(tools.EventEmitterAware); ok {
 			emitterTool.SetEventEmitter(s.emit)
 		}
 	}

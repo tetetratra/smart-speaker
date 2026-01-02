@@ -1,4 +1,4 @@
-package toolcaller
+package timer
 
 import (
 	"context"
@@ -6,34 +6,34 @@ import (
 	"log"
 	"time"
 
+	"smart-speaker/internal/tools"
 	types "smart-speaker/internal/types"
 )
 
-const timerToolName = "schedule_timer"
+const toolName = "schedule_timer"
 
-// TimerTool は指定時刻にリマインドテキストを送る簡易スケジューラ。
-// リマインドは EventTextInput (role=system) として emit される。
-type TimerTool struct {
+// Tool は指定時刻にリマインドテキストを送る簡易スケジューラです。
+type Tool struct {
 	ctx     context.Context
 	emit    func(types.Event)
 	nowFunc func() time.Time
 }
 
-func NewTimerTool() *TimerTool {
-	return &TimerTool{nowFunc: time.Now}
+func New() *Tool {
+	return &Tool{nowFunc: time.Now}
 }
 
-func (t *TimerTool) Name() string { return timerToolName }
+func (t *Tool) Name() string { return toolName }
 
-func (t *TimerTool) SetContext(ctx context.Context) {
+func (t *Tool) SetContext(ctx context.Context) {
 	t.ctx = ctx
 }
 
-func (t *TimerTool) SetEventEmitter(emit func(types.Event)) {
+func (t *Tool) SetEventEmitter(emit func(types.Event)) {
 	t.emit = emit
 }
 
-func (t *TimerTool) Run(args map[string]any) (map[string]any, error) {
+func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	kind := toStr(args["type"])
 	desc := toStr(args["description"])
 	if desc == "" {
@@ -73,14 +73,61 @@ func (t *TimerTool) Run(args map[string]any) (map[string]any, error) {
 	}
 }
 
-func (t *TimerTool) now() time.Time {
+func (t *Tool) Definition() map[string]any {
+	return map[string]any{
+		"type":        "function",
+		"name":        toolName,
+		"description": "指定時刻にリマインドをセットします。role=system のメッセージとして再度送ります。",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"type": map[string]any{
+					"type":        "string",
+					"enum":        []string{"absolute", "relative"},
+					"description": "absolute または relative を指定してください。",
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"description": "その時間に知らせたい内容（短め）。",
+				},
+				"minutes": map[string]any{
+					"type":        "integer",
+					"description": "relative の場合、何分後か（整数）。",
+				},
+				"year": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の年（西暦）。",
+				},
+				"month": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の月（1-12）。",
+				},
+				"day": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の日（1-31）。",
+				},
+				"hour": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の時（0-23）。",
+				},
+				"minute": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の分（0-59）。",
+				},
+			},
+			"required": []string{"type", "description"},
+		},
+	}
+}
+
+func (t *Tool) now() time.Time {
 	if t.nowFunc != nil {
 		return t.nowFunc()
 	}
 	return time.Now()
 }
 
-func (t *TimerTool) schedule(target time.Time, desc string) {
+func (t *Tool) schedule(target time.Time, desc string) {
 	delay := time.Until(target)
 	if delay <= 0 {
 		return
@@ -166,3 +213,8 @@ func asInt(v any) (int, error) {
 		return 0, fmt.Errorf("not an integer")
 	}
 }
+
+var _ tools.Handler = (*Tool)(nil)
+var _ tools.ContextAware = (*Tool)(nil)
+var _ tools.EventEmitterAware = (*Tool)(nil)
+var _ tools.DefinitionProvider = (*Tool)(nil)

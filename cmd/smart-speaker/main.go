@@ -18,6 +18,7 @@ import (
 	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/graph"
+	"smart-speaker/internal/tools/registry"
 )
 
 func main() {
@@ -103,10 +104,17 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	}
 	printerStage := printer.NewStage()
 	turnStage := turnmanager.NewStage()
+
+	toolRegistry := registry.New(registry.Config{
+		SwitchBotToken:     cfg.SwitchBot.Token,
+		SwitchBotSecret:    cfg.SwitchBot.Secret,
+		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
+	})
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
+		Tools:        toolRegistry.Definitions(),
 	})
 	if err != nil {
 		inStage.Close()
@@ -117,16 +125,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		realtime.Close()
 		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
 	}
-	switchBotTool := toolcaller.NewSwitchBotTool(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
-	timerTool := toolcaller.NewTimerTool()
-	tools := map[string]toolcaller.Tool{}
-	if switchBotTool != nil {
-		tools[switchBotTool.Name()] = switchBotTool
-	}
-	if timerTool != nil {
-		tools[timerTool.Name()] = timerTool
-	}
-	toolStage := toolcaller.NewStage(tools)
+	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
 	return stages{
 		input:     inStage,
 		realtime:  realtime,
