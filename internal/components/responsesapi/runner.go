@@ -74,9 +74,6 @@ func (r *runner) consume() {
 				if !ok {
 					continue
 				}
-				if strings.TrimSpace(line.Role) == "system" {
-					continue
-				}
 				text := strings.TrimSpace(line.Text)
 				if text == "" {
 					continue
@@ -121,7 +118,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 }
 
 func appendOutputConstraint(text string) string {
-	const suffix = "（マークダウン・記号・URLを使わず、1文程度で返答してください）"
+	const suffix = "（マークダウン・記号を使わず、1文程度で返答してください。リンク形式であってもURLを含めることは禁止します）"
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return trimmed
