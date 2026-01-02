@@ -77,42 +77,42 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "指定時刻にリマインドをセットします。role=system のメッセージとして再度送ります。",
+		"description": "ユーザーが「あとで起こして」「〇時に知らせて」など、明示的にタイマーを依頼した場合のみ使用します。時間指定が曖昧なら先に質問します。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"type": map[string]any{
 					"type":        "string",
 					"enum":        []string{"absolute", "relative"},
-					"description": "absolute または relative を指定してください。",
+					"description": "absolute か relative を指定してください。ユーザーの発話に時間指定がある場合のみ使います。",
 				},
 				"description": map[string]any{
 					"type":        "string",
-					"description": "その時間に知らせたい内容（短め）。",
+					"description": "その時間に知らせたい内容（短め）。ユーザーが明示的に依頼した内容のみ。",
 				},
 				"minutes": map[string]any{
 					"type":        "integer",
-					"description": "relative の場合、何分後か（整数）。",
+					"description": "relative の場合、何分後か（整数）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"year": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の年（西暦）。",
+					"description": "absolute の場合の年（西暦）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"month": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の月（1-12）。",
+					"description": "absolute の場合の月（1-12）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"day": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の日（1-31）。",
+					"description": "absolute の場合の日（1-31）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"hour": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の時（0-23）。",
+					"description": "absolute の場合の時（0-23）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"minute": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の分（0-59）。",
+					"description": "absolute の場合の分（0-59）。ユーザーの発話に明示がある場合のみ。",
 				},
 			},
 			"required": []string{"type", "description"},
