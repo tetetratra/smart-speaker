@@ -2,6 +2,7 @@ package registry
 
 import (
 	"smart-speaker/internal/tools"
+	"smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
 	"smart-speaker/internal/tools/mcp/googlecalendar"
@@ -29,10 +30,12 @@ func New(cfg Config) *Registry {
 	var entries []entry
 
 	switchTool := switchbot.New(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	diaryTool := diary.New()
 	timerTool := timer.New()
 	toolEntries := []entry{
 		{def: switchTool.Definition(), handler: switchTool},
 		{def: timerTool.Definition(), handler: timerTool},
+		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: map[string]any{"type": "web_search"}},
 		{def: googlecalendar.Definition()},
 	}
