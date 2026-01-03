@@ -62,7 +62,8 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		// 音声入力は常に PCM16 を送るためフォーマット指定
 		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
-			"type":                "server_vad",
+			"type":                "semantic_vad",
+			"eagerness":           "low",
 			"threshold":           0.65,
 			"silence_duration_ms": 800,
 			"create_response":     false,
