@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	types "smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
@@ -53,6 +54,12 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 		input = append(input, map[string]any{
 			"role":    "system",
 			"content": c.instr,
+		})
+	}
+	if extra := strings.TrimSpace(state.GetDiaryContent()); extra != "" {
+		input = append(input, map[string]any{
+			"role":    "system",
+			"content": extra,
 		})
 	}
 	input = append(input, map[string]any{
