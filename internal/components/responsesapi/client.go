@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	types "smart-speaker/internal/state"
+	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
@@ -228,16 +228,6 @@ func extractToolCalls(parsed map[string]any) []types.ToolRequest {
 			if call := parseFunctionCall(entry, respID); call != nil {
 				calls = append(calls, *call)
 			}
-		case "tool_calls":
-			if arr, ok := entry["tool_calls"].([]any); ok {
-				for _, call := range arr {
-					if m, ok := call.(map[string]any); ok {
-						if parsedCall := parseFunctionCall(m, respID); parsedCall != nil {
-							calls = append(calls, *parsedCall)
-						}
-					}
-				}
-			}
 		}
 	}
 	return calls
@@ -255,44 +245,49 @@ func extractMCPCalls(parsed map[string]any) []types.MCPCall {
 		if !ok {
 			continue
 		}
-		if asString(entry["type"]) != "mcp_call" {
-			continue
+		switch asString(entry["type"]) {
+		case "mcp_call":
+			if call := parseMCPCall(entry, respID); call != nil {
+				calls = append(calls, *call)
+			}
 		}
-		callID := asString(entry["id"])
-		name := asString(entry["name"])
-		serverLabel := asString(entry["server_label"])
-		args := toJSONRaw(asString(entry["arguments"]))
-		out := toJSONRaw(asString(entry["output"]))
-		calls = append(calls, types.MCPCall{
-			CallID:      callID,
-			ServerLabel: serverLabel,
-			Name:        name,
-			Arguments:   args,
-			Output:      out,
-			ResponseID:  respID,
-		})
 	}
 	return calls
 }
 
 func parseFunctionCall(entry map[string]any, respID string) *types.ToolRequest {
-	callID := asString(entry["call_id"])
-	if callID == "" {
-		callID = asString(entry["id"])
-	}
-	if callID == "" {
+	name, ok := entry["name"].(string)
+	if !ok || name == "" {
 		return nil
 	}
-	name := asString(entry["name"])
-	args := strings.TrimSpace(asString(entry["arguments"]))
-	if args == "" {
-		args = "{}"
+	callID, _ := entry["call_id"].(string)
+	args, _ := entry["arguments"].(string)
+	if callID == "" || args == "" {
+		return nil
 	}
 	return &types.ToolRequest{
 		ResponseID: respID,
 		ToolCallID: callID,
 		Name:       name,
-		Arguments:  json.RawMessage([]byte(args)),
+		Arguments:  json.RawMessage(args),
+	}
+}
+
+func parseMCPCall(entry map[string]any, respID string) *types.MCPCall {
+	name, ok := entry["name"].(string)
+	if !ok || name == "" {
+		return nil
+	}
+	callID, _ := entry["call_id"].(string)
+	output, _ := entry["output"].(string)
+	if callID == "" || output == "" {
+		return nil
+	}
+	return &types.MCPCall{
+		CallID:     callID,
+		Name:       name,
+		Output:     json.RawMessage(output),
+		ResponseID: respID,
 	}
 }
 
@@ -301,19 +296,4 @@ func asString(v any) string {
 		return s
 	}
 	return ""
-}
-
-func toJSONRaw(value string) json.RawMessage {
-	raw := strings.TrimSpace(value)
-	if raw == "" {
-		return json.RawMessage([]byte(`{}`))
-	}
-	if json.Valid([]byte(raw)) {
-		return json.RawMessage([]byte(raw))
-	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return json.RawMessage([]byte(`{}`))
-	}
-	return json.RawMessage(encoded)
 }

@@ -191,7 +191,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	responsesNode := add(st.responses)
 	proactiveNode := add(st.proactive)
 	diaryNode := add(st.diary)
-	resetNode := add(st.reset)
+	_ = add(st.reset)
 	if node := add(st.input); node != nil {
 		g.Connect(node, realtimeNode)
 	}
