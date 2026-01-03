@@ -161,6 +161,9 @@ function App() {
       setPresenceEnabled(false)
       setPresenceStatus('停止中')
       setPresenceError('')
+      setPresencePresent('')
+      setPresenceUpdatedAt('')
+      sendPresence('no', new Date().toISOString())
       return
     }
     if (!videoRef.current) {
