@@ -33,7 +33,7 @@ func New(cfg Config) *Registry {
 	toolEntries := []entry{
 		{def: switchTool.Definition(), handler: switchTool},
 		{def: timerTool.Definition(), handler: timerTool},
-		{def: map[string]any{"type": "web_search_preview"}},
+		{def: map[string]any{"type": "web_search"}},
 		{def: googlecalendar.Definition()},
 	}
 	for _, e := range toolEntries {
