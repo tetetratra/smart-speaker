@@ -41,18 +41,34 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	}
 	switch kind {
 	case "relative":
-		minutes, err := asInt(args["minutes"])
-		if err != nil || minutes <= 0 {
-			return nil, fmt.Errorf("minutes must be a positive integer")
+		minutes, minutesErr := asInt(args["minutes"])
+		seconds, secondsErr := asInt(args["seconds"])
+		if minutesErr != nil {
+			minutes = 0
 		}
-		delay := time.Duration(minutes) * time.Minute
+		if secondsErr != nil {
+			seconds = 0
+		}
+		if minutes <= 0 && seconds <= 0 {
+			return nil, fmt.Errorf("minutes or seconds must be a positive integer")
+		}
+		if minutes < 0 || seconds < 0 {
+			return nil, fmt.Errorf("minutes and seconds must be positive integers")
+		}
+		delay := time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second
 		target := t.now().Add(delay)
 		t.schedule(target, desc)
-		return map[string]any{
+		result := map[string]any{
 			"scheduled_for": target.Format(time.RFC3339),
 			"type":          "relative",
-			"minutes":       minutes,
-		}, nil
+		}
+		if minutes > 0 {
+			result["minutes"] = minutes
+		}
+		if seconds > 0 {
+			result["seconds"] = seconds
+		}
+		return result, nil
 	case "absolute":
 		abs, err := parseAbsolute(args, t.now())
 		if err != nil {
@@ -93,6 +109,10 @@ func (t *Tool) Definition() map[string]any {
 				"minutes": map[string]any{
 					"type":        "integer",
 					"description": "relative の場合、何分後か（整数）。ユーザーの発話に明示がある場合のみ。",
+				},
+				"seconds": map[string]any{
+					"type":        "integer",
+					"description": "relative の場合、何秒後か（整数）。ユーザーの発話に明示がある場合のみ。",
 				},
 				"hour": map[string]any{
 					"type":        "integer",
@@ -179,7 +199,7 @@ func parseAbsolute(args map[string]any, now time.Time) (absoluteTime, error) {
 	}
 	return absoluteTime{
 		year:   now.Year(),
-		month: int(now.Month()),
+		month:  int(now.Month()),
 		day:    now.Day(),
 		hour:   hour,
 		minute: minute,
