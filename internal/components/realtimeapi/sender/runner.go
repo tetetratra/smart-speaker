@@ -64,8 +64,6 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		"turn_detection": map[string]any{
 			"type":                "semantic_vad",
 			"eagerness":           "low",
-			"threshold":           0.65,
-			"silence_duration_ms": 800,
 			"create_response":     false,
 			"interrupt_response":  false,
 		},
