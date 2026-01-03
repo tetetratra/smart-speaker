@@ -54,11 +54,11 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 			"minutes":       minutes,
 		}, nil
 	case "absolute":
-		abs, err := parseAbsolute(args)
+		abs, err := parseAbsolute(args, t.now())
 		if err != nil {
 			return nil, err
 		}
-		target := time.Date(abs.year, time.Month(abs.month), abs.day, abs.hour, abs.minute, 0, 0, time.Local)
+		target := time.Date(abs.year, time.Month(abs.month), abs.day, abs.hour, abs.minute, abs.second, 0, time.Local)
 		now := t.now()
 		if !target.After(now) {
 			return nil, fmt.Errorf("specified time is not in the future")
@@ -77,7 +77,7 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "ユーザーが「あとで起こして」「〇時に知らせて」など、明示的にタイマーを依頼した場合のみ使用します。時間指定が曖昧なら先に質問します。",
+		"description": "ユーザーが「あとで起こして」「〇時に知らせて」など、明示的にタイマーを依頼した場合のみ使用します。日付等の指定が無い場合は推測して指定してください",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -94,25 +94,17 @@ func (t *Tool) Definition() map[string]any {
 					"type":        "integer",
 					"description": "relative の場合、何分後か（整数）。ユーザーの発話に明示がある場合のみ。",
 				},
-				"year": map[string]any{
-					"type":        "integer",
-					"description": "absolute の場合の年（西暦）。ユーザーの発話に明示がある場合のみ。",
-				},
-				"month": map[string]any{
-					"type":        "integer",
-					"description": "absolute の場合の月（1-12）。ユーザーの発話に明示がある場合のみ。",
-				},
-				"day": map[string]any{
-					"type":        "integer",
-					"description": "absolute の場合の日（1-31）。ユーザーの発話に明示がある場合のみ。",
-				},
 				"hour": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の時（0-23）。ユーザーの発話に明示がある場合のみ。",
+					"description": "absolute の場合の時（0-23）。日付は本日固定です。",
 				},
 				"minute": map[string]any{
 					"type":        "integer",
-					"description": "absolute の場合の分（0-59）。ユーザーの発話に明示がある場合のみ。",
+					"description": "absolute の場合の分（0-59）。日付は本日固定です。",
+				},
+				"second": map[string]any{
+					"type":        "integer",
+					"description": "absolute の場合の秒（0-59）。日付は本日固定です。",
 				},
 			},
 			"required": []string{"type", "description"},
@@ -163,20 +155,12 @@ type absoluteTime struct {
 	day    int
 	hour   int
 	minute int
+	second int
 }
 
-func parseAbsolute(args map[string]any) (absoluteTime, error) {
-	year, err := asInt(args["year"])
-	if err != nil {
-		return absoluteTime{}, fmt.Errorf("year must be int")
-	}
-	month, err := asInt(args["month"])
-	if err != nil {
-		return absoluteTime{}, fmt.Errorf("month must be int")
-	}
-	day, err := asInt(args["day"])
-	if err != nil {
-		return absoluteTime{}, fmt.Errorf("day must be int")
+func parseAbsolute(args map[string]any, now time.Time) (absoluteTime, error) {
+	if args["year"] != nil || args["month"] != nil || args["day"] != nil {
+		return absoluteTime{}, fmt.Errorf("year/month/day are not supported; date defaults to today")
 	}
 	hour, err := asInt(args["hour"])
 	if err != nil {
@@ -186,10 +170,21 @@ func parseAbsolute(args map[string]any) (absoluteTime, error) {
 	if err != nil {
 		return absoluteTime{}, fmt.Errorf("minute must be int")
 	}
-	if month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+	second, err := asInt(args["second"])
+	if err != nil {
+		second = 0
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59 {
 		return absoluteTime{}, fmt.Errorf("invalid date/time range")
 	}
-	return absoluteTime{year: year, month: month, day: day, hour: hour, minute: minute}, nil
+	return absoluteTime{
+		year:   now.Year(),
+		month: int(now.Month()),
+		day:    now.Day(),
+		hour:   hour,
+		minute: minute,
+		second: second,
+	}, nil
 }
 
 func toStr(v any) string {
