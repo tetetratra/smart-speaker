@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	minIdleSeconds        = 20
-	maxRandomDelaySeconds = 10
+	minIdleMinutes        = 20
+	maxRandomDelayMinutes = 120
 	checkInterval         = time.Second
 )
 
@@ -89,8 +89,8 @@ func (r *runner) check() {
 func computeScheduledAt(lastTalkAt time.Time, loc *time.Location) time.Time {
 	seed := lastTalkAt.Unix()
 	gen := rand.New(rand.NewSource(seed))
-	randomDelay := time.Duration(gen.Intn(maxRandomDelaySeconds+1)) * time.Second
-	base := lastTalkAt.In(loc).Add(time.Duration(minIdleSeconds) * time.Second)
+	randomDelay := time.Duration(gen.Intn(maxRandomDelayMinutes+1)) * time.Minute
+	base := lastTalkAt.In(loc).Add(time.Duration(minIdleMinutes) * time.Minute)
 	return base.Add(randomDelay)
 }
 
