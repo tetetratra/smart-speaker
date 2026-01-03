@@ -33,6 +33,7 @@ type VadEvent struct {
 
 // ResponsesRequest はResponses APIへの要求を表します。
 type ResponsesRequest struct {
+	Role string
 	Text string
 }
 

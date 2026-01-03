@@ -72,7 +72,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest(text)
+				r.handleRequest(strings.TrimSpace(req.Role), text)
 			case types.EventTextInput:
 				line, ok := evt.Payload.(types.OutputLine)
 				if !ok {
@@ -82,7 +82,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest(text)
+				r.handleRequest("user", text)
 			case types.EventToolResponse:
 				resp, ok := evt.Payload.(types.ToolResponse)
 				if !ok {
@@ -94,13 +94,13 @@ func (r *runner) consume() {
 	}
 }
 
-func (r *runner) handleRequest(text string) {
+func (r *runner) handleRequest(role, text string) {
 	prevID := r.currentResponseID()
-	resp, err := r.client.CreateResponse(r.ctx, appendOutputConstraint(text), prevID)
+	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), prevID)
 	if err != nil {
 		if prevID != "" && isInvalidPreviousResponseID(err) {
 			r.clearResponseID()
-			resp, err = r.client.CreateResponse(r.ctx, appendOutputConstraint(text), "")
+			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), "")
 			if err == nil {
 				r.handleResponsesResponse(resp)
 				return

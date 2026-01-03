@@ -44,8 +44,11 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, text, previousResponseID string) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID string) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
+	if strings.TrimSpace(role) == "" {
+		role = "user"
+	}
 	if strings.TrimSpace(c.instr) != "" {
 		input = append(input, map[string]any{
 			"role":    "system",
@@ -53,7 +56,7 @@ func (c *Client) CreateResponse(ctx context.Context, text, previousResponseID st
 		})
 	}
 	input = append(input, map[string]any{
-		"role":    "user",
+		"role":    role,
 		"content": text,
 	})
 

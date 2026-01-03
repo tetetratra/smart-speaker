@@ -81,7 +81,7 @@ func (s *turnManager) emitIfReady() {
 	if text == "" {
 		return
 	}
-	req := types.ResponsesRequest{Text: text}
+	req := types.ResponsesRequest{Role: "user", Text: text}
 	select {
 	case <-s.ctx.Done():
 		return
