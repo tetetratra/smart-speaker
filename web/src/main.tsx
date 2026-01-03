@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createAudioReceiver, createAudioSender } from './audio'
-import { downloadLanguageModel, startCameraWatcher } from './vision'
 import { createWS } from './ws'
 
 type ChatMessage =
@@ -17,26 +16,14 @@ function App() {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
-  const [cameraEnabled, setCameraEnabled] = useState(false)
-  const [cameraStatus, setCameraStatus] = useState('停止中')
-  const [cameraSummary, setCameraSummary] = useState('')
-  const [cameraChanged, setCameraChanged] = useState<'yes' | 'no' | ''>('')
-  const [cameraError, setCameraError] = useState('')
-  const [cameraCapturedAt, setCameraCapturedAt] = useState('')
-  const [cameraPerson, setCameraPerson] = useState<'yes' | 'no' | ''>('')
-  const [cameraActivity, setCameraActivity] = useState('')
-  const [cameraImageUrl, setCameraImageUrl] = useState('')
-  const [downloading, setDownloading] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   const receiver = useMemo(() => createAudioReceiver(), [])
 
   const wsAudioRef = useRef<ReturnType<typeof createWS> | null>(null)
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const stopSenderRef = useRef<(() => void) | null>(null)
-  const stopCameraRef = useRef<(() => void) | null>(null)
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
@@ -140,129 +127,8 @@ function App() {
   useEffect(() => {
     return () => {
       disconnect()
-      stopCameraRef.current?.()
-      stopCameraRef.current = null
     }
   }, [disconnect])
-
-  const sendCameraContext = useCallback(
-    (summary: string, changed: 'yes' | 'no', person: 'yes' | 'no', activity: string) => {
-      const ws = wsChatRef.current
-      if (!ws || !connected) return
-      ws.send({
-        type: 'camera_context',
-        summary,
-        changed,
-        person,
-        activity,
-        timestamp: new Date().toISOString(),
-      })
-    },
-    [connected],
-  )
-
-  const startCamera = useCallback(async () => {
-    if (cameraEnabled) {
-      stopCameraRef.current?.()
-      stopCameraRef.current = null
-      setCameraEnabled(false)
-      setCameraStatus('停止中')
-      setCameraError('')
-      return
-    }
-    if (!videoRef.current) {
-      return
-    }
-    setCameraEnabled(true)
-    setCameraError('')
-    try {
-      const handle = await startCameraWatcher({
-        video: videoRef.current,
-        intervalMs: 10000, // 10秒ごとに解析
-        onStatus: (status, message) => {
-          if (status === 'error') {
-            setCameraStatus('エラー')
-            setCameraError(message ?? '')
-            return
-          }
-          if (status === 'unsupported') {
-            setCameraStatus('未対応')
-            setCameraError(message ?? '')
-            return
-          }
-          if (status === 'starting') {
-            setCameraStatus(message ? `起動中: ${message}` : '起動中')
-            return
-          }
-          if (status === 'ready') {
-            setCameraStatus(message ? `待機中: ${message}` : '待機中')
-            return
-          }
-          if (status === 'running') {
-            setCameraStatus(message ? `解析中: ${message}` : '解析中')
-            return
-          }
-          if (status === 'idle') {
-            setCameraStatus('停止中')
-          }
-        },
-        onResult: (result) => {
-          setCameraSummary(result.summary)
-          setCameraChanged(result.changed)
-          setCameraCapturedAt(result.capturedAt)
-          setCameraPerson(result.personPresent)
-          setCameraActivity(result.activity)
-          setCameraImageUrl(result.imageUrl)
-          if (result.changed === 'yes' && result.summary) {
-            sendCameraContext(result.summary, result.changed, result.personPresent, result.activity)
-          }
-        },
-      })
-      stopCameraRef.current = handle.stop
-    } catch (err) {
-      setCameraEnabled(false)
-      setCameraStatus('エラー')
-      setCameraError(err instanceof Error ? err.message : 'unknown error')
-    }
-  }, [cameraEnabled, sendCameraContext])
-
-  const downloadModel = useCallback(async () => {
-    if (downloading) return
-    setDownloading(true)
-    setCameraError('')
-    try {
-      await downloadLanguageModel((status, message) => {
-        if (status === 'error') {
-          setCameraStatus('エラー')
-          setCameraError(message ?? '')
-          return
-        }
-        if (status === 'unsupported') {
-          setCameraStatus('未対応')
-          setCameraError(message ?? '')
-          return
-        }
-        if (status === 'starting') {
-          setCameraStatus(message ? `起動中: ${message}` : '起動中')
-          return
-        }
-        if (status === 'ready') {
-          setCameraStatus(message ? `待機中: ${message}` : '待機中')
-          return
-        }
-        if (status === 'running') {
-          setCameraStatus(message ? `解析中: ${message}` : '解析中')
-          return
-        }
-      })
-      setCameraStatus('待機中')
-    } catch (err) {
-      setCameraStatus('エラー')
-      setCameraError(err instanceof Error ? err.message : 'unknown error')
-    } finally {
-      setDownloading(false)
-    }
-  }, [downloading])
 
   useEffect(() => {
     const el = chatRef.current
@@ -295,61 +161,6 @@ function App() {
         <button onClick={disconnect} disabled={!connected}>
           切断
         </button>
-        <button onClick={startCamera} disabled={busy}>
-          {cameraEnabled ? 'カメラ停止' : 'カメラ開始'}
-        </button>
-        <button onClick={downloadModel} disabled={downloading}>
-          {downloading ? 'モデルDL中' : 'モデルDL開始'}
-        </button>
-      </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>
-            <strong>カメラ状態:</strong> {cameraStatus}
-          </div>
-          {cameraError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>エラー:</strong> {cameraError}
-            </div>
-          )}
-          <video ref={videoRef} width={320} height={240} autoPlay muted style={{ transform: 'scaleX(-1)' }} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div>
-            <strong>直近の変化:</strong>
-          </div>
-          <div style={{ minHeight: 48, background: '#f3f4f6', borderRadius: 6, padding: 8 }}>
-            {cameraSummary || '（なし）'}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>changed判定:</strong> {cameraChanged || '（なし）'}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>人の有無:</strong> {cameraPerson || '（なし）'}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>作業内容:</strong> {cameraActivity || '（なし）'}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>使用画像:</strong>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            {cameraImageUrl ? (
-              <img
-                src={cameraImageUrl}
-                alt="camera snapshot"
-                width={160}
-                height={160}
-                style={{ objectFit: 'contain', background: '#000' }}
-              />
-            ) : (
-              '（なし）'
-            )}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>撮影時刻:</strong> {cameraCapturedAt ? new Date(cameraCapturedAt).toLocaleTimeString('ja-JP') : '（なし）'}
-          </div>
-        </div>
       </div>
       <div
         style={{
