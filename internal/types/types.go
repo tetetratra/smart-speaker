@@ -1,5 +1,7 @@
 package types
 
+import "encoding/json"
+
 // Base64 で表現された PCM チャンク
 type AudioChunk string
 
@@ -40,4 +42,15 @@ type ResponsesResponse struct {
 	ResponseID  string
 	HasResponse bool
 	ToolCalls   []ToolRequest
+	MCPCalls    []MCPCall
+}
+
+// MCPCall はResponses APIのMCP呼び出し結果を表します。
+type MCPCall struct {
+	CallID      string
+	ServerLabel string
+	Name        string
+	Arguments   json.RawMessage
+	Output      json.RawMessage
+	ResponseID  string
 }

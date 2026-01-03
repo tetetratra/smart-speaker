@@ -150,6 +150,11 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 			r.emit(types.Event{Kind: types.EventToolRequest, Payload: call})
 		}
 	}
+	if len(resp.MCPCalls) > 0 {
+		for _, call := range resp.MCPCalls {
+			r.emit(types.Event{Kind: types.EventMCPCall, Payload: call})
+		}
+	}
 	if !resp.HasResponse {
 		return
 	}

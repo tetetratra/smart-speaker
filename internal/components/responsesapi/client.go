@@ -96,11 +96,13 @@ func (c *Client) CreateResponse(ctx context.Context, text, previousResponseID st
 	textOut := extractResponseText(parsed)
 	respID, _ := parsed["id"].(string)
 	toolCalls := extractToolCalls(parsed)
+	mcpCalls := extractMCPCalls(parsed)
 	return types.ResponsesResponse{
 		Text:        textOut,
 		ResponseID:  respID,
 		HasResponse: strings.TrimSpace(textOut) != "",
 		ToolCalls:   toolCalls,
+		MCPCalls:    mcpCalls,
 	}, nil
 }
 
@@ -157,11 +159,13 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 	textOut := extractResponseText(parsed)
 	respID, _ := parsed["id"].(string)
 	toolCalls := extractToolCalls(parsed)
+	mcpCalls := extractMCPCalls(parsed)
 	return types.ResponsesResponse{
 		Text:        textOut,
 		ResponseID:  respID,
 		HasResponse: strings.TrimSpace(textOut) != "",
 		ToolCalls:   toolCalls,
+		MCPCalls:    mcpCalls,
 	}, nil
 }
 
@@ -229,6 +233,38 @@ func extractToolCalls(parsed map[string]any) []types.ToolRequest {
 	return calls
 }
 
+func extractMCPCalls(parsed map[string]any) []types.MCPCall {
+	respID, _ := parsed["id"].(string)
+	output, ok := parsed["output"].([]any)
+	if !ok {
+		return nil
+	}
+	var calls []types.MCPCall
+	for _, item := range output {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if asString(entry["type"]) != "mcp_call" {
+			continue
+		}
+		callID := asString(entry["id"])
+		name := asString(entry["name"])
+		serverLabel := asString(entry["server_label"])
+		args := toJSONRaw(asString(entry["arguments"]))
+		out := toJSONRaw(asString(entry["output"]))
+		calls = append(calls, types.MCPCall{
+			CallID:      callID,
+			ServerLabel: serverLabel,
+			Name:        name,
+			Arguments:   args,
+			Output:      out,
+			ResponseID:  respID,
+		})
+	}
+	return calls
+}
+
 func parseFunctionCall(entry map[string]any, respID string) *types.ToolRequest {
 	callID := asString(entry["call_id"])
 	if callID == "" {
@@ -255,4 +291,19 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func toJSONRaw(value string) json.RawMessage {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return json.RawMessage([]byte(`{}`))
+	}
+	if json.Valid([]byte(raw)) {
+		return json.RawMessage([]byte(raw))
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return json.RawMessage([]byte(`{}`))
+	}
+	return json.RawMessage(encoded)
 }

@@ -12,6 +12,7 @@ const (
 	EventRealtimeAudio
 	EventToolRequest
 	EventToolResponse
+	EventMCPCall
 	EventVadStart
 	EventVadStop
 	EventTranscriptPartial
