@@ -51,7 +51,7 @@ func LoadConfig(promptPath string) Config {
 	model := "gpt-realtime-mini"
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
-		responsesModel = "gpt-5.2-chat-latest"
+		responsesModel = "gpt-5-chat-latest"
 	}
 	voice := strings.TrimSpace(os.Getenv("OPENAI_VOICE"))
 	if voice == "" {
