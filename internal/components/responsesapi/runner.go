@@ -160,6 +160,7 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 	if !resp.HasResponse {
 		return
 	}
+	state.SetLastActivityAt(time.Now())
 	state.SetLastAssistantTalkAt(time.Now())
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: resp.Text, ResponseID: resp.ResponseID, Source: "responses"}})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: resp.ResponseID, Final: true, Source: "responses"}})

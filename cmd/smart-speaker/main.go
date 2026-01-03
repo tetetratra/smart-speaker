@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
+	"smart-speaker/internal/components/diarywriter"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/proactive"
 	"smart-speaker/internal/components/realtimeapi"
@@ -74,10 +75,11 @@ type stages struct {
 	chat      *graph.Stage
 	tool      *graph.Stage
 	proactive *graph.Stage
+	diary     *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive} {
+	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.diary} {
 		if st != nil {
 			st.Close()
 		}
@@ -120,6 +122,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	printerStage := printer.NewStage()
 	turnStage := turnmanager.NewStage()
 	proactiveStage := proactive.NewStage()
+	diaryStage := diarywriter.NewStage()
 
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
@@ -153,6 +156,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		chat:      chatStage,
 		tool:      toolStage,
 		proactive: proactiveStage,
+		diary:     diaryStage,
 	}, nil
 }
 
@@ -182,6 +186,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	turnNode := add(st.turn)
 	responsesNode := add(st.responses)
 	proactiveNode := add(st.proactive)
+	diaryNode := add(st.diary)
 	if node := add(st.input); node != nil {
 		g.Connect(node, realtimeNode)
 	}
@@ -193,10 +198,18 @@ func wireGraph(g *graph.Graph, st stages) {
 		if proactiveNode != nil {
 			g.Connect(proactiveNode, node)
 		}
+		if diaryNode != nil {
+			g.Connect(diaryNode, node)
+		}
 	}
 	if proactiveNode != nil {
 		if responsesNode != nil {
 			g.Connect(proactiveNode, responsesNode)
+		}
+	}
+	if diaryNode != nil {
+		if responsesNode != nil {
+			g.Connect(diaryNode, responsesNode)
 		}
 	}
 	if turnNode != nil {
@@ -229,6 +242,9 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 		if proactiveNode != nil {
 			g.Connect(proactiveNode, node)
+		}
+		if diaryNode != nil {
+			g.Connect(diaryNode, node)
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)

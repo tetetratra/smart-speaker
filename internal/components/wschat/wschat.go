@@ -250,6 +250,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		if role == "" {
 			role = "user"
 		}
+		state.SetLastActivityAt(time.Now())
 		select {
 		case c.downstream <- types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{Role: role, Text: text}}:
 		case <-r.Context().Done():
