@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"smart-speaker/internal/state"
 	"smart-speaker/internal/tools"
 )
 
@@ -26,19 +27,18 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	timestamp := toStr(args["timestamp"])
-	when := time.Now()
-	if strings.TrimSpace(timestamp) != "" {
-		if parsed, err := time.Parse(time.RFC3339, timestamp); err == nil {
-			when = parsed
-		}
+	when := state.GetLastActivityAt()
+	if when.IsZero() {
+		when = time.Now()
 	}
 	if err := os.MkdirAll(filepath.Join("tmp", "diary"), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create diary dir: %w", err)
 	}
 	filename := when.Format("2006-01-02_150405") + ".md"
 	path := filepath.Join("tmp", "diary", filename)
-	if err := os.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
+	header := "# " + when.Format("2006-01-02 15:04")
+	body := header + "\n" + strings.TrimLeft(content, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write diary: %w", err)
 	}
 	return map[string]any{
@@ -51,17 +51,13 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "直近の会話を日記として保存します。必ず指定のフォーマットで各セクション3〜5行程度で書き、会話ごとに1ファイルにしてください。",
+		"description": "直近の会話を日記として保存します。必ず指定のフォーマットで各セクション5行前後で書いてください。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
-					"description": "日記本文。以下の形式を厳守してください。\n# (会話の日時)\n## 会話した話題\n...\n## ユーザーに関する知識\n...\n## 会話で得た知識\n...\n## 備考\n...\n## 今回の会話に対するあなたの感想\n...",
-				},
-				"timestamp": map[string]any{
-					"type":        "string",
-					"description": "会話の日時（RFC3339推奨）。未指定の場合は現在時刻を使います。",
+					"description": "日記本文。先頭の日時行(# ...)はツール側で付与するため記載せず、以下の形式を厳守してください。\n## 会話した話題\n...\n## ユーザーに関する知識\n...\n## 会話で得た一般的な知識\n...\n## 以降の会話で気にすること\n...\n## 今回の会話に対するあなたの感想\n...",
 				},
 			},
 			"required": []string{"content"},
