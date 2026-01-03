@@ -59,7 +59,7 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 	if extra := strings.TrimSpace(state.GetDiaryContent()); extra != "" {
 		input = append(input, map[string]any{
 			"role":    "system",
-			"content": extra,
+			"content": "以下は過去の会話をまとめた日記です。参考として扱ってください。\n" + extra,
 		})
 	}
 	input = append(input, map[string]any{

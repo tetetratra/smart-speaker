@@ -3,18 +3,14 @@ package diaryreset
 import (
 	"context"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/state"
 )
 
 const responseIDFile = "tmp/response_id.txt"
 
-// NewStage resets response state at midnight JST and loads diary content.
+// NewStage resets response state at midnight JST.
 func NewStage() *graph.Stage {
 	r := &runner{}
 	return &graph.Stage{
@@ -59,28 +55,6 @@ func (r *runner) untilNextMidnight() time.Duration {
 
 func (r *runner) reset() {
 	_ = os.Remove(responseIDFile)
-	content := readDiaryContent()
-	state.SetDiaryContent(content)
-}
-
-func readDiaryContent() string {
-	paths, _ := filepath.Glob(filepath.Join("tmp", "diary", "*.md"))
-	if len(paths) == 0 {
-		return ""
-	}
-	sort.Strings(paths)
-	var b strings.Builder
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
-		b.Write(data)
-	}
-	return strings.TrimSpace(b.String())
 }
 
 func (r *runner) close() error {
