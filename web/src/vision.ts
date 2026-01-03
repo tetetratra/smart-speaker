@@ -9,7 +9,8 @@ type VisionResult = {
   personPresent: 'yes' | 'no'
   activity: string
   raw: string
-  timestamp: string
+  capturedAt: string
+  imageUrl: string
 }
 
 type VisionStatus = 'idle' | 'starting' | 'ready' | 'running' | 'unsupported' | 'error'
@@ -82,25 +83,46 @@ async function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
   })
 }
 
-async function captureImageFile(video: HTMLVideoElement): Promise<File> {
+const captureWidth = 160
+const captureHeight = 160
+const jpegQuality = 0.3
+
+async function captureImageFile(
+  video: HTMLVideoElement,
+): Promise<{ file: File; capturedAt: string; imageUrl: string }> {
   const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
+  canvas.width = captureWidth
+  canvas.height = captureHeight
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     throw new Error('Canvas context is not available')
   }
+  const videoWidth = video.videoWidth
+  const videoHeight = video.videoHeight
+  const scale = Math.min(captureWidth / videoWidth, captureHeight / videoHeight)
+  const drawWidth = videoWidth * scale
+  const drawHeight = videoHeight * scale
+  const offsetX = (captureWidth - drawWidth) / 2
+  const offsetY = (captureHeight - drawHeight) / 2
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, captureWidth, captureHeight)
   ctx.save()
+  ctx.translate(captureWidth, 0)
   ctx.scale(-1, 1)
-  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height)
+  ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight)
   ctx.restore()
   const blob = await new Promise<Blob>((resolve) => {
-    canvas.toBlob((b) => resolve(b as Blob), 'image/jpeg')
+    canvas.toBlob((b) => resolve(b as Blob), 'image/jpeg', jpegQuality)
   })
   if (!blob) {
     throw new Error('Failed to capture image blob')
   }
-  return new File([blob], 'camera.jpeg', { type: 'image/jpeg' })
+  const imageUrl = canvas.toDataURL('image/jpeg', jpegQuality)
+  return {
+    file: new File([blob], 'camera.jpeg', { type: 'image/jpeg' }),
+    capturedAt: new Date().toISOString(),
+    imageUrl,
+  }
 }
 
 async function runPrompt(session: LanguageModelSession, previousImage: File, currentImage: File): Promise<string> {
@@ -123,7 +145,7 @@ async function runPrompt(session: LanguageModelSession, previousImage: File, cur
   }
 }
 
-function parseOutput(raw: string): VisionResult {
+function parseOutput(raw: string, capturedAt: string, imageUrl: string): VisionResult {
   const cleaned = raw.trim()
   const changedMatch = cleaned.match(/changed\s*:\s*(yes|no)/i)
   const summaryMatch = cleaned.match(/change\s*:\s*(.*)/i)
@@ -139,7 +161,8 @@ function parseOutput(raw: string): VisionResult {
     personPresent,
     activity,
     raw: cleaned,
-    timestamp: new Date().toISOString(),
+    capturedAt,
+    imageUrl,
   }
 }
 
@@ -147,7 +170,7 @@ export async function startCameraWatcher(options: VisionOptions): Promise<{ stop
   const { video, intervalMs, onResult, onStatus } = options
   let stopped = false
   let timer: number | undefined
-  let previousImage: File | null = null
+  let previousImage: { file: File; capturedAt: string; imageUrl: string } | null = null
 
   onStatus('starting', 'カメラを起動中')
   const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
@@ -172,8 +195,8 @@ export async function startCameraWatcher(options: VisionOptions): Promise<{ stop
         onStatus('ready', '初回画像を保存しました')
         return
       }
-      const raw = await runPrompt(session, previousImage, currentImage)
-      const result = parseOutput(raw)
+      const raw = await runPrompt(session, previousImage.file, currentImage.file)
+      const result = parseOutput(raw, currentImage.capturedAt, currentImage.imageUrl)
       previousImage = currentImage
       onResult(result)
     } catch (err) {

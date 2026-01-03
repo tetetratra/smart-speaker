@@ -22,9 +22,10 @@ function App() {
   const [cameraSummary, setCameraSummary] = useState('')
   const [cameraChanged, setCameraChanged] = useState<'yes' | 'no' | ''>('')
   const [cameraError, setCameraError] = useState('')
-  const [cameraUpdatedAt, setCameraUpdatedAt] = useState('')
+  const [cameraCapturedAt, setCameraCapturedAt] = useState('')
   const [cameraPerson, setCameraPerson] = useState<'yes' | 'no' | ''>('')
   const [cameraActivity, setCameraActivity] = useState('')
+  const [cameraImageUrl, setCameraImageUrl] = useState('')
   const [downloading, setDownloading] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -208,9 +209,10 @@ function App() {
         onResult: (result) => {
           setCameraSummary(result.summary)
           setCameraChanged(result.changed)
-          setCameraUpdatedAt(result.timestamp)
+          setCameraCapturedAt(result.capturedAt)
           setCameraPerson(result.personPresent)
           setCameraActivity(result.activity)
+          setCameraImageUrl(result.imageUrl)
           if (result.changed === 'yes' && result.summary) {
             sendCameraContext(result.summary, result.changed, result.personPresent, result.activity)
           }
@@ -329,7 +331,23 @@ function App() {
             <strong>作業内容:</strong> {cameraActivity || '（なし）'}
           </div>
           <div style={{ marginTop: 8 }}>
-            <strong>最終出力時刻:</strong> {cameraUpdatedAt || '（なし）'}
+            <strong>使用画像:</strong>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            {cameraImageUrl ? (
+              <img
+                src={cameraImageUrl}
+                alt="camera snapshot"
+                width={160}
+                height={160}
+                style={{ objectFit: 'contain', background: '#000' }}
+              />
+            ) : (
+              '（なし）'
+            )}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <strong>撮影時刻:</strong> {cameraCapturedAt ? new Date(cameraCapturedAt).toLocaleTimeString('ja-JP') : '（なし）'}
           </div>
         </div>
       </div>
