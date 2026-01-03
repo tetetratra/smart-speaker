@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"nhooyr.io/websocket"
 
 	"smart-speaker/internal/graph"
+	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
@@ -211,12 +213,30 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var msg struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-			Role string `json:"role"`
+			Type       string `json:"type"`
+			Text       string `json:"text"`
+			Role       string `json:"role"`
+			Present    string `json:"present"`
+			CapturedAt string `json:"captured_at"`
+			Source     string `json:"source"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("wschat client message parse error: %v", err)
+			continue
+		}
+		if msg.Type == "presence" {
+			presentText := strings.ToLower(strings.TrimSpace(msg.Present))
+			if presentText == "" {
+				continue
+			}
+			present := presentText == "yes" || presentText == "true"
+			capturedAt := time.Now()
+			if ts := strings.TrimSpace(msg.CapturedAt); ts != "" {
+				if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+					capturedAt = parsed
+				}
+			}
+			state.Set(present, capturedAt)
 			continue
 		}
 		if msg.Type != "message" {

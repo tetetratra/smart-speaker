@@ -141,6 +141,19 @@ function App() {
     }
   }, [disconnect])
 
+  const sendPresence = useCallback(
+    (present: 'yes' | 'no', capturedAt: string) => {
+      const ws = wsChatRef.current
+      if (!ws || !connected) return
+      ws.send({
+        type: 'presence',
+        present,
+        captured_at: capturedAt,
+      })
+    },
+    [connected],
+  )
+
   const startPresence = useCallback(async () => {
     if (presenceEnabled) {
       stopPresenceRef.current?.()
@@ -190,6 +203,7 @@ function App() {
           setPresencePresent(result.present)
           const time = new Date(result.capturedAt).toLocaleTimeString('ja-JP', { hour12: false })
           setPresenceUpdatedAt(time)
+          sendPresence(result.present, result.capturedAt)
         },
       })
       stopPresenceRef.current = handle.stop
@@ -198,7 +212,7 @@ function App() {
       setPresenceStatus('エラー')
       setPresenceError(err instanceof Error ? err.message : 'unknown error')
     }
-  }, [presenceEnabled])
+  }, [presenceEnabled, sendPresence])
 
   const downloadModel = useCallback(async () => {
     if (downloading) return
