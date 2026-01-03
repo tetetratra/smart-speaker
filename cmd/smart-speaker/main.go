@@ -10,6 +10,7 @@ import (
 
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/printer"
+	"smart-speaker/internal/components/proactive"
 	"smart-speaker/internal/components/realtimeapi"
 	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/toolcaller"
@@ -72,10 +73,11 @@ type stages struct {
 	tts       *graph.Stage
 	chat      *graph.Stage
 	tool      *graph.Stage
+	proactive *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool} {
+	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive} {
 		if st != nil {
 			st.Close()
 		}
@@ -117,6 +119,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	}
 	printerStage := printer.NewStage()
 	turnStage := turnmanager.NewStage()
+	proactiveStage := proactive.NewStage()
 
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
@@ -149,6 +152,7 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		tts:       ttsStage,
 		chat:      chatStage,
 		tool:      toolStage,
+		proactive: proactiveStage,
 	}, nil
 }
 
@@ -177,6 +181,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	}
 	turnNode := add(st.turn)
 	responsesNode := add(st.responses)
+	proactiveNode := add(st.proactive)
 	if node := add(st.input); node != nil {
 		g.Connect(node, realtimeNode)
 	}
@@ -184,6 +189,14 @@ func wireGraph(g *graph.Graph, st stages) {
 		g.Connect(realtimeNode, node)
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
+		}
+		if proactiveNode != nil {
+			g.Connect(proactiveNode, node)
+		}
+	}
+	if proactiveNode != nil {
+		if responsesNode != nil {
+			g.Connect(proactiveNode, responsesNode)
 		}
 	}
 	if turnNode != nil {
@@ -213,6 +226,9 @@ func wireGraph(g *graph.Graph, st stages) {
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
 			g.Connect(node, responsesNode)
+		}
+		if proactiveNode != nil {
+			g.Connect(proactiveNode, node)
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)
