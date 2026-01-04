@@ -126,10 +126,9 @@ func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	url := fmt.Sprintf(
-		"wss://api.elevenlabs.io/v1/text-to-speech/%s/stream-input?model_id=%s&output_format=pcm_24000&language_code=%s",
+		"wss://api.elevenlabs.io/v1/text-to-speech/%s/stream-input?model_id=%s&output_format=pcm_24000",
 		t.cfg.Voice,
 		t.cfg.Model,
-		"ja", // 固定で日本語を指定
 	)
 	headers := http.Header{}
 	headers.Set("xi-api-key", t.cfg.APIKey)
