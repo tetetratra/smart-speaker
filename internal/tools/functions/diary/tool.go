@@ -51,7 +51,7 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "直近の会話を日記として保存します。必ず指定のフォーマットで各セクション5行前後で書いてください。",
+		"description": "直近の会話を日記として保存します。指示がない限り勝手に呼び出さないでください。必ず指定のフォーマットで各セクション5行前後で書いてください。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
