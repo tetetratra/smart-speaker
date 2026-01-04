@@ -26,6 +26,7 @@ type runner struct {
 	mu             sync.Mutex
 	toolResponseID map[string]string
 	lastResponseID string
+	systemPrompt   string
 }
 
 // NewStage はResponses API呼び出しのステージを構築します。
@@ -39,6 +40,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		downstream:     make(chan types.Event, graph.DefaultChannelBufferSize),
 		client:         client,
 		toolResponseID: map[string]string{},
+		systemPrompt:   strings.TrimSpace(cfg.Instructions),
 	}
 	r.loadResponseIDFromFile()
 	return &graph.Stage{
@@ -98,11 +100,13 @@ func (r *runner) consume() {
 
 func (r *runner) handleRequest(role, text string) {
 	prevID := r.currentResponseID()
-	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), prevID)
+	systemPrompt := r.systemPromptIfNeeded(prevID)
+	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), prevID, systemPrompt)
 	if err != nil {
 		if prevID != "" && isInvalidPreviousResponseID(err) {
 			r.clearResponseID()
-			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), "")
+			systemPrompt = r.systemPromptIfNeeded("")
+			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), "", systemPrompt)
 			if err == nil {
 				r.handleResponsesResponse(resp)
 				return
@@ -112,6 +116,13 @@ func (r *runner) handleRequest(role, text string) {
 		return
 	}
 	r.handleResponsesResponse(resp)
+}
+
+func (r *runner) systemPromptIfNeeded(previousResponseID string) string {
+	if strings.TrimSpace(previousResponseID) != "" {
+		return ""
+	}
+	return r.systemPrompt
 }
 
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
@@ -133,7 +144,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 }
 
 func appendOutputConstraint(text string) string {
-	const suffix = "（マークダウン・記号を使わず、1文程度で返答してください。リンク形式であってもURLを含めることは禁止します）"
+	const suffix = "（記号・URLの使用禁止）"
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return trimmed

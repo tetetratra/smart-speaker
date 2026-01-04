@@ -23,7 +23,6 @@ type Config struct {
 type Client struct {
 	apiKey string
 	model  string
-	instr  string
 	client *http.Client
 	tools  []any
 }
@@ -38,21 +37,20 @@ func NewClient(cfg Config) (*Client, error) {
 	return &Client{
 		apiKey: cfg.APIKey,
 		model:  cfg.Model,
-		instr:  cfg.Instructions,
 		client: &http.Client{},
 		tools:  cfg.Tools,
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID string) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(role) == "" {
 		role = "user"
 	}
-	if strings.TrimSpace(c.instr) != "" {
+	if strings.TrimSpace(systemContent) != "" {
 		input = append(input, map[string]any{
 			"role":    "system",
-			"content": c.instr,
+			"content": systemContent,
 		})
 	}
 	input = append(input, map[string]any{
@@ -119,13 +117,6 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 		"output":  output,
 	}
 	input := []map[string]any{item}
-	if strings.TrimSpace(c.instr) != "" {
-		input = append([]map[string]any{{
-			"type":    "message",
-			"role":    "system",
-			"content": []map[string]any{{"type": "input_text", "text": c.instr}},
-		}}, input...)
-	}
 	payload := map[string]any{
 		"model":                c.model,
 		"input":                input,
