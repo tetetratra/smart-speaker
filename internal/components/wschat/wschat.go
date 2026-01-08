@@ -224,6 +224,16 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			log.Printf("wschat client message parse error: %v", err)
 			continue
 		}
+		if msg.Type == "reset" {
+			select {
+			case c.downstream <- types.Event{Kind: types.EventSessionReset}:
+			case <-r.Context().Done():
+				return
+			case <-c.ctx.Done():
+				return
+			}
+			continue
+		}
 		if msg.Type == "presence" {
 			presentText := strings.ToLower(strings.TrimSpace(msg.Present))
 			if presentText == "" {

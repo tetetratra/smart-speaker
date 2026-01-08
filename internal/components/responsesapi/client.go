@@ -42,7 +42,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string, toolChoice any) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(role) == "" {
 		role = "user"

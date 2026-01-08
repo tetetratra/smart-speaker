@@ -245,6 +245,7 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 		if resetNode != nil {
 			g.Connect(resetNode, node)
+			g.Connect(node, resetNode)
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)

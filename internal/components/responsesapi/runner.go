@@ -72,7 +72,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest(strings.TrimSpace(req.Role), text)
+				r.handleRequest(strings.TrimSpace(req.Role), text, req.ToolChoice)
 			case types.EventTextInput:
 				line, ok := evt.Payload.(types.OutputLine)
 				if !ok {
@@ -82,7 +82,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest("user", text)
+				r.handleRequest("user", text, nil)
 			case types.EventToolResponse:
 				resp, ok := evt.Payload.(types.ToolResponse)
 				if !ok {
@@ -96,15 +96,15 @@ func (r *runner) consume() {
 	}
 }
 
-func (r *runner) handleRequest(role, text string) {
+func (r *runner) handleRequest(role, text string, toolChoice any) {
 	prevID := r.currentResponseID()
 	systemPrompt := r.systemPromptIfNeeded(prevID)
-	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), prevID, systemPrompt)
+	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), prevID, systemPrompt, toolChoice)
 	if err != nil {
 		if prevID != "" && isInvalidPreviousResponseID(err) {
 			state.ClearResponseID()
 			systemPrompt = r.systemPromptIfNeeded("")
-			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), "", systemPrompt)
+			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), "", systemPrompt, toolChoice)
 			if err == nil {
 				r.handleResponsesResponse(resp)
 				return
@@ -133,7 +133,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		return
 	}
 	out := strings.TrimSpace(string(resp.Output))
-	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint(out))
+	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint("assistant", out))
 	if err != nil {
 		log.Printf("responsesapi: tool output error: %v", err)
 		return
@@ -141,9 +141,12 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 	r.handleResponsesResponse(next)
 }
 
-func appendOutputConstraint(text string) string {
+func appendOutputConstraint(role, text string) string {
 	const suffix = "（記号・URLの使用禁止）"
 	trimmed := strings.TrimSpace(text)
+	if role == "system" {
+		return trimmed
+	}
 	if trimmed == "" {
 		return trimmed
 	}

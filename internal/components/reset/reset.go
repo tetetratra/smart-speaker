@@ -17,6 +17,7 @@ const (
 const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
 
 type runner struct {
+	upstream   chan types.Event
 	downstream chan types.Event
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -26,9 +27,11 @@ type runner struct {
 // NewStage creates a stage that requests diary writing and resets response state after inactivity.
 func NewStage() *graph.Stage {
 	r := &runner{
+		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
+		Upstream:   r.upstream,
 		Downstream: r.downstream,
 		Run:        r.run,
 		CloseFn:    r.close,
@@ -52,6 +55,23 @@ func (r *runner) run(parent context.Context) {
 			}
 		}
 	}()
+	go r.consume()
+}
+
+func (r *runner) consume() {
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case evt, ok := <-r.upstream:
+			if !ok {
+				return
+			}
+			if evt.Kind == types.EventSessionReset {
+				r.runReset()
+			}
+		}
+	}
 }
 
 func (r *runner) check() {
@@ -65,9 +85,13 @@ func (r *runner) check() {
 	if state.IsDiaryWrittenSince(lastActivity) {
 		return
 	}
+	r.runReset()
+}
+
+func (r *runner) runReset() {
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "reset"}})
 	r.emit(types.Event{Kind: types.EventSessionReset})
-	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{Role: "system", Text: diaryPrompt}})
+	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{Role: "system", Text: diaryPrompt, ToolChoice: map[string]any{"type": "function", "name": "write_diary"}}})
 	state.SetDiaryWrittenAt(time.Now())
 }
 
@@ -87,5 +111,6 @@ func (r *runner) close() error {
 	if r.cancel != nil {
 		r.cancel()
 	}
+	close(r.upstream)
 	return nil
 }

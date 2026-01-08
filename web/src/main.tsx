@@ -262,6 +262,12 @@ function App() {
     }
   }, [messages])
 
+  const sendReset = useCallback(() => {
+    const ws = wsChatRef.current
+    if (!ws || !connected) return
+    ws.send({ type: "reset" })
+  }, [connected])
+
   const sendText = useCallback(() => {
     const ws = wsChatRef.current
     const text = input.trim()
@@ -291,6 +297,9 @@ function App() {
         </button>
         <button onClick={downloadModel} disabled={downloading}>
           {downloading ? 'モデルDL中' : 'モデルDL開始'}
+        </button>
+        <button onClick={sendReset} disabled={!connected}>
+          リセット
         </button>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
