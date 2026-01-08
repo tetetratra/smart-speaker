@@ -12,6 +12,7 @@ import (
 const (
 	checkInterval = time.Minute
 	idleThreshold = 1 * time.Minute
+-	// idleThreshold = 30 * time.Minute
 )
 
 const diaryPrompt = `今回の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください。
