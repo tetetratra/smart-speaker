@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	minIdleMinutes        = 20
-	maxRandomDelayMinutes = 120
+	minIdleMinutes        = 1
+	// minIdleMinutes        = 20
+	maxRandomDelayMinutes = 1
+	// maxRandomDelayMinutes = 120
 	checkInterval         = time.Second
 )
 
