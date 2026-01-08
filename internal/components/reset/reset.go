@@ -11,10 +11,11 @@ import (
 
 const (
 	checkInterval = time.Minute
-	idleThreshold = 30 * time.Minute
+	idleThreshold = 1 * time.Minute
 )
 
-const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください"
+const diaryPrompt = `今回の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください。
+すでに過去の日記に書かれていることではなく、今回の会話で話した内容にのみ触れてください。`
 
 type runner struct {
 	upstream   chan types.Event
