@@ -1,7 +1,8 @@
-package diarywriter
+package reset
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"smart-speaker/internal/graph"
@@ -14,7 +15,10 @@ const (
 	idleThreshold = 30 * time.Minute
 )
 
-const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
+const (
+	diaryPrompt    = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
+	responseIDFile = "tmp/response_id.txt"
+)
 
 type runner struct {
 	downstream chan types.Event
@@ -23,7 +27,7 @@ type runner struct {
 	once       bool
 }
 
-// NewStage creates a stage that requests diary writing after inactivity.
+// NewStage creates a stage that requests diary writing and resets response state after inactivity.
 func NewStage() *graph.Stage {
 	r := &runner{
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
@@ -65,7 +69,8 @@ func (r *runner) check() {
 	if state.IsDiaryWrittenSince(lastActivity) {
 		return
 	}
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "diarywriter"}})
+	_ = os.Remove(responseIDFile)
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "reset"}})
 	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{Role: "system", Text: diaryPrompt}})
 	state.SetDiaryWrittenAt(time.Now())
 }
