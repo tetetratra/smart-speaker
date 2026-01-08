@@ -91,8 +91,9 @@ func (r *runner) check() {
 
 func (r *runner) runReset() {
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "reset"}})
-	r.emit(types.Event{Kind: types.EventSessionReset})
 	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{Role: "system", Text: diaryPrompt, ToolChoice: map[string]any{"type": "function", "name": "write_diary"}}})
+	time.Sleep(20 * time.Second) // 日記よりも先に届くのを防ぐために少し待つ
+	r.emit(types.Event{Kind: types.EventSessionReset})
 	state.SetDiaryWrittenAt(time.Now())
 }
 
