@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	minIdleMinutes        = 1
-	// minIdleMinutes        = 20
-	maxRandomDelayMinutes = 1
-	// maxRandomDelayMinutes = 120
+	minIdleMinutes        = 10
+	maxRandomDelayMinutes = 10
 	checkInterval         = time.Second
+	quietHoursStart       = 23
+	quietHoursEnd         = 9
 )
 
 const proactivePrompt = "独り言か軽い呼びかけを短い1文で返してください"
@@ -98,7 +98,7 @@ func computeScheduledAt(lastTalkAt time.Time, loc *time.Location) time.Time {
 
 func isQuietHours(t time.Time) bool {
 	hour := t.Hour()
-	return hour >= 23 || hour < 9
+	return hour >= quietHoursStart || hour < quietHoursEnd
 }
 
 func (r *runner) emit(evt types.Event) {
