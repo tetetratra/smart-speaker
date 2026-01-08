@@ -13,6 +13,19 @@ import (
 
 const toolName = "write_diary"
 
+const (
+	diaryDescription = `直近の会話を日記として保存します。
+指示がない限り勝手に呼び出さないでください。
+必ず指定のフォーマットで各セクション5行前後で書いてください。
+`
+
+	diaryContentDescription = `日記本文。文章の構造化などはせずに以下の話題などに触れて5行前後で書いてください。
+- 会話した話題
+- 会話で知った、ユーザーや、一般的な事柄に対する知識
+- あなたの感想
+`
+)
+
 // Tool は会話の日記をファイルに保存します。
 type Tool struct{}
 
@@ -51,13 +64,13 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "直近の会話を日記として保存します。指示がない限り勝手に呼び出さないでください。必ず指定のフォーマットで各セクション5行前後で書いてください。",
+		"description": diaryDescription,
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
-					"description": "日記本文。先頭の日時行(# ...)はツール側で付与するため記載せず、以下の形式を厳守してください。\n## 会話した話題\n...\n## ユーザーに関する知識\n...\n## 会話で得た一般的な知識\n...\n## 以降の会話で気にすること\n...\n## 今回の会話に対するあなたの感想\n...",
+					"description": diaryContentDescription,
 				},
 			},
 			"required": []string{"content"},

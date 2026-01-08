@@ -14,7 +14,7 @@ const (
 	idleThreshold = 30 * time.Minute
 )
 
-const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
+const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください"
 
 type runner struct {
 	upstream   chan types.Event

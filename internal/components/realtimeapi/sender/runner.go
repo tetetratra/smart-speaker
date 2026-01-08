@@ -62,10 +62,10 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		// 音声入力は常に PCM16 を送るためフォーマット指定
 		"input_audio_format": "pcm16",
 		"turn_detection": map[string]any{
-			"type":                "semantic_vad",
-			"eagerness":           "low",
-			"create_response":     false,
-			"interrupt_response":  false,
+			"type":               "semantic_vad",
+			"eagerness":          "low",
+			"create_response":    false,
+			"interrupt_response": false,
 		},
 	}
 	if cfg.TranscriptionModel != "" {
