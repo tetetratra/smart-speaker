@@ -3,8 +3,6 @@ package responsesapi
 import (
 	"context"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +23,6 @@ type runner struct {
 
 	mu             sync.Mutex
 	toolResponseID map[string]string
-	lastResponseID string
 	systemPrompt   string
 }
 
@@ -42,7 +39,6 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		toolResponseID: map[string]string{},
 		systemPrompt:   strings.TrimSpace(cfg.Instructions),
 	}
-	r.loadResponseIDFromFile()
 	return &graph.Stage{
 		Upstream:   r.upstream,
 		Downstream: r.downstream,
@@ -93,6 +89,8 @@ func (r *runner) consume() {
 					continue
 				}
 				r.handleToolResponse(resp)
+			case types.EventSessionReset:
+				state.ClearResponseID()
 			}
 		}
 	}
@@ -104,7 +102,7 @@ func (r *runner) handleRequest(role, text string) {
 	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), prevID, systemPrompt)
 	if err != nil {
 		if prevID != "" && isInvalidPreviousResponseID(err) {
-			r.clearResponseID()
+			state.ClearResponseID()
 			systemPrompt = r.systemPromptIfNeeded("")
 			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(text), "", systemPrompt)
 			if err == nil {
@@ -178,19 +176,11 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 }
 
 func (r *runner) currentResponseID() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.lastResponseID
+	return state.GetResponseID()
 }
 
 func (r *runner) setCurrentResponseID(responseID string) {
-	if strings.TrimSpace(responseID) == "" {
-		return
-	}
-	r.mu.Lock()
-	r.lastResponseID = responseID
-	r.mu.Unlock()
-	r.persistResponseID(responseID)
+	state.SetResponseID(responseID)
 }
 
 func (r *runner) emit(evt types.Event) {
@@ -199,42 +189,6 @@ func (r *runner) emit(evt types.Event) {
 		return
 	case r.downstream <- evt:
 	}
-}
-
-func (r *runner) loadResponseIDFromFile() {
-	data, err := os.ReadFile(responseIDFilePath())
-	if err != nil {
-		return
-	}
-	id := strings.TrimSpace(string(data))
-	if id == "" {
-		return
-	}
-	r.lastResponseID = id
-}
-
-func (r *runner) persistResponseID(responseID string) {
-	path := responseIDFilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		log.Printf("responsesapi: failed to create tmp dir: %v", err)
-		return
-	}
-	if err := os.WriteFile(path, []byte(responseID+"\n"), 0o644); err != nil {
-		log.Printf("responsesapi: failed to write response id: %v", err)
-	}
-}
-
-func (r *runner) clearResponseID() {
-	r.mu.Lock()
-	r.lastResponseID = ""
-	r.mu.Unlock()
-	if err := os.Remove(responseIDFilePath()); err != nil && !os.IsNotExist(err) {
-		log.Printf("responsesapi: failed to remove response id: %v", err)
-	}
-}
-
-func responseIDFilePath() string {
-	return filepath.Join("tmp", "response_id.txt")
 }
 
 func isInvalidPreviousResponseID(err error) bool {

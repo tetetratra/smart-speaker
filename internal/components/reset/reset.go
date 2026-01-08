@@ -2,7 +2,6 @@ package reset
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"smart-speaker/internal/graph"
@@ -15,10 +14,7 @@ const (
 	idleThreshold = 30 * time.Minute
 )
 
-const (
-	diaryPrompt    = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
-	responseIDFile = "tmp/response_id.txt"
-)
+const diaryPrompt = "直近の会話を日記としてまとめ、write_diary ツールを呼び出してください"
 
 type runner struct {
 	downstream chan types.Event
@@ -69,8 +65,8 @@ func (r *runner) check() {
 	if state.IsDiaryWrittenSince(lastActivity) {
 		return
 	}
-	_ = os.Remove(responseIDFile)
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "reset"}})
+	r.emit(types.Event{Kind: types.EventSessionReset})
 	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{Role: "system", Text: diaryPrompt}})
 	state.SetDiaryWrittenAt(time.Now())
 }
