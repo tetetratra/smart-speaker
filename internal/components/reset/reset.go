@@ -75,7 +75,7 @@ func (r *runner) consume() {
 			if !ok {
 				return
 			}
-			if evt.Kind == types.EventSessionReset {
+			if evt.Kind == types.EventReset {
 				r.runReset()
 			}
 		}
@@ -105,7 +105,7 @@ func (r *runner) runReset() {
 		Tools:      r.tools,
 	}})
 	time.Sleep(20 * time.Second) // 日記よりも先に届くのを防ぐために少し待つ
-	r.emit(types.Event{Kind: types.EventSessionReset})
+	r.emit(types.Event{Kind: types.EventSessionClear})
 	state.SetDiaryWrittenAt(time.Now())
 }
 

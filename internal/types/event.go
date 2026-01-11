@@ -19,7 +19,8 @@ const (
 	EventTranscriptFinal
 	EventResponsesRequest
 	EventResponsesResponse
-	EventSessionReset
+	EventReset
+	EventSessionClear
 )
 
 // Event is the common data structure passed between stages.

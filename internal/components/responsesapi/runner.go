@@ -89,7 +89,7 @@ func (r *runner) consume() {
 					continue
 				}
 				r.handleToolResponse(resp)
-			case types.EventSessionReset:
+			case types.EventSessionClear:
 				state.ClearResponseID()
 			}
 		}

@@ -231,7 +231,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		}
 		if msg.Type == "reset" {
 			select {
-			case c.downstream <- types.Event{Kind: types.EventSessionReset}:
+			case c.downstream <- types.Event{Kind: types.EventReset}:
 			case <-r.Context().Done():
 				return
 			case <-c.ctx.Done():
