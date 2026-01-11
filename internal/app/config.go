@@ -49,7 +49,7 @@ func LoadConfig(promptPath string) Config {
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY is not set")
 	}
-	model := "gpt-realtime-mini"
+	model := "gpt-realtime"
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
 		responsesModel = "gpt-5-chat-latest"
