@@ -68,10 +68,11 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 			"interrupt_response": false,
 		},
 	}
-	session["input_audio_transcription"] = map[string]any{
-		"model":    "gpt-4o-transcribe",
-		"language": "ja",
-		"prompt":   "固有名詞や読みが曖昧な語は、無理に漢字にせずカタカナやひらがなを優先してください。文脈に合う自然な表記を優先してください。",
+	if cfg.TranscriptionModel != "" {
+		session["input_audio_transcription"] = map[string]any{
+			"model":    cfg.TranscriptionModel,
+			"language": "ja",
+		}
 	}
 	return client.Send(map[string]any{
 		"type":    "session.update",
