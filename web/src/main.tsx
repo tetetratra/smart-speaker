@@ -102,7 +102,13 @@ function App() {
             receiver.play(msg.audio)
           }
         }),
-        wsChat.connect((msg) => handleChatMessage(msg)),
+        wsChat.connect((msg) => {
+          if (msg?.type === 'vad' && msg.event === 'start') {
+            receiver.stop()
+            return
+          }
+          handleChatMessage(msg)
+        }),
       ])
 
       wsAudioRef.current = wsAudio

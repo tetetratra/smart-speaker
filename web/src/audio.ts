@@ -7,6 +7,7 @@ const SAMPLE_RATE = 24000
 
 export interface AudioReceiver {
   play: (b64pcm: string) => void
+  stop: () => void
 }
 
 export async function createAudioSender(onChunk: (audio: string) => void): Promise<AudioSender> {
@@ -52,6 +53,7 @@ export async function createAudioSender(onChunk: (audio: string) => void): Promi
 export function createAudioReceiver(): AudioReceiver {
   const ctx = new AudioContext()
   let playhead = 0
+  const sources = new Set<AudioBufferSourceNode>()
   return {
     play: (b64pcm: string) => {
       try {
@@ -60,12 +62,25 @@ export function createAudioReceiver(): AudioReceiver {
         const src = ctx.createBufferSource()
         src.buffer = audioBuf
         src.connect(ctx.destination)
+        sources.add(src)
+        src.onended = () => {
+          sources.delete(src)
+        }
         const startAt = Math.max(ctx.currentTime, playhead)
         src.start(startAt)
         playhead = startAt + audioBuf.duration
       } catch (e) {
         console.warn('audio play error:', (e as any)?.message)
       }
+    },
+    stop: () => {
+      sources.forEach((src) => {
+        try {
+          src.stop()
+        } catch {}
+      })
+      sources.clear()
+      playhead = ctx.currentTime
     },
   }
 }

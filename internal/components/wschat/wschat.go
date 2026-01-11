@@ -172,6 +172,11 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"output":       json.RawMessage(call.Output),
 		})
 		return
+	case types.EventVadStart:
+		msg = map[string]any{
+			"type":  "vad",
+			"event": "start",
+		}
 	default:
 		return
 	}
