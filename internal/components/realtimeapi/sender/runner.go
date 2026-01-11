@@ -72,7 +72,6 @@ func sendSessionUpdate(client Client, cfg SessionConfig) error {
 		session["input_audio_transcription"] = map[string]any{
 			"model":    cfg.TranscriptionModel,
 			"language": "ja",
-			"prompt":  "固有名詞や読みが曖昧な語は、無理に漢字にせずカタカナやひらがなを優先してください。文脈に合う自然な表記を優先してください。",
 		}
 	}
 	return client.Send(map[string]any{
