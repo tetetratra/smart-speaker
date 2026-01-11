@@ -154,8 +154,13 @@ func appendOutputConstraint(role, text string) string {
 }
 
 func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
-	r.setCurrentResponseID(resp.ResponseID)
-	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: resp})
+	cleaned := sanitizeResponseText(resp.Text)
+	respClean := resp
+	respClean.Text = cleaned
+	respClean.HasResponse = strings.TrimSpace(cleaned) != ""
+
+	r.setCurrentResponseID(respClean.ResponseID)
+	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: respClean})
 	if len(resp.ToolCalls) > 0 {
 		for _, call := range resp.ToolCalls {
 			r.mu.Lock()
@@ -169,13 +174,13 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 			r.emit(types.Event{Kind: types.EventMCPCall, Payload: call})
 		}
 	}
-	if !resp.HasResponse {
+	if !respClean.HasResponse {
 		return
 	}
 	state.SetLastActivityAt(time.Now())
 	state.SetLastAssistantTalkAt(time.Now())
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: resp.Text, ResponseID: resp.ResponseID, Source: "responses"}})
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: resp.ResponseID, Final: true, Source: "responses"}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: respClean.Text, ResponseID: respClean.ResponseID, Source: "responses"}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respClean.ResponseID, Final: true, Source: "responses"}})
 }
 
 func (r *runner) currentResponseID() string {
