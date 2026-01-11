@@ -72,7 +72,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest(strings.TrimSpace(req.Role), text, req.ToolChoice)
+				r.handleRequest(strings.TrimSpace(req.Role), text, req.ToolChoice, req.Tools)
 			case types.EventTextInput:
 				line, ok := evt.Payload.(types.OutputLine)
 				if !ok {
@@ -82,7 +82,7 @@ func (r *runner) consume() {
 				if text == "" {
 					continue
 				}
-				r.handleRequest("user", text, nil)
+				r.handleRequest("user", text, nil, nil)
 			case types.EventToolResponse:
 				resp, ok := evt.Payload.(types.ToolResponse)
 				if !ok {
@@ -96,15 +96,15 @@ func (r *runner) consume() {
 	}
 }
 
-func (r *runner) handleRequest(role, text string, toolChoice any) {
+func (r *runner) handleRequest(role, text string, toolChoice any, tools []any) {
 	prevID := r.currentResponseID()
 	systemPrompt := r.systemPromptIfNeeded(prevID)
-	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), prevID, systemPrompt, toolChoice)
+	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), prevID, systemPrompt, toolChoice, tools)
 	if err != nil {
 		if prevID != "" && isInvalidPreviousResponseID(err) {
 			state.ClearResponseID()
 			systemPrompt = r.systemPromptIfNeeded("")
-			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), "", systemPrompt, toolChoice)
+			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), "", systemPrompt, toolChoice, tools)
 			if err == nil {
 				r.handleResponsesResponse(resp)
 				return

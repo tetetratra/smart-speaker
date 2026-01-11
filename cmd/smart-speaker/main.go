@@ -122,18 +122,22 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 	printerStage := printer.NewStage()
 	turnStage := turnmanager.NewStage()
 	proactiveStage := proactive.NewStage()
-	resetStage := reset.NewStage()
 
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
 	})
+	writeDiaryTools := []any{}
+	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
+		writeDiaryTools = append(writeDiaryTools, def)
+	}
+	resetStage := reset.NewStage(reset.Config{WriteDiaryTools: writeDiaryTools})
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
-		Tools:        toolRegistry.Definitions(),
+		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
 		inStage.Close()

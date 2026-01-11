@@ -36,6 +36,7 @@ type ResponsesRequest struct {
 	Role       string
 	Text       string
 	ToolChoice any
+	Tools      []any
 }
 
 // ResponsesResponse はResponses APIの応答を表します。

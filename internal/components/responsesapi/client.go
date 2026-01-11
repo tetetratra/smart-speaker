@@ -42,7 +42,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string, toolChoice any) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string, toolChoice any, toolsOverride []any) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(role) == "" {
 		role = "user"
@@ -65,8 +65,15 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 	if strings.TrimSpace(previousResponseID) != "" {
 		payload["previous_response_id"] = previousResponseID
 	}
-	if len(c.tools) > 0 {
-		payload["tools"] = c.tools
+	tools := c.tools
+	if toolsOverride != nil {
+		tools = toolsOverride
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
+	}
+	if toolChoice != nil {
+		payload["tool_choice"] = toolChoice
 	}
 
 	body, err := json.Marshal(payload)

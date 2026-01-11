@@ -60,6 +60,46 @@ func (r *Registry) Definitions() []any {
 	return defs
 }
 
+// DefinitionsExcluding returns tool definitions excluding specified tool names.
+func (r *Registry) DefinitionsExcluding(names ...string) []any {
+	if r == nil {
+		return nil
+	}
+	exclude := map[string]struct{}{}
+	for _, name := range names {
+		exclude[name] = struct{}{}
+	}
+	defs := make([]any, 0, len(r.entries))
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		if name, ok := e.def["name"].(string); ok {
+			if _, found := exclude[name]; found {
+				continue
+			}
+		}
+		defs = append(defs, e.def)
+	}
+	return defs
+}
+
+// DefinitionByName returns a tool definition by name.
+func (r *Registry) DefinitionByName(name string) (map[string]any, bool) {
+	if r == nil {
+		return nil, false
+	}
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		if defName, ok := e.def["name"].(string); ok && defName == name {
+			return e.def, true
+		}
+	}
+	return nil, false
+}
+
 // Handlers はtoolcaller向けのname->handlerマップを返します。
 func (r *Registry) Handlers() map[string]tools.Handler {
 	handlers := map[string]tools.Handler{}
