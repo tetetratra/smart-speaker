@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { createAudioReceiver, createAudioSender } from './audio'
+import { createAudioReceiver } from './audio'
+import { createSpeechRecognizer } from './speech'
+import { startVAD } from './vad'
 import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
@@ -17,6 +19,10 @@ function App() {
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
+  const [voiceStatus, setVoiceStatus] = useState('停止中')
+  const [speechError, setSpeechError] = useState('')
+  const [transcriptFinal, setTranscriptFinal] = useState('')
+  const [transcriptInterim, setTranscriptInterim] = useState('')
   const [presenceEnabled, setPresenceEnabled] = useState(false)
   const [presenceStatus, setPresenceStatus] = useState('停止中')
   const [presenceError, setPresenceError] = useState('')
@@ -31,8 +37,15 @@ function App() {
 
   const wsAudioRef = useRef<ReturnType<typeof createWS> | null>(null)
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
-  const stopSenderRef = useRef<(() => void) | null>(null)
+  const connectedRef = useRef(false)
   const stopPresenceRef = useRef<(() => void) | null>(null)
+  const vadRef = useRef<ReturnType<typeof startVAD> | null>(null)
+  const speechRef = useRef<ReturnType<typeof createSpeechRecognizer> | null>(null)
+  const speechActiveRef = useRef(false)
+  const vadSpeakingRef = useRef(false)
+  const finalTranscriptRef = useRef('')
+  const interimTranscriptRef = useRef('')
+  const micStreamRef = useRef<MediaStream | null>(null)
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
@@ -89,6 +102,148 @@ function App() {
     [appendMessage],
   )
 
+  const resetTranscripts = useCallback(() => {
+    finalTranscriptRef.current = ''
+    interimTranscriptRef.current = ''
+    setTranscriptFinal('')
+    setTranscriptInterim('')
+  }, [])
+
+  const sendVoiceText = useCallback(
+    (text: string) => {
+      const ws = wsChatRef.current
+      const trimmed = text.trim()
+      if (!ws || !connectedRef.current || !trimmed) return
+      console.log('voice send', { text: trimmed, readyState: ws?.readyState })
+      ws.send({ type: 'message', role: 'user', text: trimmed })
+      appendMessage({ id: Date.now(), type: 'user', text: trimmed, responseId: undefined, final: true, source: 'browser' })
+    },
+    [appendMessage],
+  )
+
+  const flushTranscript = useCallback(() => {
+    const finalText = finalTranscriptRef.current.trim()
+    const interimText = interimTranscriptRef.current.trim()
+    const text = finalText || interimText
+    console.log('voice flush', { finalText, interimText })
+    if (!text) return
+    sendVoiceText(text)
+    resetTranscripts()
+  }, [resetTranscripts, sendVoiceText])
+
+  const stopVoice = useCallback(() => {
+    speechActiveRef.current = false
+    speechRef.current?.stop()
+    speechRef.current = null
+    vadSpeakingRef.current = false
+    if (vadRef.current) {
+      vadRef.current.stop()
+      vadRef.current = null
+    } else if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop())
+    }
+    micStreamRef.current = null
+    setVoiceStatus('停止中')
+    setSpeechError('')
+    resetTranscripts()
+  }, [resetTranscripts])
+
+  const startVoice = useCallback(async () => {
+    if (speechRef.current || vadRef.current) return
+    console.log('voice start: begin')
+    setSpeechError('')
+    const speech = createSpeechRecognizer({
+      onFinal: (text) => {
+        console.log('speech final', text)
+        const next = [finalTranscriptRef.current, text].filter(Boolean).join(' ').trim()
+        finalTranscriptRef.current = next
+        setTranscriptFinal(next)
+        setTranscriptInterim('')
+      },
+      onInterim: (text) => {
+        console.log('speech interim', text)
+        interimTranscriptRef.current = text
+        setTranscriptInterim(text)
+      },
+      onStart: () => {
+        console.log('speech start')
+        if (!vadSpeakingRef.current) {
+          setVoiceStatus('認識中')
+        }
+      },
+      onEnd: () => {
+        console.log('speech end')
+        if (!speechActiveRef.current) {
+          setVoiceStatus('停止中')
+          return
+        }
+        window.setTimeout(() => {
+          if (speechActiveRef.current) {
+            try {
+              speech.start()
+            } catch (err) {
+              setSpeechError(err instanceof Error ? err.message : 'speech restart error')
+            }
+          }
+        }, 200)
+      },
+      onError: (message) => {
+        console.log('speech error', message)
+        setSpeechError(message)
+      },
+    })
+
+    if (!speech.isSupported) {
+      console.log('speech unsupported')
+      setSpeechError('SpeechRecognition 非対応ブラウザです')
+      return
+    }
+
+    speechRef.current = speech
+    speechActiveRef.current = true
+
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+    } catch (err) {
+      console.log('mic error', err)
+      setSpeechError(err instanceof Error ? err.message : 'microphone error')
+      speechActiveRef.current = false
+      speechRef.current = null
+      setVoiceStatus('停止中')
+      return
+    }
+    micStreamRef.current = stream
+    vadRef.current = startVAD(stream, {
+      onStart: () => {
+        console.log('vad start')
+        receiver.stop()
+        vadSpeakingRef.current = true
+        setVoiceStatus('発話中')
+        resetTranscripts()
+      },
+      onStop: () => {
+        console.log('vad stop')
+        vadSpeakingRef.current = false
+        setVoiceStatus('待機中')
+        flushTranscript()
+      },
+    })
+
+    setVoiceStatus('待機中')
+    try {
+      speech.start()
+    } catch (err) {
+      setSpeechError(err instanceof Error ? err.message : 'speech start error')
+    }
+  }, [flushTranscript, receiver, resetTranscripts])
+
   const connect = useCallback(async () => {
     if (connected || busy) return
     setBusy(true)
@@ -103,10 +258,6 @@ function App() {
           }
         }),
         wsChat.connect((msg) => {
-          if (msg?.type === 'vad' && msg.event === 'start') {
-            receiver.stop()
-            return
-          }
           handleChatMessage(msg)
         }),
       ])
@@ -114,30 +265,34 @@ function App() {
       wsAudioRef.current = wsAudio
       wsChatRef.current = wsChat
 
-      const sender = await createAudioSender((audioB64) => {
-        wsAudio.send({ type: 'audio.append', audio: audioB64 })
-      })
-      await sender.start()
-      stopSenderRef.current = () => sender.stop()
       setConnected(true)
+      connectedRef.current = true
+      await startVoice()
       appendMessage({ id: Date.now(), type: 'assistant', text: '接続しました。話しかけてください。' })
     } catch (e) {
       console.error('connect error', e)
+      stopVoice()
+      setConnected(false)
+      connectedRef.current = false
+      wsAudioRef.current?.close()
+      wsAudioRef.current = null
+      wsChatRef.current?.close()
+      wsChatRef.current = null
       throw e
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, busy, connected, handleChatMessage, receiver])
+  }, [appendMessage, busy, connected, handleChatMessage, receiver, startVoice, stopVoice])
 
   const disconnect = useCallback(() => {
-    stopSenderRef.current?.()
-    stopSenderRef.current = null
+    stopVoice()
     wsAudioRef.current?.close()
     wsAudioRef.current = null
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
-  }, [])
+    connectedRef.current = false
+  }, [stopVoice])
 
   useEffect(() => {
     return () => {
@@ -327,6 +482,22 @@ function App() {
           <div>
             <strong>撮影時刻:</strong> {presenceUpdatedAt || '（なし）'}
           </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div>
+          <strong>音声認識:</strong> {voiceStatus}
+        </div>
+        {speechError && (
+          <div style={{ color: '#dc2626' }}>
+            <strong>音声認識エラー:</strong> {speechError}
+          </div>
+        )}
+        <div>
+          <strong>文字起こし(確定):</strong> {transcriptFinal || '（なし）'}
+        </div>
+        <div style={{ color: '#6b7280' }}>
+          <strong>文字起こし(途中):</strong> {transcriptInterim || '（なし）'}
         </div>
       </div>
       <div

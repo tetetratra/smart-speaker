@@ -1,53 +1,8 @@
-export interface AudioSender {
-  start: () => Promise<void>
-  stop: () => void
-}
-
 const SAMPLE_RATE = 24000
 
 export interface AudioReceiver {
   play: (b64pcm: string) => void
   stop: () => void
-}
-
-export async function createAudioSender(onChunk: (audio: string) => void): Promise<AudioSender> {
-  const ctx = new AudioContext()
-  await ctx.audioWorklet.addModule('/audio-worklets/mic-capture.js')
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  })
-  const source = ctx.createMediaStreamSource(stream)
-  const capture = new AudioWorkletNode(ctx, 'mic-capture')
-  capture.port.onmessage = (ev) => {
-    const msg = ev.data
-    if (msg?.type === 'audio.append' && msg.audio) {
-      onChunk(msg.audio)
-    }
-  }
-  // 重要: destination にはつなげない
-  source.connect(capture)
-
-  let stopped = false
-  return {
-    start: async () => {
-      if (ctx.state === 'suspended') await ctx.resume()
-      stopped = false
-    },
-    stop: () => {
-      if (stopped) return
-      stopped = true
-      capture.port.onmessage = null
-      try {
-        source.disconnect()
-        capture.disconnect()
-      } catch {}
-      stream.getTracks().forEach((t) => t.stop())
-    },
-  }
 }
 
 export function createAudioReceiver(): AudioReceiver {

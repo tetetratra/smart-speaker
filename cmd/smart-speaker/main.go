@@ -11,14 +11,13 @@ import (
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/proactive"
-	"smart-speaker/internal/components/realtimeapi"
 	"smart-speaker/internal/components/reset"
 	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
-	"smart-speaker/internal/components/turnmanager"
 	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/components/wschat"
+	"smart-speaker/internal/components/wsserver"
 	"smart-speaker/internal/graph"
 	"smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/tools/registry"
@@ -34,7 +33,7 @@ func main() {
 
 	ensureGoogleCalendarToken()
 
-	stages, err := buildStages(ctx, cfg)
+	stages, err := buildStages(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,8 +44,6 @@ func main() {
 
 	wireGraph(g, stages)
 
-	log.Printf("wsinput downstream nil? %v", stages.input.Downstream == nil)
-	log.Printf("realtime upstream nil? %v", stages.realtime.Upstream == nil)
 	log.Printf("main ctx err: %v", ctx.Err())
 
 	if err := g.Run(ctx); err != nil {
@@ -65,9 +62,7 @@ func ensureGoogleCalendarToken() {
 }
 
 type stages struct {
-	input     *graph.Stage
-	realtime  *graph.Stage
-	turn      *graph.Stage
+	wsserver  *graph.Stage
 	responses *graph.Stage
 	printer   *graph.Stage
 	player    *graph.Stage
@@ -79,15 +74,15 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.input, s.realtime, s.turn, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.reset} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.reset} {
 		if st != nil {
 			st.Close()
 		}
 	}
 }
 
-func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
-	inStage, outStage, chatStage, err := buildWSStages(cfg)
+func buildStages(cfg app.Config) (stages, error) {
+	serverStage, outStage, chatStage, err := buildWSStages(cfg)
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
@@ -97,30 +92,11 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		Model:  cfg.ElevenLabs.Model,
 	})
 	if err != nil {
-		inStage.Close()
+		serverStage.Close()
 		outStage.Close()
 		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
-	realtime, err := realtimeapi.NewStage(ctx, realtimeapi.Config{
-		APIKey:             cfg.APIKey,
-		Model:              cfg.Model,
-		TranscriptionModel: cfg.TranscriptionModel,
-		Instructions:       cfg.SystemPrompt,
-		Voice:              cfg.Voice,
-		Modalities:         []string{"text"},
-		DebugPrintMsgType:  cfg.Debug.PrintMsgType,
-		DebugDumpResponses: cfg.Debug.DumpResponses,
-	})
-	if err != nil {
-		inStage.Close()
-		outStage.Close()
-		if ttsStage != nil {
-			ttsStage.Close()
-		}
-		return stages{}, fmt.Errorf("failed to init realtime stage: %w", err)
-	}
 	printerStage := printer.NewStage()
-	turnStage := turnmanager.NewStage()
 	proactiveStage := proactive.NewStage()
 
 	toolRegistry := registry.New(registry.Config{
@@ -140,19 +116,16 @@ func buildStages(ctx context.Context, cfg app.Config) (stages, error) {
 		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
-		inStage.Close()
+		serverStage.Close()
 		outStage.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
-		realtime.Close()
 		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
 	}
 	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
 	return stages{
-		input:     inStage,
-		realtime:  realtime,
-		turn:      turnStage,
+		wsserver:  serverStage,
 		responses: responsesStage,
 		printer:   printerStage,
 		player:    outStage,
@@ -170,9 +143,10 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, *graph.Stage, er
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	in, out := wsaudio.NewStages(server, mux)
+	serverStage := wsserver.NewStage(server)
+	out := wsaudio.NewStage(mux)
 	chat := wschat.NewStage(mux)
-	return in, out, chat, nil
+	return serverStage, out, chat, nil
 }
 
 func wireGraph(g *graph.Graph, st stages) {
@@ -183,19 +157,13 @@ func wireGraph(g *graph.Graph, st stages) {
 		return g.AddNode(stage)
 	}
 
-	realtimeNode := add(st.realtime)
-	if realtimeNode == nil {
+	if node := add(st.wsserver); node == nil {
 		return
 	}
-	turnNode := add(st.turn)
 	responsesNode := add(st.responses)
 	proactiveNode := add(st.proactive)
 	resetNode := add(st.reset)
-	if node := add(st.input); node != nil {
-		g.Connect(node, realtimeNode)
-	}
 	if node := add(st.printer); node != nil {
-		g.Connect(realtimeNode, node)
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
 		}
@@ -216,12 +184,6 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(resetNode, responsesNode)
 		}
 	}
-	if turnNode != nil {
-		g.Connect(realtimeNode, turnNode)
-	}
-	if responsesNode != nil && turnNode != nil {
-		g.Connect(turnNode, responsesNode)
-	}
 	if node := add(st.tts); node != nil {
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
@@ -239,7 +201,6 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 	}
 	if node := add(st.chat); node != nil {
-		g.Connect(realtimeNode, node)
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
 			g.Connect(node, responsesNode)

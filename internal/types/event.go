@@ -6,17 +6,12 @@ import "encoding/json"
 type EventKind int
 
 const (
-	EventAudioChunk EventKind = iota
-	EventTextInput
+	EventTextInput EventKind = iota
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
 	EventToolResponse
 	EventMCPCall
-	EventVadStart
-	EventVadStop
-	EventTranscriptPartial
-	EventTranscriptFinal
 	EventResponsesRequest
 	EventResponsesResponse
 	EventReset
@@ -29,7 +24,7 @@ type Event struct {
 	Payload any
 }
 
-// ToolRequest is emitted by the realtime stage when function calling is required.
+// ToolRequest は関数呼び出しが必要なときに発行されます。
 type ToolRequest struct {
 	ResponseID string
 	ToolCallID string
@@ -37,7 +32,7 @@ type ToolRequest struct {
 	Arguments  json.RawMessage
 }
 
-// ToolResponse returns the execution result back to the realtime stage.
+// ToolResponse は実行結果を responses ステージに返します。
 type ToolResponse struct {
 	ToolCallID string
 	Output     json.RawMessage

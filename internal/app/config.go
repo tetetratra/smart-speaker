@@ -13,17 +13,12 @@ import (
 // Config holds runtime settings.
 type Config struct {
 	APIKey             string
-	Model              string
 	ResponsesModel     string
-	TranscriptionModel string
-	InputVoicePath     string
 	SystemPrompt       string
 	AutoPromptInterval time.Duration
 	AutoPromptMessage  string
-	Voice              string
 	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
-	Debug              DebugConfig
 	WSAddr             string
 }
 
@@ -39,28 +34,16 @@ type ElevenLabsConfig struct {
 	Model   string
 }
 
-type DebugConfig struct {
-	PrintMsgType  bool
-	DumpResponses bool
-}
-
 func LoadConfig(promptPath string) Config {
 	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY is not set")
 	}
-	model := "gpt-realtime"
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
 		responsesModel = "gpt-5-chat-latest"
 	}
-	voice := strings.TrimSpace(os.Getenv("OPENAI_VOICE"))
-	if voice == "" {
-		voice = "marin"
-	}
 
-	transcription := "gpt-4o-mini-transcribe"
-	inputVoicePath := strings.TrimSpace(os.Getenv("INPUT_VOICE"))
 	prompt := readSystemPrompt(promptPath)
 	if diary := strings.TrimSpace(state.GetDiaryContent()); diary != "" {
 		if strings.TrimSpace(prompt) != "" {
@@ -99,35 +82,13 @@ func LoadConfig(promptPath string) Config {
 
 	return Config{
 		APIKey:             apiKey,
-		Model:              model,
 		ResponsesModel:     responsesModel,
-		TranscriptionModel: transcription,
-		InputVoicePath:     inputVoicePath,
 		SystemPrompt:       prompt,
 		AutoPromptInterval: interval,
 		AutoPromptMessage:  message,
-		Voice:              voice,
-		// モダリティはデフォルトで text のみ。変更したい場合はコード側で書き換える。
 		ElevenLabs: elv,
 		SwitchBot:  switchCfg,
 		WSAddr:     wsAddr,
-		Debug: DebugConfig{
-			PrintMsgType:  envBool("SMART_SPEAKER_DEBUG_PRINT_MSG_TYPE"),
-			DumpResponses: envBool("SMART_SPEAKER_DEBUG_DUMP_RESPONSES"),
-		},
-	}
-}
-
-func envBool(name string) bool {
-	v := strings.TrimSpace(os.Getenv(name))
-	if v == "" {
-		return false
-	}
-	switch strings.ToLower(v) {
-	case "1", "true", "t", "yes", "y", "on":
-		return true
-	default:
-		return false
 	}
 }
 

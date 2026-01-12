@@ -7,7 +7,6 @@
 
 ## 環境変数
 - `OPENAI_API_KEY`（必須）
-- `OPENAI_VOICE`（音声モードを使う場合のみ）
 - `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
@@ -17,7 +16,7 @@
 ```sh
 go run ./cmd/smart-speaker
 ```
-デフォルトで `WS_ADDR=:8081` で `/ws/audio` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ `audio.play` で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
+デフォルトで `WS_ADDR=:8081` で `/ws/audio` と `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ `audio.play` で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
 
 ## フロント（Web）開発
 初回のみ依存インストール:
@@ -29,18 +28,16 @@ npm install
 npm run dev
 ```
 ブラウザで `http://localhost:5173/` を開いて接続します。  
-ブラウザは Web Audio + AudioWorklet でマイクを取得（`echoCancellation: true`）し、PCM16(24kHz) を WS `audio.append` で送信します。受信した `audio.play`（24kHz PCM16）を再生します。
+ブラウザは Web Speech API で文字起こしし、VAD で発話終端を検出して `/ws/chat` に送信します。受信した `audio.play`（24kHz PCM16）を再生します。
 
 ## WebSocket プロトコル
 - エンドポイント: `ws://<WS_ADDR>/ws/audio` （デフォルト `ws://localhost:8081/ws/audio`）
-- 送信（ブラウザ→サーバー）: `{"type":"audio.append","audio":"<base64 pcm16>"}`
-  チャンクは約300ms、24kHz/mono/PCM16 を想定
 - 受信（サーバー→ブラウザ）: `{"type":"audio.play","audio":"<base64 pcm16>","role":"assistant"}` を再生
 
 ## 構成図（ステージ接続）
-- `ws_input (/ws/audio)` → `realtimeapi` → `tts(ElevenLabs)` → `ws_output (/ws/audio)`
-- `toolcaller` ↔ `realtimeapi` → `wschat (/ws/chat)` も通知
-- `printer` は `realtimeapi` のログ出力用（UIには流さない）
+- `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `ws_output (/ws/audio)`
+- `toolcaller` ↔ `responsesapi` → `wschat (/ws/chat)` も通知
+- `printer` は `responsesapi` のログ出力用（UIには流さない）
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`

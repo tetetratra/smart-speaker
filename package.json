@@ -9,6 +9,7 @@
     "preview": "vite preview --config web/vite.config.ts"
   },
   "dependencies": {
+    "hark": "^1.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
