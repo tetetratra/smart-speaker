@@ -6,6 +6,7 @@ export type VADOptions = {
   onVolume?: (db: number) => void
   threshold?: number
   interval?: number
+  history?: number
 }
 
 export type VADHandle = {
@@ -14,8 +15,9 @@ export type VADHandle = {
 
 export function startVAD(stream: MediaStream, options: VADOptions): VADHandle {
   const vad = hark(stream, {
-    interval: options.interval ?? 50,
-    threshold: options.threshold ?? -50,
+    interval: options.interval ?? 150, // 音量判定のサンプリング周期(ms)
+    threshold: options.threshold ?? -50, // 発話判定のしきい値(dB)
+    history: options.history ?? 10, // 無音判定の履歴数(回)
   })
 
   vad.on('speaking', options.onStart)
