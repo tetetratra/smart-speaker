@@ -1,6 +1,9 @@
 export type SpeechCallbacks = {
   onFinal: (text: string) => void
   onInterim: (text: string) => void
+  onResult?: () => void
+  onSpeechEnd?: () => void
+  onSoundEnd?: () => void
   onStart?: () => void
   onEnd?: () => void
   onError?: (message: string) => void
@@ -33,11 +36,14 @@ export function createSpeechRecognizer(callbacks: SpeechCallbacks): SpeechHandle
 
   recognition.onstart = () => callbacks.onStart?.()
   recognition.onend = () => callbacks.onEnd?.()
+  recognition.onspeechend = () => callbacks.onSpeechEnd?.()
+  recognition.onsoundend = () => callbacks.onSoundEnd?.()
   recognition.onerror = (event: any) => {
     const message = typeof event?.error === 'string' ? event.error : 'unknown error'
     callbacks.onError?.(message)
   }
   recognition.onresult = (event: any) => {
+    callbacks.onResult?.()
     let interim = ''
     const finals: string[] = []
     for (let i = event.resultIndex; i < event.results.length; i += 1) {

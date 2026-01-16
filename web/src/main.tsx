@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createAudioReceiver } from './audio'
 import { createSpeechRecognizer } from './speech'
-import { startVAD } from './vad'
 import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
@@ -13,6 +12,7 @@ type ChatMessage =
 
 const audioWSUrl = 'ws://localhost:8081/ws/audio'
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
+const silenceTimeoutMs = 1200
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -39,13 +39,12 @@ function App() {
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const connectedRef = useRef(false)
   const stopPresenceRef = useRef<(() => void) | null>(null)
-  const vadRef = useRef<ReturnType<typeof startVAD> | null>(null)
   const speechRef = useRef<ReturnType<typeof createSpeechRecognizer> | null>(null)
   const speechActiveRef = useRef(false)
-  const vadSpeakingRef = useRef(false)
   const finalTranscriptRef = useRef('')
   const interimTranscriptRef = useRef('')
   const micStreamRef = useRef<MediaStream | null>(null)
+  const silenceTimerRef = useRef<number | null>(null)
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
@@ -131,25 +130,44 @@ function App() {
     resetTranscripts()
   }, [resetTranscripts, sendVoiceText])
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current === null) return
+    window.clearTimeout(silenceTimerRef.current)
+    silenceTimerRef.current = null
+  }, [])
+
+  const scheduleSilenceFlush = useCallback(
+    (delayMs: number) => {
+      clearSilenceTimer()
+      silenceTimerRef.current = window.setTimeout(() => {
+        if (!speechActiveRef.current) return
+        flushTranscript()
+        setVoiceStatus('待機中')
+      }, delayMs)
+    },
+    [clearSilenceTimer, flushTranscript],
+  )
+
+  const resetSilenceTimer = useCallback(() => {
+    scheduleSilenceFlush(silenceTimeoutMs)
+  }, [scheduleSilenceFlush])
+
   const stopVoice = useCallback(() => {
     speechActiveRef.current = false
+    clearSilenceTimer()
     speechRef.current?.stop()
     speechRef.current = null
-    vadSpeakingRef.current = false
-    if (vadRef.current) {
-      vadRef.current.stop()
-      vadRef.current = null
-    } else if (micStreamRef.current) {
+    if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
     }
     micStreamRef.current = null
     setVoiceStatus('停止中')
     setSpeechError('')
     resetTranscripts()
-  }, [resetTranscripts])
+  }, [clearSilenceTimer, resetTranscripts])
 
   const startVoice = useCallback(async () => {
-    if (speechRef.current || vadRef.current) return
+    if (speechRef.current) return
     console.log('voice start: begin')
     setSpeechError('')
     const speech = createSpeechRecognizer({
@@ -159,17 +177,28 @@ function App() {
         finalTranscriptRef.current = next
         setTranscriptFinal(next)
         setTranscriptInterim('')
+        setVoiceStatus('認識中')
+        resetSilenceTimer()
       },
       onInterim: (text) => {
         console.log('speech interim', text)
         interimTranscriptRef.current = text
         setTranscriptInterim(text)
+        setVoiceStatus('認識中')
+        resetSilenceTimer()
+      },
+      onResult: () => {
+        resetSilenceTimer()
+      },
+      onSpeechEnd: () => {
+        scheduleSilenceFlush(200)
+      },
+      onSoundEnd: () => {
+        scheduleSilenceFlush(200)
       },
       onStart: () => {
         console.log('speech start')
-        if (!vadSpeakingRef.current) {
-          setVoiceStatus('認識中')
-        }
+        setVoiceStatus('待機中')
       },
       onEnd: () => {
         console.log('speech end')
@@ -220,29 +249,13 @@ function App() {
       return
     }
     micStreamRef.current = stream
-    vadRef.current = startVAD(stream, {
-      onStart: () => {
-        console.log('vad start')
-        receiver.stop()
-        vadSpeakingRef.current = true
-        setVoiceStatus('発話中')
-        resetTranscripts()
-      },
-      onStop: () => {
-        console.log('vad stop')
-        vadSpeakingRef.current = false
-        setVoiceStatus('待機中')
-        flushTranscript()
-      },
-    })
-
     setVoiceStatus('待機中')
     try {
       speech.start()
     } catch (err) {
       setSpeechError(err instanceof Error ? err.message : 'speech start error')
     }
-  }, [flushTranscript, receiver, resetTranscripts])
+  }, [flushTranscript, resetSilenceTimer, resetTranscripts, scheduleSilenceFlush])
 
   const connect = useCallback(async () => {
     if (connected || busy) return
