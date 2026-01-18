@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
+	"smart-speaker/internal/components/followup"
 	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/proactive"
 	"smart-speaker/internal/components/reset"
@@ -71,10 +72,11 @@ type stages struct {
 	tool      *graph.Stage
 	proactive *graph.Stage
 	reset     *graph.Stage
+	followup  *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.reset} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.reset, s.followup} {
 		if st != nil {
 			st.Close()
 		}
@@ -98,6 +100,7 @@ func buildStages(cfg app.Config) (stages, error) {
 	}
 	printerStage := printer.NewStage()
 	proactiveStage := proactive.NewStage()
+	followupStage := followup.NewStage()
 
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
@@ -134,6 +137,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		tool:      toolStage,
 		proactive: proactiveStage,
 		reset:     resetStage,
+		followup:  followupStage,
 	}, nil
 }
 
@@ -163,6 +167,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	responsesNode := add(st.responses)
 	proactiveNode := add(st.proactive)
 	resetNode := add(st.reset)
+	followupNode := add(st.followup)
 	if node := add(st.printer); node != nil {
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
@@ -182,6 +187,12 @@ func wireGraph(g *graph.Graph, st stages) {
 	if resetNode != nil {
 		if responsesNode != nil {
 			g.Connect(resetNode, responsesNode)
+		}
+	}
+	if followupNode != nil {
+		if responsesNode != nil {
+			g.Connect(responsesNode, followupNode)
+			g.Connect(followupNode, responsesNode)
 		}
 	}
 	if node := add(st.tts); node != nil {
@@ -211,6 +222,9 @@ func wireGraph(g *graph.Graph, st stages) {
 		if resetNode != nil {
 			g.Connect(resetNode, node)
 			g.Connect(node, resetNode)
+		}
+		if followupNode != nil {
+			g.Connect(node, followupNode)
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, node)

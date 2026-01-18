@@ -62,6 +62,9 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 		"model": c.model,
 		"input": input,
 	}
+	payload["text"] = map[string]any{
+		"format": defaultResponseFormat(),
+	}
 	if strings.TrimSpace(previousResponseID) != "" {
 		payload["previous_response_id"] = previousResponseID
 	}
@@ -128,6 +131,9 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 		"model":                c.model,
 		"input":                input,
 		"previous_response_id": previousResponseID,
+	}
+	payload["text"] = map[string]any{
+		"format": defaultResponseFormat(),
 	}
 	if len(c.tools) > 0 {
 		payload["tools"] = c.tools
@@ -287,4 +293,27 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func defaultResponseFormat() map[string]any {
+	return map[string]any{
+		"type": "json_schema",
+		"name": "assistant_response",
+		"schema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"speech": map[string]any{
+					"type": "string",
+				},
+				"expectation": map[string]any{
+					"type":    "integer",
+					"minimum": 0,
+					"maximum": 10,
+				},
+			},
+			"required":             []string{"speech", "expectation"},
+			"additionalProperties": false,
+		},
+		"strict": true,
+	}
 }

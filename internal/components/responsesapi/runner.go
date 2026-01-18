@@ -142,19 +142,18 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 }
 
 func appendOutputConstraint(role, text string) string {
-	const suffix = "（記号・URLの使用禁止）"
 	trimmed := strings.TrimSpace(text)
-	if role == "system" {
-		return trimmed
-	}
-	if trimmed == "" {
-		return trimmed
-	}
-	return trimmed + " " + suffix
+	return trimmed
 }
 
 func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 	cleaned := sanitizeResponseText(resp.Text)
+	expectation := (*int)(nil)
+	if parsed, ok := parseStructuredOutput(resp.Text); ok {
+		cleaned = sanitizeResponseText(parsed.Speech)
+		clamped := clampExpectation(parsed.Expectation)
+		expectation = &clamped
+	}
 	respClean := resp
 	respClean.Text = cleaned
 	respClean.HasResponse = strings.TrimSpace(cleaned) != ""
@@ -179,8 +178,8 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 	}
 	state.SetLastActivityAt(time.Now())
 	state.SetLastAssistantTalkAt(time.Now())
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: respClean.Text, ResponseID: respClean.ResponseID, Source: "responses"}})
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respClean.ResponseID, Final: true, Source: "responses"}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: respClean.Text, ResponseID: respClean.ResponseID, Source: "responses", Expectation: expectation}})
+	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respClean.ResponseID, Final: true, Source: "responses", Expectation: expectation}})
 }
 
 func (r *runner) currentResponseID() string {
