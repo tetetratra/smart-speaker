@@ -17,9 +17,11 @@ type runner struct {
 	cancel     context.CancelFunc
 	once       bool
 
-	timer           *time.Timer
-	timerC          <-chan time.Time
-	lastExpectation int
+	timer            *time.Timer
+	timerC           <-chan time.Time
+	lastExpectation  int
+	readyForFollowup bool
+	pendingRespID    string
 }
 
 // NewStage は無応答時にフォローアップの system メッセージを送るステージを作成します。
@@ -48,10 +50,12 @@ func (r *runner) consume() {
 		select {
 		case <-r.ctx.Done():
 			r.stopTimer()
+			r.readyForFollowup = false
 			return
 		case evt, ok := <-r.upstream:
 			if !ok {
 				r.stopTimer()
+				r.readyForFollowup = false
 				return
 			}
 			r.handleEvent(evt)
@@ -82,20 +86,45 @@ func (r *runner) handleEvent(evt types.Event) {
 		if line.Expectation != nil {
 			r.lastExpectation = *line.Expectation
 		}
+		if line.Text != "" {
+			r.pendingRespID = line.ResponseID
+		}
 		if !line.Final {
 			return
 		}
-		expectation := r.lastExpectation
-		if line.Expectation != nil {
-			expectation = *line.Expectation
+		r.readyForFollowup = true
+	case types.EventTextInput:
+		r.stopTimer()
+		r.readyForFollowup = false
+	case types.EventTTSEnd:
+		if !r.readyForFollowup {
+			return
 		}
+		tts, ok := evt.Payload.(types.TTSEvent)
+		if !ok {
+			return
+		}
+		if tts.ResponseID == "" || r.pendingRespID == "" || tts.ResponseID != r.pendingRespID {
+			return
+		}
+		r.readyForFollowup = false
+		expectation := r.lastExpectation
 		if expectation <= 0 {
 			r.stopTimer()
 			return
 		}
-		r.startTimer(time.Duration(expectation) * time.Second)
-	case types.EventTextInput:
-		r.stopTimer()
+		r.startTimer(expectationDelay(expectation))
+	}
+}
+
+func expectationDelay(expectation int) time.Duration {
+	switch expectation {
+	case 1:
+		return 5 * time.Second
+	case 2:
+		return 10 * time.Second
+	default:
+		return 0
 	}
 }
 

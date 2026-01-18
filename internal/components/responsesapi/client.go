@@ -308,7 +308,7 @@ func defaultResponseFormat() map[string]any {
 				"expectation": map[string]any{
 					"type":    "integer",
 					"minimum": 0,
-					"maximum": 10,
+					"maximum": 2,
 				},
 			},
 			"required":             []string{"speech", "expectation"},

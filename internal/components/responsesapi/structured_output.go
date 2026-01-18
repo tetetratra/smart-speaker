@@ -16,7 +16,8 @@ func parseStructuredOutput(raw string) (structuredOutput, bool) {
 		return structuredOutput{}, false
 	}
 	var out structuredOutput
-	if err := json.Unmarshal([]byte(trimmed), &out); err != nil {
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	if err := dec.Decode(&out); err != nil {
 		return structuredOutput{}, false
 	}
 	return out, true
@@ -26,8 +27,8 @@ func clampExpectation(value int) int {
 	if value < 0 {
 		return 0
 	}
-	if value > 10 {
-		return 10
+	if value > 2 {
+		return 2
 	}
 	return value
 }

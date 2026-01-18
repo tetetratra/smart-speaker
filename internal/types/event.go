@@ -14,6 +14,7 @@ const (
 	EventMCPCall
 	EventResponsesRequest
 	EventResponsesResponse
+	EventTTSEnd
 	EventReset
 	EventSessionClear
 )

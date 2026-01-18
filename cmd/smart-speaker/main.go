@@ -199,6 +199,9 @@ func wireGraph(g *graph.Graph, st stages) {
 		if responsesNode != nil {
 			g.Connect(responsesNode, node)
 		}
+		if followupNode != nil {
+			g.Connect(node, followupNode)
+		}
 		if player := add(st.player); player != nil {
 			g.Connect(node, player)
 		}

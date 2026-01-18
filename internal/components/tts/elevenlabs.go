@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,7 +150,7 @@ func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
 	log.Printf("elevenlabs: connected (voice=%s model=%s resp=%s)", t.cfg.Voice, t.cfg.Model, respID)
 
 	readCtx, cancelRead := context.WithCancel(context.Background())
-	go t.readLoop(readCtx, conn)
+	go t.readLoop(readCtx, conn, respID)
 	t.conn = conn
 	t.cancelRead = cancelRead
 	t.connectedID = respID
@@ -188,7 +189,7 @@ func (t *streamTTS) sendFlush(ctx context.Context) error {
 	return conn.Write(ctx, websocket.MessageText, mustJSON(payload))
 }
 
-func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn) {
+func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID string) {
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
@@ -225,6 +226,13 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn) {
 				}
 				if resp.IsFinal {
 					log.Printf("elevenlabs: isFinal")
+					if strings.TrimSpace(respID) != "" {
+						select {
+						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{ResponseID: respID}}:
+						case <-ctx.Done():
+							return
+						}
+					}
 					t.closeConn()
 					return
 				}

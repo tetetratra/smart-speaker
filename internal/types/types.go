@@ -18,6 +18,11 @@ type OutputAudio struct {
 	Audio string
 }
 
+// TTSEvent はTTSストリーム完了を表します。
+type TTSEvent struct {
+	ResponseID string
+}
+
 // ResponsesRequest はResponses APIへの要求を表します。
 type ResponsesRequest struct {
 	Role       string
