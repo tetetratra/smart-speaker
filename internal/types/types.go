@@ -23,6 +23,18 @@ type TTSEvent struct {
 	ResponseID string
 }
 
+type RTCIceCandidate struct {
+	Candidate     string  `json:"candidate"`
+	SDPMid        *string `json:"sdpMid,omitempty"`
+	SDPMLineIndex *uint16 `json:"sdpMLineIndex,omitempty"`
+}
+
+type RTCSignal struct {
+	Type      string           `json:"type"`
+	SDP       string           `json:"sdp,omitempty"`
+	Candidate *RTCIceCandidate `json:"candidate,omitempty"`
+}
+
 // ResponsesRequest はResponses APIへの要求を表します。
 type ResponsesRequest struct {
 	Role       string

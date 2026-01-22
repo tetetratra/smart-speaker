@@ -17,6 +17,7 @@ const (
 	EventTTSEnd
 	EventReset
 	EventSessionClear
+	EventRTCSignal
 )
 
 // Event is the common data structure passed between stages.

@@ -14,6 +14,7 @@ import (
 	"smart-speaker/internal/components/proactive"
 	"smart-speaker/internal/components/reset"
 	"smart-speaker/internal/components/responsesapi"
+	"smart-speaker/internal/components/rtc"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wsaudio"
@@ -69,6 +70,7 @@ type stages struct {
 	player    *graph.Stage
 	tts       *graph.Stage
 	chat      *graph.Stage
+	rtc       *graph.Stage
 	tool      *graph.Stage
 	proactive *graph.Stage
 	reset     *graph.Stage
@@ -76,7 +78,7 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.tool, s.proactive, s.reset, s.followup} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
 		if st != nil {
 			st.Close()
 		}
@@ -127,6 +129,20 @@ func buildStages(cfg app.Config) (stages, error) {
 		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
 	}
 	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
+	rtcStage, err := rtc.NewStage(rtc.Config{
+		ModelPath:  cfg.Vosk.ModelPath,
+		IceHostIPs: cfg.RTCIceHostIPs,
+		IcePortMin: cfg.RTCIcePortMin,
+		IcePortMax: cfg.RTCIcePortMax,
+	})
+	if err != nil {
+		serverStage.Close()
+		outStage.Close()
+		if ttsStage != nil {
+			ttsStage.Close()
+		}
+		return stages{}, fmt.Errorf("failed to init rtc stage: %w", err)
+	}
 	return stages{
 		wsserver:  serverStage,
 		responses: responsesStage,
@@ -134,6 +150,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		player:    outStage,
 		tts:       ttsStage,
 		chat:      chatStage,
+		rtc:       rtcStage,
 		tool:      toolStage,
 		proactive: proactiveStage,
 		reset:     resetStage,
@@ -168,15 +185,21 @@ func wireGraph(g *graph.Graph, st stages) {
 	proactiveNode := add(st.proactive)
 	resetNode := add(st.reset)
 	followupNode := add(st.followup)
-	if node := add(st.printer); node != nil {
+	printerNode := add(st.printer)
+	ttsNode := add(st.tts)
+	playerNode := add(st.player)
+	rtcNode := add(st.rtc)
+	chatNode := add(st.chat)
+
+	if printerNode != nil {
 		if responsesNode != nil {
-			g.Connect(responsesNode, node)
+			g.Connect(responsesNode, printerNode)
 		}
 		if proactiveNode != nil {
-			g.Connect(proactiveNode, node)
+			g.Connect(proactiveNode, printerNode)
 		}
 		if resetNode != nil {
-			g.Connect(resetNode, node)
+			g.Connect(resetNode, printerNode)
 		}
 	}
 	if proactiveNode != nil {
@@ -195,15 +218,18 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(followupNode, responsesNode)
 		}
 	}
-	if node := add(st.tts); node != nil {
+	if ttsNode != nil {
 		if responsesNode != nil {
-			g.Connect(responsesNode, node)
+			g.Connect(responsesNode, ttsNode)
 		}
 		if followupNode != nil {
-			g.Connect(node, followupNode)
+			g.Connect(ttsNode, followupNode)
 		}
-		if player := add(st.player); player != nil {
-			g.Connect(node, player)
+		if rtcNode != nil {
+			g.Connect(ttsNode, rtcNode)
+		}
+		if playerNode != nil {
+			g.Connect(ttsNode, playerNode)
 		}
 	}
 	var toolNode *graph.Node
@@ -214,23 +240,30 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(toolNode, responsesNode)
 		}
 	}
-	if node := add(st.chat); node != nil {
+	if chatNode != nil {
 		if responsesNode != nil {
-			g.Connect(responsesNode, node)
-			g.Connect(node, responsesNode)
+			g.Connect(responsesNode, chatNode)
+			g.Connect(chatNode, responsesNode)
+		}
+		if rtcNode != nil {
+			g.Connect(chatNode, rtcNode)
+			g.Connect(rtcNode, chatNode)
 		}
 		if proactiveNode != nil {
-			g.Connect(proactiveNode, node)
+			g.Connect(proactiveNode, chatNode)
 		}
 		if resetNode != nil {
-			g.Connect(resetNode, node)
-			g.Connect(node, resetNode)
+			g.Connect(resetNode, chatNode)
+			g.Connect(chatNode, resetNode)
 		}
 		if followupNode != nil {
-			g.Connect(node, followupNode)
+			g.Connect(chatNode, followupNode)
 		}
 		if toolNode != nil {
-			g.Connect(toolNode, node)
+			g.Connect(toolNode, chatNode)
 		}
+	}
+	if rtcNode != nil && responsesNode != nil {
+		g.Connect(rtcNode, responsesNode)
 	}
 }

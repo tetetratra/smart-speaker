@@ -1,7 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { createAudioReceiver } from './audio'
-import { createSpeechRecognizer } from './speech'
 import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
@@ -10,19 +8,15 @@ type ChatMessage =
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
-const audioWSUrl = 'ws://localhost:8081/ws/audio'
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
-const silenceTimeoutMs = 1200
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
-  const [voiceStatus, setVoiceStatus] = useState('停止中')
-  const [speechError, setSpeechError] = useState('')
-  const [transcriptFinal, setTranscriptFinal] = useState('')
-  const [transcriptInterim, setTranscriptInterim] = useState('')
+  const [rtcStatus, setRtcStatus] = useState('停止中')
+  const [rtcError, setRtcError] = useState('')
   const [presenceEnabled, setPresenceEnabled] = useState(false)
   const [presenceStatus, setPresenceStatus] = useState('停止中')
   const [presenceError, setPresenceError] = useState('')
@@ -32,22 +26,48 @@ function App() {
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const receiver = useMemo(() => createAudioReceiver(), [])
-
-  const wsAudioRef = useRef<ReturnType<typeof createWS> | null>(null)
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
-  const connectedRef = useRef(false)
   const stopPresenceRef = useRef<(() => void) | null>(null)
-  const speechRef = useRef<ReturnType<typeof createSpeechRecognizer> | null>(null)
-  const speechActiveRef = useRef(false)
-  const finalTranscriptRef = useRef('')
-  const interimTranscriptRef = useRef('')
+  const peerRef = useRef<RTCPeerConnection | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
-  const silenceTimerRef = useRef<number | null>(null)
+  const pendingICERef = useRef<RTCIceCandidateInit[]>([])
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
+  }, [])
+
+  const handleRTCSignal = useCallback(async (raw: any) => {
+    const peer = peerRef.current
+    if (!peer) return
+    if (raw.type === 'webrtc.answer') {
+      if (!raw.sdp) return
+      try {
+        await peer.setRemoteDescription({ type: 'answer', sdp: String(raw.sdp) })
+        const pending = pendingICERef.current
+        pendingICERef.current = []
+        for (const cand of pending) {
+          await peer.addIceCandidate(cand)
+        }
+      } catch (err) {
+        setRtcError(err instanceof Error ? err.message : 'RTC answer error')
+      }
+      return
+    }
+    if (raw.type === 'webrtc.ice') {
+      if (!raw.candidate) return
+      const candidate = raw.candidate as RTCIceCandidateInit
+      if (!peer.remoteDescription) {
+        pendingICERef.current.push(candidate)
+        return
+      }
+      try {
+        await peer.addIceCandidate(candidate)
+      } catch (err) {
+        setRtcError(err instanceof Error ? err.message : 'RTC ice error')
+      }
+    }
   }, [])
 
   const handleChatMessage = useCallback(
@@ -57,6 +77,10 @@ function App() {
         return idRef.current
       }
       if (!raw || typeof raw !== 'object') return
+      if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
+        handleRTCSignal(raw)
+        return
+      }
       switch (raw.type) {
         case 'message': {
           const text = typeof raw.text === 'string' ? raw.text : ''
@@ -100,138 +124,58 @@ function App() {
           break
       }
     },
-    [appendMessage],
+    [appendMessage, handleRTCSignal],
   )
 
-  const resetTranscripts = useCallback(() => {
-    finalTranscriptRef.current = ''
-    interimTranscriptRef.current = ''
-    setTranscriptFinal('')
-    setTranscriptInterim('')
-  }, [])
-
-  const sendVoiceText = useCallback(
-    (text: string) => {
-      const ws = wsChatRef.current
-      const trimmed = text.trim()
-      if (!ws || !connectedRef.current || !trimmed) return
-      console.log('voice send', { text: trimmed, readyState: ws?.readyState })
-      ws.send({ type: 'message', role: 'user', text: trimmed })
-      appendMessage({ id: Date.now(), type: 'user', text: trimmed, responseId: undefined, final: true, source: 'browser' })
-    },
-    [appendMessage],
-  )
-
-  const flushTranscript = useCallback(() => {
-    const finalText = finalTranscriptRef.current.trim()
-    const interimText = interimTranscriptRef.current.trim()
-    const text = finalText || interimText
-    console.log('voice flush', { finalText, interimText })
-    if (!text) return
-    sendVoiceText(text)
-    resetTranscripts()
-  }, [resetTranscripts, sendVoiceText])
-
-  const clearSilenceTimer = useCallback(() => {
-    if (silenceTimerRef.current === null) return
-    window.clearTimeout(silenceTimerRef.current)
-    silenceTimerRef.current = null
-  }, [])
-
-  const scheduleSilenceFlush = useCallback(
-    (delayMs: number) => {
-      clearSilenceTimer()
-      silenceTimerRef.current = window.setTimeout(() => {
-        if (!speechActiveRef.current) return
-        flushTranscript()
-        setVoiceStatus('待機中')
-      }, delayMs)
-    },
-    [clearSilenceTimer, flushTranscript],
-  )
-
-  const resetSilenceTimer = useCallback(() => {
-    scheduleSilenceFlush(silenceTimeoutMs)
-  }, [scheduleSilenceFlush])
-
-  const stopVoice = useCallback(() => {
-    speechActiveRef.current = false
-    clearSilenceTimer()
-    speechRef.current?.stop()
-    speechRef.current = null
+  const stopRTC = useCallback(() => {
+    if (peerRef.current) {
+      peerRef.current.onicecandidate = null
+      peerRef.current.ontrack = null
+      peerRef.current.onconnectionstatechange = null
+      peerRef.current.close()
+      peerRef.current = null
+    }
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
+      micStreamRef.current = null
     }
-    micStreamRef.current = null
-    setVoiceStatus('停止中')
-    setSpeechError('')
-    resetTranscripts()
-  }, [clearSilenceTimer, resetTranscripts])
+    pendingICERef.current = []
+    setRtcStatus('停止中')
+    setRtcError('')
+  }, [])
 
-  const startVoice = useCallback(async () => {
-    if (speechRef.current) return
-    console.log('voice start: begin')
-    setSpeechError('')
-    const speech = createSpeechRecognizer({
-      onFinal: (text) => {
-        console.log('speech final', text)
-        const next = [finalTranscriptRef.current, text].filter(Boolean).join(' ').trim()
-        finalTranscriptRef.current = next
-        setTranscriptFinal(next)
-        setTranscriptInterim('')
-        setVoiceStatus('認識中')
-        resetSilenceTimer()
-      },
-      onInterim: (text) => {
-        console.log('speech interim', text)
-        interimTranscriptRef.current = text
-        setTranscriptInterim(text)
-        setVoiceStatus('認識中')
-        resetSilenceTimer()
-      },
-      onResult: () => {
-        resetSilenceTimer()
-      },
-      onSpeechEnd: () => {
-        scheduleSilenceFlush(200)
-      },
-      onSoundEnd: () => {
-        scheduleSilenceFlush(200)
-      },
-      onStart: () => {
-        console.log('speech start')
-        setVoiceStatus('待機中')
-      },
-      onEnd: () => {
-        console.log('speech end')
-        if (!speechActiveRef.current) {
-          setVoiceStatus('停止中')
-          return
-        }
-        window.setTimeout(() => {
-          if (speechActiveRef.current) {
-            try {
-              speech.start()
-            } catch (err) {
-              setSpeechError(err instanceof Error ? err.message : 'speech restart error')
-            }
-          }
-        }, 200)
-      },
-      onError: (message) => {
-        console.log('speech error', message)
-        setSpeechError(message)
-      },
-    })
+  const startRTC = useCallback(async () => {
+    if (peerRef.current) return
+    setRtcError('')
+    const ws = wsChatRef.current
+    if (!ws) return
 
-    if (!speech.isSupported) {
-      console.log('speech unsupported')
-      setSpeechError('SpeechRecognition 非対応ブラウザです')
-      return
+    const peer = new RTCPeerConnection()
+    peerRef.current = peer
+
+    peer.onicecandidate = (event) => {
+      if (!event.candidate) return
+      ws.send({ type: 'webrtc.ice', candidate: event.candidate.toJSON() })
     }
-
-    speechRef.current = speech
-    speechActiveRef.current = true
+    peer.onconnectionstatechange = () => {
+      const state = peer.connectionState
+      if (state === 'connected') {
+        setRtcStatus('接続済み')
+      } else if (state === 'connecting') {
+        setRtcStatus('接続中')
+      } else if (state === 'failed') {
+        setRtcStatus('失敗')
+      } else if (state === 'disconnected') {
+        setRtcStatus('切断')
+      }
+    }
+    peer.ontrack = (event) => {
+      const stream = event.streams?.[0] ?? new MediaStream([event.track])
+      if (audioRef.current) {
+        audioRef.current.srcObject = stream
+        audioRef.current.play().catch(() => {})
+      }
+    }
 
     let stream: MediaStream
     try {
@@ -243,71 +187,57 @@ function App() {
         },
       })
     } catch (err) {
-      console.log('mic error', err)
-      setSpeechError(err instanceof Error ? err.message : 'microphone error')
-      speechActiveRef.current = false
-      speechRef.current = null
-      setVoiceStatus('停止中')
+      setRtcError(err instanceof Error ? err.message : 'microphone error')
+      stopRTC()
       return
     }
     micStreamRef.current = stream
-    setVoiceStatus('待機中')
+    stream.getTracks().forEach((track) => {
+      peer.addTrack(track, stream)
+    })
+
     try {
-      speech.start()
+      const offer = await peer.createOffer({ offerToReceiveAudio: true })
+      await peer.setLocalDescription(offer)
+      ws.send({ type: 'webrtc.offer', sdp: offer.sdp })
+      setRtcStatus('接続中')
     } catch (err) {
-      setSpeechError(err instanceof Error ? err.message : 'speech start error')
+      setRtcError(err instanceof Error ? err.message : 'RTC start error')
+      stopRTC()
     }
-  }, [flushTranscript, resetSilenceTimer, resetTranscripts, scheduleSilenceFlush])
+  }, [stopRTC])
 
   const connect = useCallback(async () => {
     if (connected || busy) return
     setBusy(true)
     try {
-      const wsAudio = createWS(audioWSUrl)
       const wsChat = createWS(chatWSUrl)
+      await wsChat.connect((msg) => {
+        handleChatMessage(msg)
+      })
 
-      await Promise.all([
-        wsAudio.connect((msg) => {
-          if (msg?.type === 'audio.play' && msg.audio) {
-            receiver.play(msg.audio)
-          }
-        }),
-        wsChat.connect((msg) => {
-          handleChatMessage(msg)
-        }),
-      ])
-
-      wsAudioRef.current = wsAudio
       wsChatRef.current = wsChat
-
       setConnected(true)
-      connectedRef.current = true
-      await startVoice()
+      await startRTC()
       appendMessage({ id: Date.now(), type: 'assistant', text: '接続しました。話しかけてください。' })
     } catch (e) {
       console.error('connect error', e)
-      stopVoice()
+      stopRTC()
       setConnected(false)
-      connectedRef.current = false
-      wsAudioRef.current?.close()
-      wsAudioRef.current = null
       wsChatRef.current?.close()
       wsChatRef.current = null
       throw e
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, busy, connected, handleChatMessage, receiver, startVoice, stopVoice])
+  }, [appendMessage, busy, connected, handleChatMessage, startRTC, stopRTC])
 
   const disconnect = useCallback(() => {
-    stopVoice()
-    wsAudioRef.current?.close()
-    wsAudioRef.current = null
+    stopRTC()
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
-    connectedRef.current = false
-  }, [stopVoice])
+  }, [stopRTC])
 
   useEffect(() => {
     return () => {
@@ -441,7 +371,7 @@ function App() {
   const sendReset = useCallback(() => {
     const ws = wsChatRef.current
     if (!ws || !connected) return
-    ws.send({ type: "reset" })
+    ws.send({ type: 'reset' })
   }, [connected])
 
   const sendText = useCallback(() => {
@@ -450,7 +380,6 @@ function App() {
     if (!ws || !connected || !text) return
     const msg = { type: 'message', role: 'user', text }
     ws.send(msg)
-    // ローカルにも即時反映
     setMessages((prev) => [
       ...prev,
       { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
@@ -501,20 +430,15 @@ function App() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div>
-          <strong>音声認識:</strong> {voiceStatus}
+          <strong>音声接続:</strong> {rtcStatus}
         </div>
-        {speechError && (
+        {rtcError && (
           <div style={{ color: '#dc2626' }}>
-            <strong>音声認識エラー:</strong> {speechError}
+            <strong>音声エラー:</strong> {rtcError}
           </div>
         )}
-        <div>
-          <strong>文字起こし(確定):</strong> {transcriptFinal || '（なし）'}
-        </div>
-        <div style={{ color: '#6b7280' }}>
-          <strong>文字起こし(途中):</strong> {transcriptInterim || '（なし）'}
-        </div>
       </div>
+      <audio ref={audioRef} autoPlay />
       <div
         style={{
           border: '1px solid #ddd',

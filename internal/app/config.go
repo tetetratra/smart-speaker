@@ -19,6 +19,10 @@ type Config struct {
 	AutoPromptMessage  string
 	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
+	Vosk               VoskConfig
+	RTCIceHostIPs      []string
+	RTCIcePortMin      int
+	RTCIcePortMax      int
 	WSAddr             string
 }
 
@@ -32,6 +36,10 @@ type ElevenLabsConfig struct {
 	APIKey  string
 	VoiceID string
 	Model   string
+}
+
+type VoskConfig struct {
+	ModelPath string
 }
 
 func LoadConfig(promptPath string) Config {
@@ -80,16 +88,51 @@ func LoadConfig(promptPath string) Config {
 		elv.Model = "eleven_multilingual_v2"
 	}
 
+	rtcIceHostIPs := splitComma(os.Getenv("RTC_ICE_HOST_IPS"))
+	rtcIcePortMin := readEnvInt("RTC_ICE_PORT_MIN")
+	rtcIcePortMax := readEnvInt("RTC_ICE_PORT_MAX")
+
 	return Config{
 		APIKey:             apiKey,
 		ResponsesModel:     responsesModel,
 		SystemPrompt:       prompt,
 		AutoPromptInterval: interval,
 		AutoPromptMessage:  message,
-		ElevenLabs: elv,
-		SwitchBot:  switchCfg,
-		WSAddr:     wsAddr,
+		ElevenLabs:         elv,
+		SwitchBot:          switchCfg,
+		Vosk: VoskConfig{
+			ModelPath: strings.TrimSpace(os.Getenv("VOSK_MODEL_PATH")),
+		},
+		RTCIceHostIPs: rtcIceHostIPs,
+		RTCIcePortMin: rtcIcePortMin,
+		RTCIcePortMax: rtcIcePortMax,
+		WSAddr:        wsAddr,
 	}
+}
+
+func splitComma(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func readEnvInt(key string) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return val
 }
 
 func readSystemPrompt(path string) string {

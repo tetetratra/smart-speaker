@@ -175,6 +175,16 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"output":       json.RawMessage(call.Output),
 		})
 		return
+	case types.EventRTCSignal:
+		sig, ok := evt.Payload.(types.RTCSignal)
+		if !ok {
+			return
+		}
+		msg = map[string]any{
+			"type":      sig.Type,
+			"sdp":       sig.SDP,
+			"candidate": sig.Candidate,
+		}
 	default:
 		return
 	}
@@ -216,15 +226,32 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var msg struct {
-			Type       string `json:"type"`
-			Text       string `json:"text"`
-			Role       string `json:"role"`
-			Present    string `json:"present"`
-			CapturedAt string `json:"captured_at"`
-			Source     string `json:"source"`
+			Type       string                 `json:"type"`
+			Text       string                 `json:"text"`
+			Role       string                 `json:"role"`
+			Present    string                 `json:"present"`
+			CapturedAt string                 `json:"captured_at"`
+			Source     string                 `json:"source"`
+			SDP        string                 `json:"sdp"`
+			Candidate  *types.RTCIceCandidate `json:"candidate"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("wschat client message parse error: %v", err)
+			continue
+		}
+		if strings.HasPrefix(msg.Type, "webrtc.") {
+			sig := types.RTCSignal{
+				Type:      msg.Type,
+				SDP:       msg.SDP,
+				Candidate: msg.Candidate,
+			}
+			select {
+			case c.downstream <- types.Event{Kind: types.EventRTCSignal, Payload: sig}:
+			case <-r.Context().Done():
+				return
+			case <-c.ctx.Done():
+				return
+			}
 			continue
 		}
 		if msg.Type == "reset" {
