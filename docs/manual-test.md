@@ -14,7 +14,7 @@
 ## 3. 起動手順
 1. サーバーを起動する
    - `docker build -t smart-speaker-server .`
-   - `docker run --rm -p 8081:8081 -p 50000-50100:50000-50100/udp -e OPENAI_API_KEY=... -e ELEVENLABS_API_KEY=... -e ELEVENLABS_VOICE_ID=... -e ELEVENLABS_MODEL_ID=... -e RTC_ICE_HOST_IPS=... -e RTC_ICE_PORT_MIN=50000 -e RTC_ICE_PORT_MAX=50100 -e SWITCHBOT_TOKEN=... -e SWITCHBOT_SECRET=... -e SWITCHBOT_DEVICE_MAP=... smart-speaker-server`
+   - `docker run --rm -p 8081:8081 -p 50000-50100:50000-50100/udp -e OPENAI_API_KEY=... -e ELEVENLABS_API_KEY=... -e ELEVENLABS_VOICE_ID=... -e ELEVENLABS_MODEL_ID=... -e RTC_ICE_HOST_IPS=... -e SWITCHBOT_TOKEN=... -e SWITCHBOT_SECRET=... -e SWITCHBOT_DEVICE_MAP=... smart-speaker-server`
    - Docker Compose 利用時:
      - `docker compose up --build`
 2. フロントを起動する

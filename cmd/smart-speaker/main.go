@@ -132,8 +132,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	rtcStage, err := rtc.NewStage(rtc.Config{
 		ModelPath:  cfg.Vosk.ModelPath,
 		IceHostIPs: cfg.RTCIceHostIPs,
-		IcePortMin: cfg.RTCIcePortMin,
-		IcePortMax: cfg.RTCIcePortMax,
 	})
 	if err != nil {
 		serverStage.Close()

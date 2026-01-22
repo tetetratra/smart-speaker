@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"smart-speaker/internal/state"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -21,8 +20,6 @@ type Config struct {
 	SwitchBot          SwitchBotConfig
 	Vosk               VoskConfig
 	RTCIceHostIPs      []string
-	RTCIcePortMin      int
-	RTCIcePortMax      int
 	WSAddr             string
 }
 
@@ -89,8 +86,6 @@ func LoadConfig(promptPath string) Config {
 	}
 
 	rtcIceHostIPs := splitComma(os.Getenv("RTC_ICE_HOST_IPS"))
-	rtcIcePortMin := readEnvInt("RTC_ICE_PORT_MIN")
-	rtcIcePortMax := readEnvInt("RTC_ICE_PORT_MAX")
 
 	return Config{
 		APIKey:             apiKey,
@@ -104,8 +99,6 @@ func LoadConfig(promptPath string) Config {
 			ModelPath: strings.TrimSpace(os.Getenv("VOSK_MODEL_PATH")),
 		},
 		RTCIceHostIPs: rtcIceHostIPs,
-		RTCIcePortMin: rtcIcePortMin,
-		RTCIcePortMax: rtcIcePortMax,
 		WSAddr:        wsAddr,
 	}
 }
@@ -121,18 +114,6 @@ func splitComma(raw string) []string {
 		out = append(out, trimmed)
 	}
 	return out
-}
-
-func readEnvInt(key string) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return 0
-	}
-	val, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0
-	}
-	return val
 }
 
 func readSystemPrompt(path string) string {

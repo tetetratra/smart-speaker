@@ -32,8 +32,6 @@ const (
 type Config struct {
 	ModelPath  string
 	IceHostIPs []string
-	IcePortMin int
-	IcePortMax int
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
@@ -131,7 +129,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	defer s.mu.Unlock()
 	s.resetPeerLocked()
 
-	peer, err := newPeerConnection(s.cfg.IceHostIPs, s.cfg.IcePortMin, s.cfg.IcePortMax)
+	peer, err := newPeerConnection(s.cfg.IceHostIPs)
 	if err != nil {
 		log.Printf("rtc: peer create error: %v", err)
 		return
@@ -233,7 +231,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	}})
 }
 
-func newPeerConnection(iceHostIPs []string, icePortMin, icePortMax int) (*webrtc.PeerConnection, error) {
+func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
 	var m webrtc.MediaEngine
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		return nil, err
@@ -243,12 +241,12 @@ func newPeerConnection(iceHostIPs []string, icePortMin, icePortMax int) (*webrtc
 		return nil, err
 	}
 	var s webrtc.SettingEngine
-	if icePortMin > 0 && icePortMax > 0 && icePortMin <= icePortMax {
-		if err := s.SetEphemeralUDPPortRange(uint16(icePortMin), uint16(icePortMax)); err != nil {
-			return nil, err
-		}
-		log.Printf("rtc: use ICE UDP port range %d-%d", icePortMin, icePortMax)
+	icePortMin := uint16(50000)
+	icePortMax := uint16(50100)
+	if err := s.SetEphemeralUDPPortRange(icePortMin, icePortMax); err != nil {
+		return nil, err
 	}
+	log.Printf("rtc: use ICE UDP port range %d-%d", icePortMin, icePortMax)
 	if len(iceHostIPs) > 0 {
 		log.Printf("rtc: use ICE host IPs: %s", strings.Join(iceHostIPs, ","))
 		s.SetNAT1To1IPs(iceHostIPs, webrtc.ICECandidateTypeHost)
