@@ -46,6 +46,10 @@ UDP のポート範囲は 50000-50100 を公開する必要があります。
 ```sh
 docker compose up --build
 ```
+実行時に `RTC_ICE_HOST_IPS` を渡す場合は以下の通りです。
+```sh
+RTC_ICE_HOST_IPS=$(ipconfig getifaddr en0) docker compose up --build
+```
 
 ### 依存ライブラリ
 - Vosk の Go バインディングは libvosk を利用します。Docker で完結させるためホストへのインストールは不要です  
