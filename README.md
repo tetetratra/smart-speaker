@@ -43,6 +43,7 @@ UDP のポート範囲は 50000-50100 を公開する必要があります。
 ```sh
 docker compose -f docker-compose.yml up --build
 ```
+`npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
 ### 依存ライブラリ
 - Vosk の Go バインディングは libvosk を利用します。Docker で完結させるためホストへのインストールは不要です  

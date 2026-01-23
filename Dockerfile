@@ -28,6 +28,16 @@ ENV CGO_CPPFLAGS="-I /opt/vosk/runtime"
 ENV CGO_LDFLAGS="-L /opt/vosk/runtime -lvosk"
 ENV VOSK_MODEL_PATH=/opt/vosk/model
 
+FROM --platform=linux/arm64 node:20-bookworm AS frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY web ./web
+RUN npm run build
+
 FROM base AS dev
 
 COPY go.mod go.sum ./
@@ -46,8 +56,11 @@ RUN go build -o /app/bin/smart-speaker ./cmd/smart-speaker
 
 FROM gcr.io/distroless/base-debian12 AS runtime
 
+WORKDIR /app
+
 COPY --from=base /opt/vosk /opt/vosk
 COPY --from=build /app/bin/smart-speaker /app/bin/smart-speaker
+COPY --from=frontend /app/web/dist /app/web/dist
 
 ENV VOSK_PATH=/opt/vosk/runtime
 ENV LD_LIBRARY_PATH=/opt/vosk/runtime
