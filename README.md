@@ -11,6 +11,7 @@
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
 - `VOSK_MODEL_PATH`（Docker 以外で起動する場合に必須、Vosk 日本語モデルのパス）
 - `RTC_ICE_HOST_IPS`（任意、Docker で WebRTC を使う場合にホストIPを指定。カンマ区切り）
+- `WEB_DIST_DIR`（任意、フロントの配信ディレクトリ。デフォルト `web/dist`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
 - SwitchBot を使う場合: `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` / `SWITCHBOT_DEVICE_MAP`
 

@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
+	"path"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"smart-speaker/internal/app"
@@ -158,6 +162,7 @@ func buildStages(cfg app.Config) (stages, error) {
 
 func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, *graph.Stage, error) {
 	mux := http.NewServeMux()
+	registerWebUI(mux, cfg.WebDistDir)
 	server := &http.Server{
 		Addr:    cfg.WSAddr,
 		Handler: mux,
@@ -264,4 +269,48 @@ func wireGraph(g *graph.Graph, st stages) {
 	if rtcNode != nil && responsesNode != nil {
 		g.Connect(rtcNode, responsesNode)
 	}
+}
+
+func registerWebUI(mux *http.ServeMux, distDir string) {
+	if distDir == "" {
+		distDir = "web/dist"
+	}
+	absDir, err := filepath.Abs(distDir)
+	if err != nil {
+		log.Printf("web ui: invalid dist dir: %v", err)
+		return
+	}
+	info, err := os.Stat(absDir)
+	if err != nil || !info.IsDir() {
+		log.Printf("web ui: dist dir not found: %s", absDir)
+		return
+	}
+	indexPath := filepath.Join(absDir, "index.html")
+	if info, err := os.Stat(indexPath); err != nil || info.IsDir() {
+		log.Printf("web ui: index.html not found: %s", indexPath)
+		return
+	}
+	log.Printf("web ui: serve %s", absDir)
+
+	fileServer := http.FileServer(http.Dir(absDir))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		cleanPath := path.Clean(r.URL.Path)
+		if cleanPath == "/" {
+			cleanPath = "/index.html"
+		}
+		targetPath := filepath.Join(absDir, strings.TrimPrefix(cleanPath, "/"))
+		if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		clone := *r
+		urlCopy := *r.URL
+		clone.URL = &urlCopy
+		clone.URL.Path = "/index.html"
+		fileServer.ServeHTTP(w, &clone)
+	}))
 }

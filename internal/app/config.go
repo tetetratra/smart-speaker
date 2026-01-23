@@ -22,6 +22,7 @@ type Config struct {
 	Vosk               VoskConfig
 	RTCIceHostIPs      []string
 	WSAddr             string
+	WebDistDir         string
 }
 
 type SwitchBotConfig struct {
@@ -62,6 +63,10 @@ func LoadConfig(promptPath string) Config {
 	if wsAddr == "" {
 		wsAddr = ":8081"
 	}
+	webDistDir := strings.TrimSpace(os.Getenv("WEB_DIST_DIR"))
+	if webDistDir == "" {
+		webDistDir = "web/dist"
+	}
 
 	interval := time.Minute * 10
 	if raw := strings.TrimSpace(os.Getenv("AUTO_PROMPT_INTERVAL")); raw != "" {
@@ -101,6 +106,7 @@ func LoadConfig(promptPath string) Config {
 		},
 		RTCIceHostIPs: rtcIceHostIPs,
 		WSAddr:        wsAddr,
+		WebDistDir:    webDistDir,
 	}
 }
 
