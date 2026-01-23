@@ -9,7 +9,7 @@
 - `OPENAI_API_KEY`（必須）
 - `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
-- `VOSK_MODEL_PATH`（必須、Vosk 日本語モデルのパス）
+- `VOSK_MODEL_PATH`（Docker 以外で起動する場合に必須、Vosk 日本語モデルのパス）
 - `RTC_ICE_HOST_IPS`（任意、Docker で WebRTC を使う場合にホストIPを指定。カンマ区切り）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
 - SwitchBot を使う場合: `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` / `SWITCHBOT_DEVICE_MAP`
@@ -20,35 +20,27 @@ go run ./cmd/smart-speaker
 ```
 デフォルトで `WS_ADDR=:8081` で `/ws/audio` と `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ `audio.play` で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
 
-### Docker（Apple Silicon / arm64）
-サーバー全体を Docker で実行します。
-```sh
-docker build -t smart-speaker-server .
-docker run --rm -p 8081:8081 -p 50000-50100:50000-50100/udp \
-  -e OPENAI_API_KEY=... \
-  -e ELEVENLABS_API_KEY=... \
-  -e ELEVENLABS_VOICE_ID=... \
-  -e ELEVENLABS_MODEL_ID=... \
-  -e RTC_ICE_HOST_IPS=... \
-  -e SWITCHBOT_TOKEN=... \
-  -e SWITCHBOT_SECRET=... \
-  -e SWITCHBOT_DEVICE_MAP=... \
-  smart-speaker-server
-```
-Vosk のバイナリ/モデルはイメージ内に含まれ、`VOSK_MODEL_PATH` も設定済みです。
+### Docker（開発）
+開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
 
+初回のみビルド:
+```sh
+docker compose build
+```
+起動（通常はビルド不要）:
+```sh
+RTC_ICE_HOST_IPS=$(ipconfig getifaddr en0) docker compose up
+```
+依存更新や Dockerfile 更新時だけ `docker compose build` してください。
+
+Vosk のバイナリ/モデルはイメージ内に含まれ、`VOSK_MODEL_PATH` も設定済みです。
 Docker で WebRTC を使う場合、`RTC_ICE_HOST_IPS` にホストの IP を指定してください。
-（例: `RTC_ICE_HOST_IPS=192.168.1.10`）
 UDP のポート範囲は 50000-50100 を公開する必要があります。
 
-### Docker Compose
-`.env` に環境変数を設定した上で起動します。
+### Docker（本番）
+本番は `runtime` ターゲットのイメージを使います。
 ```sh
-docker compose up --build
-```
-実行時に `RTC_ICE_HOST_IPS` を渡す場合は以下の通りです。
-```sh
-RTC_ICE_HOST_IPS=$(ipconfig getifaddr en0) docker compose up --build
+docker compose -f docker-compose.yml up --build
 ```
 
 ### 依存ライブラリ
