@@ -1,0 +1,7 @@
+services:
+  server:
+    build:
+      target: dev
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/smart-speaker"]

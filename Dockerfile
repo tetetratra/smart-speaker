@@ -1,4 +1,4 @@
-FROM --platform=linux/arm64 golang:1.24-bookworm
+FROM --platform=linux/arm64 golang:1.24-bookworm AS base
 
 WORKDIR /app
 
@@ -28,11 +28,30 @@ ENV CGO_CPPFLAGS="-I /opt/vosk/runtime"
 ENV CGO_LDFLAGS="-L /opt/vosk/runtime -lvosk"
 ENV VOSK_MODEL_PATH=/opt/vosk/model
 
+FROM base AS dev
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+CMD ["go", "run", "./cmd/smart-speaker"]
+
+FROM base AS build
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 RUN go build -o /app/bin/smart-speaker ./cmd/smart-speaker
+
+FROM gcr.io/distroless/base-debian12 AS runtime
+
+COPY --from=base /opt/vosk /opt/vosk
+COPY --from=build /app/bin/smart-speaker /app/bin/smart-speaker
+
+ENV VOSK_PATH=/opt/vosk/runtime
+ENV LD_LIBRARY_PATH=/opt/vosk/runtime
+ENV VOSK_MODEL_PATH=/opt/vosk/model
 
 EXPOSE 8081
 CMD ["/app/bin/smart-speaker"]
