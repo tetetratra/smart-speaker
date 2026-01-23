@@ -56,23 +56,12 @@ docker compose -f docker-compose.yml up --build
   https://alphacephei.com/vosk/models
 
 ## フロント（Web）開発
-Docker を使わない場合の初回のみ依存インストール:
-```sh
-npm install
-```
-開発サーバー起動（Vite, ポート5173）:
-```sh
-npm run dev
-```
-ブラウザで `http://localhost:5173/` を開いて接続します。  
-ブラウザは WebRTC でマイク音声を送信し、サーバー側の Vosk で文字起こしします。TTS 音声は WebRTC で受信して再生します。
-
-### フロントも Docker で開発する場合
 `web` サービスが `npm install` → `npm run dev` を実行します。
 ```sh
 docker compose up web
 ```
 ポートは `http://localhost:5173/` です。依存は `node_modules` ボリュームに保持されます。
+ブラウザは WebRTC でマイク音声を送信し、サーバー側の Vosk で文字起こしします。TTS 音声は WebRTC で受信して再生します。
 
 ## WebSocket プロトコル
 - エンドポイント: `ws://<WS_ADDR>/ws/audio` （デフォルト `ws://localhost:8081/ws/audio`）
