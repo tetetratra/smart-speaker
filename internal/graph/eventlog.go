@@ -55,7 +55,7 @@ func (g *Graph) formatForwardLog(from *Stage, downstreams []*Stage, evt types.Ev
 	}
 	fromName := stageName(from)
 	toNames := stageNames(downstreams)
-	return fmt.Sprintf("%s --%s%s--> %s", fromName, eventName, detailPart, strings.Join(toNames, ", "))
+	return fmt.Sprintf("%s-%s%s->%s", fromName, eventName, detailPart, strings.Join(toNames, ","))
 }
 
 func stageName(stage *Stage) string {
@@ -88,9 +88,6 @@ func formatOutputLineDetail(evt types.Event) string {
 	}
 	if line.Source != "" {
 		parts = append(parts, fmt.Sprintf("source=%s", line.Source))
-	}
-	if line.ResponseID != "" {
-		parts = append(parts, fmt.Sprintf("response_id=%s", line.ResponseID))
 	}
 	if line.Expectation != nil {
 		parts = append(parts, fmt.Sprintf("expectation=%d", *line.Expectation))
@@ -128,9 +125,6 @@ func formatResponsesResponseDetail(evt types.Event) string {
 		fmt.Sprintf("mcp_calls=%d", len(resp.MCPCalls)),
 		fmt.Sprintf("has_response=%t", resp.HasResponse),
 	}
-	if resp.ResponseID != "" {
-		parts = append(parts, fmt.Sprintf("response_id=%s", resp.ResponseID))
-	}
 	return strings.Join(parts, ", ")
 }
 
@@ -145,12 +139,6 @@ func formatToolRequestDetail(evt types.Event) string {
 		fmt.Sprintf("arguments=%s", quoteText(args)),
 		fmt.Sprintf("args_bytes=%d", len(req.Arguments)),
 	}
-	if req.ToolCallID != "" {
-		parts = append(parts, fmt.Sprintf("tool_call_id=%s", req.ToolCallID))
-	}
-	if req.ResponseID != "" {
-		parts = append(parts, fmt.Sprintf("response_id=%s", req.ResponseID))
-	}
 	return strings.Join(parts, ", ")
 }
 
@@ -163,9 +151,6 @@ func formatToolResponseDetail(evt types.Event) string {
 	parts := []string{
 		fmt.Sprintf("output=%s", quoteText(output)),
 		fmt.Sprintf("output_bytes=%d", len(resp.Output)),
-	}
-	if resp.ToolCallID != "" {
-		parts = append(parts, fmt.Sprintf("tool_call_id=%s", resp.ToolCallID))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -186,12 +171,6 @@ func formatMCPCallDetail(evt types.Event) string {
 	}
 	if call.ServerLabel != "" {
 		parts = append(parts, fmt.Sprintf("server_label=%s", call.ServerLabel))
-	}
-	if call.CallID != "" {
-		parts = append(parts, fmt.Sprintf("call_id=%s", call.CallID))
-	}
-	if call.ResponseID != "" {
-		parts = append(parts, fmt.Sprintf("response_id=%s", call.ResponseID))
 	}
 	return strings.Join(parts, ", ")
 }
