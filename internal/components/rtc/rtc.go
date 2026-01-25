@@ -172,7 +172,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		}
 	})
 
-	decoder, err := opus.NewDecoder(webrtcSampleRate, opusChannels)
+	decoder, err := opus.NewDecoder(sttSampleRate, opusChannels)
 	if err != nil {
 		log.Printf("rtc: opus decoder error: %v", err)
 	}
@@ -180,7 +180,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	if err != nil {
 		log.Printf("rtc: opus encoder error: %v", err)
 	}
-	log.Printf("rtc: using opus channels=%d", opusChannels)
+	log.Printf("rtc: using opus channels=%d stt_rate=%d", opusChannels, sttSampleRate)
 
 	recognizer, err := vosk.NewRecognizer(s.model, sttSampleRate)
 	if err != nil {
@@ -310,14 +310,14 @@ func (s *stage) consumeRemoteTrack(ctx context.Context, track *webrtc.TrackRemot
 		if err != nil {
 			return
 		}
-		pcm, err := decodeOpusPacket(decoder, pkt, s.opusChannels)
+		pcm, err := decodeOpusPacket(decoder, pkt, s.opusChannels, sttSampleRate)
 		if err != nil {
 			continue
 		}
 		if len(pcm) == 0 {
 			continue
 		}
-		sttPCM := downsampleBy3(downmixToMono(pcm, s.opusChannels))
+		sttPCM := downmixToMono(pcm, s.opusChannels)
 		if len(sttPCM) == 0 {
 			continue
 		}
@@ -382,11 +382,11 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 	s.mu.Unlock()
 }
 
-func decodeOpusPacket(dec *opus.Decoder, pkt *rtp.Packet, channels int) ([]int16, error) {
+func decodeOpusPacket(dec *opus.Decoder, pkt *rtp.Packet, channels int, sampleRate int) ([]int16, error) {
 	if pkt == nil || dec == nil {
 		return nil, errors.New("decoder not ready")
 	}
-	maxSamples := webrtcSampleRate * 60 / 1000 * max(1, channels)
+	maxSamples := sampleRate * 60 / 1000 * max(1, channels)
 	pcm := make([]int16, maxSamples)
 	n, err := dec.Decode(pkt.Payload, pcm)
 	if err != nil {
@@ -420,18 +420,6 @@ func bytesToInt16(b []byte) []int16 {
 	out := make([]int16, len(b)/2)
 	for i := 0; i < len(out); i++ {
 		out[i] = int16(binary.LittleEndian.Uint16(b[i*2:]))
-	}
-	return out
-}
-
-func downsampleBy3(in []int16) []int16 {
-	if len(in) < 3 {
-		return nil
-	}
-	out := make([]int16, len(in)/3)
-	for i := 0; i < len(out); i++ {
-		sum := int(in[i*3]) + int(in[i*3+1]) + int(in[i*3+2])
-		out[i] = int16(sum / 3)
 	}
 	return out
 }
