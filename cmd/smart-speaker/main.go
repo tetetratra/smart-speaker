@@ -21,7 +21,6 @@ import (
 	"smart-speaker/internal/components/rtc"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
-	"smart-speaker/internal/components/wsaudio"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/components/wsserver"
 	"smart-speaker/internal/graph"
@@ -71,7 +70,6 @@ type stages struct {
 	wsserver  *graph.Stage
 	responses *graph.Stage
 	printer   *graph.Stage
-	player    *graph.Stage
 	tts       *graph.Stage
 	chat      *graph.Stage
 	rtc       *graph.Stage
@@ -82,7 +80,7 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.player, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
 		if st != nil {
 			st.Close()
 		}
@@ -90,7 +88,7 @@ func (s stages) close() {
 }
 
 func buildStages(cfg app.Config) (stages, error) {
-	serverStage, outStage, chatStage, err := buildWSStages(cfg)
+	serverStage, chatStage, err := buildWSStages(cfg)
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
@@ -148,7 +146,6 @@ func buildStages(cfg app.Config) (stages, error) {
 		wsserver:  serverStage,
 		responses: responsesStage,
 		printer:   printerStage,
-		player:    outStage,
 		tts:       ttsStage,
 		chat:      chatStage,
 		rtc:       rtcStage,
@@ -159,7 +156,7 @@ func buildStages(cfg app.Config) (stages, error) {
 	}, nil
 }
 
-func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, *graph.Stage, error) {
+func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	server := &http.Server{
@@ -167,9 +164,8 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, *graph.Stage, er
 		Handler: mux,
 	}
 	serverStage := wsserver.NewStage(server)
-	out := wsaudio.NewStage(mux)
 	chat := wschat.NewStage(mux)
-	return serverStage, out, chat, nil
+	return serverStage, chat, nil
 }
 
 func wireGraph(g *graph.Graph, st stages) {
@@ -189,7 +185,6 @@ func wireGraph(g *graph.Graph, st stages) {
 	followupNode := add(st.followup)
 	printerNode := add(st.printer)
 	ttsNode := add(st.tts)
-	playerNode := add(st.player)
 	rtcNode := add(st.rtc)
 	chatNode := add(st.chat)
 
@@ -229,9 +224,6 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 		if rtcNode != nil {
 			g.Connect(ttsNode, rtcNode)
-		}
-		if playerNode != nil {
-			g.Connect(ttsNode, playerNode)
 		}
 	}
 	var toolNode *graph.Node

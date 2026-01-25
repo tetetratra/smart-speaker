@@ -18,7 +18,7 @@
 ```sh
 go run ./cmd/smart-speaker
 ```
-デフォルトで `WS_ADDR=:8081` で `/ws/audio` と `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ `audio.play` で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
+デフォルトで `WS_ADDR=:8081` で `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ WebRTC で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
 
 ### Docker（開発）
 開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
@@ -55,13 +55,8 @@ docker compose up web
 ポートは `http://localhost:5173/` です。依存は `node_modules` ボリュームに保持されます。
 ブラウザは getUserMedia のマイク音声を Web Speech API で文字起こしし、/ws/chat に送信します。TTS 音声は WebRTC で受信して再生します。
 
-## WebSocket プロトコル
-- エンドポイント: `ws://<WS_ADDR>/ws/audio` （デフォルト `ws://localhost:8081/ws/audio`）
-- 受信（サーバー→ブラウザ）: `{"type":"audio.play","audio":"<base64 pcm16>","role":"assistant"}` を再生
-  - WebRTC 移行後は利用しません（移行期間中のみ）
-
 ## 構成図（ステージ接続）
-- `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `ws_output (/ws/audio)`
+- `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `rtc (WebRTC)`
 - `toolcaller` ↔ `responsesapi` → `wschat (/ws/chat)` も通知
 - `printer` は `responsesapi` のログ出力用（UIには流さない）
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
