@@ -55,7 +55,7 @@ func (g *Graph) formatForwardLog(from *Stage, downstreams []*Stage, evt types.Ev
 	}
 	fromName := stageName(from)
 	toNames := stageNames(downstreams)
-	return fmt.Sprintf("%s-%s%s->%s", fromName, eventName, detailPart, strings.Join(toNames, ","))
+	return fmt.Sprintf("%s -- %s%s --> %s", fromName, eventName, detailPart, strings.Join(toNames, ","))
 }
 
 func stageName(stage *Stage) string {
