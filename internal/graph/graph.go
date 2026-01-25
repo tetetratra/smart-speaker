@@ -21,9 +21,13 @@ type Edge struct {
 type Graph struct {
 	nodes []*Node
 	edges []*Edge
+
+	eventDetailFormatters map[types.EventKind]EventDetailFormatter
 }
 
-func New() *Graph { return &Graph{} }
+func New() *Graph {
+	return &Graph{eventDetailFormatters: defaultEventDetailFormatters()}
+}
 
 func (g *Graph) AddNode(stage *Stage) *Node {
 	n := &Node{Stage: stage}
@@ -69,9 +73,8 @@ func (g *Graph) Run(ctx context.Context) error {
 					if !ok {
 						return
 					}
-					// Debug: forward log
-					for _, dst := range downstreams {
-						log.Printf("graph forward %T -> %T", val, dst.Upstream)
+					if len(downstreams) > 0 {
+						log.Printf("%s", g.formatForwardLog(node.Stage, downstreams, val))
 					}
 					for _, dst := range downstreams {
 						in := (chan<- types.Event)(dst.Upstream)

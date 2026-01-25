@@ -92,6 +92,12 @@ func buildStages(cfg app.Config) (stages, error) {
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
 	}
+	if serverStage != nil {
+		serverStage.Name = "wsserver.NewStage"
+	}
+	if chatStage != nil {
+		chatStage.Name = "wschat.NewStage"
+	}
 	ttsStage, err := tts.NewStage(tts.Config{
 		APIKey: cfg.ElevenLabs.APIKey,
 		Voice:  cfg.ElevenLabs.VoiceID,
@@ -101,9 +107,21 @@ func buildStages(cfg app.Config) (stages, error) {
 		serverStage.Close()
 		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
+	if ttsStage != nil {
+		ttsStage.Name = "tts.NewStage"
+	}
 	printerStage := printer.NewStage()
+	if printerStage != nil {
+		printerStage.Name = "printer.NewStage"
+	}
 	proactiveStage := proactive.NewStage()
+	if proactiveStage != nil {
+		proactiveStage.Name = "proactive.NewStage"
+	}
 	followupStage := followup.NewStage()
+	if followupStage != nil {
+		followupStage.Name = "followup.NewStage"
+	}
 
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
@@ -115,6 +133,9 @@ func buildStages(cfg app.Config) (stages, error) {
 		writeDiaryTools = append(writeDiaryTools, def)
 	}
 	resetStage := reset.NewStage(reset.Config{WriteDiaryTools: writeDiaryTools})
+	if resetStage != nil {
+		resetStage.Name = "reset.NewStage"
+	}
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
@@ -128,7 +149,13 @@ func buildStages(cfg app.Config) (stages, error) {
 		}
 		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
 	}
+	if responsesStage != nil {
+		responsesStage.Name = "responsesapi.NewStage"
+	}
 	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
+	if toolStage != nil {
+		toolStage.Name = "toolcaller.NewStage"
+	}
 	rtcStage, err := rtc.NewStage(rtc.Config{
 		IceHostIPs: cfg.RTCIceHostIPs,
 	})
@@ -138,6 +165,9 @@ func buildStages(cfg app.Config) (stages, error) {
 			ttsStage.Close()
 		}
 		return stages{}, fmt.Errorf("failed to init rtc stage: %w", err)
+	}
+	if rtcStage != nil {
+		rtcStage.Name = "rtc.NewStage"
 	}
 	return stages{
 		wsserver:  serverStage,

@@ -11,6 +11,7 @@ const DefaultChannelBufferSize = 64
 
 // Stage represents an executable node in the graph with upstream/downstream channels.
 type Stage struct {
+	Name       string
 	Upstream   chan types.Event
 	Downstream chan types.Event
 	Run        func(context.Context)
