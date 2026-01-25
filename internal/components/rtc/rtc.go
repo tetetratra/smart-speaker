@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -23,10 +24,17 @@ import (
 )
 
 const (
-	webrtcSampleRate = 48000
-	webrtcChannels   = 1
-	sttSampleRate    = 16000
-	opusFrameMs      = 20
+	webrtcSampleRate  = 48000
+	webrtcChannels    = 1
+	sttSampleRate     = 16000
+	opusFrameMs       = 20
+	vadStartFrames    = 3
+	vadEndFrames      = 8
+	vadPreRollMs      = 200
+	vadMinSpeechRMS   = 300
+	vadSpeechRatio    = 2.5
+	vadNoiseMaxRatio  = 1.5
+	vadNoiseSmoothing = 0.95
 )
 
 type Config struct {
@@ -300,6 +308,9 @@ func (s *stage) consumeRemoteTrack(ctx context.Context, track *webrtc.TrackRemot
 	if decoder == nil || recognizer == nil {
 		return
 	}
+	vad := newVADState()
+	preRollMax := sttSampleRate * vadPreRollMs / 1000
+	preRoll := make([]int16, 0, preRollMax)
 	for {
 		select {
 		case <-ctx.Done():
@@ -321,16 +332,22 @@ func (s *stage) consumeRemoteTrack(ctx context.Context, track *webrtc.TrackRemot
 		if len(sttPCM) == 0 {
 			continue
 		}
-		buf := int16ToBytes(sttPCM)
-		if recognizer.AcceptWaveform(buf) != 0 {
-			text := extractVoskText(recognizer.Result())
-			if strings.TrimSpace(text) != "" {
-				s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{
-					Role:   "user",
-					Text:   text,
-					Source: "stt",
-				}})
+		active, started, ended := vad.update(rms(sttPCM))
+		if started {
+			combined := append(preRoll, sttPCM...)
+			preRoll = preRoll[:0]
+			s.feedRecognizer(recognizer, combined)
+		} else if active {
+			s.feedRecognizer(recognizer, sttPCM)
+		} else {
+			preRoll = append(preRoll, sttPCM...)
+			if len(preRoll) > preRollMax {
+				preRoll = preRoll[len(preRoll)-preRollMax:]
 			}
+		}
+		if ended {
+			preRoll = preRoll[:0]
+			s.flushRecognizer(recognizer)
 		}
 	}
 }
@@ -405,6 +422,37 @@ func extractVoskText(result string) string {
 	return strings.TrimSpace(payload.Text)
 }
 
+func (s *stage) feedRecognizer(recognizer *vosk.VoskRecognizer, pcm []int16) {
+	if recognizer == nil || len(pcm) == 0 {
+		return
+	}
+	buf := int16ToBytes(pcm)
+	if recognizer.AcceptWaveform(buf) != 0 {
+		text := extractVoskText(recognizer.Result())
+		if strings.TrimSpace(text) != "" {
+			s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{
+				Role:   "user",
+				Text:   text,
+				Source: "stt",
+			}})
+		}
+	}
+}
+
+func (s *stage) flushRecognizer(recognizer *vosk.VoskRecognizer) {
+	if recognizer == nil {
+		return
+	}
+	text := extractVoskText(recognizer.FinalResult())
+	if strings.TrimSpace(text) != "" {
+		s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{
+			Role:   "user",
+			Text:   text,
+			Source: "stt",
+		}})
+	}
+}
+
 func int16ToBytes(samples []int16) []byte {
 	buf := make([]byte, len(samples)*2)
 	for i, v := range samples {
@@ -473,6 +521,70 @@ func downmixToMono(in []int16, channels int) []int16 {
 		out[i] = int16((left + right) / 2)
 	}
 	return out
+}
+
+type vadState struct {
+	active       bool
+	speechCount  int
+	silenceCount int
+	noiseRMS     float64
+}
+
+func newVADState() *vadState {
+	return &vadState{}
+}
+
+func (v *vadState) update(rms float64) (active bool, started bool, ended bool) {
+	if v.noiseRMS == 0 {
+		v.noiseRMS = rms
+	}
+	if !v.active && rms <= v.noiseRMS*vadNoiseMaxRatio {
+		v.noiseRMS = v.noiseRMS*vadNoiseSmoothing + rms*(1.0-vadNoiseSmoothing)
+	}
+	threshold := maxFloat(float64(vadMinSpeechRMS), v.noiseRMS*vadSpeechRatio)
+	isSpeech := rms >= threshold
+	if isSpeech {
+		v.speechCount++
+		v.silenceCount = 0
+	} else {
+		v.silenceCount++
+		if !v.active {
+			v.speechCount = 0
+		}
+	}
+	if !v.active && v.speechCount >= vadStartFrames {
+		v.active = true
+		started = true
+		v.speechCount = 0
+		v.silenceCount = 0
+	}
+	if v.active && v.silenceCount >= vadEndFrames {
+		v.active = false
+		ended = true
+		v.speechCount = 0
+		v.silenceCount = 0
+	}
+	return v.active, started, ended
+}
+
+func rms(samples []int16) float64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	var sumSquares int64
+	for _, sample := range samples {
+		v := int64(sample)
+		sumSquares += v * v
+	}
+	meanSquare := float64(sumSquares) / float64(len(samples))
+	return math.Sqrt(meanSquare)
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func upmixToStereo(in []int16) []int16 {
