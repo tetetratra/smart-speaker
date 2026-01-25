@@ -14,7 +14,6 @@ import (
 
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/followup"
-	"smart-speaker/internal/components/printer"
 	"smart-speaker/internal/components/proactive"
 	"smart-speaker/internal/components/reset"
 	"smart-speaker/internal/components/responsesapi"
@@ -69,7 +68,6 @@ func ensureGoogleCalendarToken() {
 type stages struct {
 	wsserver  *graph.Stage
 	responses *graph.Stage
-	printer   *graph.Stage
 	tts       *graph.Stage
 	chat      *graph.Stage
 	rtc       *graph.Stage
@@ -80,7 +78,7 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.printer, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
 		if st != nil {
 			st.Close()
 		}
@@ -109,10 +107,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	}
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
-	}
-	printerStage := printer.NewStage()
-	if printerStage != nil {
-		printerStage.Name = "printer"
 	}
 	proactiveStage := proactive.NewStage()
 	if proactiveStage != nil {
@@ -172,7 +166,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	return stages{
 		wsserver:  serverStage,
 		responses: responsesStage,
-		printer:   printerStage,
 		tts:       ttsStage,
 		chat:      chatStage,
 		rtc:       rtcStage,
@@ -210,22 +203,10 @@ func wireGraph(g *graph.Graph, st stages) {
 	proactiveNode := add(st.proactive)
 	resetNode := add(st.reset)
 	followupNode := add(st.followup)
-	printerNode := add(st.printer)
 	ttsNode := add(st.tts)
 	rtcNode := add(st.rtc)
 	chatNode := add(st.chat)
 
-	if printerNode != nil {
-		if responsesNode != nil {
-			g.Connect(responsesNode, printerNode)
-		}
-		if proactiveNode != nil {
-			g.Connect(proactiveNode, printerNode)
-		}
-		if resetNode != nil {
-			g.Connect(resetNode, printerNode)
-		}
-	}
 	if proactiveNode != nil {
 		if responsesNode != nil {
 			g.Connect(proactiveNode, responsesNode)

@@ -147,7 +147,6 @@ func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
 	}
 	_ = conn.Write(ctx, websocket.MessageText, mustJSON(init))
 	conn.SetReadLimit(10 << 20)
-	log.Printf("elevenlabs: connected (voice=%s model=%s resp=%s)", t.cfg.Voice, t.cfg.Model, respID)
 
 	readCtx, cancelRead := context.WithCancel(context.Background())
 	go t.readLoop(readCtx, conn, respID)
@@ -166,7 +165,6 @@ func (t *streamTTS) sendText(ctx context.Context, text string) error {
 	if conn == nil {
 		return fmt.Errorf("connection not ready")
 	}
-	log.Printf("elevenlabs: send text len=%d", len(text))
 	payload := map[string]any{"text": text}
 	if !triggered {
 		payload["try_trigger_generation"] = true
@@ -184,7 +182,6 @@ func (t *streamTTS) sendFlush(ctx context.Context) error {
 	if conn == nil {
 		return nil
 	}
-	log.Printf("elevenlabs: flush")
 	payload := map[string]any{"text": ""}
 	return conn.Write(ctx, websocket.MessageText, mustJSON(payload))
 }
@@ -200,7 +197,6 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 		switch typ {
 		case websocket.MessageBinary:
 			audioB64 := base64.StdEncoding.EncodeToString(data)
-			log.Printf("elevenlabs: recv audio len=%d", len(audioB64))
 			select {
 			case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: audioB64}}:
 			case <-ctx.Done():
@@ -213,8 +209,7 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 			}
 			if err := json.Unmarshal(data, &resp); err == nil {
 				if resp.Audio != nil && *resp.Audio != "" {
-					if raw, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
-						log.Printf("elevenlabs: recv audio len=%d", len(raw))
+					if _, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
 						select {
 						case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: *resp.Audio}}:
 						case <-ctx.Done():
@@ -225,7 +220,6 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 					}
 				}
 				if resp.IsFinal {
-					log.Printf("elevenlabs: isFinal")
 					if strings.TrimSpace(respID) != "" {
 						select {
 						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{ResponseID: respID}}:
@@ -236,12 +230,6 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 					t.closeConn()
 					return
 				}
-			} else if len(data) > 0 {
-				preview := data
-				if len(preview) > 200 {
-					preview = preview[:200]
-				}
-				log.Printf("elevenlabs: recv text len=%d body=%s", len(data), string(preview))
 			}
 		}
 	}
