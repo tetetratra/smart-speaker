@@ -18,9 +18,9 @@ RUN mkdir -p /opt/vosk && \
   mv /opt/vosk/vosk-linux-aarch64-0.3.45 /opt/vosk/runtime
 
 RUN curl -L -o /opt/vosk/model.zip \
-    https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip && \
+    https://alphacephei.com/vosk/models/vosk-model-ja-0.22.zip && \
   unzip /opt/vosk/model.zip -d /opt/vosk && \
-  mv /opt/vosk/vosk-model-small-ja-0.22 /opt/vosk/model
+  mv /opt/vosk/vosk-model-ja-0.22 /opt/vosk/model
 
 ENV VOSK_PATH=/opt/vosk/runtime
 ENV LD_LIBRARY_PATH=/opt/vosk/runtime

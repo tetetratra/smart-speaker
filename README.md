@@ -52,7 +52,7 @@ docker compose -f docker-compose.yml up --build
   https://github.com/hraban/opus
 
 ### Vosk モデル（日本語）
-- `vosk-model-small-ja-0.22` / `vosk-model-ja-0.22` が利用できます  
+- 本番イメージでは `vosk-model-ja-0.22` を利用しています  
   https://alphacephei.com/vosk/models
 
 ## フロント（Web）開発
