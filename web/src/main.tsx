@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { createSpeechRecognizer, type SpeechHandle } from './speech'
 import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
@@ -17,6 +18,9 @@ function App() {
   const [input, setInput] = useState('')
   const [rtcStatus, setRtcStatus] = useState('停止中')
   const [rtcError, setRtcError] = useState('')
+  const [sttStatus, setSttStatus] = useState('停止中')
+  const [sttError, setSttError] = useState('')
+  const [sttInterim, setSttInterim] = useState('')
   const [presenceEnabled, setPresenceEnabled] = useState(false)
   const [presenceStatus, setPresenceStatus] = useState('停止中')
   const [presenceError, setPresenceError] = useState('')
@@ -33,6 +37,12 @@ function App() {
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
   const pendingICERef = useRef<RTCIceCandidateInit[]>([])
+  const speechRef = useRef<SpeechHandle | null>(null)
+
+  const nextMessageId = useCallback(() => {
+    idRef.current += 1
+    return idRef.current
+  }, [])
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
@@ -72,10 +82,6 @@ function App() {
 
   const handleChatMessage = useCallback(
     (raw: any) => {
-      const nextId = () => {
-        idRef.current += 1
-        return idRef.current
-      }
       if (!raw || typeof raw !== 'object') return
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
@@ -91,7 +97,7 @@ function App() {
           const expectation = typeof raw.expectation === 'number' ? raw.expectation : undefined
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
-            id: nextId(),
+            id: nextMessageId(),
             type: role,
             text: displayText,
             responseId: raw.response_id,
@@ -103,7 +109,7 @@ function App() {
         }
         case 'function_call': {
           appendMessage({
-            id: nextId(),
+            id: nextMessageId(),
             type: 'function_call',
             toolCallId: String(raw.tool_call_id || ''),
             name: String(raw.name || ''),
@@ -113,7 +119,7 @@ function App() {
         }
         case 'function_result': {
           appendMessage({
-            id: nextId(),
+            id: nextMessageId(),
             type: 'function_result',
             toolCallId: String(raw.tool_call_id || ''),
             output: raw.output ? JSON.stringify(raw.output) : undefined,
@@ -124,8 +130,52 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal],
+    [appendMessage, handleRTCSignal, nextMessageId],
   )
+
+  const sendSpeechText = useCallback(
+    (text: string) => {
+      const ws = wsChatRef.current
+      const trimmed = text.trim()
+      if (!ws || !trimmed) return
+      ws.send({ type: 'message', role: 'user', text: trimmed })
+      appendMessage({
+        id: nextMessageId(),
+        type: 'user',
+        text: trimmed,
+        final: true,
+        source: 'browser-stt',
+      })
+    },
+    [appendMessage, nextMessageId],
+  )
+
+  useEffect(() => {
+    const speech = createSpeechRecognizer({
+      onFinal: (text) => {
+        sendSpeechText(text)
+        setSttInterim('')
+      },
+      onInterim: (text) => setSttInterim(text),
+      onStart: () => {
+        setSttStatus('認識中')
+        setSttError('')
+      },
+      onEnd: () => setSttStatus('停止中'),
+      onError: (message) => {
+        setSttStatus('エラー')
+        setSttError(message)
+      },
+    })
+    speechRef.current = speech
+    if (!speech.isSupported) {
+      setSttStatus('未対応')
+    }
+    return () => {
+      speech.abort()
+      speechRef.current = null
+    }
+  }, [sendSpeechText])
 
   const stopRTC = useCallback(() => {
     if (peerRef.current) {
@@ -139,6 +189,8 @@ function App() {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
       micStreamRef.current = null
     }
+    speechRef.current?.stop()
+    setSttInterim('')
     pendingICERef.current = []
     setRtcStatus('停止中')
     setRtcError('')
@@ -152,6 +204,7 @@ function App() {
 
     const peer = new RTCPeerConnection()
     peerRef.current = peer
+    peer.addTransceiver('audio', { direction: 'recvonly' })
 
     peer.onicecandidate = (event) => {
       if (!event.candidate) return
@@ -192,12 +245,16 @@ function App() {
       return
     }
     micStreamRef.current = stream
-    stream.getTracks().forEach((track) => {
-      peer.addTrack(track, stream)
-    })
+    const audioTrack = stream.getAudioTracks()[0]
+    if (audioTrack && speechRef.current?.isSupported) {
+      speechRef.current.start(audioTrack)
+    } else if (!audioTrack) {
+      setSttStatus('エラー')
+      setSttError('マイクトラックを取得できませんでした')
+    }
 
     try {
-      const offer = await peer.createOffer({ offerToReceiveAudio: true })
+      const offer = await peer.createOffer()
       await peer.setLocalDescription(offer)
       ws.send({ type: 'webrtc.offer', sdp: offer.sdp })
       setRtcStatus('接続中')
@@ -435,6 +492,19 @@ function App() {
         {rtcError && (
           <div style={{ color: '#dc2626' }}>
             <strong>音声エラー:</strong> {rtcError}
+          </div>
+        )}
+        <div>
+          <strong>文字起こし:</strong> {sttStatus}
+        </div>
+        {sttInterim && (
+          <div style={{ color: '#0f766e' }}>
+            <strong>認識中:</strong> {sttInterim}
+          </div>
+        )}
+        {sttError && (
+          <div style={{ color: '#dc2626' }}>
+            <strong>文字起こしエラー:</strong> {sttError}
           </div>
         )}
       </div>

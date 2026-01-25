@@ -11,7 +11,7 @@ export type SpeechCallbacks = {
 
 export type SpeechHandle = {
   isSupported: boolean
-  start: () => void
+  start: (track?: MediaStreamTrack) => void
   stop: () => void
   abort: () => void
 }
@@ -34,8 +34,40 @@ export function createSpeechRecognizer(callbacks: SpeechCallbacks): SpeechHandle
   recognition.continuous = true
   recognition.interimResults = true
 
-  recognition.onstart = () => callbacks.onStart?.()
-  recognition.onend = () => callbacks.onEnd?.()
+  let desired = false
+  let running = false
+  let currentTrack: MediaStreamTrack | undefined
+
+  const startRecognition = () => {
+    if (running) return
+    try {
+      if (currentTrack) {
+        ;(recognition as any).start(currentTrack)
+      } else {
+        recognition.start()
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : ''
+      if (name === 'InvalidStateError') {
+        return
+      }
+      const message = err instanceof Error ? err.message : 'start error'
+      callbacks.onError?.(message)
+    }
+  }
+
+  recognition.onstart = () => {
+    running = true
+    callbacks.onStart?.()
+  }
+  recognition.onend = () => {
+    running = false
+    callbacks.onEnd?.()
+    if (!desired) return
+    setTimeout(() => {
+      startRecognition()
+    }, 200)
+  }
   recognition.onspeechend = () => callbacks.onSpeechEnd?.()
   recognition.onsoundend = () => callbacks.onSoundEnd?.()
   recognition.onerror = (event: any) => {
@@ -67,8 +99,23 @@ export function createSpeechRecognizer(callbacks: SpeechCallbacks): SpeechHandle
 
   return {
     isSupported: true,
-    start: () => recognition.start(),
-    stop: () => recognition.stop(),
-    abort: () => recognition.abort(),
+    start: (track?: MediaStreamTrack) => {
+      desired = true
+      if (track) {
+        currentTrack = track
+      }
+      if (running) return
+      startRecognition()
+    },
+    stop: () => {
+      desired = false
+      if (running) {
+        recognition.stop()
+      }
+    },
+    abort: () => {
+      desired = false
+      recognition.abort()
+    },
   }
 }

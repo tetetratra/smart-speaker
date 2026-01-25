@@ -61,7 +61,7 @@ docker compose -f docker-compose.yml up --build
 docker compose up web
 ```
 ポートは `http://localhost:5173/` です。依存は `node_modules` ボリュームに保持されます。
-ブラウザは WebRTC でマイク音声を送信し、サーバー側の Vosk で文字起こしします。TTS 音声は WebRTC で受信して再生します。
+ブラウザは getUserMedia のマイク音声を Web Speech API で文字起こしし、/ws/chat に送信します。TTS 音声は WebRTC で受信して再生します。
 
 ## WebSocket プロトコル
 - エンドポイント: `ws://<WS_ADDR>/ws/audio` （デフォルト `ws://localhost:8081/ws/audio`）
@@ -72,7 +72,8 @@ docker compose up web
 - `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `ws_output (/ws/audio)`
 - `toolcaller` ↔ `responsesapi` → `wschat (/ws/chat)` も通知
 - `printer` は `responsesapi` のログ出力用（UIには流さない）
- - `rtc` が WebRTC 音声入出力と Vosk 文字起こしを担当
+- `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
+- 文字起こしはブラウザの Web Speech API で実施
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`
@@ -84,5 +85,5 @@ docker compose up web
 
 ## 備考
 - 旧 PortAudio ベースのマイク/再生は WS 入出力に置き換え済みです
-- ハウリング対策は getUserMedia の `echoCancellation` と WebRTC の AEC を利用します  
+- ハウリング対策は getUserMedia の `echoCancellation` を利用します  
   https://developer.mozilla.org/en-US/docs/Web/API/MediaTrackConstraints/echoCancellation
