@@ -28,7 +28,7 @@ const (
 	webrtcChannels    = 1
 	sttSampleRate     = 16000
 	opusFrameMs       = 20
-	vadStartFrames    = 3
+	vadStartFrames    = 25
 	vadEndFrames      = 50
 	vadPreRollMs      = 200
 	vadMinSpeechRMS   = 300
