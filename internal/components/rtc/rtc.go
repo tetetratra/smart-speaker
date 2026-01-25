@@ -27,7 +27,6 @@ const (
 	webrtcChannels   = 1
 	sttSampleRate    = 16000
 	opusFrameMs      = 20
-	sttRmsThreshold  = 200
 )
 
 type Config struct {
@@ -322,9 +321,6 @@ func (s *stage) consumeRemoteTrack(ctx context.Context, track *webrtc.TrackRemot
 		if len(sttPCM) == 0 {
 			continue
 		}
-		if !isLoudEnough(sttPCM, sttRmsThreshold) {
-			continue
-		}
 		buf := int16ToBytes(sttPCM)
 		if recognizer.AcceptWaveform(buf) != 0 {
 			text := extractVoskText(recognizer.Result())
@@ -477,19 +473,6 @@ func downmixToMono(in []int16, channels int) []int16 {
 		out[i] = int16((left + right) / 2)
 	}
 	return out
-}
-
-func isLoudEnough(samples []int16, threshold int) bool {
-	if len(samples) == 0 {
-		return false
-	}
-	var sumSquares int64
-	for _, sample := range samples {
-		v := int64(sample)
-		sumSquares += v * v
-	}
-	meanSquare := sumSquares / int64(len(samples))
-	return meanSquare >= int64(threshold*threshold)
 }
 
 func upmixToStereo(in []int16) []int16 {
