@@ -8,7 +8,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-const followupPrompt = "会話を続ける短い一文を出力してください。この返答に付与するexpectationは基本的には0を指定してください"
+const followupPrompt = "(会話を続ける短文を出力。expectationは0)"
 
 type runner struct {
 	upstream   chan types.Event
