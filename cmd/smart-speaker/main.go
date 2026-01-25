@@ -99,7 +99,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	})
 	if err != nil {
 		serverStage.Close()
-		outStage.Close()
 		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
 	printerStage := printer.NewStage()
@@ -124,7 +123,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	})
 	if err != nil {
 		serverStage.Close()
-		outStage.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
@@ -136,7 +134,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	})
 	if err != nil {
 		serverStage.Close()
-		outStage.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
