@@ -29,7 +29,7 @@ const (
 	sttSampleRate     = 16000
 	opusFrameMs       = 20
 	vadStartFrames    = 3
-	vadEndFrames      = 8
+	vadEndFrames      = 50
 	vadPreRollMs      = 200
 	vadMinSpeechRMS   = 300
 	vadSpeechRatio    = 2.5
