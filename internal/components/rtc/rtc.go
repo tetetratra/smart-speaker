@@ -30,7 +30,7 @@ const (
 	opusFrameMs       = 20
 	vadStartFrames    = 25   // 連続で音声と判定したフレーム数で開始扱い
 	vadEndFrames      = 50   // 連続で無音と判定したフレーム数で終了扱い
-	vadPreRollMs      = 200  // 発話開始直前に付与する音声の長さ
+	vadPreRollMs      = 500  // 発話開始直前に付与する音声の長さ
 	vadMinSpeechRMS   = 300  // 音声と判定する最小RMS
 	vadSpeechRatio    = 2.5  // ノイズ床に対する音声判定倍率
 	vadNoiseMaxRatio  = 1.5  // ノイズ床更新を許す最大倍率
