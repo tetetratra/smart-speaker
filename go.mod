@@ -3,8 +3,7 @@ module smart-speaker
 go 1.24.4
 
 require (
-	github.com/alphacep/vosk-api/go v0.3.45
-	github.com/pion/rtp v1.8.15
+	github.com/pion/rtp v1.8.15 // indirect
 	github.com/pion/webrtc/v4 v4.1.0
 	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302
 	nhooyr.io/websocket v1.8.10

@@ -134,7 +134,6 @@ func buildStages(cfg app.Config) (stages, error) {
 	}
 	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
 	rtcStage, err := rtc.NewStage(rtc.Config{
-		ModelPath:  cfg.Vosk.ModelPath,
 		IceHostIPs: cfg.RTCIceHostIPs,
 	})
 	if err != nil {

@@ -4,17 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
-	"errors"
 	"log"
-	"math"
 	"strings"
 	"sync"
 	"time"
 
-	vosk "github.com/alphacep/vosk-api/go"
 	"github.com/pion/interceptor"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	opus "gopkg.in/hraban/opus.v2"
@@ -26,35 +21,18 @@ import (
 const (
 	webrtcSampleRate  = 48000
 	webrtcChannels    = 1
-	sttSampleRate     = 16000
 	opusFrameMs       = 20
-	vadStartFrames    = 25   // 連続で音声と判定したフレーム数で開始扱い
-	vadEndFrames      = 50   // 連続で無音と判定したフレーム数で終了扱い
-	vadPreRollMs      = 500  // 発話開始直前に付与する音声の長さ
-	vadMinSpeechRMS   = 300  // 音声と判定する最小RMS
-	vadSpeechRatio    = 2.5  // ノイズ床に対する音声判定倍率
-	vadNoiseMaxRatio  = 1.5  // ノイズ床更新を許す最大倍率
-	vadNoiseSmoothing = 0.95 // ノイズ床の指数移動平均係数
 )
 
 type Config struct {
-	ModelPath  string
 	IceHostIPs []string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
-	if strings.TrimSpace(cfg.ModelPath) == "" {
-		return nil, errors.New("rtc: VOSK_MODEL_PATH is required")
-	}
-	model, err := vosk.NewModel(cfg.ModelPath)
-	if err != nil {
-		return nil, err
-	}
 	r := &stage{
 		cfg:        cfg,
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		model:      model,
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -77,12 +55,8 @@ type stage struct {
 	peer         *webrtc.PeerConnection
 	track        *webrtc.TrackLocalStaticSample
 	encoder      *opus.Encoder
-	decoder      *opus.Decoder
-	recognizer   *vosk.VoskRecognizer
 	pendingICE   []webrtc.ICECandidateInit
 	audioBuf     []int16
-	model        *vosk.VoskModel
-	trackCancel  context.CancelFunc
 	connected    bool
 	closed       bool
 	opusChannels int
@@ -180,32 +154,15 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		}
 	})
 
-	decoder, err := opus.NewDecoder(sttSampleRate, opusChannels)
-	if err != nil {
-		log.Printf("rtc: opus decoder error: %v", err)
-	}
 	encoder, err := opus.NewEncoder(webrtcSampleRate, opusChannels, opus.AppVoIP)
 	if err != nil {
 		log.Printf("rtc: opus encoder error: %v", err)
 	}
-	log.Printf("rtc: using opus channels=%d stt_rate=%d", opusChannels, sttSampleRate)
-
-	recognizer, err := vosk.NewRecognizer(s.model, sttSampleRate)
-	if err != nil {
-		log.Printf("rtc: vosk recognizer error: %v", err)
-	}
-
-	trackCtx, trackCancel := context.WithCancel(s.ctx)
-	s.trackCancel = trackCancel
-	peer.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		go s.consumeRemoteTrack(trackCtx, remote, decoder, recognizer)
-	})
+	log.Printf("rtc: using opus channels=%d", opusChannels)
 
 	s.peer = peer
 	s.track = track
-	s.decoder = decoder
 	s.encoder = encoder
-	s.recognizer = recognizer
 	s.audioBuf = nil
 	s.connected = true
 	s.opusChannels = opusChannels
@@ -301,57 +258,6 @@ func (s *stage) handleICE(sig types.RTCSignal) {
 	}
 }
 
-func (s *stage) consumeRemoteTrack(ctx context.Context, track *webrtc.TrackRemote, decoder *opus.Decoder, recognizer *vosk.VoskRecognizer) {
-	if track == nil {
-		return
-	}
-	if decoder == nil || recognizer == nil {
-		return
-	}
-	vad := newVADState()
-	preRollMax := sttSampleRate * vadPreRollMs / 1000
-	preRoll := make([]int16, 0, preRollMax)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		pkt, _, err := track.ReadRTP()
-		if err != nil {
-			return
-		}
-		pcm, err := decodeOpusPacket(decoder, pkt, s.opusChannels, sttSampleRate)
-		if err != nil {
-			continue
-		}
-		if len(pcm) == 0 {
-			continue
-		}
-		sttPCM := downmixToMono(pcm, s.opusChannels)
-		if len(sttPCM) == 0 {
-			continue
-		}
-		active, started, ended := vad.update(rms(sttPCM))
-		if started {
-			combined := append(preRoll, sttPCM...)
-			preRoll = preRoll[:0]
-			s.feedRecognizer(recognizer, combined)
-		} else if active {
-			s.feedRecognizer(recognizer, sttPCM)
-		} else {
-			preRoll = append(preRoll, sttPCM...)
-			if len(preRoll) > preRollMax {
-				preRoll = preRoll[len(preRoll)-preRollMax:]
-			}
-		}
-		if ended {
-			preRoll = preRoll[:0]
-			s.flushRecognizer(recognizer)
-		}
-	}
-}
-
 func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 	s.mu.Lock()
 	if s.peer == nil || s.track == nil || s.encoder == nil || !s.connected {
@@ -397,68 +303,6 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 	}
 	s.audioBuf = buf
 	s.mu.Unlock()
-}
-
-func decodeOpusPacket(dec *opus.Decoder, pkt *rtp.Packet, channels int, sampleRate int) ([]int16, error) {
-	if pkt == nil || dec == nil {
-		return nil, errors.New("decoder not ready")
-	}
-	maxSamples := sampleRate * 60 / 1000 * max(1, channels)
-	pcm := make([]int16, maxSamples)
-	n, err := dec.Decode(pkt.Payload, pcm)
-	if err != nil {
-		return nil, err
-	}
-	return pcm[:n*max(1, channels)], nil
-}
-
-func extractVoskText(result string) string {
-	var payload struct {
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(result), &payload); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(payload.Text)
-}
-
-func (s *stage) feedRecognizer(recognizer *vosk.VoskRecognizer, pcm []int16) {
-	if recognizer == nil || len(pcm) == 0 {
-		return
-	}
-	buf := int16ToBytes(pcm)
-	if recognizer.AcceptWaveform(buf) != 0 {
-		text := extractVoskText(recognizer.Result())
-		if strings.TrimSpace(text) != "" {
-			s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{
-				Role:   "user",
-				Text:   text,
-				Source: "stt",
-			}})
-		}
-	}
-}
-
-func (s *stage) flushRecognizer(recognizer *vosk.VoskRecognizer) {
-	if recognizer == nil {
-		return
-	}
-	text := extractVoskText(recognizer.FinalResult())
-	if strings.TrimSpace(text) != "" {
-		s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{
-			Role:   "user",
-			Text:   text,
-			Source: "stt",
-		}})
-	}
-}
-
-func int16ToBytes(samples []int16) []byte {
-	buf := make([]byte, len(samples)*2)
-	for i, v := range samples {
-		binary.LittleEndian.PutUint16(buf[i*2:], uint16(v))
-	}
-	return buf
 }
 
 func bytesToInt16(b []byte) []int16 {
@@ -510,83 +354,6 @@ func parseOpusChannels(sdp string) int {
 	return webrtcChannels
 }
 
-func downmixToMono(in []int16, channels int) []int16 {
-	if channels <= 1 || len(in) == 0 {
-		return in
-	}
-	out := make([]int16, len(in)/channels)
-	for i := 0; i < len(out); i++ {
-		left := int(in[i*channels])
-		right := int(in[i*channels+1])
-		out[i] = int16((left + right) / 2)
-	}
-	return out
-}
-
-type vadState struct {
-	active       bool
-	speechCount  int
-	silenceCount int
-	noiseRMS     float64
-}
-
-func newVADState() *vadState {
-	return &vadState{}
-}
-
-func (v *vadState) update(rms float64) (active bool, started bool, ended bool) {
-	if v.noiseRMS == 0 {
-		v.noiseRMS = rms
-	}
-	if !v.active && rms <= v.noiseRMS*vadNoiseMaxRatio {
-		v.noiseRMS = v.noiseRMS*vadNoiseSmoothing + rms*(1.0-vadNoiseSmoothing)
-	}
-	threshold := maxFloat(float64(vadMinSpeechRMS), v.noiseRMS*vadSpeechRatio)
-	isSpeech := rms >= threshold
-	if isSpeech {
-		v.speechCount++
-		v.silenceCount = 0
-	} else {
-		v.silenceCount++
-		if !v.active {
-			v.speechCount = 0
-		}
-	}
-	if !v.active && v.speechCount >= vadStartFrames {
-		v.active = true
-		started = true
-		v.speechCount = 0
-		v.silenceCount = 0
-	}
-	if v.active && v.silenceCount >= vadEndFrames {
-		v.active = false
-		ended = true
-		v.speechCount = 0
-		v.silenceCount = 0
-	}
-	return v.active, started, ended
-}
-
-func rms(samples []int16) float64 {
-	if len(samples) == 0 {
-		return 0
-	}
-	var sumSquares int64
-	for _, sample := range samples {
-		v := int64(sample)
-		sumSquares += v * v
-	}
-	meanSquare := float64(sumSquares) / float64(len(samples))
-	return math.Sqrt(meanSquare)
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func upmixToStereo(in []int16) []int16 {
 	if len(in) == 0 {
 		return nil
@@ -611,16 +378,7 @@ func (s *stage) resetPeerLocked() {
 		_ = s.peer.Close()
 		s.peer = nil
 	}
-	if s.recognizer != nil {
-		s.recognizer.Free()
-		s.recognizer = nil
-	}
-	if s.trackCancel != nil {
-		s.trackCancel()
-		s.trackCancel = nil
-	}
 	s.encoder = nil
-	s.decoder = nil
 	s.track = nil
 	s.pendingICE = nil
 	s.audioBuf = nil
@@ -646,10 +404,6 @@ func (s *stage) close() error {
 		s.cancel()
 	}
 	s.resetPeerLocked()
-	if s.model != nil {
-		s.model.Free()
-		s.model = nil
-	}
 	close(s.upstream)
 	return nil
 }

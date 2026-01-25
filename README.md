@@ -9,7 +9,6 @@
 - `OPENAI_API_KEY`（必須）
 - `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
-- `VOSK_MODEL_PATH`（Docker 以外で起動する場合に必須、Vosk 日本語モデルのパス）
 - `RTC_ICE_HOST_IPS`（任意、Docker で WebRTC を使う場合にホストIPを指定。カンマ区切り）
 - `WEB_DIST_DIR`（任意、フロントの配信ディレクトリ。デフォルト `web/dist`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
@@ -34,7 +33,6 @@ RTC_ICE_HOST_IPS=$(ipconfig getifaddr en0) docker compose up
 ```
 依存更新や Dockerfile 更新時だけ `docker compose build` してください。
 
-Vosk のバイナリ/モデルはイメージ内に含まれ、`VOSK_MODEL_PATH` も設定済みです。
 Docker で WebRTC を使う場合、`RTC_ICE_HOST_IPS` にホストの IP を指定してください。
 UDP のポート範囲は 50000-50100 を公開する必要があります。
 
@@ -46,14 +44,8 @@ docker compose -f docker-compose.yml up --build
 `npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
 ### 依存ライブラリ
-- Vosk の Go バインディングは libvosk を利用します。Docker で完結させるためホストへのインストールは不要です  
-  https://github.com/alphacep/vosk-api/blob/master/go/example/README.md
 - Opus エンコード/デコードに libopus / libopusfile を利用します  
   https://github.com/hraban/opus
-
-### Vosk モデル（日本語）
-- 本番イメージでは `vosk-model-ja-0.22` を利用しています  
-  https://alphacephei.com/vosk/models
 
 ## フロント（Web）開発
 `web` サービスが `npm install` → `npm run dev` を実行します。

@@ -19,7 +19,6 @@ type Config struct {
 	AutoPromptMessage  string
 	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
-	Vosk               VoskConfig
 	RTCIceHostIPs      []string
 	WSAddr             string
 	WebDistDir         string
@@ -35,10 +34,6 @@ type ElevenLabsConfig struct {
 	APIKey  string
 	VoiceID string
 	Model   string
-}
-
-type VoskConfig struct {
-	ModelPath string
 }
 
 func LoadConfig(promptPath string) Config {
@@ -101,9 +96,6 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		ElevenLabs:         elv,
 		SwitchBot:          switchCfg,
-		Vosk: VoskConfig{
-			ModelPath: strings.TrimSpace(os.Getenv("VOSK_MODEL_PATH")),
-		},
 		RTCIceHostIPs: rtcIceHostIPs,
 		WSAddr:        wsAddr,
 		WebDistDir:    webDistDir,
