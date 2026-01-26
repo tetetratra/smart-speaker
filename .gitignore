@@ -1,7 +1,7 @@
 tmp
 .envrc
 AGENTS.md
-system_prompt.txt
+system_prompt.local.txt
 /smart-speaker
 node_modules
 package-lock.json

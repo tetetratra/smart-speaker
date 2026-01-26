@@ -1,9 +1,11 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"smart-speaker/internal/state"
 	"strconv"
 	"strings"
@@ -96,9 +98,9 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		ElevenLabs:         elv,
 		SwitchBot:          switchCfg,
-		RTCIceHostIPs: rtcIceHostIPs,
-		WSAddr:        wsAddr,
-		WebDistDir:    webDistDir,
+		RTCIceHostIPs:      rtcIceHostIPs,
+		WSAddr:             wsAddr,
+		WebDistDir:         webDistDir,
 	}
 }
 
@@ -119,10 +121,39 @@ func readSystemPrompt(path string) string {
 	if path == "" {
 		return ""
 	}
-	data, err := os.ReadFile(path)
+	mainPrompt, err := readPromptFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to read system prompt (%v)\n", err)
-		return ""
 	}
-	return string(data)
+
+	localPath := filepath.Join(filepath.Dir(path), "system_prompt.local.txt")
+	localPrompt, err := readPromptFile(localPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "warning: failed to read local system prompt (%v)\n", err)
+	}
+
+	return joinPrompts(mainPrompt, localPrompt)
+}
+
+func readPromptFile(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func joinPrompts(mainPrompt, localPrompt string) string {
+	if strings.TrimSpace(mainPrompt) == "" {
+		return localPrompt
+	}
+	if strings.TrimSpace(localPrompt) == "" {
+		return mainPrompt
+	}
+	mainPrompt = strings.TrimRight(mainPrompt, "\n")
+	localPrompt = strings.TrimLeft(localPrompt, "\n")
+	return mainPrompt + "\n\n" + localPrompt
 }
