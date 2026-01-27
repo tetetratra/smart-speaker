@@ -461,7 +461,7 @@ function App() {
           {downloading ? 'モデルDL中' : 'モデルDL開始'}
         </button>
         <button onClick={sendReset} disabled={!connected}>
-          リセット
+          おやすみ
         </button>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
