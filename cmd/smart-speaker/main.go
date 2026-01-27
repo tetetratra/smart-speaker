@@ -122,6 +122,8 @@ func buildStages(cfg app.Config) (stages, error) {
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
 	})
+	minimalTools := toolRegistry.DefinitionsMinimal()
+	expandedTools := toolRegistry.DefinitionsExcluding("write_diary")
 	writeDiaryTools := []any{}
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
 		writeDiaryTools = append(writeDiaryTools, def)
@@ -131,10 +133,11 @@ func buildStages(cfg app.Config) (stages, error) {
 		resetStage.Name = "reset"
 	}
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
-		APIKey:       cfg.APIKey,
-		Model:        cfg.ResponsesModel,
-		Instructions: cfg.SystemPrompt,
-		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
+		APIKey:        cfg.APIKey,
+		Model:         cfg.ResponsesModel,
+		Instructions:  cfg.SystemPrompt,
+		Tools:         minimalTools,
+		ExpandedTools: expandedTools,
 	})
 	if err != nil {
 		serverStage.Close()

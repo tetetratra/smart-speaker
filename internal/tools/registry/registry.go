@@ -3,6 +3,7 @@ package registry
 import (
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/diary"
+	"smart-speaker/internal/tools/functions/requiretools"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
 	"smart-speaker/internal/tools/mcp/googlecalendar"
@@ -32,10 +33,12 @@ func New(cfg Config) *Registry {
 	switchTool := switchbot.New(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	diaryTool := diary.New()
 	timerTool := timer.New()
+	requireToolsTool := requiretools.New()
 	toolEntries := []entry{
 		{def: switchTool.Definition(), handler: switchTool},
 		{def: timerTool.Definition(), handler: timerTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
+		{def: requireToolsTool.Definition(), handler: requireToolsTool},
 		{def: map[string]any{"type": "web_search"}},
 		{def: googlecalendar.Definition()},
 	}
@@ -54,6 +57,27 @@ func (r *Registry) Definitions() []any {
 	defs := make([]any, 0, len(r.entries))
 	for _, e := range r.entries {
 		if e.def != nil {
+			defs = append(defs, e.def)
+		}
+	}
+	return defs
+}
+
+// DefinitionsMinimal はweb_searchとrequire_toolsのみ返します。
+func (r *Registry) DefinitionsMinimal() []any {
+	if r == nil {
+		return nil
+	}
+	defs := make([]any, 0, len(r.entries))
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		if defName, ok := e.def["name"].(string); ok && defName == "require_tools" {
+			defs = append(defs, e.def)
+			continue
+		}
+		if defType, ok := e.def["type"].(string); ok && defType == "web_search" {
 			defs = append(defs, e.def)
 		}
 	}

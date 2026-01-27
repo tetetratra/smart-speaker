@@ -14,10 +14,11 @@ import (
 
 // Config はResponses APIクライアントの設定を表します。
 type Config struct {
-	APIKey       string
-	Model        string
-	Instructions string
-	Tools        []any
+	APIKey        string
+	Model         string
+	Instructions  string
+	Tools         []any
+	ExpandedTools []any
 }
 
 type Client struct {
@@ -117,7 +118,7 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 	}, nil
 }
 
-func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callID, output string) (types.ResponsesResponse, error) {
+func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callID, output string, toolsOverride []any) (types.ResponsesResponse, error) {
 	if strings.TrimSpace(previousResponseID) == "" {
 		return types.ResponsesResponse{}, fmt.Errorf("responsesapi: previous response id is required")
 	}
@@ -135,8 +136,12 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 	payload["text"] = map[string]any{
 		"format": defaultResponseFormat(),
 	}
-	if len(c.tools) > 0 {
-		payload["tools"] = c.tools
+	tools := c.tools
+	if toolsOverride != nil {
+		tools = toolsOverride
+	}
+	if len(tools) > 0 {
+		payload["tools"] = tools
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -258,9 +263,22 @@ func parseFunctionCall(entry map[string]any, respID string) *types.ToolRequest {
 		return nil
 	}
 	callID, _ := entry["call_id"].(string)
-	args, _ := entry["arguments"].(string)
-	if callID == "" || args == "" {
+	args := ""
+	switch v := entry["arguments"].(type) {
+	case string:
+		args = v
+	case map[string]any:
+		if encoded, err := json.Marshal(v); err == nil {
+			args = string(encoded)
+		}
+	case nil:
+		args = ""
+	}
+	if callID == "" {
 		return nil
+	}
+	if strings.TrimSpace(args) == "" {
+		args = "{}"
 	}
 	return &types.ToolRequest{
 		ResponseID: respID,

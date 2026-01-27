@@ -23,7 +23,9 @@ type runner struct {
 
 	mu             sync.Mutex
 	toolResponseID map[string]string
+	toolNameByID   map[string]string
 	systemPrompt   string
+	expandedTools  []any
 }
 
 // NewStage はResponses API呼び出しのステージを構築します。
@@ -37,7 +39,9 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		downstream:     make(chan types.Event, graph.DefaultChannelBufferSize),
 		client:         client,
 		toolResponseID: map[string]string{},
+		toolNameByID:   map[string]string{},
 		systemPrompt:   strings.TrimSpace(cfg.Instructions),
+		expandedTools:  cfg.ExpandedTools,
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -126,14 +130,20 @@ func (r *runner) systemPromptIfNeeded(previousResponseID string) string {
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
 	r.mu.Lock()
 	responseID := r.toolResponseID[resp.ToolCallID]
+	toolName := r.toolNameByID[resp.ToolCallID]
 	delete(r.toolResponseID, resp.ToolCallID)
+	delete(r.toolNameByID, resp.ToolCallID)
 	r.mu.Unlock()
 	if responseID == "" {
 		log.Printf("responsesapi: missing response id for tool call %s", resp.ToolCallID)
 		return
 	}
 	out := strings.TrimSpace(string(resp.Output))
-	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint("assistant", out))
+	var toolsOverride []any
+	if toolName == "require_tools" {
+		toolsOverride = r.expandedTools
+	}
+	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint("assistant", out), toolsOverride)
 	if err != nil {
 		log.Printf("responsesapi: tool output error: %v", err)
 		return
@@ -164,6 +174,7 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 		for _, call := range resp.ToolCalls {
 			r.mu.Lock()
 			r.toolResponseID[call.ToolCallID] = resp.ResponseID
+			r.toolNameByID[call.ToolCallID] = call.Name
 			r.mu.Unlock()
 			r.emit(types.Event{Kind: types.EventToolRequest, Payload: call})
 		}
