@@ -58,7 +58,6 @@ docker compose up web
 ## 構成図（ステージ接続）
 - `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `rtc (WebRTC)`
 - `toolcaller` ↔ `responsesapi` → `wschat (/ws/chat)` も通知
-- `printer` は `responsesapi` のログ出力用（UIには流さない）
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはブラウザの Web Speech API で実施
 
