@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	minIdleMinutes        = 10
-	maxRandomDelayMinutes = 10
+	minIdleMinutes        = 2
+	maxRandomDelayMinutes = 3
 	checkInterval         = time.Second
 	quietHoursStart       = 23
 	quietHoursEnd         = 9
