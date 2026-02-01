@@ -17,6 +17,12 @@ import (
 	types "smart-speaker/internal/types"
 )
 
+const (
+	elevenlabsSampleRate     = 24000
+	elevenlabsBytesPerSample = 2
+	elevenlabsChannels       = 1
+)
+
 // Config defines settings for ElevenLabs stream-input TTS.
 type Config struct {
 	APIKey        string
@@ -187,6 +193,7 @@ func (t *streamTTS) sendFlush(ctx context.Context) error {
 }
 
 func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID string) {
+	var totalBytes int64
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
@@ -196,6 +203,7 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 		}
 		switch typ {
 		case websocket.MessageBinary:
+			totalBytes += int64(len(data))
 			audioB64 := base64.StdEncoding.EncodeToString(data)
 			select {
 			case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: audioB64}}:
@@ -209,7 +217,8 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 			}
 			if err := json.Unmarshal(data, &resp); err == nil {
 				if resp.Audio != nil && *resp.Audio != "" {
-					if _, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
+					if decoded, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
+						totalBytes += int64(len(decoded))
 						select {
 						case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: *resp.Audio}}:
 						case <-ctx.Done():
@@ -220,6 +229,8 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 					}
 				}
 				if resp.IsFinal {
+					seconds := ttsDurationSeconds(totalBytes)
+					log.Printf("elevenlabs: tts duration=%.3fs bytes=%d response_id=%s", seconds, totalBytes, respID)
 					if strings.TrimSpace(respID) != "" {
 						select {
 						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{ResponseID: respID}}:
@@ -309,6 +320,14 @@ func mustJSON(v any) []byte {
 		return nil
 	}
 	return b
+}
+
+func ttsDurationSeconds(bytes int64) float64 {
+	if bytes <= 0 {
+		return 0
+	}
+	denom := float64(elevenlabsSampleRate * elevenlabsBytesPerSample * elevenlabsChannels)
+	return float64(bytes) / denom
 }
 
 func ptrBool(v bool) *bool {

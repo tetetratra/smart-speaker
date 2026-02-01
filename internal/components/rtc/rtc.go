@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	webrtcSampleRate  = 48000
-	webrtcChannels    = 1
-	opusFrameMs       = 20
+	webrtcSampleRate = 48000
+	webrtcChannels   = 1
+	opusFrameMs      = 20
 )
 
 type Config struct {
@@ -65,6 +65,46 @@ type stage struct {
 func (s *stage) run(parent context.Context) {
 	s.ctx, s.cancel = context.WithCancel(parent)
 	go s.consume()
+	go s.sendLoop()
+}
+
+func (s *stage) sendLoop() {
+	ticker := time.NewTicker(time.Millisecond * opusFrameMs)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			s.sendOpusFrame()
+		}
+	}
+}
+
+func (s *stage) sendOpusFrame() {
+	s.mu.Lock()
+	if s.peer == nil || s.track == nil || s.encoder == nil || !s.connected {
+		s.mu.Unlock()
+		return
+	}
+	frameSize := webrtcSampleRate * opusFrameMs / 1000 * max(1, s.opusChannels)
+	if len(s.audioBuf) < frameSize {
+		s.mu.Unlock()
+		return
+	}
+	frame := make([]int16, frameSize)
+	copy(frame, s.audioBuf[:frameSize])
+	s.audioBuf = s.audioBuf[frameSize:]
+	track := s.track
+	encoder := s.encoder
+	s.mu.Unlock()
+
+	opusBuf := make([]byte, 4000)
+	n, err := encoder.Encode(frame, opusBuf)
+	if err != nil {
+		return
+	}
+	_ = track.WriteSample(media.Sample{Data: opusBuf[:n], Duration: time.Millisecond * opusFrameMs})
 }
 
 func (s *stage) consume() {
@@ -264,8 +304,6 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 		s.mu.Unlock()
 		return
 	}
-	track := s.track
-	encoder := s.encoder
 	s.mu.Unlock()
 
 	raw, err := base64.StdEncoding.DecodeString(audio.Audio)
@@ -284,24 +322,8 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 		pcm = upmixToStereo(pcm)
 	}
 
-	frameSize := webrtcSampleRate * opusFrameMs / 1000 * max(1, s.opusChannels)
-	opusBuf := make([]byte, 4000)
-
 	s.mu.Lock()
 	s.audioBuf = append(s.audioBuf, pcm...)
-	buf := s.audioBuf
-	for len(buf) >= frameSize {
-		frame := buf[:frameSize]
-		buf = buf[frameSize:]
-		n, err := encoder.Encode(frame, opusBuf)
-		if err != nil {
-			continue
-		}
-		s.mu.Unlock()
-		_ = track.WriteSample(media.Sample{Data: opusBuf[:n], Duration: time.Millisecond * opusFrameMs})
-		s.mu.Lock()
-	}
-	s.audioBuf = buf
 	s.mu.Unlock()
 }
 
