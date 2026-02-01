@@ -8,7 +8,7 @@
 ## 環境変数
 - `OPENAI_API_KEY`（必須）
 - `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
-- `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_multilingual_v2`）
+- `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_v3`）
 - `RTC_ICE_HOST_IPS`（任意、Docker で WebRTC を使う場合にホストIPを指定。カンマ区切り）
 - `WEB_DIST_DIR`（任意、フロントの配信ディレクトリ。デフォルト `web/dist`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
