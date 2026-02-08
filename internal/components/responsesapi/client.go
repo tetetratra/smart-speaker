@@ -43,21 +43,31 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponse(ctx context.Context, role, text, previousResponseID, systemContent string, toolChoice any, toolsOverride []any) (types.ResponsesResponse, error) {
+func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessage, systemContent string, toolChoice any, toolsOverride []any) (types.ResponsesResponse, error) {
 	input := []map[string]any{}
-	if strings.TrimSpace(role) == "" {
-		role = "user"
-	}
 	if strings.TrimSpace(systemContent) != "" {
 		input = append(input, map[string]any{
 			"role":    "system",
 			"content": systemContent,
 		})
 	}
-	input = append(input, map[string]any{
-		"role":    role,
-		"content": text,
-	})
+	for _, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			role = "user"
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		input = append(input, map[string]any{
+			"role":    role,
+			"content": content,
+		})
+	}
+	if len(input) == 0 {
+		return types.ResponsesResponse{}, fmt.Errorf("responsesapi: input is empty")
+	}
 
 	payload := map[string]any{
 		"model": c.model,
@@ -65,9 +75,6 @@ func (c *Client) CreateResponse(ctx context.Context, role, text, previousRespons
 	}
 	payload["text"] = map[string]any{
 		"format": defaultResponseFormat(),
-	}
-	if strings.TrimSpace(previousResponseID) != "" {
-		payload["previous_response_id"] = previousResponseID
 	}
 	tools := c.tools
 	if toolsOverride != nil {
@@ -326,10 +333,28 @@ func defaultResponseFormat() map[string]any {
 				"expectation": map[string]any{
 					"type":    "integer",
 					"minimum": 0,
-					"maximum": 2,
+					"maximum": 3,
+				},
+				"chain": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"speech": map[string]any{
+								"type": "string",
+							},
+							"expectation": map[string]any{
+								"type":    "integer",
+								"minimum": 0,
+								"maximum": 3,
+							},
+						},
+						"required":             []string{"speech", "expectation"},
+						"additionalProperties": false,
+					},
 				},
 			},
-			"required":             []string{"speech", "expectation"},
+			"required":             []string{"speech", "expectation", "chain"},
 			"additionalProperties": false,
 		},
 		"strict": true,

@@ -5,10 +5,8 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
@@ -24,6 +22,7 @@ type runner struct {
 	mu             sync.Mutex
 	toolResponseID map[string]string
 	toolNameByID   map[string]string
+	toolRequestID  map[string]string
 	systemPrompt   string
 	expandedTools  []any
 }
@@ -40,6 +39,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		client:         client,
 		toolResponseID: map[string]string{},
 		toolNameByID:   map[string]string{},
+		toolRequestID:  map[string]string{},
 		systemPrompt:   strings.TrimSpace(cfg.Instructions),
 		expandedTools:  cfg.ExpandedTools,
 	}
@@ -72,67 +72,52 @@ func (r *runner) consume() {
 				if !ok {
 					continue
 				}
-				text := strings.TrimSpace(req.Text)
-				if text == "" {
-					continue
-				}
-				r.handleRequest(strings.TrimSpace(req.Role), text, req.ToolChoice, req.Tools)
-			case types.EventTextInput:
-				line, ok := evt.Payload.(types.OutputLine)
-				if !ok {
-					continue
-				}
-				text := strings.TrimSpace(line.Text)
-				if text == "" {
-					continue
-				}
-				r.handleRequest("user", text, nil, nil)
+				r.handleRequest(req)
 			case types.EventToolResponse:
 				resp, ok := evt.Payload.(types.ToolResponse)
 				if !ok {
 					continue
 				}
 				r.handleToolResponse(resp)
-			case types.EventSessionClear:
-				state.ClearResponseID()
 			}
 		}
 	}
 }
 
-func (r *runner) handleRequest(role, text string, toolChoice any, tools []any) {
-	prevID := r.currentResponseID()
-	systemPrompt := r.systemPromptIfNeeded(prevID)
-	resp, err := r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), prevID, systemPrompt, toolChoice, tools)
-	if err != nil {
-		if prevID != "" && isInvalidPreviousResponseID(err) {
-			state.ClearResponseID()
-			systemPrompt = r.systemPromptIfNeeded("")
-			resp, err = r.client.CreateResponse(r.ctx, role, appendOutputConstraint(role, text), "", systemPrompt, toolChoice, tools)
-			if err == nil {
-				r.handleResponsesResponse(resp)
-				return
-			}
+func (r *runner) handleRequest(req types.ResponsesRequest) {
+	messages := req.Messages
+	if len(messages) == 0 {
+		text := strings.TrimSpace(req.Text)
+		if text == "" {
+			return
 		}
+		role := strings.TrimSpace(req.Role)
+		if role == "" {
+			role = "user"
+		}
+		messages = []types.ChatMessage{{Role: role, Content: text}}
+	}
+	systemPrompt := r.systemPrompt
+	if req.SystemPrompt != nil {
+		systemPrompt = strings.TrimSpace(*req.SystemPrompt)
+	}
+	resp, err := r.client.CreateResponse(r.ctx, messages, systemPrompt, req.ToolChoice, req.Tools)
+	if err != nil {
 		log.Printf("responsesapi: request error: %v", err)
 		return
 	}
+	resp.RequestID = req.RequestID
 	r.handleResponsesResponse(resp)
-}
-
-func (r *runner) systemPromptIfNeeded(previousResponseID string) string {
-	if strings.TrimSpace(previousResponseID) != "" {
-		return ""
-	}
-	return r.systemPrompt
 }
 
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
 	r.mu.Lock()
 	responseID := r.toolResponseID[resp.ToolCallID]
 	toolName := r.toolNameByID[resp.ToolCallID]
+	requestID := r.toolRequestID[resp.ToolCallID]
 	delete(r.toolResponseID, resp.ToolCallID)
 	delete(r.toolNameByID, resp.ToolCallID)
+	delete(r.toolRequestID, resp.ToolCallID)
 	r.mu.Unlock()
 	if responseID == "" {
 		log.Printf("responsesapi: missing response id for tool call %s", resp.ToolCallID)
@@ -148,6 +133,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		log.Printf("responsesapi: tool output error: %v", err)
 		return
 	}
+	next.RequestID = requestID
 	r.handleResponsesResponse(next)
 }
 
@@ -157,24 +143,14 @@ func appendOutputConstraint(role, text string) string {
 }
 
 func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
-	cleaned := sanitizeResponseText(resp.Text)
-	expectation := (*int)(nil)
-	if parsed, ok := parseStructuredOutput(resp.Text); ok {
-		cleaned = sanitizeResponseText(parsed.Speech)
-		clamped := clampExpectation(parsed.Expectation)
-		expectation = &clamped
-	}
-	respClean := resp
-	respClean.Text = cleaned
-	respClean.HasResponse = strings.TrimSpace(cleaned) != ""
-
-	r.setCurrentResponseID(respClean.ResponseID)
-	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: respClean})
+	resp.HasResponse = strings.TrimSpace(resp.Text) != ""
+	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: resp})
 	if len(resp.ToolCalls) > 0 {
 		for _, call := range resp.ToolCalls {
 			r.mu.Lock()
 			r.toolResponseID[call.ToolCallID] = resp.ResponseID
 			r.toolNameByID[call.ToolCallID] = call.Name
+			r.toolRequestID[call.ToolCallID] = resp.RequestID
 			r.mu.Unlock()
 			r.emit(types.Event{Kind: types.EventToolRequest, Payload: call})
 		}
@@ -184,21 +160,6 @@ func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
 			r.emit(types.Event{Kind: types.EventMCPCall, Payload: call})
 		}
 	}
-	if !respClean.HasResponse {
-		return
-	}
-	state.SetLastActivityAt(time.Now())
-	state.SetLastAssistantTalkAt(time.Now())
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", Text: respClean.Text, ResponseID: respClean.ResponseID, Source: "responses", Expectation: expectation}})
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "assistant", ResponseID: respClean.ResponseID, Final: true, Source: "responses", Expectation: expectation}})
-}
-
-func (r *runner) currentResponseID() string {
-	return state.GetResponseID()
-}
-
-func (r *runner) setCurrentResponseID(responseID string) {
-	state.SetResponseID(responseID)
 }
 
 func (r *runner) emit(evt types.Event) {
@@ -207,11 +168,6 @@ func (r *runner) emit(evt types.Event) {
 		return
 	case r.downstream <- evt:
 	}
-}
-
-func isInvalidPreviousResponseID(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "previous_response_id") || strings.Contains(msg, "response_id")
 }
 
 func (r *runner) close() error {

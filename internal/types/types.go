@@ -1,6 +1,9 @@
 package types
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
@@ -18,8 +21,21 @@ type OutputAudio struct {
 	Audio string
 }
 
+// SpeechEvent は文字起こしの開始/終了イベントを表します。
+type SpeechEvent struct {
+	Source     string
+	CapturedAt time.Time
+}
+
 // TTSEvent はTTSストリーム完了を表します。
 type TTSEvent struct {
+	ResponseID      string
+	AudioStartAt    time.Time
+	DurationSeconds float64
+}
+
+// TTSCancel はTTSの中断を表します。
+type TTSCancel struct {
 	ResponseID string
 }
 
@@ -35,18 +51,28 @@ type RTCSignal struct {
 	Candidate *RTCIceCandidate `json:"candidate,omitempty"`
 }
 
+// ChatMessage はResponses APIに渡す会話履歴の1メッセージです。
+type ChatMessage struct {
+	Role    string
+	Content string
+}
+
 // ResponsesRequest はResponses APIへの要求を表します。
 type ResponsesRequest struct {
-	Role       string
-	Text       string
-	ToolChoice any
-	Tools      []any
+	Role         string
+	Text         string
+	Messages     []ChatMessage
+	RequestID    string
+	SystemPrompt *string
+	ToolChoice   any
+	Tools        []any
 }
 
 // ResponsesResponse はResponses APIの応答を表します。
 type ResponsesResponse struct {
 	Text        string
 	ResponseID  string
+	RequestID   string
 	HasResponse bool
 	ToolCalls   []ToolRequest
 	MCPCalls    []MCPCall

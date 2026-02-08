@@ -6,6 +6,12 @@ import (
 )
 
 type structuredOutput struct {
+	Speech      string            `json:"speech"`
+	Expectation int               `json:"expectation"`
+	Chain       []structuredChain `json:"chain"`
+}
+
+type structuredChain struct {
 	Speech      string `json:"speech"`
 	Expectation int    `json:"expectation"`
 }
@@ -27,8 +33,8 @@ func clampExpectation(value int) int {
 	if value < 0 {
 		return 0
 	}
-	if value > 2 {
-		return 2
+	if value > 3 {
+		return 3
 	}
 	return value
 }
