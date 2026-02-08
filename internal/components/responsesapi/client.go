@@ -335,6 +335,11 @@ func defaultResponseFormat() map[string]any {
 					"minimum": 0,
 					"maximum": 3,
 				},
+				"reply_expectation": map[string]any{
+					"type":    "integer",
+					"minimum": 1,
+					"maximum": 5,
+				},
 				"chain": map[string]any{
 					"type": "array",
 					"items": map[string]any{
@@ -354,7 +359,7 @@ func defaultResponseFormat() map[string]any {
 					},
 				},
 			},
-			"required":             []string{"speech", "expectation", "chain"},
+			"required":             []string{"speech", "expectation", "reply_expectation", "chain"},
 			"additionalProperties": false,
 		},
 		"strict": true,

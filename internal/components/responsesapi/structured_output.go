@@ -6,9 +6,10 @@ import (
 )
 
 type structuredOutput struct {
-	Speech      string            `json:"speech"`
-	Expectation int               `json:"expectation"`
-	Chain       []structuredChain `json:"chain"`
+	Speech           string            `json:"speech"`
+	Expectation      int               `json:"expectation"`
+	ReplyExpectation int               `json:"reply_expectation"`
+	Chain            []structuredChain `json:"chain"`
 }
 
 type structuredChain struct {

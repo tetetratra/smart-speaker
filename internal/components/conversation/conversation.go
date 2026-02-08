@@ -42,16 +42,17 @@ const (
 )
 
 type Utterance struct {
-	ID              string
-	Speaker         Speaker
-	StartAt         time.Time
-	DurationSeconds float64
-	Content         string
-	Chain           *Utterance
-	Expectation     int
-	Status          UtteranceStatus
-	ResponseID      string
-	IsChain         bool
+	ID               string
+	Speaker          Speaker
+	StartAt          time.Time
+	DurationSeconds  float64
+	Content          string
+	Chain            *Utterance
+	Expectation      int
+	ReplyExpectation int
+	Status           UtteranceStatus
+	ResponseID       string
+	IsChain          bool
 }
 
 type runner struct {
@@ -65,11 +66,14 @@ type runner struct {
 	current               *Utterance
 	utteranceByResponseID map[string]*Utterance
 
-	timer  *time.Timer
-	timerC <-chan time.Time
+	timer         *time.Timer
+	timerC        <-chan time.Time
+	preplayTimer  *time.Timer
+	preplayTimerC <-chan time.Time
 
 	pendingChain    *Utterance
 	pendingFollowup bool
+	pendingPreplay  *Utterance
 
 	pendingRequestID        string
 	pendingRequestCancelled bool
@@ -109,10 +113,12 @@ func (r *runner) consume() {
 		select {
 		case <-r.ctx.Done():
 			r.stopTimer()
+			r.stopPreplayTimer()
 			return
 		case evt, ok := <-r.upstream:
 			if !ok {
 				r.stopTimer()
+				r.stopPreplayTimer()
 				return
 			}
 			r.handleEvent(evt)
@@ -120,6 +126,10 @@ func (r *runner) consume() {
 			r.timerC = nil
 			r.timer = nil
 			r.handleNoHumanResponse()
+		case <-r.preplayTimerC:
+			r.preplayTimerC = nil
+			r.preplayTimer = nil
+			r.handlePreplayReady()
 		}
 	}
 }
@@ -155,8 +165,10 @@ func (r *runner) handleEvent(evt types.Event) {
 
 func (r *runner) handleSpeechStart() {
 	r.stopTimer()
+	r.stopPreplayTimer()
 	r.pendingChain = nil
 	r.pendingFollowup = false
+	r.pendingPreplay = nil
 	r.cancelPendingRequest()
 	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
@@ -205,7 +217,13 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 	for next := root.Chain; next != nil; next = next.Chain {
 		r.appendUtterance(next)
 	}
-	r.playUtterance(root)
+	delay := replyExpectationDelay(root.ReplyExpectation)
+	if delay <= 0 {
+		r.playUtterance(root)
+		return
+	}
+	r.pendingPreplay = root
+	r.startPreplayTimer(delay)
 }
 
 func (r *runner) handleTTSEnd(tts types.TTSEvent) {
@@ -244,6 +262,15 @@ func (r *runner) handleNoHumanResponse() {
 		r.pendingFollowup = false
 		r.requestResponse(r.buildConversationMessages(), r.followupPrompt)
 	}
+}
+
+func (r *runner) handlePreplayReady() {
+	next := r.pendingPreplay
+	r.pendingPreplay = nil
+	if next == nil || next.Status == UtteranceCanceled {
+		return
+	}
+	r.playUtterance(next)
 }
 
 func (r *runner) requestResponse(messages []types.ChatMessage, followupPrompt string) {
@@ -374,6 +401,41 @@ func (r *runner) stopTimer() {
 	r.timerC = nil
 }
 
+func (r *runner) startPreplayTimer(d time.Duration) {
+	if d <= 0 {
+		r.stopPreplayTimer()
+		r.handlePreplayReady()
+		return
+	}
+	if r.preplayTimer == nil {
+		r.preplayTimer = time.NewTimer(d)
+		r.preplayTimerC = r.preplayTimer.C
+		return
+	}
+	if !r.preplayTimer.Stop() {
+		select {
+		case <-r.preplayTimer.C:
+		default:
+		}
+	}
+	r.preplayTimer.Reset(d)
+	r.preplayTimerC = r.preplayTimer.C
+}
+
+func (r *runner) stopPreplayTimer() {
+	if r.preplayTimer == nil {
+		return
+	}
+	if !r.preplayTimer.Stop() {
+		select {
+		case <-r.preplayTimer.C:
+		default:
+		}
+	}
+	r.preplayTimer = nil
+	r.preplayTimerC = nil
+}
+
 func (r *runner) emit(evt types.Event) {
 	select {
 	case <-r.ctx.Done():
@@ -400,9 +462,10 @@ func (r *runner) nextID(prefix string) string {
 }
 
 type aiOutput struct {
-	Speech      string         `json:"speech"`
-	Expectation int            `json:"expectation"`
-	Chain       []aiChainEntry `json:"chain"`
+	Speech           string         `json:"speech"`
+	Expectation      int            `json:"expectation"`
+	ReplyExpectation int            `json:"reply_expectation"`
+	Chain            []aiChainEntry `json:"chain"`
 }
 
 type aiChainEntry struct {
@@ -429,11 +492,12 @@ func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
 		return nil
 	}
 	root := &Utterance{
-		ID:          r.nextID("ai"),
-		Speaker:     SpeakerAI,
-		Content:     rootSpeech,
-		Expectation: clampExpectation(out.Expectation),
-		Status:      UtteranceUnplayed,
+		ID:               r.nextID("ai"),
+		Speaker:          SpeakerAI,
+		Content:          rootSpeech,
+		Expectation:      clampExpectation(out.Expectation),
+		ReplyExpectation: clampReplyExpectation(out.ReplyExpectation),
+		Status:           UtteranceUnplayed,
 	}
 	cur := root
 	for _, entry := range out.Chain {
@@ -462,12 +526,29 @@ func expectationDelay(expectation int) time.Duration {
 	return time.Duration(expectation) * time.Second
 }
 
+func replyExpectationDelay(expectation int) time.Duration {
+	if expectation <= 0 {
+		return 0
+	}
+	return time.Duration(expectation) * time.Second
+}
+
 func clampExpectation(value int) int {
 	if value < 0 {
 		return 0
 	}
 	if value > 3 {
 		return 3
+	}
+	return value
+}
+
+func clampReplyExpectation(value int) int {
+	if value < 1 {
+		return 1
+	}
+	if value > 5 {
+		return 5
 	}
 	return value
 }
