@@ -334,7 +334,7 @@ func defaultResponseFormat() map[string]any {
 				},
 				"messages": map[string]any{
 					"type":     "array",
-					"minItems": 3,
+					"minItems": 2,
 					"maxItems": 5,
 					"items": map[string]any{
 						"type": "object",
