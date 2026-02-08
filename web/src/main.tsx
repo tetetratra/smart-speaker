@@ -5,7 +5,7 @@ import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; expectation?: number }
+  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; preSpeechPauseSec?: number; postSpeechWaitSec?: number }
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
@@ -133,7 +133,10 @@ function App() {
           let role: 'user' | 'assistant' | 'system' = 'assistant'
           if (raw.role === 'user') role = 'user'
           else if (raw.role === 'system') role = 'system'
-          const expectation = typeof raw.expectation === 'number' ? raw.expectation : undefined
+          const preSpeechPauseSec =
+            typeof raw.pre_speech_pause_sec === 'number' ? raw.pre_speech_pause_sec : undefined
+          const postSpeechWaitSec =
+            typeof raw.post_speech_wait_sec === 'number' ? raw.post_speech_wait_sec : undefined
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
             id: nextMessageId(),
@@ -142,7 +145,8 @@ function App() {
             responseId: raw.response_id,
             final: raw.final,
             source: typeof raw.source === 'string' ? raw.source : undefined,
-            expectation,
+            preSpeechPauseSec,
+            postSpeechWaitSec,
           })
           break
         }
@@ -627,9 +631,9 @@ function App() {
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
               <strong style={{ color }}>{label}{sourceLabel}</strong>
-              {typeof m.expectation === 'number' && (
+              {typeof m.preSpeechPauseSec === 'number' && typeof m.postSpeechWaitSec === 'number' && (
                 <span style={{ marginLeft: 8, color: '#0f766e', fontSize: 12 }}>
-                  期待度: {m.expectation}
+                  pre_speech_pause_sec: {m.preSpeechPauseSec}, post_speech_wait_sec: {m.postSpeechWaitSec}
                 </span>
               )}
               <div>{m.text}</div>

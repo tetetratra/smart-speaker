@@ -332,21 +332,27 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
 	exp := clampPostSpeechWaitSec(utt.PostSpeechWaitSec)
+	prePause := utt.PreSpeechPauseSec
+	postWait := utt.PostSpeechWaitSec
 	state.SetLastActivityAt(time.Now())
 	line := types.OutputLine{
-		Role:        "assistant",
-		Text:        utt.Content,
-		ResponseID:  utt.ResponseID,
-		Source:      utteranceSource(utt),
-		Expectation: &exp,
+		Role:              "assistant",
+		Text:              utt.Content,
+		ResponseID:        utt.ResponseID,
+		Source:            utteranceSource(utt),
+		Expectation:       &exp,
+		PreSpeechPauseSec: &prePause,
+		PostSpeechWaitSec: &postWait,
 	}
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: line})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
-		Role:        "assistant",
-		ResponseID:  utt.ResponseID,
-		Final:       true,
-		Source:      utteranceSource(utt),
-		Expectation: &exp,
+		Role:              "assistant",
+		ResponseID:        utt.ResponseID,
+		Final:             true,
+		Source:            utteranceSource(utt),
+		Expectation:       &exp,
+		PreSpeechPauseSec: &prePause,
+		PostSpeechWaitSec: &postWait,
 	}})
 }
 
