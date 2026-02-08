@@ -13,8 +13,7 @@ import (
 	"syscall"
 
 	"smart-speaker/internal/app"
-	"smart-speaker/internal/components/followup"
-	"smart-speaker/internal/components/proactive"
+	"smart-speaker/internal/components/conversation"
 	"smart-speaker/internal/components/reset"
 	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/rtc"
@@ -72,13 +71,12 @@ type stages struct {
 	chat      *graph.Stage
 	rtc       *graph.Stage
 	tool      *graph.Stage
-	proactive *graph.Stage
+	conv      *graph.Stage
 	reset     *graph.Stage
-	followup  *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.proactive, s.reset, s.followup} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.reset} {
 		if st != nil {
 			st.Close()
 		}
@@ -108,13 +106,9 @@ func buildStages(cfg app.Config) (stages, error) {
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
-	proactiveStage := proactive.NewStage()
-	if proactiveStage != nil {
-		proactiveStage.Name = "proactive"
-	}
-	followupStage := followup.NewStage()
-	if followupStage != nil {
-		followupStage.Name = "followup"
+	convStage := conversation.NewStage(conversation.Config{})
+	if convStage != nil {
+		convStage.Name = "conversation"
 	}
 
 	toolRegistry := registry.New(registry.Config{
@@ -173,9 +167,8 @@ func buildStages(cfg app.Config) (stages, error) {
 		chat:      chatStage,
 		rtc:       rtcStage,
 		tool:      toolStage,
-		proactive: proactiveStage,
+		conv:      convStage,
 		reset:     resetStage,
-		followup:  followupStage,
 	}, nil
 }
 
@@ -203,35 +196,25 @@ func wireGraph(g *graph.Graph, st stages) {
 		return
 	}
 	responsesNode := add(st.responses)
-	proactiveNode := add(st.proactive)
+	convNode := add(st.conv)
 	resetNode := add(st.reset)
-	followupNode := add(st.followup)
 	ttsNode := add(st.tts)
 	rtcNode := add(st.rtc)
 	chatNode := add(st.chat)
 
-	if proactiveNode != nil {
-		if responsesNode != nil {
-			g.Connect(proactiveNode, responsesNode)
-		}
-	}
 	if resetNode != nil {
 		if responsesNode != nil {
 			g.Connect(resetNode, responsesNode)
 		}
 	}
-	if followupNode != nil {
-		if responsesNode != nil {
-			g.Connect(responsesNode, followupNode)
-			g.Connect(followupNode, responsesNode)
-		}
+	if convNode != nil && responsesNode != nil {
+		g.Connect(convNode, responsesNode)
+		g.Connect(responsesNode, convNode)
 	}
 	if ttsNode != nil {
-		if responsesNode != nil {
-			g.Connect(responsesNode, ttsNode)
-		}
-		if followupNode != nil {
-			g.Connect(ttsNode, followupNode)
+		if convNode != nil {
+			g.Connect(convNode, ttsNode)
+			g.Connect(ttsNode, convNode)
 		}
 		if rtcNode != nil {
 			g.Connect(ttsNode, rtcNode)
@@ -246,23 +229,17 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 	}
 	if chatNode != nil {
-		if responsesNode != nil {
-			g.Connect(responsesNode, chatNode)
-			g.Connect(chatNode, responsesNode)
+		if convNode != nil {
+			g.Connect(chatNode, convNode)
+			g.Connect(convNode, chatNode)
 		}
 		if rtcNode != nil {
 			g.Connect(chatNode, rtcNode)
 			g.Connect(rtcNode, chatNode)
 		}
-		if proactiveNode != nil {
-			g.Connect(proactiveNode, chatNode)
-		}
 		if resetNode != nil {
 			g.Connect(resetNode, chatNode)
 			g.Connect(chatNode, resetNode)
-		}
-		if followupNode != nil {
-			g.Connect(chatNode, followupNode)
 		}
 		if toolNode != nil {
 			g.Connect(toolNode, chatNode)
@@ -270,6 +247,9 @@ func wireGraph(g *graph.Graph, st stages) {
 	}
 	if rtcNode != nil && responsesNode != nil {
 		g.Connect(rtcNode, responsesNode)
+	}
+	if convNode != nil && rtcNode != nil {
+		g.Connect(convNode, rtcNode)
 	}
 }
 

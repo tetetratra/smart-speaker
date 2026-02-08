@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	types "smart-speaker/internal/types"
@@ -14,6 +15,8 @@ type EventDetailFormatter func(types.Event) string
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
 		types.EventTextInput:         formatOutputLineDetail,
+		types.EventSpeechStart:       formatSpeechEventDetail,
+		types.EventSpeechEnd:         formatSpeechEventDetail,
 		types.EventRealtimeOutput:    formatOutputLineDetail,
 		types.EventRealtimeAudio:     formatRealtimeAudioDetail,
 		types.EventToolRequest:       formatToolRequestDetail,
@@ -21,6 +24,7 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventMCPCall:           formatMCPCallDetail,
 		types.EventResponsesRequest:  formatResponsesRequestDetail,
 		types.EventResponsesResponse: formatResponsesResponseDetail,
+		types.EventTTSCancel:         formatTTSCancelDetail,
 		types.EventRTCSignal:         formatRTCSignalDetail,
 	}
 }
@@ -104,11 +108,17 @@ func formatResponsesRequestDetail(evt types.Event) string {
 		fmt.Sprintf("text=%s", quoteText(req.Text)),
 		fmt.Sprintf("chars=%d", utf8.RuneCountInString(req.Text)),
 	}
+	if len(req.Messages) > 0 {
+		parts = append(parts, fmt.Sprintf("messages=%d", len(req.Messages)))
+	}
 	if req.Role != "" {
 		parts = append(parts, fmt.Sprintf("role=%s", req.Role))
 	}
 	if len(req.Tools) > 0 {
 		parts = append(parts, fmt.Sprintf("tools=%d", len(req.Tools)))
+	}
+	if req.RequestID != "" {
+		parts = append(parts, fmt.Sprintf("request_id=%s", req.RequestID))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -124,6 +134,9 @@ func formatResponsesResponseDetail(evt types.Event) string {
 		fmt.Sprintf("tool_calls=%d", len(resp.ToolCalls)),
 		fmt.Sprintf("mcp_calls=%d", len(resp.MCPCalls)),
 		fmt.Sprintf("has_response=%t", resp.HasResponse),
+	}
+	if resp.RequestID != "" {
+		parts = append(parts, fmt.Sprintf("request_id=%s", resp.RequestID))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -187,6 +200,31 @@ func formatRealtimeAudioDetail(evt types.Event) string {
 		parts = append(parts, fmt.Sprintf("role=%s", audio.Role))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func formatSpeechEventDetail(evt types.Event) string {
+	speech, ok := evt.Payload.(types.SpeechEvent)
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("at=%s", speech.CapturedAt.Format(time.RFC3339Nano)),
+	}
+	if speech.Source != "" {
+		parts = append(parts, fmt.Sprintf("source=%s", speech.Source))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatTTSCancelDetail(evt types.Event) string {
+	cancel, ok := evt.Payload.(types.TTSCancel)
+	if !ok {
+		return ""
+	}
+	if cancel.ResponseID == "" {
+		return ""
+	}
+	return fmt.Sprintf("response_id=%s", cancel.ResponseID)
 }
 
 func formatRTCSignalDetail(evt types.Event) string {

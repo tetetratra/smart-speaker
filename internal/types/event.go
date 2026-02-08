@@ -10,6 +10,8 @@ type EventKind int
 
 const (
 	EventTextInput EventKind = iota
+	EventSpeechStart
+	EventSpeechEnd
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
@@ -18,6 +20,7 @@ const (
 	EventResponsesRequest
 	EventResponsesResponse
 	EventTTSEnd
+	EventTTSCancel
 	EventReset
 	EventSessionClear
 	EventRTCSignal
@@ -33,6 +36,10 @@ func (k EventKind) String() string {
 	switch k {
 	case EventTextInput:
 		return "EventTextInput"
+	case EventSpeechStart:
+		return "EventSpeechStart"
+	case EventSpeechEnd:
+		return "EventSpeechEnd"
 	case EventRealtimeOutput:
 		return "EventRealtimeOutput"
 	case EventRealtimeAudio:
@@ -49,6 +56,8 @@ func (k EventKind) String() string {
 		return "EventResponsesResponse"
 	case EventTTSEnd:
 		return "EventTTSEnd"
+	case EventTTSCancel:
+		return "EventTTSCancel"
 	case EventReset:
 		return "EventReset"
 	case EventSessionClear:
