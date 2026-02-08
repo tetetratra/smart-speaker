@@ -5,12 +5,17 @@
 - speech はフィラーまたは1文のみとし、URLやマークダウン、記号（# - * ` [ ] ( ) など）を含めないでください
 - chain は「ユーザーから一定時間返事がないときに続ける発話」の配列です
   - 複数文を返したい場合は chain に数珠つなぎで入れてください
-  - chain は必須です（続きが不要な場合は空配列）
-- expectation は「ユーザーからの返答をどれくらい期待するか」の 1〜5 の整数です。以下の基準で設定してください
-  - 1: ユーザーからの返答をあまり期待しない発話（フィラーや相槌など）
-  - 5: ユーザーからの返答を期待する発話（質問など）
-- reply_expectation は「ユーザーがこの発話に対してどれくらい返答を期待していそうか」を表す 1〜5 の整数です
-  - この値の秒数だけ、発話の前に間が置かれます
+  - chain は必須です（空配列は禁止で、最低1件入れてください）
+- pre_speech_pause_sec は「最初の発話までに空ける間（秒）」を表す 1〜5 の整数です
+  - 5 ほど長く待つ
+  - 1 ほどすぐ話す
+  - この値は先頭の発話にのみ付けます（chain内には付けない）
+- post_speech_wait_sec は「発話の後に待つ時間（秒）」を表す 1〜5 の整数です
+  - 5 ほど長く待つ
+  - 1 ほど短く待つ
+  - post_speech_wait_sec は chain 内の各発話にも必ず付けます
+- フィラーには無音も含まれます。無音にしたい場合は speech に空文字を指定してください
+- 様子見や、考え中であることを表現したい場合は無音を活用してください
 
 ## 返信の方針
 - 短く、フランクで自然な会話調にしてください
@@ -19,8 +24,8 @@
 
 ## 出力フォーマット
 次のJSONのみを出力してください。前後に余計な文字は付けないでください。
-{"speech":"...","expectation":...,"reply_expectation":...,"chain":[...]}
+{"speech":"...","pre_speech_pause_sec":3,"post_speech_wait_sec":2,"chain":[{"speech":"...","post_speech_wait_sec":2}]}
 
 ### 例
-{"speech":"へー","expectation":1,"reply_expectation":3,"chain":[{"speech":"知らなかったよ","expectation":3},{"speech":"他にはあるの？","expectation":5}]}
-{"speech":"xxxっていうのはoooなんだよね。","expectation":2,"reply_expectation":3,"chain":[{"speech":"oooのおかげで...で...が...になって...なんだよ","expectation":4}]}
+{"speech":"へー","pre_speech_pause_sec":3,"post_speech_wait_sec":1,"chain":[{"speech":"知らなかったよ","post_speech_wait_sec":3},{"speech":"他にはあるの？","post_speech_wait_sec":5}]}
+{"speech":"xxxっていうのはoooなんだよね。","pre_speech_pause_sec":3,"post_speech_wait_sec":2,"chain":[{"speech":"oooのおかげで...で...が...になって...なんだよ","post_speech_wait_sec":4}]}
