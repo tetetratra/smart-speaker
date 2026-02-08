@@ -6,15 +6,15 @@ import (
 )
 
 type structuredOutput struct {
-	Speech            string            `json:"speech"`
-	PreSpeechPauseSec int               `json:"pre_speech_pause_sec"`
-	PostSpeechWaitSec int               `json:"post_speech_wait_sec"`
-	Chain             []structuredChain `json:"chain"`
+	Speech   string            `json:"speech"`
+	PrePause int               `json:"pre_pause"`
+	PostWait int               `json:"post_wait"`
+	Chain    []structuredChain `json:"chain"`
 }
 
 type structuredChain struct {
-	Speech            string `json:"speech"`
-	PostSpeechWaitSec int    `json:"post_speech_wait_sec"`
+	Speech   string `json:"speech"`
+	PostWait int    `json:"post_wait"`
 }
 
 func parseStructuredOutput(raw string) (structuredOutput, bool) {

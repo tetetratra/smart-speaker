@@ -330,12 +330,12 @@ func defaultResponseFormat() map[string]any {
 				"speech": map[string]any{
 					"type": "string",
 				},
-				"pre_speech_pause_sec": map[string]any{
+				"pre_pause": map[string]any{
 					"type":    "integer",
 					"minimum": 1,
 					"maximum": 5,
 				},
-				"post_speech_wait_sec": map[string]any{
+				"post_wait": map[string]any{
 					"type":    "integer",
 					"minimum": 1,
 					"maximum": 5,
@@ -349,18 +349,18 @@ func defaultResponseFormat() map[string]any {
 							"speech": map[string]any{
 								"type": "string",
 							},
-							"post_speech_wait_sec": map[string]any{
+							"post_wait": map[string]any{
 								"type":    "integer",
 								"minimum": 1,
 								"maximum": 5,
 							},
 						},
-						"required":             []string{"speech", "post_speech_wait_sec"},
+						"required":             []string{"speech", "post_wait"},
 						"additionalProperties": false,
 					},
 				},
 			},
-			"required":             []string{"speech", "pre_speech_pause_sec", "post_speech_wait_sec", "chain"},
+			"required":             []string{"speech", "pre_pause", "post_wait", "chain"},
 			"additionalProperties": false,
 		},
 		"strict": true,

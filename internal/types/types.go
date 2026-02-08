@@ -7,14 +7,14 @@ import (
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
-	Role              string
-	Text              string
-	ResponseID        string
-	Final             bool
-	Source            string
-	Expectation       *int
-	PreSpeechPauseSec *int
-	PostSpeechWaitSec *int
+	Role        string
+	Text        string
+	ResponseID  string
+	Final       bool
+	Source      string
+	Expectation *int
+	PrePauseSec *int
+	PostWaitSec *int
 }
 
 // OutputAudio represents an assistant audio response chunk.

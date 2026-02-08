@@ -42,17 +42,17 @@ const (
 )
 
 type Utterance struct {
-	ID                string
-	Speaker           Speaker
-	StartAt           time.Time
-	DurationSeconds   float64
-	Content           string
-	Chain             *Utterance
-	PostSpeechWaitSec int
-	PreSpeechPauseSec int
-	Status            UtteranceStatus
-	ResponseID        string
-	IsChain           bool
+	ID              string
+	Speaker         Speaker
+	StartAt         time.Time
+	DurationSeconds float64
+	Content         string
+	Chain           *Utterance
+	PostWaitSec     int
+	PrePauseSec     int
+	Status          UtteranceStatus
+	ResponseID      string
+	IsChain         bool
 }
 
 type runner struct {
@@ -217,7 +217,7 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 	for next := root.Chain; next != nil; next = next.Chain {
 		r.appendUtterance(next)
 	}
-	delay := preSpeechPauseDelay(root.PreSpeechPauseSec)
+	delay := prePauseDelay(root.PrePauseSec)
 	if delay <= 0 {
 		r.playUtterance(root)
 		return
@@ -323,7 +323,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 		state.SetLastActivityAt(time.Now())
 		r.pendingChain = utt.Chain
 		r.pendingFollowup = utt.Chain == nil
-		r.startTimer(postSpeechWaitDelay(utt.PostSpeechWaitSec))
+		r.startTimer(postWaitDelay(utt.PostWaitSec))
 		return
 	}
 
@@ -331,28 +331,28 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.current = utt
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
-	exp := clampPostSpeechWaitSec(utt.PostSpeechWaitSec)
-	prePause := utt.PreSpeechPauseSec
-	postWait := utt.PostSpeechWaitSec
+	exp := clampPostWait(utt.PostWaitSec)
+	prePause := utt.PrePauseSec
+	postWait := utt.PostWaitSec
 	state.SetLastActivityAt(time.Now())
 	line := types.OutputLine{
-		Role:              "assistant",
-		Text:              utt.Content,
-		ResponseID:        utt.ResponseID,
-		Source:            utteranceSource(utt),
-		Expectation:       &exp,
-		PreSpeechPauseSec: &prePause,
-		PostSpeechWaitSec: &postWait,
+		Role:        "assistant",
+		Text:        utt.Content,
+		ResponseID:  utt.ResponseID,
+		Source:      utteranceSource(utt),
+		Expectation: &exp,
+		PrePauseSec: &prePause,
+		PostWaitSec: &postWait,
 	}
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: line})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
-		Role:              "assistant",
-		ResponseID:        utt.ResponseID,
-		Final:             true,
-		Source:            utteranceSource(utt),
-		Expectation:       &exp,
-		PreSpeechPauseSec: &prePause,
-		PostSpeechWaitSec: &postWait,
+		Role:        "assistant",
+		ResponseID:  utt.ResponseID,
+		Final:       true,
+		Source:      utteranceSource(utt),
+		Expectation: &exp,
+		PrePauseSec: &prePause,
+		PostWaitSec: &postWait,
 	}})
 }
 
@@ -478,15 +478,15 @@ func (r *runner) nextID(prefix string) string {
 }
 
 type aiOutput struct {
-	Speech            string         `json:"speech"`
-	PreSpeechPauseSec int            `json:"pre_speech_pause_sec"`
-	PostSpeechWaitSec int            `json:"post_speech_wait_sec"`
-	Chain             []aiChainEntry `json:"chain"`
+	Speech   string         `json:"speech"`
+	PrePause int            `json:"pre_pause"`
+	PostWait int            `json:"post_wait"`
+	Chain    []aiChainEntry `json:"chain"`
 }
 
 type aiChainEntry struct {
-	Speech            string `json:"speech"`
-	PostSpeechWaitSec int    `json:"post_speech_wait_sec"`
+	Speech   string `json:"speech"`
+	PostWait int    `json:"post_wait"`
 }
 
 func parseAIOutput(raw string) (aiOutput, bool) {
@@ -505,23 +505,23 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
 	rootSpeech := sanitizeSpeech(out.Speech)
 	root := &Utterance{
-		ID:                r.nextID("ai"),
-		Speaker:           SpeakerAI,
-		Content:           rootSpeech,
-		PostSpeechWaitSec: clampPostSpeechWaitSec(out.PostSpeechWaitSec),
-		PreSpeechPauseSec: clampPreSpeechPauseSec(out.PreSpeechPauseSec),
-		Status:            UtteranceUnplayed,
+		ID:          r.nextID("ai"),
+		Speaker:     SpeakerAI,
+		Content:     rootSpeech,
+		PostWaitSec: clampPostWait(out.PostWait),
+		PrePauseSec: clampPrePause(out.PrePause),
+		Status:      UtteranceUnplayed,
 	}
 	cur := root
 	for _, entry := range out.Chain {
 		speech := sanitizeSpeech(entry.Speech)
 		next := &Utterance{
-			ID:                r.nextID("ai"),
-			Speaker:           SpeakerAI,
-			Content:           speech,
-			PostSpeechWaitSec: clampPostSpeechWaitSec(entry.PostSpeechWaitSec),
-			Status:            UtteranceUnplayed,
-			IsChain:           true,
+			ID:          r.nextID("ai"),
+			Speaker:     SpeakerAI,
+			Content:     speech,
+			PostWaitSec: clampPostWait(entry.PostWait),
+			Status:      UtteranceUnplayed,
+			IsChain:     true,
 		}
 		cur.Chain = next
 		cur = next
@@ -529,21 +529,21 @@ func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
 	return root
 }
 
-func postSpeechWaitDelay(value int) time.Duration {
+func postWaitDelay(value int) time.Duration {
 	if value <= 0 {
 		return 0
 	}
 	return time.Duration(value) * time.Second
 }
 
-func preSpeechPauseDelay(value int) time.Duration {
+func prePauseDelay(value int) time.Duration {
 	if value <= 0 {
 		return 0
 	}
 	return time.Duration(value) * time.Second
 }
 
-func clampPostSpeechWaitSec(value int) int {
+func clampPostWait(value int) int {
 	if value < 1 {
 		return 1
 	}
@@ -553,7 +553,7 @@ func clampPostSpeechWaitSec(value int) int {
 	return value
 }
 
-func clampPreSpeechPauseSec(value int) int {
+func clampPrePause(value int) int {
 	if value < 1 {
 		return 1
 	}
@@ -587,7 +587,7 @@ func (r *runner) estimateWaitDuration(utt *Utterance, tts types.TTSEvent) time.D
 	if utt == nil {
 		return 0
 	}
-	expectation := postSpeechWaitDelay(utt.PostSpeechWaitSec)
+	expectation := postWaitDelay(utt.PostWaitSec)
 	startAt := tts.AudioStartAt
 	if startAt.IsZero() {
 		return expectation
