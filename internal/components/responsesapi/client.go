@@ -327,20 +327,12 @@ func defaultResponseFormat() map[string]any {
 		"schema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"speech": map[string]any{
-					"type": "string",
-				},
 				"pre_pause": map[string]any{
 					"type":    "integer",
 					"minimum": 1,
 					"maximum": 5,
 				},
-				"post_wait": map[string]any{
-					"type":    "integer",
-					"minimum": 1,
-					"maximum": 5,
-				},
-				"chain": map[string]any{
+				"messages": map[string]any{
 					"type":     "array",
 					"minItems": 1,
 					"items": map[string]any{
@@ -360,7 +352,7 @@ func defaultResponseFormat() map[string]any {
 					},
 				},
 			},
-			"required":             []string{"speech", "pre_pause", "post_wait", "chain"},
+			"required":             []string{"pre_pause", "messages"},
 			"additionalProperties": false,
 		},
 		"strict": true,

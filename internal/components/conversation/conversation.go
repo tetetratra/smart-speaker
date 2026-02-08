@@ -478,13 +478,11 @@ func (r *runner) nextID(prefix string) string {
 }
 
 type aiOutput struct {
-	Speech   string         `json:"speech"`
-	PrePause int            `json:"pre_pause"`
-	PostWait int            `json:"post_wait"`
-	Chain    []aiChainEntry `json:"chain"`
+	PrePause int         `json:"pre_pause"`
+	Messages []aiMessage `json:"messages"`
 }
 
-type aiChainEntry struct {
+type aiMessage struct {
 	Speech   string `json:"speech"`
 	PostWait int    `json:"post_wait"`
 }
@@ -503,17 +501,20 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 }
 
 func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
-	rootSpeech := sanitizeSpeech(out.Speech)
+	if len(out.Messages) == 0 {
+		return nil
+	}
+	rootSpeech := sanitizeSpeech(out.Messages[0].Speech)
 	root := &Utterance{
 		ID:          r.nextID("ai"),
 		Speaker:     SpeakerAI,
 		Content:     rootSpeech,
-		PostWaitSec: clampPostWait(out.PostWait),
+		PostWaitSec: clampPostWait(out.Messages[0].PostWait),
 		PrePauseSec: clampPrePause(out.PrePause),
 		Status:      UtteranceUnplayed,
 	}
 	cur := root
-	for _, entry := range out.Chain {
+	for _, entry := range out.Messages[1:] {
 		speech := sanitizeSpeech(entry.Speech)
 		next := &Utterance{
 			ID:          r.nextID("ai"),

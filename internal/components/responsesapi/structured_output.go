@@ -6,13 +6,11 @@ import (
 )
 
 type structuredOutput struct {
-	Speech   string            `json:"speech"`
 	PrePause int               `json:"pre_pause"`
-	PostWait int               `json:"post_wait"`
-	Chain    []structuredChain `json:"chain"`
+	Messages []structuredEntry `json:"messages"`
 }
 
-type structuredChain struct {
+type structuredEntry struct {
 	Speech   string `json:"speech"`
 	PostWait int    `json:"post_wait"`
 }
