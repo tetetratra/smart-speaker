@@ -189,6 +189,19 @@ function App() {
     [appendMessage, nextMessageId],
   )
 
+  const sendSTTEvent = useCallback(
+    (type: 'stt_start' | 'stt_end') => {
+      const ws = wsChatRef.current
+      if (!ws || !connected) return
+      ws.send({
+        type,
+        source: 'browser-stt',
+        captured_at: new Date().toISOString(),
+      })
+    },
+    [connected],
+  )
+
   useEffect(() => {
     const speech = createSpeechRecognizer({
       onFinal: (text) => {
@@ -199,6 +212,10 @@ function App() {
       onStart: () => {
         setSttStatus('認識中')
         setSttError('')
+        sendSTTEvent('stt_start')
+      },
+      onSpeechEnd: () => {
+        sendSTTEvent('stt_end')
       },
       onEnd: () => setSttStatus('停止中'),
       onError: (message) => {
@@ -214,7 +231,7 @@ function App() {
       speech.abort()
       speechRef.current = null
     }
-  }, [sendSpeechText])
+  }, [sendSpeechText, sendSTTEvent])
 
   const stopRTC = useCallback(() => {
     if (peerRef.current) {
@@ -605,7 +622,8 @@ function App() {
             color = '#6b7280'
             label = 'System'
           }
-          const sourceLabel = m.source ? ` (${m.source})` : ''
+          const sourceLabel =
+            m.source === 'conversation-chain' ? ' (chain)' : m.source ? ` (${m.source})` : ''
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
               <strong style={{ color }}>{label}{sourceLabel}</strong>

@@ -279,6 +279,26 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			state.Set(present, capturedAt)
 			continue
 		}
+		if msg.Type == "stt_start" || msg.Type == "stt_end" {
+			capturedAt := time.Now()
+			if ts := strings.TrimSpace(msg.CapturedAt); ts != "" {
+				if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+					capturedAt = parsed
+				}
+			}
+			kind := types.EventSpeechStart
+			if msg.Type == "stt_end" {
+				kind = types.EventSpeechEnd
+			}
+			select {
+			case c.downstream <- types.Event{Kind: kind, Payload: types.SpeechEvent{Source: strings.TrimSpace(msg.Source), CapturedAt: capturedAt}}:
+			case <-r.Context().Done():
+				return
+			case <-c.ctx.Done():
+				return
+			}
+			continue
+		}
 		if msg.Type != "message" {
 			continue
 		}

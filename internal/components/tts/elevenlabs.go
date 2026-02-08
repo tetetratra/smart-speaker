@@ -91,6 +91,13 @@ func (t *streamTTS) run(ctx context.Context) {
 			if !ok {
 				return
 			}
+			if evt.Kind == types.EventTTSCancel {
+				cancel, ok := evt.Payload.(types.TTSCancel)
+				if ok {
+					t.handleCancel(cancel)
+				}
+				continue
+			}
 			if evt.Kind != types.EventRealtimeOutput {
 				continue
 			}
@@ -122,6 +129,16 @@ func (t *streamTTS) run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (t *streamTTS) handleCancel(cancel types.TTSCancel) {
+	t.mu.Lock()
+	connectedID := t.connectedID
+	t.mu.Unlock()
+	if cancel.ResponseID != "" && connectedID != "" && cancel.ResponseID != connectedID {
+		return
+	}
+	t.closeConn()
 }
 
 func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
@@ -194,6 +211,7 @@ func (t *streamTTS) sendFlush(ctx context.Context) error {
 
 func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID string) {
 	var totalBytes int64
+	var audioStartAt time.Time
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
@@ -203,6 +221,9 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 		}
 		switch typ {
 		case websocket.MessageBinary:
+			if audioStartAt.IsZero() {
+				audioStartAt = time.Now()
+			}
 			totalBytes += int64(len(data))
 			audioB64 := base64.StdEncoding.EncodeToString(data)
 			select {
@@ -218,6 +239,9 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 			if err := json.Unmarshal(data, &resp); err == nil {
 				if resp.Audio != nil && *resp.Audio != "" {
 					if decoded, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
+						if audioStartAt.IsZero() {
+							audioStartAt = time.Now()
+						}
 						totalBytes += int64(len(decoded))
 						select {
 						case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: *resp.Audio}}:
@@ -232,8 +256,15 @@ func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID s
 					seconds := ttsDurationSeconds(totalBytes)
 					log.Printf("elevenlabs: tts duration=%.3fs bytes=%d response_id=%s", seconds, totalBytes, respID)
 					if strings.TrimSpace(respID) != "" {
+						if audioStartAt.IsZero() {
+							audioStartAt = time.Now()
+						}
 						select {
-						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{ResponseID: respID}}:
+						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{
+							ResponseID:      respID,
+							AudioStartAt:    audioStartAt,
+							DurationSeconds: seconds,
+						}}:
 						case <-ctx.Done():
 							return
 						}

@@ -130,6 +130,8 @@ func (s *stage) consume() {
 					continue
 				}
 				s.handleTTSAudio(audio)
+			case types.EventTTSCancel:
+				s.handleTTSCancel()
 			}
 		}
 	}
@@ -324,6 +326,12 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 
 	s.mu.Lock()
 	s.audioBuf = append(s.audioBuf, pcm...)
+	s.mu.Unlock()
+}
+
+func (s *stage) handleTTSCancel() {
+	s.mu.Lock()
+	s.audioBuf = nil
 	s.mu.Unlock()
 }
 
