@@ -1,9 +1,12 @@
 package conversation
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,6 +26,7 @@ var (
 
 type Config struct {
 	FollowupPrompt string
+	LogPath        string
 }
 
 type Speaker string
@@ -80,6 +84,21 @@ type runner struct {
 
 	seq            int
 	followupPrompt string
+
+	logFile    *os.File
+	logWriter  *bufio.Writer
+	logEncoder *json.Encoder
+}
+
+type logRecord struct {
+	Timestamp  string `json:"ts"`
+	Speaker    string `json:"speaker"`
+	Text       string `json:"text"`
+	ResponseID string `json:"response_id,omitempty"`
+	Source     string `json:"source,omitempty"`
+	PrePause   *int   `json:"pre_pause,omitempty"`
+	PostWait   *int   `json:"post_wait,omitempty"`
+	IsChain    bool   `json:"is_chain,omitempty"`
 }
 
 // NewStage は会話タイミング管理のステージを作成します。
@@ -88,11 +107,15 @@ func NewStage(cfg Config) *graph.Stage {
 	if prompt == "" {
 		prompt = defaultFollowupPrompt
 	}
+	logWriter, logEncoder, logFile := openLogWriter(cfg.LogPath)
 	r := &runner{
 		upstream:              make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream:            make(chan types.Event, graph.DefaultChannelBufferSize),
 		utteranceByResponseID: make(map[string]*Utterance),
 		followupPrompt:        prompt,
+		logWriter:             logWriter,
+		logEncoder:            logEncoder,
+		logFile:               logFile,
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -188,6 +211,10 @@ func (r *runner) handleHumanText(text string) {
 		StartAt: time.Now(),
 		Content: text,
 		Status:  UtterancePlayed,
+	})
+	r.logRecord(logRecord{
+		Speaker: "human",
+		Text:    text,
 	})
 	r.requestResponse(r.buildConversationMessages(), "")
 }
@@ -318,6 +345,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 	utt.Status = UtterancePlaying
 	utt.StartAt = time.Now()
 	if strings.TrimSpace(utt.Content) == "" {
+		r.logRecord(r.buildLogRecord(utt))
 		utt.Status = UtterancePlayed
 		utt.DurationSeconds = 0
 		state.SetLastActivityAt(time.Now())
@@ -334,6 +362,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 	exp := clampPostWait(utt.PostWaitSec)
 	prePause := utt.PrePauseSec
 	postWait := utt.PostWaitSec
+	r.logRecord(r.buildLogRecord(utt))
 	state.SetLastActivityAt(time.Now())
 	line := types.OutputLine{
 		Role:        "assistant",
@@ -467,6 +496,16 @@ func (r *runner) close() error {
 	r.once = true
 	if r.cancel != nil {
 		r.cancel()
+	}
+	if r.logWriter != nil {
+		if err := r.logWriter.Flush(); err != nil {
+			log.Printf("conversation: log flush error: %v", err)
+		}
+	}
+	if r.logFile != nil {
+		if err := r.logFile.Close(); err != nil {
+			log.Printf("conversation: log close error: %v", err)
+		}
 	}
 	close(r.upstream)
 	return nil
@@ -602,4 +641,62 @@ func (r *runner) estimateWaitDuration(utt *Utterance, tts types.TTSEvent) time.D
 		remaining = 0
 	}
 	return remaining + expectation
+}
+
+func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
+	logPath := strings.TrimSpace(path)
+	if logPath == "" {
+		return nil, nil, nil
+	}
+	dir := filepath.Dir(logPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("conversation: failed to create log dir: %v", err)
+		return nil, nil, nil
+	}
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		log.Printf("conversation: failed to open log file: %v", err)
+		return nil, nil, nil
+	}
+	writer := bufio.NewWriter(file)
+	encoder := json.NewEncoder(writer)
+	return writer, encoder, file
+}
+
+func (r *runner) buildLogRecord(utt *Utterance) logRecord {
+	var prePause *int
+	if utt.PrePauseSec > 0 {
+		value := utt.PrePauseSec
+		prePause = &value
+	}
+	var postWait *int
+	if utt.PostWaitSec > 0 {
+		value := utt.PostWaitSec
+		postWait = &value
+	}
+	return logRecord{
+		Speaker:    "ai",
+		Text:       utt.Content,
+		ResponseID: utt.ResponseID,
+		Source:     utteranceSource(utt),
+		PrePause:   prePause,
+		PostWait:   postWait,
+		IsChain:    utt.IsChain,
+	}
+}
+
+func (r *runner) logRecord(rec logRecord) {
+	if r.logEncoder == nil {
+		return
+	}
+	if rec.Timestamp == "" {
+		rec.Timestamp = time.Now().Format(time.RFC3339Nano)
+	}
+	if err := r.logEncoder.Encode(rec); err != nil {
+		log.Printf("conversation: log encode error: %v", err)
+		return
+	}
+	if err := r.logWriter.Flush(); err != nil {
+		log.Printf("conversation: log flush error: %v", err)
+	}
 }

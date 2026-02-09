@@ -6,3 +6,4 @@ system_prompt.local.txt
 node_modules
 package-lock.json
 web/dist
+data

@@ -106,7 +106,9 @@ func buildStages(cfg app.Config) (stages, error) {
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
-	convStage := conversation.NewStage(conversation.Config{})
+	convStage := conversation.NewStage(conversation.Config{
+		LogPath: "data/conversation.jsonl",
+	})
 	if convStage != nil {
 		convStage.Name = "conversation"
 	}
