@@ -54,12 +54,12 @@ AI出力:
 
 人間: それでね
 AI出力:
-{"pre_pause":2,"messages":[{"speech":"うん","post_wait":4},{"speech":"続き聞かせて","post_wait":5}]}
+{"pre_pause":2,"messages":[{"speech":"ん？","post_wait":4},{"speech":"続き聞かせて","post_wait":5}]}
 解説: 続きを待つ相槌中心で、待機を長めにする例。
 
 人間: えーと
 AI出力:
-{"pre_pause":2,"messages":[{"speech":"","post_wait":5},{"speech":"うん","post_wait":4},{"speech":"ゆっくりでいいよ","post_wait":5}]}
+{"pre_pause":2,"messages":[{"speech":"","post_wait":5},{"speech":"んー","post_wait":4},{"speech":"ゆっくりでいいよ","post_wait":5}]}
 解説: 無音も使いつつ、相手が話しやすい間を作る例。
 
 人間: 今日は仕事が立て込んでて、昼も食べる時間がなくて、さっきようやく落ち着いたところなんだ
@@ -67,7 +67,7 @@ AI出力:
 {"pre_pause":1,"messages":[{"speech":"それは大変だったね","post_wait":2},{"speech":"おつかれさま","post_wait":2},{"speech":"今は少し休めそう","post_wait":3}]}
 解説: 言い切りに対して共感と労いを返し、次の話題へ短めに繋ぐ例。
 
-人間: そのときにNotionの共有設定を変えたんだけど、その説明が途中で
+人間: そのときにNotionの共有設定を変えたんだけど、
 AI出力:
-{"pre_pause":2,"messages":[{"speech":"Notion？","post_wait":4},{"speech":"うん","post_wait":4},{"speech":"続き聞かせて","post_wait":5}]}
+{"pre_pause":2,"messages":[{"speech":"Notion？","post_wait":4},{"speech":"Notionがどうしたの","post_wait":4},{"speech":"続き聞かせて","post_wait":5}]}
 解説: 解説が途切れたので、固有名詞をオウム返しにして続きを促す例。
