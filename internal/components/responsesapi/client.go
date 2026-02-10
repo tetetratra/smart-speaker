@@ -328,7 +328,7 @@ func defaultResponseFormat() map[string]any {
 			"properties": map[string]any{
 				"pre_pause": map[string]any{
 					"type":    "integer",
-					"minimum": 1,
+					"minimum": 0,
 					"maximum": 5,
 				},
 				"messages": map[string]any{
@@ -343,7 +343,7 @@ func defaultResponseFormat() map[string]any {
 							},
 							"post_wait": map[string]any{
 								"type":    "integer",
-								"minimum": 1,
+								"minimum": 0,
 								"maximum": 5,
 							},
 						},
