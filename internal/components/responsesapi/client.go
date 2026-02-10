@@ -18,7 +18,6 @@ type Config struct {
 	Model         string
 	Instructions  string
 	Tools         []any
-	ExpandedTools []any
 }
 
 type Client struct {

@@ -34,6 +34,7 @@ type Speaker string
 const (
 	SpeakerHuman Speaker = "human"
 	SpeakerAI    Speaker = "ai"
+	SpeakerTool  Speaker = "tool"
 )
 
 type UtteranceStatus int
@@ -177,6 +178,12 @@ func (r *runner) handleEvent(evt types.Event) {
 			return
 		}
 		r.handleResponses(resp)
+	case types.EventToolResponse:
+		resp, ok := evt.Payload.(types.ToolResponse)
+		if !ok {
+			return
+		}
+		r.handleToolResponse(resp)
 	case types.EventTTSEnd:
 		tts, ok := evt.Payload.(types.TTSEvent)
 		if !ok {
@@ -251,6 +258,35 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 	}
 	r.pendingPreplay = root
 	r.startPreplayTimer(delay)
+}
+
+func (r *runner) handleToolResponse(resp types.ToolResponse) {
+	name := strings.TrimSpace(resp.Name)
+	if name == "" {
+		name = "unknown_tool"
+	}
+	if name == "write_diary" {
+		return
+	}
+	output := strings.TrimSpace(string(resp.Output))
+	if output == "" {
+		return
+	}
+	content := "ツール実行結果(" + name + "): " + output
+	r.appendUtterance(&Utterance{
+		ID:         r.nextID("tool"),
+		Speaker:    SpeakerTool,
+		StartAt:    time.Now(),
+		Content:    content,
+		Status:     UtterancePlayed,
+		ResponseID: strings.TrimSpace(resp.ResponseID),
+	})
+	r.logRecord(logRecord{
+		Speaker:    "tool",
+		Text:       content,
+		ResponseID: strings.TrimSpace(resp.ResponseID),
+		Source:     name,
+	})
 }
 
 func (r *runner) handleTTSEnd(tts types.TTSEvent) {
@@ -333,6 +369,8 @@ func (r *runner) buildConversationMessages() []types.ChatMessage {
 				continue
 			}
 			out = append(out, types.ChatMessage{Role: "assistant", Content: utt.Content})
+		case SpeakerTool:
+			out = append(out, types.ChatMessage{Role: "system", Content: utt.Content})
 		}
 	}
 	return out

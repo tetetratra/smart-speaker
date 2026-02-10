@@ -123,7 +123,12 @@ func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 		log.Printf("toolcaller: result marshal error: %v", err)
 		output = []byte(`{"error":"result encoding failed"}`)
 	}
-	return types.ToolResponse{ToolCallID: req.ToolCallID, Output: output}
+	return types.ToolResponse{
+		ToolCallID: req.ToolCallID,
+		Name:       req.Name,
+		ResponseID: req.ResponseID,
+		Output:     output,
+	}
 }
 
 func (s *toolCaller) close() error {

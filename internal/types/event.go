@@ -80,5 +80,7 @@ type ToolRequest struct {
 // ToolResponse は実行結果を responses ステージに返します。
 type ToolResponse struct {
 	ToolCallID string
+	Name       string
+	ResponseID string
 	Output     json.RawMessage
 }

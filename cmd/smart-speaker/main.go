@@ -118,8 +118,6 @@ func buildStages(cfg app.Config) (stages, error) {
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
 	})
-	minimalTools := toolRegistry.DefinitionsMinimal()
-	expandedTools := toolRegistry.DefinitionsExcluding("write_diary")
 	writeDiaryTools := []any{}
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
 		writeDiaryTools = append(writeDiaryTools, def)
@@ -132,8 +130,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		APIKey:        cfg.APIKey,
 		Model:         cfg.ResponsesModel,
 		Instructions:  cfg.SystemPrompt,
-		Tools:         minimalTools,
-		ExpandedTools: expandedTools,
+		Tools:         toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
 		serverStage.Close()
@@ -229,6 +226,9 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(responsesNode, toolNode)
 			g.Connect(toolNode, responsesNode)
 		}
+	}
+	if toolNode != nil && convNode != nil {
+		g.Connect(toolNode, convNode)
 	}
 	if chatNode != nil {
 		if convNode != nil {
