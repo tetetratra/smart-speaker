@@ -221,6 +221,9 @@ func wireGraph(g *graph.Graph, st stages) {
 	if resetNode != nil && convNode != nil {
 		g.Connect(resetNode, convNode)
 	}
+	if responsesNode != nil && chatNode != nil {
+		g.Connect(responsesNode, chatNode)
+	}
 	if convNode != nil && responsesNode != nil {
 		g.Connect(convNode, responsesNode)
 		g.Connect(responsesNode, convNode)
