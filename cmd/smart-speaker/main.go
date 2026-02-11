@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/conversation"
@@ -32,6 +33,8 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	setLocalTimeZone()
+
 	cfg := app.LoadConfig("system_prompt.txt")
 
 	ensureGoogleCalendarToken()
@@ -52,6 +55,15 @@ func main() {
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
 	}
+}
+
+func setLocalTimeZone() {
+	loc, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		log.Printf("failed to load timezone: %v", err)
+		return
+	}
+	time.Local = loc
 }
 
 func ensureGoogleCalendarToken() {
