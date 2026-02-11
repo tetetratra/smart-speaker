@@ -17,16 +17,13 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-const defaultFollowupPrompt = "ユーザーから返答がないため、会話を続ける短い1文を返してください"
-
 var (
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]*\]\((https?://[^)]+)\)`)
 	bareURLPattern      = regexp.MustCompile(`https?://\S+`)
 )
 
 type Config struct {
-	FollowupPrompt string
-	LogPath        string
+	LogPath string
 }
 
 type Speaker string
@@ -77,14 +74,12 @@ type runner struct {
 	preplayTimerC <-chan time.Time
 
 	pendingChain    *Utterance
-	pendingFollowup bool
 	pendingPreplay  *Utterance
 
 	pendingRequestID        string
 	pendingRequestCancelled bool
 
-	seq            int
-	followupPrompt string
+	seq int
 
 	logFile    *os.File
 	logWriter  *bufio.Writer
@@ -104,16 +99,11 @@ type logRecord struct {
 
 // NewStage は会話タイミング管理のステージを作成します。
 func NewStage(cfg Config) *graph.Stage {
-	prompt := strings.TrimSpace(cfg.FollowupPrompt)
-	if prompt == "" {
-		prompt = defaultFollowupPrompt
-	}
 	logWriter, logEncoder, logFile := openLogWriter(cfg.LogPath)
 	r := &runner{
 		upstream:              make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream:            make(chan types.Event, graph.DefaultChannelBufferSize),
 		utteranceByResponseID: make(map[string]*Utterance),
-		followupPrompt:        prompt,
 		logWriter:             logWriter,
 		logEncoder:            logEncoder,
 		logFile:               logFile,
@@ -199,7 +189,6 @@ func (r *runner) handleSpeechStart() {
 	r.stopTimer()
 	r.stopPreplayTimer()
 	r.pendingChain = nil
-	r.pendingFollowup = false
 	r.pendingPreplay = nil
 	r.cancelPendingRequest()
 	r.cancelUnplayedUtterances()
@@ -226,7 +215,7 @@ func (r *runner) handleHumanText(text string) {
 		Text:    text,
 	})
 	r.updateConversationState()
-	r.requestResponse(r.buildConversationMessages(), "")
+	r.requestResponse(r.buildConversationMessages())
 }
 
 func (r *runner) handleResponses(resp types.ResponsesResponse) {
@@ -301,7 +290,6 @@ func (r *runner) handleSessionClear() {
 	r.stopTimer()
 	r.stopPreplayTimer()
 	r.pendingChain = nil
-	r.pendingFollowup = false
 	r.pendingPreplay = nil
 	r.cancelPendingRequest()
 	r.cancelUnplayedUtterances()
@@ -336,7 +324,6 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 	state.SetLastAssistantTalkAt(time.Now())
 
 	r.pendingChain = utt.Chain
-	r.pendingFollowup = utt.Chain == nil
 	r.startTimer(r.estimateWaitDuration(utt, tts))
 	r.updateConversationState()
 }
@@ -346,11 +333,6 @@ func (r *runner) handleNoHumanResponse() {
 		next := r.pendingChain
 		r.pendingChain = nil
 		r.playUtterance(next)
-		return
-	}
-	if r.pendingFollowup {
-		r.pendingFollowup = false
-		r.requestResponse(r.buildConversationMessages(), r.followupPrompt)
 	}
 }
 
@@ -363,15 +345,9 @@ func (r *runner) handlePreplayReady() {
 	r.playUtterance(next)
 }
 
-func (r *runner) requestResponse(messages []types.ChatMessage, followupPrompt string) {
+func (r *runner) requestResponse(messages []types.ChatMessage) {
 	if len(messages) == 0 {
 		return
-	}
-	if strings.TrimSpace(followupPrompt) != "" {
-		messages = append(messages, types.ChatMessage{
-			Role:    "system",
-			Content: followupPrompt,
-		})
 	}
 	reqID := r.nextID("req")
 	r.pendingRequestID = reqID
@@ -415,7 +391,6 @@ func (r *runner) playUtterance(utt *Utterance) {
 		utt.DurationSeconds = 0
 		state.SetLastActivityAt(time.Now())
 		r.pendingChain = utt.Chain
-		r.pendingFollowup = utt.Chain == nil
 		r.startTimer(postWaitDelay(utt.PostWaitSec))
 		return
 	}
