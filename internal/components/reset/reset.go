@@ -98,10 +98,12 @@ func (r *runner) check() {
 
 func (r *runner) runReset() {
 	emptySystem := ""
+	messages := state.GetConversationMessages()
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: "system", Text: diaryPrompt, Source: "reset"}})
 	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{
 		Role:         "system",
 		Text:         diaryPrompt,
+		Messages:     messages,
 		SystemPrompt: &emptySystem,
 		ToolChoice:   map[string]any{"type": "function", "name": "write_diary"},
 		Tools:        r.tools,

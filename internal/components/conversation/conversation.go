@@ -184,6 +184,8 @@ func (r *runner) handleEvent(evt types.Event) {
 			return
 		}
 		r.handleToolResponse(resp)
+	case types.EventSessionClear:
+		r.handleSessionClear()
 	case types.EventTTSEnd:
 		tts, ok := evt.Payload.(types.TTSEvent)
 		if !ok {
@@ -223,6 +225,7 @@ func (r *runner) handleHumanText(text string) {
 		Speaker: "human",
 		Text:    text,
 	})
+	r.updateConversationState()
 	r.requestResponse(r.buildConversationMessages(), "")
 }
 
@@ -287,6 +290,25 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		ResponseID: strings.TrimSpace(resp.ResponseID),
 		Source:     name,
 	})
+	r.updateConversationState()
+}
+
+func (r *runner) handleSessionClear() {
+	r.stopTimer()
+	r.stopPreplayTimer()
+	r.pendingChain = nil
+	r.pendingFollowup = false
+	r.pendingPreplay = nil
+	r.cancelPendingRequest()
+	r.cancelUnplayedUtterances()
+	if r.current != nil && r.current.Status == UtterancePlaying {
+		r.current.Status = UtteranceCanceled
+		r.emit(types.Event{Kind: types.EventTTSCancel, Payload: types.TTSCancel{ResponseID: r.current.ResponseID}})
+	}
+	r.current = nil
+	r.utteranceByResponseID = make(map[string]*Utterance)
+	r.conversation = nil
+	state.ClearConversationMessages()
 }
 
 func (r *runner) handleTTSEnd(tts types.TTSEvent) {
@@ -312,6 +334,7 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 	r.pendingChain = utt.Chain
 	r.pendingFollowup = utt.Chain == nil
 	r.startTimer(r.estimateWaitDuration(utt, tts))
+	r.updateConversationState()
 }
 
 func (r *runner) handleNoHumanResponse() {
@@ -421,6 +444,10 @@ func (r *runner) playUtterance(utt *Utterance) {
 		PrePauseSec: &prePause,
 		PostWaitSec: &postWait,
 	}})
+}
+
+func (r *runner) updateConversationState() {
+	state.SetConversationMessages(r.buildConversationMessages())
 }
 
 func (r *runner) appendUtterance(utt *Utterance) {
