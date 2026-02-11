@@ -205,24 +205,47 @@ function App() {
   )
 
   useEffect(() => {
+    let hasActiveSpeech = false
     const speech = createSpeechRecognizer({
       onFinal: (text) => {
         sendSpeechText(text)
         setSttInterim('')
+        if (hasActiveSpeech) {
+          sendSTTEvent('stt_end')
+          hasActiveSpeech = false
+        }
       },
-      onInterim: (text) => setSttInterim(text),
+      onInterim: (text) => {
+        setSttInterim(text)
+        if (!hasActiveSpeech) {
+          sendSTTEvent('stt_start')
+          hasActiveSpeech = true
+        }
+      },
       onStart: () => {
         setSttStatus('認識中')
         setSttError('')
-        sendSTTEvent('stt_start')
       },
       onSpeechEnd: () => {
-        sendSTTEvent('stt_end')
+        if (hasActiveSpeech) {
+          sendSTTEvent('stt_end')
+          hasActiveSpeech = false
+        }
       },
-      onEnd: () => setSttStatus('停止中'),
+      onEnd: () => {
+        setSttStatus('停止中')
+        if (hasActiveSpeech) {
+          sendSTTEvent('stt_end')
+          hasActiveSpeech = false
+        }
+      },
       onError: (message) => {
         setSttStatus('エラー')
         setSttError(message)
+        if (hasActiveSpeech) {
+          sendSTTEvent('stt_end')
+          hasActiveSpeech = false
+        }
       },
     })
     speechRef.current = speech
