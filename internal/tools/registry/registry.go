@@ -29,11 +29,15 @@ type Config struct {
 func New(cfg Config) *Registry {
 	var entries []entry
 
-	switchTool := switchbot.New(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	airconTool := switchbot.NewAircon(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	lightTool := switchbot.NewLight(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	diaryTool := diary.New()
 	timerTool := timer.New()
 	toolEntries := []entry{
-		{def: switchTool.Definition(), handler: switchTool},
+		{def: airconTool.Definition(), handler: airconTool},
+		{def: lightTool.Definition(), handler: lightTool},
+		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: map[string]any{"type": "web_search"}},

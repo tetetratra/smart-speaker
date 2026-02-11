@@ -59,16 +59,9 @@ func NewSwitchbotClient(token, secret, deviceMapRaw string) *Client {
 
 // SwitchBot API にコマンドを送りレスポンスを返す
 func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, error) {
-	deviceID := strings.TrimSpace(cmd.DeviceID)
-	if deviceID == "" && cmd.DeviceAlias != "" {
-		var ok bool
-		deviceID, ok = c.deviceMap[strings.ToLower(cmd.DeviceAlias)]
-		if !ok {
-			return nil, fmt.Errorf("未定義のデバイス名です: %s", cmd.DeviceAlias)
-		}
-	}
-	if deviceID == "" {
-		return nil, errors.New("device_id か device (エイリアス) のいずれかを指定してください")
+	deviceID, err := c.resolveDeviceID(cmd.DeviceID, cmd.DeviceAlias)
+	if err != nil {
+		return nil, err
 	}
 
 	command := strings.TrimSpace(cmd.Command)
@@ -109,11 +102,7 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json; charset=utf8")
-	req.Header.Set("Authorization", c.token)
-	req.Header.Set("t", timestamp)
-	req.Header.Set("nonce", nonce)
-	req.Header.Set("sign", signature)
+	c.applyAuthHeaders(req, timestamp, nonce, signature)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -130,6 +119,41 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 	return out, nil
 }
 
+// GetStatus はデバイスのステータスを取得します。
+func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (map[string]any, error) {
+	resolvedID, err := c.resolveDeviceID(deviceID, deviceAlias)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/v1.1/devices/%s/status", baseURL, resolvedID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := uuid.NewString()
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	signature, err := c.signPayload(timestamp, nonce)
+	if err != nil {
+		return nil, err
+	}
+	c.applyAuthHeaders(req, timestamp, nonce, signature)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	out["http_status"] = resp.StatusCode
+	out["device_id"] = resolvedID
+	return out, nil
+}
+
 func (c *Client) signPayload(timestamp, nonce string) (string, error) {
 	mac := hmac.New(sha256.New, []byte(c.secret))
 	if _, err := mac.Write([]byte(c.token + timestamp + nonce)); err != nil {
@@ -137,6 +161,29 @@ func (c *Client) signPayload(timestamp, nonce string) (string, error) {
 	}
 	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	return sig, nil
+}
+
+func (c *Client) resolveDeviceID(deviceID, deviceAlias string) (string, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" && deviceAlias != "" {
+		var ok bool
+		deviceID, ok = c.deviceMap[strings.ToLower(deviceAlias)]
+		if !ok {
+			return "", fmt.Errorf("未定義のデバイス名です: %s", deviceAlias)
+		}
+	}
+	if deviceID == "" {
+		return "", errors.New("device_id か device (エイリアス) のいずれかを指定してください")
+	}
+	return deviceID, nil
+}
+
+func (c *Client) applyAuthHeaders(req *http.Request, timestamp, nonce, signature string) {
+	req.Header.Set("Content-Type", "application/json; charset=utf8")
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("t", timestamp)
+	req.Header.Set("nonce", nonce)
+	req.Header.Set("sign", signature)
 }
 
 func parseDeviceMap(raw string) map[string]string {
