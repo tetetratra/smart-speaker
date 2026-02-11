@@ -235,12 +235,16 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 	}
 	if r.pendingRequestCancelled {
 		r.pendingRequestCancelled = false
+		r.pendingRequestID = ""
 		return
 	}
-	r.pendingRequestID = ""
+	if len(resp.ToolCalls) > 0 {
+		return
+	}
 	if !resp.HasResponse {
 		return
 	}
+	r.pendingRequestID = ""
 	out, ok := parseAIOutput(resp.Text)
 	if !ok {
 		log.Printf("conversation: invalid response: %s", strings.TrimSpace(resp.Text))
