@@ -276,14 +276,10 @@ func (t *streamTTS) close() error {
 func (t *streamTTS) buildVoiceSettings() map[string]any {
 	// デフォルト値（ハードコード）
 	defaultVS := VoiceSettings{
-		Stability:       0.7,
-		SimilarityBoost: 0.5,
-		Speed:           0.9,
-		UseSpeakerBoost: ptrBool(false),
-	}
-	if strings.HasPrefix(t.cfg.Model, "eleven_v3") {
-		// v3は安定性の許容値が限定されるため、無難な値に寄せる
-		defaultVS.Stability = 0.5
+		Stability:       1.0, // v3 は 0.5 or 1.0 のみ有効
+		SimilarityBoost: 0.8,
+		Speed:           1.2, // 0.7–1.2 の範囲で、1.0がデフォルト
+		UseSpeakerBoost: ptrBool(true),
 	}
 
 	vs := defaultVS
