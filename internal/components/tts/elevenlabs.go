@@ -1,17 +1,17 @@
 package tts
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"nhooyr.io/websocket"
 
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
@@ -74,18 +74,20 @@ type streamTTS struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 
-	mu          sync.Mutex
-	conn        *websocket.Conn
-	cancelRead  context.CancelFunc
-	connectedID string // optional tracking of current response
-	triggered   bool   // whether try_trigger_generation has been sent on this connection
+	mu             sync.Mutex
+	client         *http.Client
+	cancelStream   context.CancelFunc
+	streamResponse string
 }
 
 func (t *streamTTS) run(ctx context.Context) {
+	if t.client == nil {
+		t.client = &http.Client{}
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			t.closeConn()
+			t.cancelActiveStream()
 			return
 		case evt, ok := <-t.upstream:
 			if !ok {
@@ -108,192 +110,164 @@ func (t *streamTTS) run(ctx context.Context) {
 			if line.Role != "" && line.Role != "assistant" {
 				continue
 			}
-			// open connection lazily
-			if err := t.ensureConn(ctx, line.ResponseID); err != nil {
-				log.Printf("elevenlabs: connect error: %v", err)
-				continue
-			}
 			if line.Final {
-				if err := t.sendFlush(ctx); err != nil {
-					log.Printf("elevenlabs: flush error: %v", err)
-				}
 				continue
 			}
 			if line.Text == "" {
 				continue
 			}
-			if err := t.sendText(ctx, line.Text); err != nil {
-				log.Printf("elevenlabs: send text error: %v", err)
-				t.closeConn()
-				continue
-			}
+			t.startStream(ctx, line.ResponseID, line.Text)
 		}
 	}
 }
 
 func (t *streamTTS) handleCancel(cancel types.TTSCancel) {
 	t.mu.Lock()
-	connectedID := t.connectedID
+	current := t.streamResponse
 	t.mu.Unlock()
-	if cancel.ResponseID != "" && connectedID != "" && cancel.ResponseID != connectedID {
+	if cancel.ResponseID != "" && current != "" && cancel.ResponseID != current {
 		return
 	}
-	t.closeConn()
+	t.cancelActiveStream()
 }
 
-func (t *streamTTS) ensureConn(parent context.Context, respID string) error {
+func (t *streamTTS) startStream(parent context.Context, respID string, text string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.conn != nil {
-		return nil
+	if t.streamResponse == respID {
+		t.mu.Unlock()
+		return
 	}
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
-	defer cancel()
+	t.mu.Unlock()
+	t.cancelActiveStream()
+
+	ctx, cancel := context.WithCancel(parent)
+	t.mu.Lock()
+	t.cancelStream = cancel
+	t.streamResponse = respID
+	t.mu.Unlock()
+
+	go t.streamRequest(ctx, respID, text)
+}
+
+func (t *streamTTS) streamRequest(ctx context.Context, respID string, text string) {
 	url := fmt.Sprintf(
-		"wss://api.elevenlabs.io/v1/text-to-speech/%s/stream-input?model_id=%s&output_format=pcm_24000&language_code=ja",
+		"https://api.elevenlabs.io/v1/text-to-speech/%s/stream?output_format=pcm_24000",
 		t.cfg.Voice,
-		t.cfg.Model,
 	)
-	headers := http.Header{}
-	headers.Set("xi-api-key", t.cfg.APIKey)
-	conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: headers})
-	if err != nil {
-		return err
-	}
-	// send initial settings
-	init := map[string]any{
-		"text":     " ", // 空文字は終端扱いされるためスペースを送る
-		"model_id": t.cfg.Model,
+	payload := map[string]any{
+		"text":          text,
+		"model_id":      t.cfg.Model,
+		"language_code": "ja",
 	}
 	if vs := t.buildVoiceSettings(); vs != nil {
-		init["voice_settings"] = vs
+		payload["voice_settings"] = vs
 	}
-	_ = conn.Write(ctx, websocket.MessageText, mustJSON(init))
-	conn.SetReadLimit(10 << 20)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("elevenlabs: json marshal error: %v", err)
+		t.finishStream(respID)
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("elevenlabs: request error: %v", err)
+		t.finishStream(respID)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("xi-api-key", t.cfg.APIKey)
 
-	readCtx, cancelRead := context.WithCancel(context.Background())
-	go t.readLoop(readCtx, conn, respID)
-	t.conn = conn
-	t.cancelRead = cancelRead
-	t.connectedID = respID
-	t.triggered = false
-	return nil
+	resp, err := t.client.Do(req)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("elevenlabs: request error: %v", err)
+		}
+		t.finishStream(respID)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(resp.Body)
+		log.Printf("elevenlabs: http error: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		t.finishStream(respID)
+		return
+	}
+
+	t.readStream(ctx, resp.Body, respID)
+	t.finishStream(respID)
 }
 
-func (t *streamTTS) sendText(ctx context.Context, text string) error {
-	t.mu.Lock()
-	conn := t.conn
-	triggered := t.triggered
-	t.mu.Unlock()
-	if conn == nil {
-		return fmt.Errorf("connection not ready")
-	}
-	payload := map[string]any{"text": text}
-	if !triggered {
-		payload["try_trigger_generation"] = true
-		t.mu.Lock()
-		t.triggered = true
-		t.mu.Unlock()
-	}
-	return conn.Write(ctx, websocket.MessageText, mustJSON(payload))
-}
-
-func (t *streamTTS) sendFlush(ctx context.Context) error {
-	t.mu.Lock()
-	conn := t.conn
-	t.mu.Unlock()
-	if conn == nil {
-		return nil
-	}
-	payload := map[string]any{"text": ""}
-	return conn.Write(ctx, websocket.MessageText, mustJSON(payload))
-}
-
-func (t *streamTTS) readLoop(ctx context.Context, conn *websocket.Conn, respID string) {
+func (t *streamTTS) readStream(ctx context.Context, body io.Reader, respID string) {
 	var totalBytes int64
 	var audioStartAt time.Time
+	buf := make([]byte, 4096)
 	for {
-		typ, data, err := conn.Read(ctx)
-		if err != nil {
-			log.Printf("elevenlabs: read error: %v", err)
-			t.closeConn()
+		if ctx.Err() != nil {
 			return
 		}
-		switch typ {
-		case websocket.MessageBinary:
+		n, err := body.Read(buf)
+		if n > 0 {
 			if audioStartAt.IsZero() {
 				audioStartAt = time.Now()
 			}
-			totalBytes += int64(len(data))
-			audioB64 := base64.StdEncoding.EncodeToString(data)
+			totalBytes += int64(n)
+			audioB64 := base64.StdEncoding.EncodeToString(buf[:n])
 			select {
 			case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: audioB64}}:
 			case <-ctx.Done():
 				return
 			}
-		case websocket.MessageText:
-			var resp struct {
-				Audio   *string `json:"audio"`
-				IsFinal bool    `json:"isFinal"`
-			}
-			if err := json.Unmarshal(data, &resp); err == nil {
-				if resp.Audio != nil && *resp.Audio != "" {
-					if decoded, err := base64.StdEncoding.DecodeString(*resp.Audio); err == nil {
-						if audioStartAt.IsZero() {
-							audioStartAt = time.Now()
-						}
-						totalBytes += int64(len(decoded))
-						select {
-						case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: *resp.Audio}}:
-						case <-ctx.Done():
-							return
-						}
-					} else {
-						log.Printf("elevenlabs: decode error: %v", err)
-					}
-				}
-				if resp.IsFinal {
-					seconds := ttsDurationSeconds(totalBytes)
-					log.Printf("elevenlabs: tts duration=%.3fs bytes=%d response_id=%s", seconds, totalBytes, respID)
-					if strings.TrimSpace(respID) != "" {
-						if audioStartAt.IsZero() {
-							audioStartAt = time.Now()
-						}
-						select {
-						case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{
-							ResponseID:      respID,
-							AudioStartAt:    audioStartAt,
-							DurationSeconds: seconds,
-						}}:
-						case <-ctx.Done():
-							return
-						}
-					}
-					t.closeConn()
-					return
-				}
-			}
 		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			if ctx.Err() == nil {
+				log.Printf("elevenlabs: read error: %v", err)
+			}
+			return
+		}
+	}
+	if strings.TrimSpace(respID) == "" {
+		return
+	}
+	seconds := ttsDurationSeconds(totalBytes)
+	log.Printf("elevenlabs: tts duration=%.3fs bytes=%d response_id=%s", seconds, totalBytes, respID)
+	if audioStartAt.IsZero() {
+		audioStartAt = time.Now()
+	}
+	select {
+	case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{
+		ResponseID:      respID,
+		AudioStartAt:    audioStartAt,
+		DurationSeconds: seconds,
+	}}:
+	case <-ctx.Done():
 	}
 }
 
-func (t *streamTTS) closeConn() {
+func (t *streamTTS) cancelActiveStream() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.cancelRead != nil {
-		t.cancelRead()
-		t.cancelRead = nil
+	if t.cancelStream != nil {
+		t.cancelStream()
+		t.cancelStream = nil
 	}
-	if t.conn != nil {
-		_ = t.conn.Close(websocket.StatusNormalClosure, "bye")
-		t.conn = nil
-		t.connectedID = ""
-		t.triggered = false
+	t.streamResponse = ""
+}
+
+func (t *streamTTS) finishStream(respID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.streamResponse != respID {
+		return
 	}
+	t.streamResponse = ""
+	t.cancelStream = nil
 }
 
 func (t *streamTTS) close() error {
-	t.closeConn()
+	t.cancelActiveStream()
 	close(t.upstream)
 	close(t.downstream)
 	return nil
@@ -342,15 +316,6 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	}
 
 	return settings
-}
-
-func mustJSON(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		log.Printf("elevenlabs: json marshal error: %v", err)
-		return nil
-	}
-	return b
 }
 
 func ttsDurationSeconds(bytes int64) float64 {
