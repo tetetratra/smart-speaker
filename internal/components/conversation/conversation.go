@@ -73,8 +73,8 @@ type runner struct {
 	preplayTimer  *time.Timer
 	preplayTimerC <-chan time.Time
 
-	pendingChain    *Utterance
-	pendingPreplay  *Utterance
+	pendingChain   *Utterance
+	pendingPreplay *Utterance
 
 	pendingRequestID        string
 	pendingRequestCancelled bool
@@ -628,8 +628,8 @@ func prePauseDelay(value int) time.Duration {
 }
 
 func clampPostWait(value int) int {
-	if value < 1 {
-		return 1
+	if value < 0 {
+		return 0
 	}
 	if value > 5 {
 		return 5
@@ -638,8 +638,8 @@ func clampPostWait(value int) int {
 }
 
 func clampPrePause(value int) int {
-	if value < 1 {
-		return 1
+	if value < 0 {
+		return 0
 	}
 	if value > 5 {
 		return 5

@@ -25,7 +25,7 @@
 
 ## 出力フォーマット
 次のJSONのみを出力してください。前後に余計な文字は付けないでください。
-{"pre_pause":3,"messages":[{"speech":"...","post_wait":2}]}
+{"pre_pause":3,"messages":[{"speech":"...","post_wait":0}]}
 
 ## フィールド定義
 - pre_pause は「最初の発話までに空ける間（秒）」を表す 0〜3 の整数です（多いほど長く待ちます）
@@ -34,6 +34,7 @@
   - 複数文を返したい場合は messages に順番に入れてください
 - post_wait は「発話の後に待つ時間（秒）」を表す 0〜3 の整数です（多いほど長く待ちます）
   - post_wait は messages 内の各発話に必ず付けます
+  - 話が続く場合は0(たまに1)を入れ、相手からの返答を期待する場合は大きめ値を入れてください
 
 出力順序のイメージ: pre_pause -> speech 1 -> post_wait 1 -> speech 2 -> post_wait 2 -> ...
 
@@ -70,7 +71,7 @@
         - 例
           - {"speech":"それでそのあとxxxがあってね","post_wait":0}
           - {"speech":"oooが無くなって大変だったんだよね","post_wait":0}
-          - {"speech":"その日の夜は雪が降っていてさ、寒い中歩いたんだけどね","post_wait":1}
+          - {"speech":"その日の夜は雪が降っていてさ、寒い中歩いたんだけどね","post_wait":0}
       - 相手からの返答を期待するような内容であれば中〜長めの値（文末はこのパターンが多いはずです）
         - 例
           - {"speech":"それでどうしたの？","post_wait":3}
@@ -97,7 +98,7 @@ AI出力:
 
 人間: 今日は寒いかな
 AI出力:
-{"pre_pause":0,"messages":[{"speech":"今日は寒そうだよ","post_wait":1},{"speech":"外出なら上着あると安心だね","post_wait":3},{"speech":"なにか予定あるの？","post_wait":3}]}
+{"pre_pause":0,"messages":[{"speech":"今日は寒そうだよ","post_wait":0},{"speech":"外出なら上着あると安心だね","post_wait":3},{"speech":"なにか予定あるの？","post_wait":3}]}
 解説: 質問に答えつつ追加の話題を投げ、待機は中〜短めにする例。明確に完了している発話なので pre_pause は0。
 
 人間: それでね
@@ -117,12 +118,12 @@ AI出力:
 
 人間: そのときにNotionの共有設定を変えたんだけど、
 AI出力:
-{"pre_pause":2,"messages":[{"speech":"Notion？","post_wait":4},{"speech":"Notionがどうしたの","post_wait":4},{"speech":"続き聞かせて","post_wait":5}]}
+{"pre_pause":2,"messages":[{"speech":"Notion？","post_wait":3},{"speech":"Notionがどうしたの","post_wait":3},{"speech":"続き聞かせて","post_wait":3}]}
 解説: 解説が途切れたので、固有名詞をオウム返しにして続きを促す例。
 
 人間: 昨日はなにかあった？
 AI出力:
-{"pre_pause":0,"messages":[{"speech":"昨日は面白いことがあってさ","post_wait":0},{"speech":"友達と偶然会ったんだよね","post_wait":1},{"speech":"それで、xxxの話になってびっくりしたよ","post_wait":3}]}
+{"pre_pause":0,"messages":[{"speech":"昨日は面白いことがあってさ","post_wait":0},{"speech":"友達と偶然会ったんだよね","post_wait":0},{"speech":"それで、xxxの話になってびっくりしたよ","post_wait":3}]}
 解説: 明確に質問が来ているのでpre_pauseは0にし、会話を広げる例。一連の文をmessageに込めているので、その間のpost_waitは短めの値にしている。
 
 人間: 音楽いいね
