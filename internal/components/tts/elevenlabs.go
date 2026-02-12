@@ -281,6 +281,10 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 		Speed:           0.9,
 		UseSpeakerBoost: ptrBool(false),
 	}
+	if strings.HasPrefix(t.cfg.Model, "eleven_v3") {
+		// v3は安定性の許容値が限定されるため、無難な値に寄せる
+		defaultVS.Stability = 0.5
+	}
 
 	vs := defaultVS
 	if t.cfg.VoiceSettings != nil {
@@ -302,7 +306,7 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	}
 
 	settings := map[string]any{
-		"stability":        vs.Stability,
+		"stability":        normalizeStability(t.cfg.Model, vs.Stability),
 		"similarity_boost": vs.SimilarityBoost,
 	}
 	if vs.Style != 0 {
@@ -328,4 +332,21 @@ func ttsDurationSeconds(bytes int64) float64 {
 
 func ptrBool(v bool) *bool {
 	return &v
+}
+
+func normalizeStability(model string, value float64) float64 {
+	if !strings.HasPrefix(model, "eleven_v3") {
+		return value
+	}
+	switch value {
+	case 0, 0.5, 1:
+		return value
+	}
+	if value < 0.25 {
+		return 0
+	}
+	if value < 0.75 {
+		return 0.5
+	}
+	return 1
 }
