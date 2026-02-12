@@ -89,7 +89,7 @@ func LoadConfig(promptPath string) Config {
 		// eleven_multilingual_v2: 漢字で読めないことが多い
 		// eleven_flash_v2_5: 未検証。数字や日付の読み上げが難点らしい。リアルタイム向け
 		// eleven_turbo_v2_5: 40,000 文字/リクエスト の上限あり
-		// eveven_v3: APIではなぜか使えず(websocketではなくhttpで使う必要があるのかも)
+		// eleven_v3: APIではなぜか使えず(websocketではなくhttpで使う必要があるのかも)
 		elv.Model = "eleven_turbo_v2_5"
 	}
 
