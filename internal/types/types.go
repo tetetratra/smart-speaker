@@ -13,8 +13,8 @@ type OutputLine struct {
 	Final       bool
 	Source      string
 	Expectation *int
-	PrePauseSec *int
-	PostWaitSec *int
+	PrePauseSec *float64
+	PostWaitSec *float64
 }
 
 // OutputAudio represents an assistant audio response chunk.

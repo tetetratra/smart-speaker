@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,8 +51,8 @@ type Utterance struct {
 	DurationSeconds float64
 	Content         string
 	Chain           *Utterance
-	PostWaitSec     int
-	PrePauseSec     int
+	PostWaitSec     float64
+	PrePauseSec     float64
 	Status          UtteranceStatus
 	ResponseID      string
 	IsChain         bool
@@ -87,14 +88,14 @@ type runner struct {
 }
 
 type logRecord struct {
-	Timestamp  string `json:"ts"`
-	Speaker    string `json:"speaker"`
-	Text       string `json:"text"`
-	ResponseID string `json:"response_id,omitempty"`
-	Source     string `json:"source,omitempty"`
-	PrePause   *int   `json:"pre_pause,omitempty"`
-	PostWait   *int   `json:"post_wait,omitempty"`
-	IsChain    bool   `json:"is_chain,omitempty"`
+	Timestamp  string   `json:"ts"`
+	Speaker    string   `json:"speaker"`
+	Text       string   `json:"text"`
+	ResponseID string   `json:"response_id,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	PrePause   *float64 `json:"pre_pause,omitempty"`
+	PostWait   *float64 `json:"post_wait,omitempty"`
+	IsChain    bool     `json:"is_chain,omitempty"`
 }
 
 // NewStage は会話タイミング管理のステージを作成します。
@@ -399,7 +400,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.current = utt
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
-	exp := clampPostWait(utt.PostWaitSec)
+	exp := clampExpectation(utt.PostWaitSec)
 	prePause := utt.PrePauseSec
 	postWait := utt.PostWaitSec
 	r.logRecord(r.buildLogRecord(utt))
@@ -561,13 +562,13 @@ func (r *runner) nextID(prefix string) string {
 }
 
 type aiOutput struct {
-	PrePause int         `json:"pre_pause"`
+	PrePause float64     `json:"pre_pause"`
 	Messages []aiMessage `json:"messages"`
 }
 
 type aiMessage struct {
-	Speech   string `json:"speech"`
-	PostWait int    `json:"post_wait"`
+	Speech   string  `json:"speech"`
+	PostWait float64 `json:"post_wait"`
 }
 
 func parseAIOutput(raw string) (aiOutput, bool) {
@@ -613,23 +614,23 @@ func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
 	return root
 }
 
-func postWaitDelay(value int) time.Duration {
+func postWaitDelay(value float64) time.Duration {
 	if value <= 0 {
 		return 0
 	}
-	return time.Duration(value) * time.Second
+	return time.Duration(value * float64(time.Second))
 }
 
-func prePauseDelay(value int) time.Duration {
+func prePauseDelay(value float64) time.Duration {
 	if value <= 0 {
 		return 0
 	}
-	return time.Duration(value) * time.Second
+	return time.Duration(value * float64(time.Second))
 }
 
-func clampPostWait(value int) int {
-	if value < 0 {
-		return 0
+func clampPostWait(value float64) float64 {
+	if value <= 0 {
+		return 0.5
 	}
 	if value > 5 {
 		return 5
@@ -637,14 +638,25 @@ func clampPostWait(value int) int {
 	return value
 }
 
-func clampPrePause(value int) int {
-	if value < 0 {
-		return 0
+func clampPrePause(value float64) float64 {
+	if value <= 0 {
+		return 0.5
 	}
 	if value > 5 {
 		return 5
 	}
 	return value
+}
+
+func clampExpectation(value float64) int {
+	v := int(math.Ceil(value))
+	if v < 1 {
+		return 1
+	}
+	if v > 5 {
+		return 5
+	}
+	return v
 }
 
 func sanitizeSpeech(text string) string {
@@ -708,12 +720,12 @@ func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
 }
 
 func (r *runner) buildLogRecord(utt *Utterance) logRecord {
-	var prePause *int
+	var prePause *float64
 	if utt.PrePauseSec > 0 {
 		value := utt.PrePauseSec
 		prePause = &value
 	}
-	var postWait *int
+	var postWait *float64
 	if utt.PostWaitSec > 0 {
 		value := utt.PostWaitSec
 		postWait = &value
