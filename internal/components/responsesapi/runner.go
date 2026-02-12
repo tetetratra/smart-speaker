@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
@@ -97,6 +98,7 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 	if req.SystemPrompt != nil {
 		systemPrompt = strings.TrimSpace(*req.SystemPrompt)
 	}
+	systemPrompt = appendCurrentTimestamp(systemPrompt)
 	resp, err := r.client.CreateResponse(r.ctx, messages, systemPrompt, req.ToolChoice, req.Tools)
 	if err != nil {
 		log.Printf("responsesapi: request error: %v", err)
@@ -104,6 +106,16 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 	}
 	resp.RequestID = req.RequestID
 	r.handleResponsesResponse(resp)
+}
+
+func appendCurrentTimestamp(prompt string) string {
+	now := time.Now()
+	dateLine := "現在日時：" + now.Format("2006/01/02")
+	timeLine := "現在時刻：" + now.Format("15:04:05")
+	if strings.TrimSpace(prompt) == "" {
+		return dateLine + "\n" + timeLine
+	}
+	return strings.TrimRight(prompt, "\n") + "\n" + dateLine + "\n" + timeLine
 }
 
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
