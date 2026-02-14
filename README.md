@@ -86,30 +86,30 @@ flowchart LR
   tts["tts (ElevenLabs)"]
   rtc["rtc (WebRTC)"]
 
-  wschat --> conversation
-  conversation --> wschat
+  wschat -- "EventTextInput / EventSpeechStart / EventSpeechEnd" --> conversation
+  conversation -- "EventRealtimeOutput" --> wschat
 
-  conversation --> responses
-  responses --> conversation
+  conversation -- "EventResponsesRequest" --> responses
+  responses -- "EventResponsesResponse" --> conversation
 
-  responses --> toolcaller
-  toolcaller --> responses
+  responses -- "EventToolRequest" --> toolcaller
+  toolcaller -- "EventToolResponse" --> responses
 
-  toolcaller --> conversation
-  toolcaller --> wschat
-  responses --> wschat
+  toolcaller -- "EventToolResponse / EventTextInput" --> conversation
+  toolcaller -- "EventToolResponse / EventTextInput" --> wschat
+  responses -- "EventResponsesResponse" --> wschat
 
-  conversation --> tts
-  tts --> conversation
-  tts --> rtc
+  conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
+  tts -- "EventTTSEnd" --> conversation
+  tts -- "EventRealtimeAudio" --> rtc
 
-  wschat --> rtc
-  rtc --> wschat
+  wschat -- "EventRTCSignal" --> rtc
+  rtc -- "EventRTCSignal" --> wschat
 
-  wschat --> reset
-  reset --> wschat
-  reset --> responses
-  reset --> conversation
+  wschat -- "EventReset" --> reset
+  reset -- "EventRealtimeOutput" --> wschat
+  reset -- "EventResponsesRequest" --> responses
+  reset -- "EventSessionClear" --> conversation
 ```
 
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
