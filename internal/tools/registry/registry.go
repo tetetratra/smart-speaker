@@ -3,9 +3,9 @@ package registry
 import (
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/diary"
+	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
-	"smart-speaker/internal/tools/mcp/googlecalendar"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。
@@ -33,6 +33,9 @@ func New(cfg Config) *Registry {
 	lightTool := switchbot.NewLight(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	diaryTool := diary.New()
+	googleCalendarList := googlecalendar.NewList()
+	googleCalendarCreate := googlecalendar.NewCreate()
+	googleCalendarUpdate := googlecalendar.NewUpdate()
 	timerTool := timer.New()
 	toolEntries := []entry{
 		{def: airconTool.Definition(), handler: airconTool},
@@ -40,8 +43,10 @@ func New(cfg Config) *Registry {
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
+		{def: googleCalendarList.Definition(), handler: googleCalendarList},
+		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
+		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
 		{def: map[string]any{"type": "web_search"}},
-		{def: googlecalendar.Definition()},
 	}
 	for _, e := range toolEntries {
 		entries = append(entries, e)
