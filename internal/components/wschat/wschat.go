@@ -159,28 +159,6 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"tool_call_id": resp.ToolCallID,
 			"output":       json.RawMessage(resp.Output),
 		}
-	case types.EventMCPCall:
-		call, ok := evt.Payload.(types.MCPCall)
-		if !ok {
-			return
-		}
-		name := call.Name
-		if call.ServerLabel != "" {
-			name = "mcp:" + call.ServerLabel + "/" + call.Name
-		}
-		c.writeMessage(ctx, map[string]any{
-			"type":         "function_call",
-			"tool_call_id": call.CallID,
-			"name":         name,
-			"arguments":    json.RawMessage(call.Arguments),
-			"response_id":  call.ResponseID,
-		})
-		c.writeMessage(ctx, map[string]any{
-			"type":         "function_result",
-			"tool_call_id": call.CallID,
-			"output":       json.RawMessage(call.Output),
-		})
-		return
 	case types.EventRTCSignal:
 		sig, ok := evt.Payload.(types.RTCSignal)
 		if !ok {

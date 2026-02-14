@@ -16,7 +16,6 @@ const (
 	EventRealtimeAudio
 	EventToolRequest
 	EventToolResponse
-	EventMCPCall
 	EventResponsesRequest
 	EventResponsesResponse
 	EventTTSEnd
@@ -48,8 +47,6 @@ func (k EventKind) String() string {
 		return "EventToolRequest"
 	case EventToolResponse:
 		return "EventToolResponse"
-	case EventMCPCall:
-		return "EventMCPCall"
 	case EventResponsesRequest:
 		return "EventResponsesRequest"
 	case EventResponsesResponse:

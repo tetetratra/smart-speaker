@@ -21,7 +21,6 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventRealtimeAudio:     formatRealtimeAudioDetail,
 		types.EventToolRequest:       formatToolRequestDetail,
 		types.EventToolResponse:      formatToolResponseDetail,
-		types.EventMCPCall:           formatMCPCallDetail,
 		types.EventResponsesRequest:  formatResponsesRequestDetail,
 		types.EventResponsesResponse: formatResponsesResponseDetail,
 		types.EventTTSCancel:         formatTTSCancelDetail,
@@ -132,7 +131,6 @@ func formatResponsesResponseDetail(evt types.Event) string {
 		fmt.Sprintf("text=%s", quoteText(resp.Text)),
 		fmt.Sprintf("chars=%d", utf8.RuneCountInString(resp.Text)),
 		fmt.Sprintf("tool_calls=%d", len(resp.ToolCalls)),
-		fmt.Sprintf("mcp_calls=%d", len(resp.MCPCalls)),
 		fmt.Sprintf("has_response=%t", resp.HasResponse),
 	}
 	if resp.RequestID != "" {
@@ -164,26 +162,6 @@ func formatToolResponseDetail(evt types.Event) string {
 	parts := []string{
 		fmt.Sprintf("output=%s", quoteText(output)),
 		fmt.Sprintf("output_bytes=%d", len(resp.Output)),
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatMCPCallDetail(evt types.Event) string {
-	call, ok := evt.Payload.(types.MCPCall)
-	if !ok {
-		return ""
-	}
-	args := string(call.Arguments)
-	output := string(call.Output)
-	parts := []string{
-		fmt.Sprintf("name=%s", call.Name),
-		fmt.Sprintf("arguments=%s", quoteText(args)),
-		fmt.Sprintf("args_bytes=%d", len(call.Arguments)),
-		fmt.Sprintf("output=%s", quoteText(output)),
-		fmt.Sprintf("output_bytes=%d", len(call.Output)),
-	}
-	if call.ServerLabel != "" {
-		parts = append(parts, fmt.Sprintf("server_label=%s", call.ServerLabel))
 	}
 	return strings.Join(parts, ", ")
 }

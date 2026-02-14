@@ -1,9 +1,6 @@
 package types
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
@@ -77,15 +74,4 @@ type ResponsesResponse struct {
 	RequestID   string
 	HasResponse bool
 	ToolCalls   []ToolRequest
-	MCPCalls    []MCPCall
-}
-
-// MCPCall はResponses APIのMCP呼び出し結果を表します。
-type MCPCall struct {
-	CallID      string
-	ServerLabel string
-	Name        string
-	Arguments   json.RawMessage
-	Output      json.RawMessage
-	ResponseID  string
 }

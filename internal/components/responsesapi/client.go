@@ -14,10 +14,10 @@ import (
 
 // Config はResponses APIクライアントの設定を表します。
 type Config struct {
-	APIKey        string
-	Model         string
-	Instructions  string
-	Tools         []any
+	APIKey       string
+	Model        string
+	Instructions string
+	Tools        []any
 }
 
 type Client struct {
@@ -114,13 +114,11 @@ func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessag
 	textOut := extractResponseText(parsed)
 	respID, _ := parsed["id"].(string)
 	toolCalls := extractToolCalls(parsed)
-	mcpCalls := extractMCPCalls(parsed)
 	return types.ResponsesResponse{
 		Text:        textOut,
 		ResponseID:  respID,
 		HasResponse: strings.TrimSpace(textOut) != "",
 		ToolCalls:   toolCalls,
-		MCPCalls:    mcpCalls,
 	}, nil
 }
 
@@ -177,13 +175,11 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 	textOut := extractResponseText(parsed)
 	respID, _ := parsed["id"].(string)
 	toolCalls := extractToolCalls(parsed)
-	mcpCalls := extractMCPCalls(parsed)
 	return types.ResponsesResponse{
 		Text:        textOut,
 		ResponseID:  respID,
 		HasResponse: strings.TrimSpace(textOut) != "",
 		ToolCalls:   toolCalls,
-		MCPCalls:    mcpCalls,
 	}, nil
 }
 
@@ -241,28 +237,6 @@ func extractToolCalls(parsed map[string]any) []types.ToolRequest {
 	return calls
 }
 
-func extractMCPCalls(parsed map[string]any) []types.MCPCall {
-	respID, _ := parsed["id"].(string)
-	output, ok := parsed["output"].([]any)
-	if !ok {
-		return nil
-	}
-	var calls []types.MCPCall
-	for _, item := range output {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		switch asString(entry["type"]) {
-		case "mcp_call":
-			if call := parseMCPCall(entry, respID); call != nil {
-				calls = append(calls, *call)
-			}
-		}
-	}
-	return calls
-}
-
 func parseFunctionCall(entry map[string]any, respID string) *types.ToolRequest {
 	name, ok := entry["name"].(string)
 	if !ok || name == "" {
@@ -291,24 +265,6 @@ func parseFunctionCall(entry map[string]any, respID string) *types.ToolRequest {
 		ToolCallID: callID,
 		Name:       name,
 		Arguments:  json.RawMessage(args),
-	}
-}
-
-func parseMCPCall(entry map[string]any, respID string) *types.MCPCall {
-	name, ok := entry["name"].(string)
-	if !ok || name == "" {
-		return nil
-	}
-	callID, _ := entry["call_id"].(string)
-	output, _ := entry["output"].(string)
-	if callID == "" || output == "" {
-		return nil
-	}
-	return &types.MCPCall{
-		CallID:     callID,
-		Name:       name,
-		Output:     json.RawMessage(output),
-		ResponseID: respID,
 	}
 }
 
