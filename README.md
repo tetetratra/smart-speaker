@@ -13,12 +13,32 @@
 - `WEB_DIST_DIR`（任意、フロントの配信ディレクトリ。デフォルト `web/dist`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
 - SwitchBot を使う場合: `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` / `SWITCHBOT_DEVICE_MAP`
+- Google Calendar を使う場合:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_REDIRECT_URL`（任意、デフォルト `http://localhost:3939/google/callback`）
+  - `GOOGLE_OAUTH_SCOPE`（任意、デフォルト `https://www.googleapis.com/auth/calendar.events`）
 
 ## サーバー（Go）起動
 ```sh
 go run ./cmd/smart-speaker
 ```
 デフォルトで `WS_ADDR=:8081` で `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ WebRTC で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
+
+## Google Calendar OAuth 認証
+Google Calendar を利用するには OAuth トークンが必要です。以下の CLI を使って取得します。
+
+```sh
+go run ./cmd/googlecalendar-oauth
+```
+
+表示されたURLをブラウザで開き、認証が完了すると `tmp/googlecalendar_oauth_token.json` にトークンが保存されます。
+
+（Docker で実行する場合）
+1. `docker-compose.yml` で `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` を渡す
+2. `GOOGLE_REDIRECT_URL` は `http://localhost:3939/google/callback` に合わせる
+3. `go run ./cmd/googlecalendar-oauth -addr 0.0.0.0:3939` を実行
+4. ブラウザで表示されたURLにアクセスして認証
 
 ### Docker（開発）
 開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
