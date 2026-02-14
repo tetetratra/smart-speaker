@@ -322,7 +322,6 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 		r.current = nil
 	}
 	state.SetLastActivityAt(time.Now())
-	state.SetLastAssistantTalkAt(time.Now())
 
 	r.pendingChain = utt.Chain
 	r.startTimer(r.estimateWaitDuration(utt, tts))
