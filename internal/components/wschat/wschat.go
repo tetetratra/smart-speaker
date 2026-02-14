@@ -270,21 +270,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if msg.Type == "presence" {
-			presentText := strings.ToLower(strings.TrimSpace(msg.Present))
-			if presentText == "" {
-				continue
-			}
-			present := presentText == "yes" || presentText == "true"
-			capturedAt := time.Now()
-			if ts := strings.TrimSpace(msg.CapturedAt); ts != "" {
-				if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
-					capturedAt = parsed
-				}
-			}
-			state.Set(present, capturedAt)
-			continue
-		}
 		if msg.Type == "stt_start" || msg.Type == "stt_end" {
 			capturedAt := time.Now()
 			if ts := strings.TrimSpace(msg.CapturedAt); ts != "" {

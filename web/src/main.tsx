@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createSpeechRecognizer, type SpeechHandle } from './speech'
-import { downloadLanguageModel, startPresenceWatcher } from './vision'
 import { createWS } from './ws'
 
 type ChatMessage =
@@ -22,19 +21,11 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [sttInterim, setSttInterim] = useState('')
-  const [presenceEnabled, setPresenceEnabled] = useState(false)
-  const [presenceStatus, setPresenceStatus] = useState('停止中')
-  const [presenceError, setPresenceError] = useState('')
-  const [presencePresent, setPresencePresent] = useState<'yes' | 'no' | ''>('')
-  const [presenceUpdatedAt, setPresenceUpdatedAt] = useState('')
-  const [downloading, setDownloading] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
-  const stopPresenceRef = useRef<(() => void) | null>(null)
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
   const pendingICERef = useRef<RTCIceCandidateInit[]>([])
@@ -392,124 +383,9 @@ function App() {
   useEffect(() => {
     return () => {
       disconnect()
-      stopPresenceRef.current?.()
-      stopPresenceRef.current = null
     }
   }, [disconnect])
 
-  const sendPresence = useCallback(
-    (present: 'yes' | 'no', capturedAt: string) => {
-      const ws = wsChatRef.current
-      if (!ws || !connected) return
-      ws.send({
-        type: 'presence',
-        present,
-        captured_at: capturedAt,
-      })
-    },
-    [connected],
-  )
-
-  const startPresence = useCallback(async () => {
-    if (presenceEnabled) {
-      stopPresenceRef.current?.()
-      stopPresenceRef.current = null
-      setPresenceEnabled(false)
-      setPresenceStatus('停止中')
-      setPresenceError('')
-      setPresencePresent('')
-      setPresenceUpdatedAt('')
-      sendPresence('no', new Date().toISOString())
-      return
-    }
-    if (!videoRef.current) {
-      return
-    }
-    setPresenceEnabled(true)
-    setPresenceError('')
-    try {
-      const handle = await startPresenceWatcher({
-        video: videoRef.current,
-        intervalMs: 10000,
-        onStatus: (status, message) => {
-          if (status === 'error') {
-            setPresenceStatus('エラー')
-            setPresenceError(message ?? '')
-            return
-          }
-          if (status === 'unsupported') {
-            setPresenceStatus('未対応')
-            setPresenceError(message ?? '')
-            return
-          }
-          if (status === 'starting') {
-            setPresenceStatus(message ? `起動中: ${message}` : '起動中')
-            return
-          }
-          if (status === 'ready') {
-            setPresenceStatus(message ? `待機中: ${message}` : '待機中')
-            return
-          }
-          if (status === 'running') {
-            setPresenceStatus(message ? `解析中: ${message}` : '解析中')
-            return
-          }
-          if (status === 'idle') {
-            setPresenceStatus('停止中')
-          }
-        },
-        onResult: (result) => {
-          setPresencePresent(result.present)
-          const time = new Date(result.capturedAt).toLocaleTimeString('ja-JP', { hour12: false })
-          setPresenceUpdatedAt(time)
-          sendPresence(result.present, result.capturedAt)
-        },
-      })
-      stopPresenceRef.current = handle.stop
-    } catch (err) {
-      setPresenceEnabled(false)
-      setPresenceStatus('エラー')
-      setPresenceError(err instanceof Error ? err.message : 'unknown error')
-    }
-  }, [presenceEnabled, sendPresence])
-
-  const downloadModel = useCallback(async () => {
-    if (downloading) return
-    setDownloading(true)
-    setPresenceError('')
-    try {
-      await downloadLanguageModel((status, message) => {
-        if (status === 'error') {
-          setPresenceStatus('エラー')
-          setPresenceError(message ?? '')
-          return
-        }
-        if (status === 'unsupported') {
-          setPresenceStatus('未対応')
-          setPresenceError(message ?? '')
-          return
-        }
-        if (status === 'starting') {
-          setPresenceStatus(message ? `起動中: ${message}` : '起動中')
-          return
-        }
-        if (status === 'ready') {
-          setPresenceStatus(message ? `待機中: ${message}` : '待機中')
-          return
-        }
-        if (status === 'running') {
-          setPresenceStatus(message ? `解析中: ${message}` : '解析中')
-          return
-        }
-      })
-      setPresenceStatus('待機中')
-    } catch (err) {
-      setPresenceStatus('エラー')
-      setPresenceError(err instanceof Error ? err.message : 'unknown error')
-    } finally {
-      setDownloading(false)
-    }
-  }, [downloading])
 
   useEffect(() => {
     const el = chatRef.current
@@ -547,36 +423,9 @@ function App() {
         <button onClick={disconnect} disabled={!connected}>
           切断
         </button>
-        <button onClick={startPresence} disabled={busy}>
-          {presenceEnabled ? 'カメラ停止' : 'カメラ開始'}
-        </button>
-        <button onClick={downloadModel} disabled={downloading}>
-          {downloading ? 'モデルDL中' : 'モデルDL開始'}
-        </button>
         <button onClick={sendReset} disabled={!connected}>
           おやすみ
         </button>
-      </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>
-            <strong>カメラ状態:</strong> {presenceStatus}
-          </div>
-          {presenceError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>エラー:</strong> {presenceError}
-            </div>
-          )}
-          <video ref={videoRef} width={160} height={120} autoPlay muted style={{ transform: 'scaleX(-1)' }} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ marginBottom: 8 }}>
-            <strong>人の有無:</strong> {presencePresent || '（なし）'}
-          </div>
-          <div>
-            <strong>撮影時刻:</strong> {presenceUpdatedAt || '（なし）'}
-          </div>
-        </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div>
