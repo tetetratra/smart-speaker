@@ -110,12 +110,33 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 
 func appendCurrentTimestamp(prompt string) string {
 	now := time.Now()
-	dateLine := "現在日時：" + now.Format("2006/01/02")
+	dateLine := "現在日時：" + now.Format("2006/01/02") + " (" + formatJapaneseWeekday(now.Weekday()) + ")"
 	timeLine := "現在時刻：" + now.Format("15:04:05")
 	if strings.TrimSpace(prompt) == "" {
 		return dateLine + "\n" + timeLine
 	}
 	return strings.TrimRight(prompt, "\n") + "\n" + dateLine + "\n" + timeLine
+}
+
+func formatJapaneseWeekday(w time.Weekday) string {
+	switch w {
+	case time.Monday:
+		return "月"
+	case time.Tuesday:
+		return "火"
+	case time.Wednesday:
+		return "水"
+	case time.Thursday:
+		return "木"
+	case time.Friday:
+		return "金"
+	case time.Saturday:
+		return "土"
+	case time.Sunday:
+		return "日"
+	default:
+		return ""
+	}
 }
 
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
