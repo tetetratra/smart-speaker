@@ -2,8 +2,6 @@ package diary
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,6 +36,7 @@ func (t *Tool) Name() string { return toolName }
 
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	content := toStr(args["content"])
+	content = strings.ReplaceAll(content, `\n`, "\n")
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
@@ -45,14 +44,8 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	if when.IsZero() {
 		when = time.Now()
 	}
-	if err := os.MkdirAll(filepath.Join("tmp", "diary"), 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create diary dir: %w", err)
-	}
-	filename := when.Format("2006-01-02_150405") + ".md"
-	path := filepath.Join("tmp", "diary", filename)
-	header := "# " + when.Format("2006-01-02 15:04")
-	body := header + "\n" + strings.TrimLeft(content, "\n") + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	path, err := state.AppendDiaryEntry(when, content)
+	if err != nil {
 		return nil, fmt.Errorf("failed to write diary: %w", err)
 	}
 	return map[string]any{
