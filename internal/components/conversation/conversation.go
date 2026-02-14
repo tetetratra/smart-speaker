@@ -21,6 +21,7 @@ import (
 var (
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]*\]\((https?://[^)]+)\)`)
 	bareURLPattern      = regexp.MustCompile(`https?://\S+`)
+	citationPattern     = regexp.MustCompile(`\uE200cite\uE202[^\uE201]+\uE201`)
 )
 
 type Config struct {
@@ -665,6 +666,7 @@ func sanitizeSpeech(text string) string {
 	}
 	out := markdownLinkPattern.ReplaceAllString(trimmed, "")
 	out = bareURLPattern.ReplaceAllString(out, "")
+	out = citationPattern.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }
 
