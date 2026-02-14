@@ -17,7 +17,6 @@ function App() {
   const [input, setInput] = useState('')
   const [rtcStatus, setRtcStatus] = useState('停止中')
   const [rtcError, setRtcError] = useState('')
-  const [rtcAudioSeconds, setRtcAudioSeconds] = useState<number | null>(null)
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [sttInterim, setSttInterim] = useState('')
@@ -30,7 +29,6 @@ function App() {
   const micStreamRef = useRef<MediaStream | null>(null)
   const pendingICERef = useRef<RTCIceCandidateInit[]>([])
   const speechRef = useRef<SpeechHandle | null>(null)
-  const statsTimerRef = useRef<number | null>(null)
 
   const nextMessageId = useCallback(() => {
     idRef.current += 1
@@ -70,43 +68,6 @@ function App() {
       } catch (err) {
         setRtcError(err instanceof Error ? err.message : 'RTC ice error')
       }
-    }
-  }, [])
-
-  const updateRTCStats = useCallback(async () => {
-    const peer = peerRef.current
-    if (!peer) return
-    try {
-      const stats = await peer.getStats()
-      let inbound: any = null
-      stats.forEach((report) => {
-        if (report.type !== 'inbound-rtp') return
-        const kind = (report as any).kind ?? (report as any).mediaType
-        if (kind !== 'audio') return
-        inbound = report
-      })
-      if (!inbound) return
-      const inboundAny = inbound as any
-      let seconds: number | null = null
-      if (typeof inboundAny.totalSamplesDuration === 'number') {
-        seconds = inboundAny.totalSamplesDuration
-      } else if (typeof inboundAny.totalSamplesReceived === 'number') {
-        let clockRate: number | null = null
-        if (inboundAny.codecId) {
-          const codec = stats.get(inboundAny.codecId)
-          if (codec && typeof (codec as any).clockRate === 'number') {
-            clockRate = (codec as any).clockRate
-          }
-        }
-        if (clockRate && clockRate > 0) {
-          seconds = inboundAny.totalSamplesReceived / clockRate
-        }
-      }
-      if (seconds !== null && Number.isFinite(seconds)) {
-        setRtcAudioSeconds(seconds)
-      }
-    } catch {
-      return
     }
   }, [])
 
@@ -264,11 +225,6 @@ function App() {
     speechRef.current?.stop()
     setSttInterim('')
     pendingICERef.current = []
-    if (statsTimerRef.current !== null) {
-      window.clearInterval(statsTimerRef.current)
-      statsTimerRef.current = null
-    }
-    setRtcAudioSeconds(null)
     setRtcStatus('停止中')
     setRtcError('')
   }, [])
@@ -282,14 +238,6 @@ function App() {
     const peer = new RTCPeerConnection()
     peerRef.current = peer
     peer.addTransceiver('audio', { direction: 'recvonly' })
-    if (statsTimerRef.current !== null) {
-      window.clearInterval(statsTimerRef.current)
-      statsTimerRef.current = null
-    }
-    statsTimerRef.current = window.setInterval(() => {
-      updateRTCStats()
-    }, 1000)
-
     peer.onicecandidate = (event) => {
       if (!event.candidate) return
       ws.send({ type: 'webrtc.ice', candidate: event.candidate.toJSON() })
@@ -346,7 +294,7 @@ function App() {
       setRtcError(err instanceof Error ? err.message : 'RTC start error')
       stopRTC()
     }
-  }, [stopRTC, updateRTCStats])
+  }, [stopRTC])
 
   const connect = useCallback(async () => {
     if (connected || busy) return
@@ -415,7 +363,6 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h1>WS Audio Client</h1>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={connect} disabled={connected || busy}>
           接続
@@ -436,10 +383,6 @@ function App() {
             <strong>音声エラー:</strong> {rtcError}
           </div>
         )}
-        <div>
-          <strong>受信音声(合計):</strong>{' '}
-          {rtcAudioSeconds === null ? '（取得不可）' : `${rtcAudioSeconds.toFixed(2)}秒`}
-        </div>
         <div>
           <strong>文字起こし:</strong> {sttStatus}
         </div>
