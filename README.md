@@ -76,8 +76,42 @@ docker compose up web
 ブラウザは getUserMedia のマイク音声を Web Speech API で文字起こしし、/ws/chat に送信します。TTS 音声は WebRTC で受信して再生します。
 
 ## 構成図（ステージ接続）
-- `wschat (/ws/chat)` → `responsesapi` → `tts(ElevenLabs)` → `rtc (WebRTC)`
-- `toolcaller` ↔ `responsesapi` → `wschat (/ws/chat)` も通知
+```mermaid
+flowchart LR
+  wschat["wschat (/ws/chat)"]
+  reset["reset"]
+  conversation["conversation"]
+  responses["responsesapi"]
+  toolcaller["toolcaller"]
+  tts["tts (ElevenLabs)"]
+  rtc["rtc (WebRTC)"]
+
+  wschat --> conversation
+  conversation --> wschat
+
+  conversation --> responses
+  responses --> conversation
+
+  responses --> toolcaller
+  toolcaller --> responses
+
+  toolcaller --> conversation
+  toolcaller --> wschat
+  responses --> wschat
+
+  conversation --> tts
+  tts --> conversation
+  tts --> rtc
+
+  wschat --> rtc
+  rtc --> wschat
+
+  wschat --> reset
+  reset --> wschat
+  reset --> responses
+  reset --> conversation
+```
+
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはブラウザの Web Speech API で実施
 
