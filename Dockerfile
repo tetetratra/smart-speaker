@@ -1,4 +1,4 @@
-FROM --platform=linux/arm64 golang:1.24-bookworm AS base
+FROM golang:1.24-bookworm AS base
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-FROM --platform=linux/arm64 node:20-bookworm AS frontend
+FROM node:20-bookworm AS frontend
 
 WORKDIR /app
 
