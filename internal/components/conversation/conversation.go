@@ -21,7 +21,7 @@ import (
 var (
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]*\]\((https?://[^)]+)\)`)
 	bareURLPattern      = regexp.MustCompile(`https?://\S+`)
-	citationPattern     = regexp.MustCompile(`\uE200cite\uE202[^\uE201]+\uE201`)
+	citationPattern     = regexp.MustCompile("cite[^]+")
 )
 
 type Config struct {

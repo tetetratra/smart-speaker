@@ -35,7 +35,13 @@ RUN go mod download
 COPY . .
 RUN go build -o /app/bin/smart-speaker ./cmd/smart-speaker
 
-FROM gcr.io/distroless/base-debian12 AS runtime
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y \
+  libopus0 \
+  libopusfile0 \
+  ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

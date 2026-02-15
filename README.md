@@ -63,6 +63,26 @@ docker compose -f docker-compose.yml up --build
 ```
 `npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
+#### 本番デプロイ（SSH Docker Context）
+開発機から SSH 経由で本番サーバーの Docker を操作してデプロイします。
+ビルドと起動は本番サーバー側で行われます。
+
+事前準備:
+-本番サーバーに SSH と Docker を導入
+- 開発機で Docker Context を作成（1回だけ）
+  ```sh
+  docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
+  ```
+
+実行手順:
+```sh
+./scripts/deploy.sh
+```
+
+補足:
+- `scripts/deploy.sh` は `production` Context を使う前提です
+- 環境変数は開発機側の設定が使われます
+
 ### 依存ライブラリ
 - Opus エンコード/デコードに libopus / libopusfile を利用します  
   https://github.com/hraban/opus
