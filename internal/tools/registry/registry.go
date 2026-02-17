@@ -31,6 +31,7 @@ func New(cfg Config) *Registry {
 
 	airconTool := switchbot.NewAircon(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	lightTool := switchbot.NewLight(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	blindTool := switchbot.NewBlindTilt(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	diaryTool := diary.New()
 	googleCalendarList := googlecalendar.NewList()
@@ -40,6 +41,7 @@ func New(cfg Config) *Registry {
 	toolEntries := []entry{
 		{def: airconTool.Definition(), handler: airconTool},
 		{def: lightTool.Definition(), handler: lightTool},
+		{def: blindTool.Definition(), handler: blindTool},
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
