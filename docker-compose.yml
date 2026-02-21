@@ -3,7 +3,11 @@ services:
     build:
       context: .
       target: runtime
+    # コンテナが落ちたら自動で再起動する
+    # Dockerデーモン再起動後も自動起動する
+    # Ctrl+C や docker stop で手動停止した場合は再起動せずに停止する
     restart: unless-stopped
+
     ports:
       - "8081:8081"
       - "50000-50100:50000-50100/udp"

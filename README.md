@@ -82,6 +82,7 @@ docker compose -f docker-compose.yml up --build
 補足:
 - `scripts/deploy.sh` は `production` Context を使う前提です
 - 環境変数は開発機側の設定が使われます
+- ログの確認方法：`docker --context production compose logs -f --tail=200`
 
 ### 依存ライブラリ
 - Opus エンコード/デコードに libopus / libopusfile を利用します  
