@@ -268,7 +268,7 @@ function App() {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
+          autoGainControl: false,
         },
       })
     } catch (err) {
