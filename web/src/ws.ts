@@ -2,7 +2,7 @@ export function createWS(url: string) {
   let socket: WebSocket | null = null
 
   return {
-    connect: (onMessage: (msg: any) => void) => {
+    connect: (onMessage: (msg: any) => void, onClose?: () => void) => {
       return new Promise<void>((resolve, reject) => {
         socket = new WebSocket(url)
         socket.onopen = () => {
@@ -18,6 +18,9 @@ export function createWS(url: string) {
           } catch (e) {
             console.warn('ws parse error:', (e as any)?.message)
           }
+        }
+        socket.onclose = () => {
+          onClose?.()
         }
       })
     },

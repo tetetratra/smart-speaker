@@ -299,6 +299,11 @@ function App() {
       const wsChat = createWS(chatWSUrl)
       await wsChat.connect((msg) => {
         handleChatMessage(msg)
+      }, () => {
+        setConnected(false)
+        if (wsChatRef.current === wsChat) {
+          wsChatRef.current = null
+        }
       })
 
       wsChatRef.current = wsChat
