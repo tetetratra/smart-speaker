@@ -115,9 +115,6 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		if line.Source != "" {
 			msg["source"] = line.Source
 		}
-		if line.Expectation != nil {
-			msg["expectation"] = *line.Expectation
-		}
 	case types.EventTextInput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {

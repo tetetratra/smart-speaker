@@ -92,9 +92,6 @@ func formatOutputLineDetail(evt types.Event) string {
 	if line.Source != "" {
 		parts = append(parts, fmt.Sprintf("source=%s", line.Source))
 	}
-	if line.Expectation != nil {
-		parts = append(parts, fmt.Sprintf("expectation=%d", *line.Expectation))
-	}
 	return strings.Join(parts, ", ")
 }
 

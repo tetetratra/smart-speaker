@@ -435,8 +435,7 @@ function App() {
             color = '#6b7280'
             label = 'System'
           }
-          const sourceLabel =
-            m.source === 'conversation-chain' ? ' (chain)' : m.source ? ` (${m.source})` : ''
+          const sourceLabel = m.source ? ` (${m.source})` : ''
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
               <strong style={{ color }}>{label}{sourceLabel}</strong>

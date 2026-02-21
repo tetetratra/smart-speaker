@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -364,27 +363,20 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.current = utt
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
-	var expectation *int
-	if waitSec, hasNextSpeech := r.peekNextWaitSeconds(); hasNextSpeech {
-		exp := clampExpectation(waitSec)
-		expectation = &exp
-	}
 	r.logRecord(r.buildLogRecord(utt))
 	state.SetLastActivityAt(time.Now())
 	line := types.OutputLine{
-		Role:        "assistant",
-		Text:        utt.Content,
-		ResponseID:  utt.ResponseID,
-		Source:      utteranceSource(utt),
-		Expectation: expectation,
+		Role:       "assistant",
+		Text:       utt.Content,
+		ResponseID: utt.ResponseID,
+		Source:     utteranceSource(utt),
 	}
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: line})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
-		Role:        "assistant",
-		ResponseID:  utt.ResponseID,
-		Final:       true,
-		Source:      utteranceSource(utt),
-		Expectation: expectation,
+		Role:       "assistant",
+		ResponseID: utt.ResponseID,
+		Final:      true,
+		Source:     utteranceSource(utt),
 	}})
 }
 
@@ -443,20 +435,6 @@ func (r *runner) consumeLeadingWaitSeconds() float64 {
 		r.pendingTimelineIdx++
 	}
 	return total
-}
-
-func (r *runner) peekNextWaitSeconds() (float64, bool) {
-	var total float64
-	for i := r.pendingTimelineIdx; i < len(r.pendingTimeline); i++ {
-		seg := r.pendingTimeline[i]
-		switch seg.Type {
-		case "wait":
-			total += normalizeWaitSeconds(seg.Sec)
-		case "speech":
-			return total, true
-		}
-	}
-	return total, false
 }
 
 func (r *runner) advanceTimeline() {
@@ -637,17 +615,6 @@ func postWaitDelay(value float64) time.Duration {
 	return time.Duration(value * float64(time.Second))
 }
 
-func clampExpectation(value float64) int {
-	v := int(math.Ceil(value))
-	if v < 1 {
-		return 1
-	}
-	if v > 5 {
-		return 5
-	}
-	return v
-}
-
 func sanitizeSpeech(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -689,20 +656,20 @@ func utteranceSource(_ *Utterance) string {
 }
 
 func (r *runner) estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
-	expectation := postWaitDelay(waitSec)
+	waitDuration := postWaitDelay(waitSec)
 	startAt := tts.AudioStartAt
 	if startAt.IsZero() {
-		return expectation
+		return waitDuration
 	}
 	if tts.DurationSeconds <= 0 {
-		return expectation
+		return waitDuration
 	}
 	endAt := startAt.Add(time.Duration(tts.DurationSeconds * float64(time.Second)))
 	remaining := time.Until(endAt)
 	if remaining < 0 {
 		remaining = 0
 	}
-	return remaining + expectation
+	return remaining + waitDuration
 }
 
 func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {

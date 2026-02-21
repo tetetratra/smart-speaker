@@ -4,12 +4,11 @@ import "time"
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
-	Role        string
-	Text        string
-	ResponseID  string
-	Final       bool
-	Source      string
-	Expectation *int
+	Role       string
+	Text       string
+	ResponseID string
+	Final      bool
+	Source     string
 }
 
 // OutputAudio represents an assistant audio response chunk.
