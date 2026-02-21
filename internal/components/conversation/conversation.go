@@ -562,13 +562,13 @@ func (r *runner) nextID(prefix string) string {
 }
 
 type aiOutput struct {
-	PrePause float64     `json:"pre_pause"`
-	Messages []aiMessage `json:"messages"`
+	Timeline []aiSegment `json:"timeline"`
 }
 
-type aiMessage struct {
-	Speech   string  `json:"speech"`
-	PostWait float64 `json:"post_wait"`
+type aiSegment struct {
+	Type string `json:"type"`
+	Sec  *int   `json:"sec,omitempty"`
+	Text string `json:"text,omitempty"`
 }
 
 func parseAIOutput(raw string) (aiOutput, bool) {
@@ -581,36 +581,76 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 	if err := dec.Decode(&out); err != nil {
 		return aiOutput{}, false
 	}
+	if len(out.Timeline) == 0 {
+		return aiOutput{}, false
+	}
+	speechCount := 0
+	for _, seg := range out.Timeline {
+		switch seg.Type {
+		case "wait":
+			if seg.Sec == nil {
+				return aiOutput{}, false
+			}
+		case "speech":
+			if strings.TrimSpace(seg.Text) == "" {
+				return aiOutput{}, false
+			}
+			speechCount++
+		default:
+			return aiOutput{}, false
+		}
+	}
+	if speechCount == 0 {
+		return aiOutput{}, false
+	}
 	return out, true
 }
 
 func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
-	if len(out.Messages) == 0 {
+	if len(out.Timeline) == 0 {
 		return nil
 	}
-	rootSpeech := sanitizeSpeech(out.Messages[0].Speech)
-	root := &Utterance{
-		ID:          r.nextID("ai"),
-		Speaker:     SpeakerAI,
-		Content:     rootSpeech,
-		PostWaitSec: clampPostWait(out.Messages[0].PostWait),
-		PrePauseSec: clampPrePause(out.PrePause),
-		Status:      UtteranceUnplayed,
-	}
-	cur := root
-	for _, entry := range out.Messages[1:] {
-		speech := sanitizeSpeech(entry.Speech)
-		next := &Utterance{
-			ID:          r.nextID("ai"),
-			Speaker:     SpeakerAI,
-			Content:     speech,
-			PostWaitSec: clampPostWait(entry.PostWait),
-			Status:      UtteranceUnplayed,
-			IsChain:     true,
+	var (
+		root        *Utterance
+		cur         *Utterance
+		pendingWait float64
+	)
+
+	for _, seg := range out.Timeline {
+		switch seg.Type {
+		case "wait":
+			if seg.Sec == nil {
+				continue
+			}
+			pendingWait += float64(*seg.Sec)
+		case "speech":
+			speech := sanitizeSpeech(seg.Text)
+			if speech == "" {
+				continue
+			}
+			next := &Utterance{
+				ID:      r.nextID("ai"),
+				Speaker: SpeakerAI,
+				Content: speech,
+				Status:  UtteranceUnplayed,
+			}
+			if root == nil {
+				next.PrePauseSec = clampPrePause(pendingWait)
+				root = next
+			} else {
+				cur.PostWaitSec = clampPostWait(pendingWait)
+				next.IsChain = true
+				cur.Chain = next
+			}
+			cur = next
+			pendingWait = 0
 		}
-		cur.Chain = next
-		cur = next
 	}
+
+	if root == nil || cur == nil {
+		return nil
+	}
+	cur.PostWaitSec = clampPostWait(pendingWait)
 	return root
 }
 

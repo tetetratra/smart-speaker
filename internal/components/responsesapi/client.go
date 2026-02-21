@@ -72,9 +72,6 @@ func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessag
 		"model": c.model,
 		"input": input,
 	}
-	payload["text"] = map[string]any{
-		"format": defaultResponseFormat(),
-	}
 	tools := c.tools
 	if toolsOverride != nil {
 		tools = toolsOverride
@@ -136,9 +133,6 @@ func (c *Client) SubmitToolOutput(ctx context.Context, previousResponseID, callI
 		"model":                c.model,
 		"input":                input,
 		"previous_response_id": previousResponseID,
-	}
-	payload["text"] = map[string]any{
-		"format": defaultResponseFormat(),
 	}
 	tools := c.tools
 	if toolsOverride != nil {
@@ -273,44 +267,4 @@ func asString(v any) string {
 		return s
 	}
 	return ""
-}
-
-func defaultResponseFormat() map[string]any {
-	return map[string]any{
-		"type": "json_schema",
-		"name": "assistant_response",
-		"schema": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"pre_pause": map[string]any{
-					"type":    "integer",
-					"minimum": 0,
-					"maximum": 5,
-				},
-				"messages": map[string]any{
-					"type":     "array",
-					"minItems": 5,
-					"maxItems": 10,
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"speech": map[string]any{
-								"type": "string",
-							},
-							"post_wait": map[string]any{
-								"type":    "integer",
-								"minimum": 0,
-								"maximum": 5,
-							},
-						},
-						"required":             []string{"speech", "post_wait"},
-						"additionalProperties": false,
-					},
-				},
-			},
-			"required":             []string{"pre_pause", "messages"},
-			"additionalProperties": false,
-		},
-		"strict": true,
-	}
 }
