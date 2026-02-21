@@ -9,6 +9,8 @@ type ChatMessage =
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
+const reconnectMaxAttempts = 5
+const reconnectInitialDelayMs = 1000
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -25,10 +27,14 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
+  const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
   const pendingICERef = useRef<RTCIceCandidateInit[]>([])
   const speechRef = useRef<SpeechHandle | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  const reconnectTimerRef = useRef<number | null>(null)
+  const manualDisconnectRef = useRef(false)
 
   const nextMessageId = useCallback(() => {
     idRef.current += 1
@@ -225,6 +231,30 @@ function App() {
     setRtcError('')
   }, [])
 
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current === null) return
+    window.clearTimeout(reconnectTimerRef.current)
+    reconnectTimerRef.current = null
+  }, [])
+
+  const scheduleReconnect = useCallback(() => {
+    if (manualDisconnectRef.current) return
+    if (reconnectTimerRef.current !== null) return
+    if (reconnectAttemptRef.current >= reconnectMaxAttempts) {
+      console.warn(`[ws reconnect] retry limit reached: ${reconnectMaxAttempts}`)
+      return
+    }
+    const attempt = reconnectAttemptRef.current + 1
+    reconnectAttemptRef.current = attempt
+    const delayMs = reconnectInitialDelayMs * Math.pow(2, attempt-1)
+    console.log(`[ws reconnect] attempt ${attempt}/${reconnectMaxAttempts} in ${delayMs}ms`)
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null
+      if (manualDisconnectRef.current) return
+      void openConnectionRef.current?.(true)
+    }, delayMs)
+  }, [])
+
   const startRTC = useCallback(async () => {
     if (peerRef.current) return
     setRtcError('')
@@ -292,7 +322,7 @@ function App() {
     }
   }, [stopRTC])
 
-  const connect = useCallback(async () => {
+  const openConnection = useCallback(async (isAutoReconnect: boolean) => {
     if (connected || busy) return
     setBusy(true)
     try {
@@ -300,34 +330,58 @@ function App() {
       await wsChat.connect((msg) => {
         handleChatMessage(msg)
       }, () => {
+        stopRTC()
         setConnected(false)
         if (wsChatRef.current === wsChat) {
           wsChatRef.current = null
         }
+        scheduleReconnect()
       })
 
       wsChatRef.current = wsChat
       setConnected(true)
+      reconnectAttemptRef.current = 0
+      clearReconnectTimer()
       await startRTC()
-      appendMessage({ id: Date.now(), type: 'assistant', text: '接続しました。話しかけてください。' })
+      if (isAutoReconnect) {
+        console.log('[ws reconnect] connected')
+      } else {
+        appendMessage({ id: Date.now(), type: 'assistant', text: '接続しました。話しかけてください。' })
+      }
     } catch (e) {
       console.error('connect error', e)
       stopRTC()
       setConnected(false)
       wsChatRef.current?.close()
       wsChatRef.current = null
+      if (isAutoReconnect) {
+        scheduleReconnect()
+        return
+      }
       throw e
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, busy, connected, handleChatMessage, startRTC, stopRTC])
+  }, [appendMessage, busy, clearReconnectTimer, connected, handleChatMessage, scheduleReconnect, startRTC, stopRTC])
+
+  openConnectionRef.current = openConnection
+
+  const connect = useCallback(async () => {
+    manualDisconnectRef.current = false
+    reconnectAttemptRef.current = 0
+    clearReconnectTimer()
+    await openConnection(false)
+  }, [clearReconnectTimer, openConnection])
 
   const disconnect = useCallback(() => {
+    manualDisconnectRef.current = true
+    reconnectAttemptRef.current = 0
+    clearReconnectTimer()
     stopRTC()
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
-  }, [stopRTC])
+  }, [clearReconnectTimer, stopRTC])
 
   useEffect(() => {
     return () => {
