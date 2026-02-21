@@ -6,11 +6,12 @@ import { createWS } from './ws'
 type ChatMessage =
   | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
-  | { id: number; type: 'function_result'; toolCallId: string; output?: string }
+  | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
 const reconnectMaxAttempts = 5
 const reconnectInitialDelayMs = 1000
+const wakeWord = 'おはよう'
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -22,6 +23,7 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [sttInterim, setSttInterim] = useState('')
+  const [isShutdownMode, setIsShutdownMode] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -44,6 +46,20 @@ function App() {
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
   }, [])
+
+  const handleShutdownToolResult = useCallback((output: any) => {
+    if (!output || typeof output !== 'object') return
+    if ((output as any).error) return
+    if ((output as any).shutdown_mode !== true) return
+    setIsShutdownMode(true)
+    appendMessage({
+      id: nextMessageId(),
+      type: 'system',
+      text: `シャットダウンモードに入りました。${wakeWord} で復帰します。`,
+      source: 'shutdown-mode',
+    })
+    setSttInterim('')
+  }, [appendMessage, nextMessageId])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -113,10 +129,14 @@ function App() {
           break
         }
         case 'function_result': {
+          if (raw.name === 'shutdown_mode') {
+            handleShutdownToolResult(raw.output)
+          }
           appendMessage({
             id: nextMessageId(),
             type: 'function_result',
             toolCallId: String(raw.tool_call_id || ''),
+            name: typeof raw.name === 'string' ? raw.name : undefined,
             output: raw.output ? JSON.stringify(raw.output) : undefined,
           })
           break
@@ -125,14 +145,27 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, nextMessageId],
+    [appendMessage, handleRTCSignal, handleShutdownToolResult, nextMessageId],
   )
 
   const sendSpeechText = useCallback(
     (text: string) => {
       const ws = wsChatRef.current
       const trimmed = text.trim()
-      if (!ws || !trimmed) return
+      if (!trimmed) return
+      if (isShutdownMode) {
+        if (trimmed === wakeWord) {
+          setIsShutdownMode(false)
+          appendMessage({
+            id: nextMessageId(),
+            type: 'system',
+            text: 'シャットダウンモードを解除しました。',
+            source: 'shutdown-mode',
+          })
+        }
+        return
+      }
+      if (!ws) return
       ws.send({ type: 'message', role: 'user', text: trimmed })
       appendMessage({
         id: nextMessageId(),
@@ -142,20 +175,20 @@ function App() {
         source: 'browser-stt',
       })
     },
-    [appendMessage, nextMessageId],
+    [appendMessage, isShutdownMode, nextMessageId],
   )
 
   const sendSTTEvent = useCallback(
     (type: 'stt_start' | 'stt_end') => {
       const ws = wsChatRef.current
-      if (!ws || !connected) return
+      if (!ws || !connected || isShutdownMode) return
       ws.send({
         type,
         source: 'browser-stt',
         captured_at: new Date().toISOString(),
       })
     },
-    [connected],
+    [connected, isShutdownMode],
   )
 
   useEffect(() => {
@@ -406,7 +439,7 @@ function App() {
   const sendText = useCallback(() => {
     const ws = wsChatRef.current
     const text = input.trim()
-    if (!ws || !connected || !text) return
+    if (!ws || !connected || !text || isShutdownMode) return
     const msg = { type: 'message', role: 'user', text }
     ws.send(msg)
     setMessages((prev) => [
@@ -414,7 +447,7 @@ function App() {
       { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
     ])
     setInput('')
-  }, [connected, input])
+  }, [connected, input, isShutdownMode])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -440,6 +473,9 @@ function App() {
         )}
         <div>
           <strong>文字起こし:</strong> {sttStatus}
+        </div>
+        <div>
+          <strong>モード:</strong> {isShutdownMode ? `シャットダウン中（復帰ワード: ${wakeWord}）` : '通常'}
         </div>
         {sttInterim && (
           <div style={{ color: '#0f766e' }}>
@@ -480,10 +516,11 @@ function App() {
             return (
               <div key={m.id} style={{ marginBottom: 8 }}>
                 <strong style={{ color: '#ec4899' }}>function result</strong>
-                <div>callId: {m.toolCallId}</div>
-                {m.output && <div>output: {m.output}</div>}
-              </div>
-            )
+              <div>callId: {m.toolCallId}</div>
+              {m.name && <div>name: {m.name}</div>}
+              {m.output && <div>output: {m.output}</div>}
+            </div>
+          )
           }
           let color = '#16a34a'
           let label = 'Assistant'
@@ -517,7 +554,7 @@ function App() {
             }
           }}
         />
-        <button onClick={sendText} disabled={!connected || !input.trim()}>
+        <button onClick={sendText} disabled={!connected || !input.trim() || isShutdownMode}>
           送信
         </button>
       </div>

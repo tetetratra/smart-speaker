@@ -148,6 +148,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		msg = map[string]any{
 			"type":         "function_result",
 			"tool_call_id": resp.ToolCallID,
+			"name":         resp.Name,
 			"output":       json.RawMessage(resp.Output),
 		}
 	case types.EventRTCSignal:
