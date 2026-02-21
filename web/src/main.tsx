@@ -4,7 +4,7 @@ import { createSpeechRecognizer, type SpeechHandle } from './speech'
 import { createWS } from './ws'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; prePause?: number; postWait?: number }
+  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; output?: string }
 
@@ -85,8 +85,6 @@ function App() {
           let role: 'user' | 'assistant' | 'system' = 'assistant'
           if (raw.role === 'user') role = 'user'
           else if (raw.role === 'system') role = 'system'
-          const prePause = typeof raw.pre_pause === 'number' ? raw.pre_pause : undefined
-          const postWait = typeof raw.post_wait === 'number' ? raw.post_wait : undefined
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
             id: nextMessageId(),
@@ -95,8 +93,6 @@ function App() {
             responseId: raw.response_id,
             final: raw.final,
             source: typeof raw.source === 'string' ? raw.source : undefined,
-            prePause,
-            postWait,
           })
           break
         }
@@ -444,11 +440,6 @@ function App() {
           return (
             <div key={m.id} style={{ marginBottom: 8 }}>
               <strong style={{ color }}>{label}{sourceLabel}</strong>
-              {typeof m.prePause === 'number' && typeof m.postWait === 'number' && (
-                <span style={{ marginLeft: 8, color: '#0f766e', fontSize: 12 }}>
-                  pre_pause: {m.prePause}, post_wait: {m.postWait}
-                </span>
-              )}
               <div>{m.text}</div>
             </div>
           )

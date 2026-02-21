@@ -118,12 +118,6 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		if line.Expectation != nil {
 			msg["expectation"] = *line.Expectation
 		}
-		if line.PrePauseSec != nil {
-			msg["pre_pause"] = *line.PrePauseSec
-		}
-		if line.PostWaitSec != nil {
-			msg["post_wait"] = *line.PostWaitSec
-		}
 	case types.EventTextInput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {

@@ -51,12 +51,8 @@ type Utterance struct {
 	StartAt         time.Time
 	DurationSeconds float64
 	Content         string
-	Chain           *Utterance
-	PostWaitSec     float64
-	PrePauseSec     float64
 	Status          UtteranceStatus
 	ResponseID      string
-	IsChain         bool
 }
 
 type runner struct {
@@ -70,13 +66,11 @@ type runner struct {
 	current               *Utterance
 	utteranceByResponseID map[string]*Utterance
 
-	timer         *time.Timer
-	timerC        <-chan time.Time
-	preplayTimer  *time.Timer
-	preplayTimerC <-chan time.Time
+	timer  *time.Timer
+	timerC <-chan time.Time
 
-	pendingChain   *Utterance
-	pendingPreplay *Utterance
+	pendingTimeline    []aiSegment
+	pendingTimelineIdx int
 
 	pendingRequestID        string
 	pendingRequestCancelled bool
@@ -89,14 +83,11 @@ type runner struct {
 }
 
 type logRecord struct {
-	Timestamp  string   `json:"ts"`
-	Speaker    string   `json:"speaker"`
-	Text       string   `json:"text"`
-	ResponseID string   `json:"response_id,omitempty"`
-	Source     string   `json:"source,omitempty"`
-	PrePause   *float64 `json:"pre_pause,omitempty"`
-	PostWait   *float64 `json:"post_wait,omitempty"`
-	IsChain    bool     `json:"is_chain,omitempty"`
+	Timestamp  string `json:"ts"`
+	Speaker    string `json:"speaker"`
+	Text       string `json:"text"`
+	ResponseID string `json:"response_id,omitempty"`
+	Source     string `json:"source,omitempty"`
 }
 
 // NewStage は会話タイミング管理のステージを作成します。
@@ -129,23 +120,17 @@ func (r *runner) consume() {
 		select {
 		case <-r.ctx.Done():
 			r.stopTimer()
-			r.stopPreplayTimer()
 			return
 		case evt, ok := <-r.upstream:
 			if !ok {
 				r.stopTimer()
-				r.stopPreplayTimer()
 				return
 			}
 			r.handleEvent(evt)
 		case <-r.timerC:
 			r.timerC = nil
 			r.timer = nil
-			r.handleNoHumanResponse()
-		case <-r.preplayTimerC:
-			r.preplayTimerC = nil
-			r.preplayTimer = nil
-			r.handlePreplayReady()
+			r.advanceTimeline()
 		}
 	}
 }
@@ -189,9 +174,7 @@ func (r *runner) handleEvent(evt types.Event) {
 
 func (r *runner) handleSpeechStart() {
 	r.stopTimer()
-	r.stopPreplayTimer()
-	r.pendingChain = nil
-	r.pendingPreplay = nil
+	r.clearPendingTimeline()
 	r.cancelPendingRequest()
 	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
@@ -242,20 +225,12 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 		return
 	}
 	root := r.buildUtteranceChain(out)
-	if root == nil {
+	if len(root) == 0 {
 		return
 	}
-	r.appendUtterance(root)
-	for next := root.Chain; next != nil; next = next.Chain {
-		r.appendUtterance(next)
-	}
-	delay := prePauseDelay(root.PrePauseSec)
-	if delay <= 0 {
-		r.playUtterance(root)
-		return
-	}
-	r.pendingPreplay = root
-	r.startPreplayTimer(delay)
+	r.pendingTimeline = root
+	r.pendingTimelineIdx = 0
+	r.advanceTimeline()
 }
 
 func (r *runner) handleToolResponse(resp types.ToolResponse) {
@@ -290,9 +265,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 
 func (r *runner) handleSessionClear() {
 	r.stopTimer()
-	r.stopPreplayTimer()
-	r.pendingChain = nil
-	r.pendingPreplay = nil
+	r.clearPendingTimeline()
 	r.cancelPendingRequest()
 	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
@@ -323,27 +296,19 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 		r.current = nil
 	}
 	state.SetLastActivityAt(time.Now())
-
-	r.pendingChain = utt.Chain
-	r.startTimer(r.estimateWaitDuration(utt, tts))
-	r.updateConversationState()
-}
-
-func (r *runner) handleNoHumanResponse() {
-	if r.pendingChain != nil {
-		next := r.pendingChain
-		r.pendingChain = nil
-		r.playUtterance(next)
-	}
-}
-
-func (r *runner) handlePreplayReady() {
-	next := r.pendingPreplay
-	r.pendingPreplay = nil
-	if next == nil || next.Status == UtteranceCanceled {
+	if !r.hasPendingSpeech() {
+		r.clearPendingTimeline()
+		r.updateConversationState()
 		return
 	}
-	r.playUtterance(next)
+	waitSec := r.consumeLeadingWaitSeconds()
+	if !r.hasPendingSpeech() {
+		r.clearPendingTimeline()
+		r.updateConversationState()
+		return
+	}
+	r.startTimer(r.estimateWaitDuration(tts, waitSec))
+	r.updateConversationState()
 }
 
 func (r *runner) requestResponse(messages []types.ChatMessage) {
@@ -391,8 +356,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 		utt.Status = UtterancePlayed
 		utt.DurationSeconds = 0
 		state.SetLastActivityAt(time.Now())
-		r.pendingChain = utt.Chain
-		r.startTimer(postWaitDelay(utt.PostWaitSec))
+		r.advanceTimeline()
 		return
 	}
 
@@ -400,9 +364,11 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.current = utt
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
-	exp := clampExpectation(utt.PostWaitSec)
-	prePause := utt.PrePauseSec
-	postWait := utt.PostWaitSec
+	var expectation *int
+	if waitSec, hasNextSpeech := r.peekNextWaitSeconds(); hasNextSpeech {
+		exp := clampExpectation(waitSec)
+		expectation = &exp
+	}
 	r.logRecord(r.buildLogRecord(utt))
 	state.SetLastActivityAt(time.Now())
 	line := types.OutputLine{
@@ -410,9 +376,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 		Text:        utt.Content,
 		ResponseID:  utt.ResponseID,
 		Source:      utteranceSource(utt),
-		Expectation: &exp,
-		PrePauseSec: &prePause,
-		PostWaitSec: &postWait,
+		Expectation: expectation,
 	}
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: line})
 	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
@@ -420,9 +384,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 		ResponseID:  utt.ResponseID,
 		Final:       true,
 		Source:      utteranceSource(utt),
-		Expectation: &exp,
-		PrePauseSec: &prePause,
-		PostWaitSec: &postWait,
+		Expectation: expectation,
 	}})
 }
 
@@ -456,10 +418,81 @@ func (r *runner) cancelUnplayedUtterances() {
 	}
 }
 
+func (r *runner) clearPendingTimeline() {
+	r.pendingTimeline = nil
+	r.pendingTimelineIdx = 0
+}
+
+func (r *runner) hasPendingSpeech() bool {
+	for i := r.pendingTimelineIdx; i < len(r.pendingTimeline); i++ {
+		if r.pendingTimeline[i].Type == "speech" {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *runner) consumeLeadingWaitSeconds() float64 {
+	var total float64
+	for r.pendingTimelineIdx < len(r.pendingTimeline) {
+		seg := r.pendingTimeline[r.pendingTimelineIdx]
+		if seg.Type != "wait" {
+			break
+		}
+		total += normalizeWaitSeconds(seg.Sec)
+		r.pendingTimelineIdx++
+	}
+	return total
+}
+
+func (r *runner) peekNextWaitSeconds() (float64, bool) {
+	var total float64
+	for i := r.pendingTimelineIdx; i < len(r.pendingTimeline); i++ {
+		seg := r.pendingTimeline[i]
+		switch seg.Type {
+		case "wait":
+			total += normalizeWaitSeconds(seg.Sec)
+		case "speech":
+			return total, true
+		}
+	}
+	return total, false
+}
+
+func (r *runner) advanceTimeline() {
+	for r.pendingTimelineIdx < len(r.pendingTimeline) {
+		seg := r.pendingTimeline[r.pendingTimelineIdx]
+		r.pendingTimelineIdx++
+		switch seg.Type {
+		case "wait":
+			delay := waitDelay(seg.Sec)
+			if delay > 0 {
+				r.startTimer(delay)
+				return
+			}
+		case "speech":
+			speech := sanitizeSpeech(seg.Text)
+			if speech == "" {
+				continue
+			}
+			utt := &Utterance{
+				ID:      r.nextID("ai"),
+				Speaker: SpeakerAI,
+				Content: speech,
+				Status:  UtteranceUnplayed,
+			}
+			r.appendUtterance(utt)
+			r.playUtterance(utt)
+			return
+		}
+	}
+	r.clearPendingTimeline()
+}
+
 func (r *runner) startTimer(d time.Duration) {
 	if d <= 0 {
 		r.stopTimer()
-		r.handleNoHumanResponse()
+		r.advanceTimeline()
 		return
 	}
 	if r.timer == nil {
@@ -489,41 +522,6 @@ func (r *runner) stopTimer() {
 	}
 	r.timer = nil
 	r.timerC = nil
-}
-
-func (r *runner) startPreplayTimer(d time.Duration) {
-	if d <= 0 {
-		r.stopPreplayTimer()
-		r.handlePreplayReady()
-		return
-	}
-	if r.preplayTimer == nil {
-		r.preplayTimer = time.NewTimer(d)
-		r.preplayTimerC = r.preplayTimer.C
-		return
-	}
-	if !r.preplayTimer.Stop() {
-		select {
-		case <-r.preplayTimer.C:
-		default:
-		}
-	}
-	r.preplayTimer.Reset(d)
-	r.preplayTimerC = r.preplayTimer.C
-}
-
-func (r *runner) stopPreplayTimer() {
-	if r.preplayTimer == nil {
-		return
-	}
-	if !r.preplayTimer.Stop() {
-		select {
-		case <-r.preplayTimer.C:
-		default:
-		}
-	}
-	r.preplayTimer = nil
-	r.preplayTimerC = nil
 }
 
 func (r *runner) emit(evt types.Event) {
@@ -606,52 +604,30 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 	return out, true
 }
 
-func (r *runner) buildUtteranceChain(out aiOutput) *Utterance {
+func (r *runner) buildUtteranceChain(out aiOutput) []aiSegment {
 	if len(out.Timeline) == 0 {
 		return nil
 	}
-	var (
-		root        *Utterance
-		cur         *Utterance
-		pendingWait float64
-	)
-
+	timeline := make([]aiSegment, 0, len(out.Timeline))
+	speechCount := 0
 	for _, seg := range out.Timeline {
 		switch seg.Type {
 		case "wait":
-			if seg.Sec == nil {
-				continue
-			}
-			pendingWait += float64(*seg.Sec)
+			wait := sanitizeWait(seg.Sec)
+			timeline = append(timeline, aiSegment{Type: "wait", Sec: &wait})
 		case "speech":
-			speech := sanitizeSpeech(seg.Text)
-			if speech == "" {
+			text := sanitizeSpeech(seg.Text)
+			if text == "" {
 				continue
 			}
-			next := &Utterance{
-				ID:      r.nextID("ai"),
-				Speaker: SpeakerAI,
-				Content: speech,
-				Status:  UtteranceUnplayed,
-			}
-			if root == nil {
-				next.PrePauseSec = clampPrePause(pendingWait)
-				root = next
-			} else {
-				cur.PostWaitSec = clampPostWait(pendingWait)
-				next.IsChain = true
-				cur.Chain = next
-			}
-			cur = next
-			pendingWait = 0
+			timeline = append(timeline, aiSegment{Type: "speech", Text: text})
+			speechCount++
 		}
 	}
-
-	if root == nil || cur == nil {
+	if speechCount == 0 {
 		return nil
 	}
-	cur.PostWaitSec = clampPostWait(pendingWait)
-	return root
+	return timeline
 }
 
 func postWaitDelay(value float64) time.Duration {
@@ -659,33 +635,6 @@ func postWaitDelay(value float64) time.Duration {
 		return 0
 	}
 	return time.Duration(value * float64(time.Second))
-}
-
-func prePauseDelay(value float64) time.Duration {
-	if value <= 0 {
-		return 0
-	}
-	return time.Duration(value * float64(time.Second))
-}
-
-func clampPostWait(value float64) float64 {
-	if value <= 0 {
-		return 0.5
-	}
-	if value > 5 {
-		return 5
-	}
-	return value
-}
-
-func clampPrePause(value float64) float64 {
-	if value <= 0 {
-		return 0.5
-	}
-	if value > 5 {
-		return 5
-	}
-	return value
 }
 
 func clampExpectation(value float64) int {
@@ -710,21 +659,37 @@ func sanitizeSpeech(text string) string {
 	return strings.TrimSpace(out)
 }
 
-func utteranceSource(utt *Utterance) string {
-	if utt == nil {
-		return "conversation"
+func sanitizeWait(value *int) int {
+	if value == nil {
+		return 0
 	}
-	if utt.IsChain {
-		return "conversation-chain"
+	if *value < 0 {
+		return 0
 	}
+	if *value > 5 {
+		return 5
+	}
+	return *value
+}
+
+func waitDelay(value *int) time.Duration {
+	return postWaitDelay(normalizeWaitSeconds(value))
+}
+
+func normalizeWaitSeconds(value *int) float64 {
+	if value == nil {
+		return 0
+	}
+	sec := sanitizeWait(value)
+	return float64(sec)
+}
+
+func utteranceSource(_ *Utterance) string {
 	return "conversation"
 }
 
-func (r *runner) estimateWaitDuration(utt *Utterance, tts types.TTSEvent) time.Duration {
-	if utt == nil {
-		return 0
-	}
-	expectation := postWaitDelay(utt.PostWaitSec)
+func (r *runner) estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
+	expectation := postWaitDelay(waitSec)
 	startAt := tts.AudioStartAt
 	if startAt.IsZero() {
 		return expectation
@@ -761,24 +726,11 @@ func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
 }
 
 func (r *runner) buildLogRecord(utt *Utterance) logRecord {
-	var prePause *float64
-	if utt.PrePauseSec > 0 {
-		value := utt.PrePauseSec
-		prePause = &value
-	}
-	var postWait *float64
-	if utt.PostWaitSec > 0 {
-		value := utt.PostWaitSec
-		postWait = &value
-	}
 	return logRecord{
 		Speaker:    "ai",
 		Text:       utt.Content,
 		ResponseID: utt.ResponseID,
 		Source:     utteranceSource(utt),
-		PrePause:   prePause,
-		PostWait:   postWait,
-		IsChain:    utt.IsChain,
 	}
 }
 
