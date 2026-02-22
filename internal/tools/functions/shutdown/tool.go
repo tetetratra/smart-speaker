@@ -16,7 +16,6 @@ func (t *Tool) Name() string { return toolName }
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	return map[string]any{
 		"shutdown_mode": true,
-		"message":       "フロントをシャットダウンモードにしてください",
 	}, nil
 }
 
