@@ -47,6 +47,17 @@ function App() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
+  const resumeSpeechRecognition = useCallback(() => {
+    const speech = speechRef.current
+    if (!speech || !speech.isSupported) return
+    const track = micStreamRef.current?.getAudioTracks()[0]
+    if (track) {
+      speech.start(track)
+      return
+    }
+    speech.start()
+  }, [])
+
   const handleShutdownToolResult = useCallback((output: any) => {
     if (!output || typeof output !== 'object') return
     if ((output as any).error) return
@@ -58,8 +69,10 @@ function App() {
       text: `シャットダウンモードに入りました。${wakeWord} で復帰します。`,
       source: 'shutdown-mode',
     })
+    setSttError('')
     setSttInterim('')
-  }, [appendMessage, nextMessageId])
+    resumeSpeechRecognition()
+  }, [appendMessage, nextMessageId, resumeSpeechRecognition])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -227,6 +240,18 @@ function App() {
         }
       },
       onError: (message) => {
+        if (message === 'aborted' && isShutdownMode && connected && !manualDisconnectRef.current) {
+          setSttStatus('再開中')
+          setSttError('')
+          setSttInterim('')
+          if (hasActiveSpeech) {
+            hasActiveSpeech = false
+          }
+          window.setTimeout(() => {
+            resumeSpeechRecognition()
+          }, 200)
+          return
+        }
         setSttStatus('エラー')
         setSttError(message)
         if (hasActiveSpeech) {
@@ -238,12 +263,19 @@ function App() {
     speechRef.current = speech
     if (!speech.isSupported) {
       setSttStatus('未対応')
+    } else {
+      const track = micStreamRef.current?.getAudioTracks()[0]
+      if (track) {
+        speech.start(track)
+      } else if (connected) {
+        speech.start()
+      }
     }
     return () => {
       speech.abort()
       speechRef.current = null
     }
-  }, [sendSpeechText, sendSTTEvent])
+  }, [connected, isShutdownMode, resumeSpeechRecognition, sendSpeechText, sendSTTEvent])
 
   const stopRTC = useCallback(() => {
     if (peerRef.current) {
