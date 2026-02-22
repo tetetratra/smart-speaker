@@ -73,6 +73,7 @@ type runner struct {
 
 	pendingRequestID        string
 	pendingRequestCancelled bool
+	invalidResponseRetries  int
 
 	seq int
 
@@ -80,6 +81,11 @@ type runner struct {
 	logWriter  *bufio.Writer
 	logEncoder *json.Encoder
 }
+
+const (
+	maxInvalidResponseRetries = 1
+	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}]} の形式に従ってください。"
+)
 
 type logRecord struct {
 	Timestamp  string `json:"ts"`
@@ -181,6 +187,7 @@ func (r *runner) handleSpeechStart() {
 	r.stopTimer()
 	r.clearPendingTimeline()
 	r.cancelPendingRequest()
+	r.invalidResponseRetries = 0
 	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
 		r.current.Status = UtteranceCanceled
@@ -242,8 +249,12 @@ func (r *runner) handleResponses(resp types.ResponsesResponse) {
 	out, ok := parseAIOutput(resp.Text)
 	if !ok {
 		log.Printf("conversation: invalid response: %s", strings.TrimSpace(resp.Text))
+		if r.retryInvalidResponse() {
+			return
+		}
 		return
 	}
+	r.invalidResponseRetries = 0
 	root := r.buildUtteranceChain(out)
 	if len(root) == 0 {
 		return
@@ -335,6 +346,7 @@ func (r *runner) requestResponse(messages []types.ChatMessage) {
 	if len(messages) == 0 {
 		return
 	}
+	r.invalidResponseRetries = 0
 	reqID := r.nextID("req")
 	r.pendingRequestID = reqID
 	r.pendingRequestCancelled = false
@@ -342,6 +354,32 @@ func (r *runner) requestResponse(messages []types.ChatMessage) {
 		RequestID: reqID,
 		Messages:  messages,
 	}})
+}
+
+func (r *runner) retryInvalidResponse() bool {
+	if r.invalidResponseRetries >= maxInvalidResponseRetries {
+		log.Printf("conversation: invalid response retry exhausted (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
+		return false
+	}
+	messages := r.buildConversationMessages()
+	if len(messages) == 0 {
+		return false
+	}
+	messages = append(messages, types.ChatMessage{
+		Role:    "system",
+		Content: invalidResponseRetryHint,
+	})
+	r.invalidResponseRetries++
+	reqID := r.nextID("req")
+	r.pendingRequestID = reqID
+	r.pendingRequestCancelled = false
+	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{
+		RequestID: reqID,
+		Messages:  messages,
+		Tools:     []any{},
+	}})
+	log.Printf("conversation: retrying due to invalid response (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
+	return true
 }
 
 func (r *runner) buildConversationMessages() []types.ChatMessage {
