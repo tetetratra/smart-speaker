@@ -34,9 +34,9 @@ func (t *Tool) SetEventEmitter(emit func(types.Event)) {
 }
 
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
-	desc := toStr(args["description"])
+	desc := toStr(args["reminder_text"])
 	if desc == "" {
-		return nil, fmt.Errorf("description is required")
+		return nil, fmt.Errorf("reminder_text is required")
 	}
 	seconds, err := asInt(args["seconds"])
 	if err != nil {
@@ -58,20 +58,20 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "ユーザーが「何秒後に知らせて」など、明示的にタイマーを依頼した場合のみ使用します。",
+		"description": "ユーザーが新規にタイマーを依頼した場合のみ1回呼び出します。reminder_text にはタイマー発火時にあなたがやることを入れてください。タイマー通知文を受けて再度このツールを呼び出してはいけません。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"description": map[string]any{
+				"reminder_text": map[string]any{
 					"type":        "string",
-					"description": "その時間に知らせたい内容（短め）。ユーザーが明示的に依頼した内容のみ。",
+					"description": "タイマー発火時にあなたがやること。例: 「起こす」, 「お茶を入れるよう伝える」, 「薬を飲むよう促す」など",
 				},
 				"seconds": map[string]any{
 					"type":        "integer",
-					"description": "何秒後か（整数）。ユーザーの発話に明示がある場合のみ。",
+					"description": "何秒後か（整数）",
 				},
 			},
-			"required": []string{"seconds", "description"},
+			"required": []string{"seconds", "reminder_text"},
 		},
 	}
 }
@@ -98,13 +98,12 @@ func (t *Tool) schedule(target time.Time, desc string) {
 			return
 		case <-time.After(delay):
 		}
-		text := fmt.Sprintf("タイマー: %s", desc)
+		text := fmt.Sprintf("タイマーが発火しました: %s", desc)
 		if t.emit != nil {
 			t.emit(types.Event{
-				Kind: types.EventTextInput,
-				Payload: types.OutputLine{
-					Role: "system",
-					Text: text,
+				Kind: types.EventTimerFired,
+				Payload: types.TimerFiredEvent{
+					ReminderText: text,
 				},
 			})
 		} else {

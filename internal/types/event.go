@@ -12,6 +12,7 @@ const (
 	EventTextInput EventKind = iota
 	EventSpeechStart
 	EventSpeechEnd
+	EventTimerFired
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
@@ -39,6 +40,8 @@ func (k EventKind) String() string {
 		return "EventSpeechStart"
 	case EventSpeechEnd:
 		return "EventSpeechEnd"
+	case EventTimerFired:
+		return "EventTimerFired"
 	case EventRealtimeOutput:
 		return "EventRealtimeOutput"
 	case EventRealtimeAudio:
@@ -80,4 +83,9 @@ type ToolResponse struct {
 	Name       string
 	ResponseID string
 	Output     json.RawMessage
+}
+
+// TimerFiredEvent はタイマー発火時の通知イベントです。
+type TimerFiredEvent struct {
+	ReminderText string
 }

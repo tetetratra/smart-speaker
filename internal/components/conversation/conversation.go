@@ -148,6 +148,12 @@ func (r *runner) handleEvent(evt types.Event) {
 			return
 		}
 		r.handleHumanText(text)
+	case types.EventTimerFired:
+		timerEvt, ok := evt.Payload.(types.TimerFiredEvent)
+		if !ok {
+			return
+		}
+		r.handleTimerFired(timerEvt)
 	case types.EventResponsesResponse:
 		resp, ok := evt.Payload.(types.ResponsesResponse)
 		if !ok {
@@ -200,6 +206,21 @@ func (r *runner) handleHumanText(text string) {
 	})
 	r.updateConversationState()
 	r.requestResponse(r.buildConversationMessages())
+}
+
+func (r *runner) handleTimerFired(evt types.TimerFiredEvent) {
+	text := strings.TrimSpace(evt.ReminderText)
+	if text == "" {
+		return
+	}
+	r.emit(types.Event{
+		Kind: types.EventRealtimeOutput,
+		Payload: types.OutputLine{
+			Role:   "assistant",
+			Text:   text,
+			Source: "timer",
+		},
+	})
 }
 
 func (r *runner) handleResponses(resp types.ResponsesResponse) {
