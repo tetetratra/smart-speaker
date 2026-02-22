@@ -34,14 +34,14 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "ユーザーが音量変更を明示的に求めたときのみ呼び出します。presetは small(50%) / normal(75%) / large(100%) のみです。",
+		"description": "ユーザーが音量変更を明示的に求めたときのみ呼び出します。presetは small / normal / large のみです。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"preset": map[string]any{
 					"type":        "string",
 					"enum":        []string{"small", "normal", "large"},
-					"description": "small=50%, normal=75%, large=100%",
+					"description": "small=小さめ, normal=普通, large=大きめ",
 				},
 			},
 			"required": []string{"preset"},
@@ -59,9 +59,9 @@ func toStr(v any) string {
 func presetToPercent(preset string) (int, bool) {
 	switch preset {
 	case "small":
-		return 50, true
+		return 40, true
 	case "normal":
-		return 75, true
+		return 70, true
 	case "large":
 		return 100, true
 	default:
