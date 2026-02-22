@@ -99,6 +99,7 @@ docker compose up web
 ## 構成図（ステージ接続）
 ```mermaid
 flowchart LR
+  wsserver["wsserver (HTTP server)"]
   wschat["wschat (/ws/chat)"]
   reset["reset"]
   conversation["conversation"]
@@ -107,6 +108,8 @@ flowchart LR
   tts["tts (ElevenLabs)"]
   rtc["rtc (WebRTC)"]
 
+  wsserver -. "ServeMuxで /ws/chat と Web UI を公開（イベント接続なし）" .-> wschat
+
   wschat -- "EventTextInput / EventSpeechStart / EventSpeechEnd" --> conversation
   conversation -- "EventRealtimeOutput" --> wschat
 
@@ -114,18 +117,20 @@ flowchart LR
   responses -- "EventResponsesResponse" --> conversation
 
   responses -- "EventToolRequest" --> toolcaller
+  responses -- "EventToolRequest (function_call表示)" --> wschat
   toolcaller -- "EventToolResponse" --> responses
 
-  toolcaller -- "EventToolResponse / EventTextInput" --> conversation
-  toolcaller -- "EventToolResponse / EventTextInput" --> wschat
-  responses -- "EventResponsesResponse" --> wschat
+  toolcaller -- "EventToolResponse / EventTimerFired" --> conversation
+  toolcaller -- "EventToolResponse (function_result表示)" --> wschat
 
   conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
   tts -- "EventTTSEnd" --> conversation
   tts -- "EventRealtimeAudio" --> rtc
+  conversation -- "EventTTSCancel" --> rtc
 
   wschat -- "EventRTCSignal" --> rtc
   rtc -- "EventRTCSignal" --> wschat
+  rtc -. "EventRTCSignal（現状 responsesapi では未処理）" .-> responses
 
   wschat -- "EventReset" --> reset
   reset -- "EventRealtimeOutput" --> wschat
@@ -133,6 +138,7 @@ flowchart LR
   reset -- "EventSessionClear" --> conversation
 ```
 
+- `wsserver` は HTTP サーバー起動専用ステージ（イベントグラフとは独立）
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはブラウザの Web Speech API で実施
 
