@@ -12,6 +12,7 @@ const chatWSUrl = 'ws://localhost:8081/ws/chat'
 const reconnectMaxAttempts = 5
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
+const defaultPlaybackVolumePercent = 75
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -24,6 +25,7 @@ function App() {
   const [sttError, setSttError] = useState('')
   const [sttInterim, setSttInterim] = useState('')
   const [isShutdownMode, setIsShutdownMode] = useState(false)
+  const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -45,6 +47,14 @@ function App() {
 
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
+  }, [])
+
+  const applyPlaybackVolume = useCallback((percent: number) => {
+    const normalized = Math.max(0, Math.min(100, Math.round(percent)))
+    setPlaybackVolumePercent(normalized)
+    if (audioRef.current) {
+      audioRef.current.volume = normalized / 100
+    }
   }, [])
 
   const resumeSpeechRecognition = useCallback(() => {
@@ -73,6 +83,31 @@ function App() {
     setSttInterim('')
     resumeSpeechRecognition()
   }, [appendMessage, nextMessageId, resumeSpeechRecognition])
+
+  const handleVolumePresetToolResult = useCallback((output: any) => {
+    if (!output || typeof output !== 'object') return
+    if ((output as any).error) return
+
+    let nextPercent: number | null = null
+    if (typeof (output as any).volume_percent === 'number') {
+      nextPercent = (output as any).volume_percent
+    } else if (typeof (output as any).preset === 'string') {
+      const preset = (output as any).preset
+      if (preset === 'small') nextPercent = 50
+      else if (preset === 'normal') nextPercent = 75
+      else if (preset === 'large') nextPercent = 100
+    }
+    if (nextPercent === null) return
+
+    applyPlaybackVolume(nextPercent)
+    const normalized = Math.max(0, Math.min(100, Math.round(nextPercent)))
+    appendMessage({
+      id: nextMessageId(),
+      type: 'system',
+      text: `再生音量を${normalized}%に設定しました。`,
+      source: 'volume',
+    })
+  }, [appendMessage, applyPlaybackVolume, nextMessageId])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -144,6 +179,8 @@ function App() {
         case 'function_result': {
           if (raw.name === 'shutdown_mode') {
             handleShutdownToolResult(raw.output)
+          } else if (raw.name === 'set_volume_preset') {
+            handleVolumePresetToolResult(raw.output)
           }
           appendMessage({
             id: nextMessageId(),
@@ -158,8 +195,13 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleShutdownToolResult, nextMessageId],
+    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumePresetToolResult, nextMessageId],
   )
+
+  useEffect(() => {
+    if (!audioRef.current) return
+    audioRef.current.volume = playbackVolumePercent / 100
+  }, [playbackVolumePercent])
 
   const sendSpeechText = useCallback(
     (text: string) => {
@@ -349,6 +391,7 @@ function App() {
       const stream = event.streams?.[0] ?? new MediaStream([event.track])
       if (audioRef.current) {
         audioRef.current.srcObject = stream
+        audioRef.current.volume = playbackVolumePercent / 100
         audioRef.current.play().catch(() => {})
       }
     }
@@ -385,7 +428,7 @@ function App() {
       setRtcError(err instanceof Error ? err.message : 'RTC start error')
       stopRTC()
     }
-  }, [stopRTC])
+  }, [playbackVolumePercent, stopRTC])
 
   const openConnection = useCallback(async (isAutoReconnect: boolean) => {
     if (connected || busy) return
@@ -505,6 +548,9 @@ function App() {
         )}
         <div>
           <strong>文字起こし:</strong> {sttStatus}
+        </div>
+        <div>
+          <strong>再生音量:</strong> {playbackVolumePercent}%
         </div>
         <div>
           <strong>モード:</strong> {isShutdownMode ? `シャットダウン中（復帰ワード: ${wakeWord}）` : '通常'}
