@@ -11,7 +11,7 @@ type ChatMessage =
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
 const reconnectMaxAttempts = 5
 const reconnectInitialDelayMs = 1000
-const wakeWord = 'おはよう'
+const wakeWord = '起きて'
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
