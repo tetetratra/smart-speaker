@@ -298,19 +298,24 @@ func registerWebUI(mux *http.ServeMux, distDir string) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		cleanPath := path.Clean(r.URL.Path)
+		cleanPath := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
 		if cleanPath == "/" {
-			cleanPath = "/index.html"
+			http.ServeFile(w, r, indexPath)
+			return
 		}
 		targetPath := filepath.Join(absDir, strings.TrimPrefix(cleanPath, "/"))
 		if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-		clone := *r
-		urlCopy := *r.URL
-		clone.URL = &urlCopy
-		clone.URL.Path = "/index.html"
-		fileServer.ServeHTTP(w, &clone)
+
+		// assets や拡張子付きの静的ファイルは SPA フォールバックの対象外にする。
+		if strings.HasPrefix(cleanPath, "/assets/") || cleanPath == "/assets" || path.Ext(cleanPath) != "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		// SPA ルーティング向けに index.html を直接返す（URL書き換えしない）。
+		http.ServeFile(w, r, indexPath)
 	}))
 }
