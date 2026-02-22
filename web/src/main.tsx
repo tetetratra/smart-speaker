@@ -9,6 +9,7 @@ type ChatMessage =
   | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
+const serverHTTPBaseUrl = chatWSUrl.replace(/^ws/, 'http').replace(/\/ws\/chat$/, '')
 const reconnectMaxAttempts = 5
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
@@ -516,6 +517,14 @@ function App() {
     setInput('')
   }, [connected, input, isShutdownMode])
 
+  const startGoogleAuth = useCallback(() => {
+    const url = `${serverHTTPBaseUrl}/oauth/google/start`
+    const opened = window.open(url, '_blank')
+    if (!opened) {
+      window.location.href = url
+    }
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -527,6 +536,9 @@ function App() {
         </button>
         <button onClick={sendReset} disabled={!connected}>
           おやすみ
+        </button>
+        <button onClick={startGoogleAuth}>
+          Google認証
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

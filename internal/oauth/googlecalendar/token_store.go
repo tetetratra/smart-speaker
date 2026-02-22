@@ -2,49 +2,45 @@ package googlecalendar
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/oauth2"
 )
 
-const tokenFile = "tmp/googlecalendar_oauth_token.json"
+var (
+	tokenMu     sync.RWMutex
+	cachedToken *oauth2.Token
+	errNoToken  = errors.New("google oauth token is not authenticated")
+)
 
-// LoadToken は保存済みトークンを読み込みます。
+// LoadToken はメモリ上のトークンを読み込みます。
 func LoadToken() (*oauth2.Token, error) {
-	f, err := os.Open(tokenFile)
-	if err != nil {
-		return nil, err
+	tokenMu.RLock()
+	defer tokenMu.RUnlock()
+	if cachedToken == nil {
+		return nil, errNoToken
 	}
-	defer f.Close()
-	var tok oauth2.Token
-	if err := json.NewDecoder(f).Decode(&tok); err != nil {
-		return nil, err
-	}
-	return &tok, nil
+	cloned := *cachedToken
+	return &cloned, nil
 }
 
-// SaveToken はトークンを保存します。
+// SaveToken はトークンをメモリに保存します。
 func SaveToken(tok *oauth2.Token) error {
 	if tok == nil {
 		return fmt.Errorf("token is nil")
 	}
-	if err := os.MkdirAll(filepath.Dir(tokenFile), 0o755); err != nil {
-		return err
-	}
-	f, err := os.Create(tokenFile)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(tok)
+	cloned := *tok
+	tokenMu.Lock()
+	cachedToken = &cloned
+	tokenMu.Unlock()
+	return nil
 }
 
-// AccessToken は保存済みトークンを読み込み、必要なら更新して返します。
+// AccessToken はメモリ上のトークンを読み込み、必要なら更新して返します。
 func AccessToken(ctx context.Context) (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {

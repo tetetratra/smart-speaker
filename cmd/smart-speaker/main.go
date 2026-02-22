@@ -70,10 +70,7 @@ func ensureGoogleCalendarToken() {
 	if _, err := googlecalendar.LoadToken(); err == nil {
 		return
 	}
-	log.Println("google oauth token not found. starting auth flow.")
-	if err := googlecalendar.StartAuthFlow(":3939"); err != nil {
-		log.Printf("google oauth flow failed: %v", err)
-	}
+	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
 }
 
 type stages struct {
@@ -139,10 +136,10 @@ func buildStages(cfg app.Config) (stages, error) {
 		resetStage.Name = "reset"
 	}
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
-		APIKey:        cfg.APIKey,
-		Model:         cfg.ResponsesModel,
-		Instructions:  cfg.SystemPrompt,
-		Tools:         toolRegistry.DefinitionsExcluding("write_diary"),
+		APIKey:       cfg.APIKey,
+		Model:        cfg.ResponsesModel,
+		Instructions: cfg.SystemPrompt,
+		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
 		serverStage.Close()
@@ -186,6 +183,7 @@ func buildStages(cfg app.Config) (stages, error) {
 func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
+	googlecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
 		Addr:    cfg.WSAddr,
 		Handler: mux,

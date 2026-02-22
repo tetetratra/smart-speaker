@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultRedirectURL = "http://localhost:3939/google/callback"
+	defaultRedirectURL = "http://localhost:8081/oauth/google/callback"
 	scopeCalendarRead  = "https://www.googleapis.com/auth/calendar.readonly"
 	scopeCalendarWrite = "https://www.googleapis.com/auth/calendar.events"
 )
