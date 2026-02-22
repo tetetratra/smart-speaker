@@ -88,16 +88,8 @@ function App() {
     if (!output || typeof output !== 'object') return
     if ((output as any).error) return
 
-    let nextPercent: number | null = null
-    if (typeof (output as any).volume_percent === 'number') {
-      nextPercent = (output as any).volume_percent
-    } else if (typeof (output as any).preset === 'string') {
-      const preset = (output as any).preset
-      if (preset === 'small') nextPercent = 50
-      else if (preset === 'normal') nextPercent = 75
-      else if (preset === 'large') nextPercent = 100
-    }
-    if (nextPercent === null) return
+    const nextPercent = (output as any).volume_percent
+    if (typeof nextPercent !== 'number') return
 
     applyPlaybackVolume(nextPercent)
     const normalized = Math.max(0, Math.min(100, Math.round(nextPercent)))
