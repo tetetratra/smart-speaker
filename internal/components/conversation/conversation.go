@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +17,7 @@ import (
 	"time"
 
 	"smart-speaker/internal/graph"
+	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
@@ -80,12 +85,19 @@ type runner struct {
 	logFile    *os.File
 	logWriter  *bufio.Writer
 	logEncoder *json.Encoder
+
+	calendarContextCache string
 }
 
 const (
 	maxInvalidResponseRetries = 1
 	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}]} の形式に従ってください。"
 	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
+	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
+	calendarCreateToolName    = "google_calendar_create"
+	calendarUpdateToolName    = "google_calendar_update"
+	calendarPromptDays        = 3
+	calendarFetchMaxResults   = 30
 )
 
 type logRecord struct {
@@ -270,6 +282,9 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 	if name == "" {
 		name = "unknown_tool"
 	}
+	if name == calendarCreateToolName || name == calendarUpdateToolName {
+		r.calendarContextCache = ""
+	}
 	if name == "write_diary" {
 		return
 	}
@@ -307,6 +322,7 @@ func (r *runner) handleSessionClear() {
 	r.current = nil
 	r.utteranceByResponseID = make(map[string]*Utterance)
 	r.conversation = nil
+	r.calendarContextCache = ""
 	state.ClearConversationMessages()
 }
 
@@ -344,7 +360,7 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 }
 
 func (r *runner) requestResponse(messages []types.ChatMessage) {
-	messages = withDiaryContext(messages)
+	messages = r.withSystemContexts(messages)
 	if len(messages) == 0 {
 		return
 	}
@@ -372,13 +388,64 @@ func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
 	return withDiary
 }
 
+func (r *runner) withSystemContexts(messages []types.ChatMessage) []types.ChatMessage {
+	out := r.withCalendarContext(messages)
+	return withDiaryContext(out)
+}
+
+func (r *runner) withCalendarContext(messages []types.ChatMessage) []types.ChatMessage {
+	content := strings.TrimSpace(r.calendarContextCache)
+	if content == "" {
+		built, err := r.buildCalendarContext()
+		if err != nil {
+			log.Printf("conversation: failed to build calendar context: %v", err)
+			return messages
+		}
+		content = strings.TrimSpace(built)
+		r.calendarContextCache = content
+	}
+	if content == "" {
+		return messages
+	}
+	withCalendar := make([]types.ChatMessage, 0, len(messages)+1)
+	withCalendar = append(withCalendar, types.ChatMessage{
+		Role:    "system",
+		Content: content,
+	})
+	withCalendar = append(withCalendar, messages...)
+	return withCalendar
+}
+
+func (r *runner) buildCalendarContext() (string, error) {
+	if _, err := oauthgooglecalendar.LoadToken(); err != nil {
+		return "", nil
+	}
+	if r.ctx == nil {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, 8*time.Second)
+	defer cancel()
+	token, err := oauthgooglecalendar.AccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now()
+	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	dayN := day0.AddDate(0, 0, calendarPromptDays)
+	events, err := fetchPrimaryCalendarEvents(ctx, token, day0, dayN, calendarFetchMaxResults)
+	if err != nil {
+		return "", err
+	}
+	return formatCalendarPrompt(events, day0), nil
+}
+
 func (r *runner) retryInvalidResponse() bool {
 	if r.invalidResponseRetries >= maxInvalidResponseRetries {
 		log.Printf("conversation: invalid response retry exhausted (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
 		return false
 	}
 	messages := r.buildConversationMessages()
-	messages = withDiaryContext(messages)
+	messages = r.withSystemContexts(messages)
 	if len(messages) == 0 {
 		return false
 	}
@@ -617,6 +684,21 @@ type aiOutput struct {
 	Timeline []aiSegment `json:"timeline"`
 }
 
+type calendarEventsResponse struct {
+	Items []calendarEvent `json:"items"`
+}
+
+type calendarEvent struct {
+	Summary string                `json:"summary"`
+	Start   calendarEventDateTime `json:"start"`
+	End     calendarEventDateTime `json:"end"`
+}
+
+type calendarEventDateTime struct {
+	Date     string `json:"date"`
+	DateTime string `json:"dateTime"`
+}
+
 type aiSegment struct {
 	Type string `json:"type"`
 	Sec  *int   `json:"sec,omitempty"`
@@ -729,6 +811,136 @@ func normalizeWaitSeconds(value *int) float64 {
 
 func utteranceSource(_ *Utterance) string {
 	return "conversation"
+}
+
+func fetchPrimaryCalendarEvents(ctx context.Context, token string, start time.Time, end time.Time, maxResults int) ([]calendarEvent, error) {
+	if maxResults <= 0 {
+		maxResults = calendarFetchMaxResults
+	}
+	query := url.Values{}
+	query.Set("timeMin", start.Format(time.RFC3339))
+	query.Set("timeMax", end.Format(time.RFC3339))
+	query.Set("singleEvents", "true")
+	query.Set("orderBy", "startTime")
+	query.Set("maxResults", strconv.Itoa(maxResults))
+	endpoint := "https://www.googleapis.com/calendar/v3/calendars/primary/events?" + query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if len(msg) > 300 {
+			msg = msg[:300] + "..."
+		}
+		return nil, fmt.Errorf("google calendar events list failed: status=%d body=%s", resp.StatusCode, msg)
+	}
+	var parsed calendarEventsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Items, nil
+}
+
+func formatCalendarPrompt(events []calendarEvent, day0 time.Time) string {
+	labels := []string{"今日", "明日", "明後日"}
+	grouped := make([][]string, calendarPromptDays)
+	dayIndex := make(map[string]int, calendarPromptDays)
+	for i := 0; i < calendarPromptDays; i++ {
+		d := day0.AddDate(0, 0, i)
+		dayIndex[d.Format("2006-01-02")] = i
+	}
+	for _, event := range events {
+		startAt, ok := eventStartTime(event.Start)
+		if !ok {
+			continue
+		}
+		idx, ok := dayIndex[startAt.Format("2006-01-02")]
+		if !ok {
+			continue
+		}
+		grouped[idx] = append(grouped[idx], formatCalendarEventLine(event))
+	}
+	var b strings.Builder
+	b.WriteString(calendarPromptPrefix)
+	for i := 0; i < calendarPromptDays; i++ {
+		b.WriteString("[")
+		b.WriteString(labels[i])
+		b.WriteString("]\n")
+		lines := grouped[i]
+		if len(lines) == 0 {
+			b.WriteString("- 予定なし\n")
+		} else {
+			for _, line := range lines {
+				b.WriteString("- ")
+				b.WriteString(line)
+				b.WriteString("\n")
+			}
+		}
+		if i < calendarPromptDays-1 {
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func formatCalendarEventLine(event calendarEvent) string {
+	title := strings.TrimSpace(event.Summary)
+	if title == "" {
+		title = "(タイトルなし)"
+	}
+	start := formatCalendarEventClock(event.Start, false)
+	end := formatCalendarEventClock(event.End, true)
+	if start == "" && end == "" {
+		return title
+	}
+	if end == "" {
+		return strings.TrimSpace(start + " " + title)
+	}
+	return strings.TrimSpace(start + "-" + end + " " + title)
+}
+
+func eventStartTime(start calendarEventDateTime) (time.Time, bool) {
+	if start.DateTime != "" {
+		t, err := time.Parse(time.RFC3339, start.DateTime)
+		if err != nil {
+			return time.Time{}, false
+		}
+		local := t.In(time.Local)
+		return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local), true
+	}
+	if start.Date != "" {
+		t, err := time.ParseInLocation("2006-01-02", start.Date, time.Local)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local), true
+	}
+	return time.Time{}, false
+}
+
+func formatCalendarEventClock(dt calendarEventDateTime, isEnd bool) string {
+	if dt.Date != "" && dt.DateTime == "" {
+		if isEnd {
+			return ""
+		}
+		return "終日"
+	}
+	if dt.DateTime != "" {
+		if t, err := time.Parse(time.RFC3339, dt.DateTime); err == nil {
+			return t.In(time.Local).Format("15:04")
+		}
+	}
+	return ""
 }
 
 func (r *runner) estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
