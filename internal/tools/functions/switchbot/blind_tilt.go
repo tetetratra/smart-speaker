@@ -52,7 +52,7 @@ func (t *BlindTiltTool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        blindToolName,
-		"description": "ブラインド(Blind Tilt)を開閉します。",
+		"description": "ブラインド(Blind Tilt)を開閉します。ユーザーが明示的に操作の要求をしたときのみ呼び出すこと。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -52,7 +52,7 @@ func (t *LightTool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        lightToolName,
-		"description": "ライトを操作します。明るさは強/中/弱の3段階。",
+		"description": "ライトを操作します。明るさは強/中/弱の3段階。ユーザーが明示的に操作の要求をしたときのみ呼び出すこと。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

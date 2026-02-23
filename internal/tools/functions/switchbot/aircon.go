@@ -52,7 +52,7 @@ func (t *AirconTool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        airconToolName,
-		"description": "エアコンを操作します。27度固定の暖房/冷房/オフのみ対応。",
+		"description": "エアコンを操作します。27度固定の暖房/冷房/オフのみ対応。ユーザーが明示的に操作の要求をしたときのみ呼び出すこと。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
