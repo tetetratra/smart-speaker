@@ -10,7 +10,7 @@ type ChatMessage =
 
 const chatWSUrl = 'ws://localhost:8081/ws/chat'
 const serverHTTPBaseUrl = chatWSUrl.replace(/^ws/, 'http').replace(/\/ws\/chat$/, '')
-const reconnectMaxAttempts = 5
+const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
 const defaultPlaybackVolumePercent = 70
