@@ -85,6 +85,7 @@ type runner struct {
 const (
 	maxInvalidResponseRetries = 1
 	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}]} の形式に従ってください。"
+	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 )
 
 type logRecord struct {
@@ -343,6 +344,7 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 }
 
 func (r *runner) requestResponse(messages []types.ChatMessage) {
+	messages = withDiaryContext(messages)
 	if len(messages) == 0 {
 		return
 	}
@@ -356,12 +358,27 @@ func (r *runner) requestResponse(messages []types.ChatMessage) {
 	}})
 }
 
+func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
+	diary := strings.TrimSpace(state.GetDiaryContent())
+	if diary == "" {
+		return messages
+	}
+	withDiary := make([]types.ChatMessage, 0, len(messages)+1)
+	withDiary = append(withDiary, types.ChatMessage{
+		Role:    "system",
+		Content: diaryPromptPrefix + diary,
+	})
+	withDiary = append(withDiary, messages...)
+	return withDiary
+}
+
 func (r *runner) retryInvalidResponse() bool {
 	if r.invalidResponseRetries >= maxInvalidResponseRetries {
 		log.Printf("conversation: invalid response retry exhausted (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
 		return false
 	}
 	messages := r.buildConversationMessages()
+	messages = withDiaryContext(messages)
 	if len(messages) == 0 {
 		return false
 	}

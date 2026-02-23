@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"smart-speaker/internal/state"
 	"strconv"
 	"strings"
 	"time"
@@ -49,12 +48,6 @@ func LoadConfig(promptPath string) Config {
 	}
 
 	prompt := readSystemPrompt(promptPath)
-	if diary := strings.TrimSpace(state.GetDiaryContent()); diary != "" {
-		if strings.TrimSpace(prompt) != "" {
-			prompt = strings.TrimRight(prompt, "\n") + "\n\n"
-		}
-		prompt = prompt + "以下は過去の会話をまとめた日記です。参考として扱ってください。\n" + diary
-	}
 
 	wsAddr := strings.TrimSpace(os.Getenv("WS_ADDR"))
 	if wsAddr == "" {
