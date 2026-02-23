@@ -13,7 +13,7 @@ const serverHTTPBaseUrl = chatWSUrl.replace(/^ws/, 'http').replace(/\/ws\/chat$/
 const reconnectMaxAttempts = 5
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
-const defaultPlaybackVolumePercent = 75
+const defaultPlaybackVolumePercent = 70
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
