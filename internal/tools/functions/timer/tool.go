@@ -58,7 +58,7 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "ユーザーが新規にタイマーを依頼した場合のみ1回呼び出します。reminder_text にはタイマー発火時にあなたがやることを入れてください。タイマー通知文を受けて再度このツールを呼び出してはいけません。",
+		"description": "あなたが自身の作業を予約するために使うツールです。指定時間後にタイマーが発動します。ユーザーが明示的に操作の要求をしたときのみ呼び出すこと。reminder_text にはタイマー発火時にあなたがやることを入れてください。タイマー通知文を受けて再度このツールを呼び出してはいけません。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
