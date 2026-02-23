@@ -11,6 +11,8 @@ services:
     ports:
       - "8081:8081"
       - "50000-50100:50000-50100/udp"
+    volumes:
+      - /var/lib/smart-speaker/data:/app/data
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}

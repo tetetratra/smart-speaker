@@ -63,6 +63,13 @@ docker compose -f docker-compose.yml up --build
 ```
 `npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
+日記ファイルをホスト側に永続化するため、デプロイ前に本番ホストで以下を実行してください。
+```sh
+sudo mkdir -p /var/lib/smart-speaker/data
+sudo chown root:root /var/lib/smart-speaker/data
+sudo chmod 755 /var/lib/smart-speaker/data
+```
+
 #### 本番デプロイ（SSH Docker Context）
 開発機から SSH 経由で本番サーバーの Docker を操作してデプロイします。
 ビルドと起動は本番サーバー側で行われます。
