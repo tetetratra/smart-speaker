@@ -8,8 +8,9 @@ type ChatMessage =
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
-const chatWSUrl = 'ws://localhost:8081/ws/chat'
-const serverHTTPBaseUrl = chatWSUrl.replace(/^ws/, 'http').replace(/\/ws\/chat$/, '')
+const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+const chatWSUrl = `${wsProtocol}://${window.location.host}/ws/chat`
+const serverHTTPBaseUrl = window.location.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
