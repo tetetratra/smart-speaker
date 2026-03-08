@@ -49,7 +49,7 @@ docker compose build
 ```
 起動（通常はビルド不要）:
 ```sh
-RTC_ICE_HOST_IPS=$(ipconfig getifaddr en0) docker compose up
+docker compose up
 ```
 依存更新や Dockerfile 更新時だけ `docker compose build` してください。
 

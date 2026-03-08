@@ -156,7 +156,11 @@ func buildStages(cfg app.Config) (stages, error) {
 		toolStage.Name = "toolcaller"
 	}
 	rtcStage, err := rtc.NewStage(rtc.Config{
-		IceHostIPs: cfg.RTCIceHostIPs,
+		IceHostIPs:       cfg.RTCIceHostIPs,
+		SpeechProjectID:  cfg.GoogleCloudProject,
+		SpeechRecognizer: cfg.GoogleRecognizer,
+		SpeechLanguage:   cfg.GoogleLanguage,
+		SpeechCredsJSON:  cfg.GoogleCredentials,
 	})
 	if err != nil {
 		serverStage.Close()
@@ -268,6 +272,7 @@ func wireGraph(g *graph.Graph, st stages) {
 	}
 	if convNode != nil && rtcNode != nil {
 		g.Connect(convNode, rtcNode)
+		g.Connect(rtcNode, convNode)
 	}
 }
 

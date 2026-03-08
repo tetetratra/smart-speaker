@@ -20,6 +20,10 @@ type Config struct {
 	AutoPromptMessage  string
 	ElevenLabs         ElevenLabsConfig
 	SwitchBot          SwitchBotConfig
+	GoogleCloudProject string
+	GoogleRecognizer   string
+	GoogleLanguage     string
+	GoogleCredentials  string
 	RTCIceHostIPs      []string
 	WSAddr             string
 	WebDistDir         string
@@ -87,6 +91,16 @@ func LoadConfig(promptPath string) Config {
 	}
 
 	rtcIceHostIPs := splitComma(os.Getenv("RTC_ICE_HOST_IPS"))
+	googleProject := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
+	googleRecognizer := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_RECOGNIZER"))
+	if googleRecognizer == "" {
+		googleRecognizer = "_"
+	}
+	googleLanguage := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_LANGUAGE"))
+	if googleLanguage == "" {
+		googleLanguage = "ja-JP"
+	}
+	googleCredentials := strings.TrimSpace(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
 	return Config{
 		APIKey:             apiKey,
@@ -96,6 +110,10 @@ func LoadConfig(promptPath string) Config {
 		AutoPromptMessage:  message,
 		ElevenLabs:         elv,
 		SwitchBot:          switchCfg,
+		GoogleCloudProject: googleProject,
+		GoogleRecognizer:   googleRecognizer,
+		GoogleLanguage:     googleLanguage,
+		GoogleCredentials:  googleCredentials,
 		RTCIceHostIPs:      rtcIceHostIPs,
 		WSAddr:             wsAddr,
 		WebDistDir:         webDistDir,

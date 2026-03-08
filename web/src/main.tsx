@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { createSpeechRecognizer, type SpeechHandle } from './speech'
 import { createWS } from './ws'
 
 type ChatMessage =
@@ -8,9 +7,14 @@ type ChatMessage =
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
-const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-const chatWSUrl = `${wsProtocol}://${window.location.host}/ws/chat`
-const serverHTTPBaseUrl = window.location.origin
+const browserURL = new URL(window.location.href)
+const backendURL = new URL(window.location.origin)
+if (browserURL.port === '5173') {
+  backendURL.port = '8081'
+}
+const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
+const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
+const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
@@ -25,7 +29,6 @@ function App() {
   const [rtcError, setRtcError] = useState('')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
-  const [sttInterim, setSttInterim] = useState('')
   const [isShutdownMode, setIsShutdownMode] = useState(false)
   const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
   const idRef = useRef(0)
@@ -37,7 +40,6 @@ function App() {
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
   const pendingICERef = useRef<RTCIceCandidateInit[]>([])
-  const speechRef = useRef<SpeechHandle | null>(null)
   const reconnectAttemptRef = useRef(0)
   const reconnectTimerRef = useRef<number | null>(null)
   const manualDisconnectRef = useRef(false)
@@ -59,17 +61,6 @@ function App() {
     }
   }, [])
 
-  const resumeSpeechRecognition = useCallback(() => {
-    const speech = speechRef.current
-    if (!speech || !speech.isSupported) return
-    const track = micStreamRef.current?.getAudioTracks()[0]
-    if (track) {
-      speech.start(track)
-      return
-    }
-    speech.start()
-  }, [])
-
   const handleShutdownToolResult = useCallback((output: any) => {
     if (!output || typeof output !== 'object') return
     if ((output as any).error) return
@@ -82,9 +73,7 @@ function App() {
       source: 'shutdown-mode',
     })
     setSttError('')
-    setSttInterim('')
-    resumeSpeechRecognition()
-  }, [appendMessage, nextMessageId, resumeSpeechRecognition])
+  }, [appendMessage, nextMessageId])
 
   const handleVolumePresetToolResult = useCallback((output: any) => {
     if (!output || typeof output !== 'object') return
@@ -149,6 +138,15 @@ function App() {
           let role: 'user' | 'assistant' | 'system' = 'assistant'
           if (raw.role === 'user') role = 'user'
           else if (raw.role === 'system') role = 'system'
+          if (role === 'user' && isShutdownMode && text.trim() === wakeWord) {
+            setIsShutdownMode(false)
+            appendMessage({
+              id: nextMessageId(),
+              type: 'system',
+              text: 'シャットダウンモードを解除しました。',
+              source: 'shutdown-mode',
+            })
+          }
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
             id: nextMessageId(),
@@ -189,129 +187,13 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumePresetToolResult, nextMessageId],
+    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumePresetToolResult, isShutdownMode, nextMessageId],
   )
 
   useEffect(() => {
     if (!audioRef.current) return
     audioRef.current.volume = playbackVolumePercent / 100
   }, [playbackVolumePercent])
-
-  const sendSpeechText = useCallback(
-    (text: string) => {
-      const ws = wsChatRef.current
-      const trimmed = text.trim()
-      if (!trimmed) return
-      if (isShutdownMode) {
-        if (trimmed === wakeWord) {
-          setIsShutdownMode(false)
-          appendMessage({
-            id: nextMessageId(),
-            type: 'system',
-            text: 'シャットダウンモードを解除しました。',
-            source: 'shutdown-mode',
-          })
-        }
-        return
-      }
-      if (!ws) return
-      ws.send({ type: 'message', role: 'user', text: trimmed })
-      appendMessage({
-        id: nextMessageId(),
-        type: 'user',
-        text: trimmed,
-        final: true,
-        source: 'browser-stt',
-      })
-    },
-    [appendMessage, isShutdownMode, nextMessageId],
-  )
-
-  const sendSTTEvent = useCallback(
-    (type: 'stt_start' | 'stt_end') => {
-      const ws = wsChatRef.current
-      if (!ws || !connected || isShutdownMode) return
-      ws.send({
-        type,
-        source: 'browser-stt',
-        captured_at: new Date().toISOString(),
-      })
-    },
-    [connected, isShutdownMode],
-  )
-
-  useEffect(() => {
-    let hasActiveSpeech = false
-    const speech = createSpeechRecognizer({
-      onFinal: (text) => {
-        sendSpeechText(text)
-        setSttInterim('')
-        if (hasActiveSpeech) {
-          sendSTTEvent('stt_end')
-          hasActiveSpeech = false
-        }
-      },
-      onInterim: (text) => {
-        setSttInterim(text)
-        if (!hasActiveSpeech) {
-          sendSTTEvent('stt_start')
-          hasActiveSpeech = true
-        }
-      },
-      onStart: () => {
-        setSttStatus('認識中')
-        setSttError('')
-      },
-      onSpeechEnd: () => {
-        if (hasActiveSpeech) {
-          sendSTTEvent('stt_end')
-          hasActiveSpeech = false
-        }
-      },
-      onEnd: () => {
-        setSttStatus('停止中')
-        if (hasActiveSpeech) {
-          sendSTTEvent('stt_end')
-          hasActiveSpeech = false
-        }
-      },
-      onError: (message) => {
-        if (message === 'aborted' && isShutdownMode && connected && !manualDisconnectRef.current) {
-          setSttStatus('再開中')
-          setSttError('')
-          setSttInterim('')
-          if (hasActiveSpeech) {
-            hasActiveSpeech = false
-          }
-          window.setTimeout(() => {
-            resumeSpeechRecognition()
-          }, 200)
-          return
-        }
-        setSttStatus('エラー')
-        setSttError(message)
-        if (hasActiveSpeech) {
-          sendSTTEvent('stt_end')
-          hasActiveSpeech = false
-        }
-      },
-    })
-    speechRef.current = speech
-    if (!speech.isSupported) {
-      setSttStatus('未対応')
-    } else {
-      const track = micStreamRef.current?.getAudioTracks()[0]
-      if (track) {
-        speech.start(track)
-      } else if (connected) {
-        speech.start()
-      }
-    }
-    return () => {
-      speech.abort()
-      speechRef.current = null
-    }
-  }, [connected, isShutdownMode, resumeSpeechRecognition, sendSpeechText, sendSTTEvent])
 
   const stopRTC = useCallback(() => {
     if (peerRef.current) {
@@ -325,11 +207,10 @@ function App() {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
       micStreamRef.current = null
     }
-    speechRef.current?.stop()
-    setSttInterim('')
     pendingICERef.current = []
     setRtcStatus('停止中')
     setRtcError('')
+    setSttStatus('停止中')
   }, [])
 
   const clearReconnectTimer = useCallback(() => {
@@ -364,7 +245,6 @@ function App() {
 
     const peer = new RTCPeerConnection()
     peerRef.current = peer
-    peer.addTransceiver('audio', { direction: 'recvonly' })
     peer.onicecandidate = (event) => {
       if (!event.candidate) return
       ws.send({ type: 'webrtc.ice', candidate: event.candidate.toJSON() })
@@ -396,22 +276,27 @@ function App() {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: false,
+          autoGainControl: true,
         },
       })
     } catch (err) {
       setRtcError(err instanceof Error ? err.message : 'microphone error')
+      setSttStatus('エラー')
+      setSttError(err instanceof Error ? err.message : 'microphone error')
       stopRTC()
       return
     }
     micStreamRef.current = stream
     const audioTrack = stream.getAudioTracks()[0]
-    if (audioTrack && speechRef.current?.isSupported) {
-      speechRef.current.start(audioTrack)
-    } else if (!audioTrack) {
+    if (!audioTrack) {
       setSttStatus('エラー')
       setSttError('マイクトラックを取得できませんでした')
+      stopRTC()
+      return
     }
+    peer.addTrack(audioTrack, stream)
+    setSttStatus('サーバー処理中')
+    setSttError('')
 
     try {
       const offer = await peer.createOffer()
@@ -508,7 +393,20 @@ function App() {
   const sendText = useCallback(() => {
     const ws = wsChatRef.current
     const text = input.trim()
-    if (!ws || !connected || !text || isShutdownMode) return
+    if (!ws || !connected || !text) return
+    if (isShutdownMode) {
+      if (text === wakeWord) {
+        setIsShutdownMode(false)
+        appendMessage({
+          id: nextMessageId(),
+          type: 'system',
+          text: 'シャットダウンモードを解除しました。',
+          source: 'shutdown-mode',
+        })
+      }
+      setInput('')
+      return
+    }
     const msg = { type: 'message', role: 'user', text }
     ws.send(msg)
     setMessages((prev) => [
@@ -516,7 +414,7 @@ function App() {
       { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
     ])
     setInput('')
-  }, [connected, input, isShutdownMode])
+  }, [appendMessage, connected, input, isShutdownMode, nextMessageId])
 
   const startGoogleAuth = useCallback(() => {
     const url = `${serverHTTPBaseUrl}/oauth/google/start`
@@ -560,11 +458,6 @@ function App() {
         <div>
           <strong>モード:</strong> {isShutdownMode ? `シャットダウン中（復帰ワード: ${wakeWord}）` : '通常'}
         </div>
-        {sttInterim && (
-          <div style={{ color: '#0f766e' }}>
-            <strong>認識中:</strong> {sttInterim}
-          </div>
-        )}
         {sttError && (
           <div style={{ color: '#dc2626' }}>
             <strong>文字起こしエラー:</strong> {sttError}
@@ -637,7 +530,7 @@ function App() {
             }
           }}
         />
-        <button onClick={sendText} disabled={!connected || !input.trim() || isShutdownMode}>
+        <button onClick={sendText} disabled={!connected || !input.trim()}>
           送信
         </button>
       </div>
