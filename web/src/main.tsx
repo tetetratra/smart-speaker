@@ -7,6 +7,9 @@ type ChatMessage =
   | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
   | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
+type StatusTone = 'idle' | 'active' | 'done' | 'error'
+type ButtonTone = 'primary' | 'secondary' | 'warning'
+
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
 if (browserURL.port === '5173') {
@@ -20,6 +23,78 @@ const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
 const defaultPlaybackVolumePercent = 70
 
+function getStatusTone(status: string): StatusTone {
+  if (status.includes('失敗') || status.includes('エラー')) return 'error'
+  if (status === '接続済み' || status === '完了') return 'done'
+  if (status === '接続中' || status === '送信中' || status === '検知中' || status === '認識中' || status === '最終結果待ち') {
+    return 'active'
+  }
+  return 'idle'
+}
+
+function getStatusBadgeStyle(tone: StatusTone): React.CSSProperties {
+  switch (tone) {
+    case 'active':
+      return { background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }
+    case 'done':
+      return { background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }
+    case 'error':
+      return { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5' }
+    default:
+      return { background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }
+  }
+}
+
+function getButtonStyle(tone: ButtonTone, disabled: boolean): React.CSSProperties {
+  const base: React.CSSProperties = {
+    borderRadius: 12,
+    padding: '10px 14px',
+    fontSize: 14,
+    fontWeight: 700,
+    border: '1px solid transparent',
+    transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
+  }
+  if (tone === 'primary') {
+    return {
+      ...base,
+      background: '#0f172a',
+      color: '#f8fafc',
+      borderColor: '#0f172a',
+    }
+  }
+  if (tone === 'warning') {
+    return {
+      ...base,
+      background: '#fff7ed',
+      color: '#c2410c',
+      borderColor: '#fdba74',
+    }
+  }
+  return {
+    ...base,
+    background: '#ffffff',
+    color: '#334155',
+    borderColor: '#cbd5e1',
+  }
+}
+
+function getPipelineStateOptions(label: string): string[] {
+  switch (label) {
+    case 'WebRTC接続':
+      return ['停止中', '接続中', '接続済み', '切断', '失敗']
+    case 'マイクストリーム送信':
+      return ['停止中', '確認中', '待機中', '送信中', '確認失敗']
+    case 'サーバー発話検知':
+      return ['待機中', '検知中']
+    case 'Google文字起こし':
+      return ['停止中', '待機中', '認識中', '最終結果待ち', '完了', 'エラー']
+    default:
+      return []
+  }
+}
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
@@ -27,6 +102,8 @@ function App() {
   const [input, setInput] = useState('')
   const [rtcStatus, setRtcStatus] = useState('停止中')
   const [rtcError, setRtcError] = useState('')
+  const [audioSendStatus, setAudioSendStatus] = useState('停止中')
+  const [speechDetectStatus, setSpeechDetectStatus] = useState('待機中')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [isShutdownMode, setIsShutdownMode] = useState(false)
@@ -43,6 +120,7 @@ function App() {
   const reconnectAttemptRef = useRef(0)
   const reconnectTimerRef = useRef<number | null>(null)
   const manualDisconnectRef = useRef(false)
+  const lastAudioBytesSentRef = useRef<number | null>(null)
 
   const nextMessageId = useCallback(() => {
     idRef.current += 1
@@ -138,6 +216,10 @@ function App() {
           let role: 'user' | 'assistant' | 'system' = 'assistant'
           if (raw.role === 'user') role = 'user'
           else if (raw.role === 'system') role = 'system'
+          if (raw.source === 'server-stt' && role === 'user') {
+            setSttStatus('完了')
+            setSpeechDetectStatus('待機中')
+          }
           if (role === 'user' && isShutdownMode && text.trim() === wakeWord) {
             setIsShutdownMode(false)
             appendMessage({
@@ -156,6 +238,17 @@ function App() {
             final: raw.final,
             source: typeof raw.source === 'string' ? raw.source : undefined,
           })
+          break
+        }
+        case 'speech_start': {
+          setSpeechDetectStatus('検知中')
+          setSttStatus('認識中')
+          setSttError('')
+          break
+        }
+        case 'speech_end': {
+          setSpeechDetectStatus('待機中')
+          setSttStatus('最終結果待ち')
           break
         }
         case 'function_call': {
@@ -208,7 +301,10 @@ function App() {
       micStreamRef.current = null
     }
     pendingICERef.current = []
+    lastAudioBytesSentRef.current = null
     setRtcStatus('停止中')
+    setAudioSendStatus('停止中')
+    setSpeechDetectStatus('待機中')
     setRtcError('')
     setSttStatus('停止中')
   }, [])
@@ -295,7 +391,9 @@ function App() {
       return
     }
     peer.addTrack(audioTrack, stream)
-    setSttStatus('サーバー処理中')
+    setAudioSendStatus('確認中')
+    setSpeechDetectStatus('待機中')
+    setSttStatus('待機中')
     setSttError('')
 
     try {
@@ -376,6 +474,52 @@ function App() {
     }
   }, [disconnect])
 
+  useEffect(() => {
+    if (!connected) {
+      setAudioSendStatus('停止中')
+      lastAudioBytesSentRef.current = null
+      return
+    }
+    const timer = window.setInterval(async () => {
+      const peer = peerRef.current
+      if (!peer || peer.connectionState !== 'connected') {
+        setAudioSendStatus('確認中')
+        lastAudioBytesSentRef.current = null
+        return
+      }
+      try {
+        const stats = await peer.getStats()
+        let currentBytesSent: number | null = null
+        stats.forEach((report) => {
+          if (report.type !== 'outbound-rtp') return
+          const mediaType = (report as RTCOutboundRtpStreamStats).kind || (report as RTCOutboundRtpStreamStats & { mediaType?: string }).mediaType
+          if (mediaType !== 'audio') return
+          if (typeof (report as RTCOutboundRtpStreamStats).bytesSent !== 'number') return
+          currentBytesSent = (report as RTCOutboundRtpStreamStats).bytesSent
+        })
+        if (currentBytesSent === null) {
+          setAudioSendStatus('確認中')
+          lastAudioBytesSentRef.current = null
+          return
+        }
+        if (lastAudioBytesSentRef.current === null) {
+          setAudioSendStatus('待機中')
+        } else if (currentBytesSent > lastAudioBytesSentRef.current) {
+          setAudioSendStatus('送信中')
+        } else {
+          setAudioSendStatus('待機中')
+        }
+        lastAudioBytesSentRef.current = currentBytesSent
+      } catch (err) {
+        setAudioSendStatus('確認失敗')
+        setRtcError(err instanceof Error ? err.message : 'RTC stats error')
+      }
+    }, 1000)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [connected])
+
 
   useEffect(() => {
     const el = chatRef.current
@@ -424,34 +568,85 @@ function App() {
     }
   }, [])
 
+  const pipelineStatuses = [
+    { label: 'WebRTC接続', status: rtcStatus },
+    { label: 'マイクストリーム送信', status: audioSendStatus },
+    { label: 'サーバー発話検知', status: speechDetectStatus },
+    { label: 'Google文字起こし', status: sttStatus },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={connect} disabled={connected || busy}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={connect} disabled={connected || busy} style={getButtonStyle('primary', connected || busy)}>
           接続
         </button>
-        <button onClick={disconnect} disabled={!connected}>
+        <button onClick={disconnect} disabled={!connected} style={getButtonStyle('secondary', !connected)}>
           切断
         </button>
-        <button onClick={sendReset} disabled={!connected}>
+        <button onClick={sendReset} disabled={!connected} style={getButtonStyle('warning', !connected)}>
           おやすみ
         </button>
-        <button onClick={startGoogleAuth}>
+        <button onClick={startGoogleAuth} style={getButtonStyle('secondary', false)}>
           Google認証
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div>
-          <strong>音声接続:</strong> {rtcStatus}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+          {pipelineStatuses.map((item) => {
+            const tone = getStatusTone(item.status)
+            const options = getPipelineStateOptions(item.label)
+            return (
+              <div
+                key={item.label}
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  background: '#ffffff',
+                  padding: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 12, color: '#475569' }}>{item.label}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {options.map((option) => {
+                    const isCurrent = option === item.status
+                    return (
+                      <span
+                        key={option}
+                        style={{
+                          ...(isCurrent
+                            ? getStatusBadgeStyle(tone)
+                            : {
+                                background: '#f8fafc',
+                                color: '#94a3b8',
+                                border: '1px solid #e2e8f0',
+                              }),
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          borderRadius: 9999,
+                          padding: '4px 10px',
+                          fontSize: 12,
+                          fontWeight: isCurrent ? 700 : 500,
+                          opacity: isCurrent ? 1 : 0.55,
+                        }}
+                      >
+                        {option}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
         {rtcError && (
           <div style={{ color: '#dc2626' }}>
             <strong>音声エラー:</strong> {rtcError}
           </div>
         )}
-        <div>
-          <strong>文字起こし:</strong> {sttStatus}
-        </div>
         <div>
           <strong>再生音量:</strong> {playbackVolumePercent}%
         </div>
