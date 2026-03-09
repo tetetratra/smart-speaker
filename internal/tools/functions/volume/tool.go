@@ -2,14 +2,13 @@ package volume
 
 import (
 	"fmt"
-	"strings"
 
 	"smart-speaker/internal/tools"
 )
 
-const toolName = "set_volume_preset"
+const toolName = "set_volume"
 
-// Tool は再生音量のプリセット変更をフロントへ指示します。
+// Tool は再生音量の変更をフロントへ指示します。
 type Tool struct{}
 
 func New() *Tool {
@@ -19,13 +18,11 @@ func New() *Tool {
 func (t *Tool) Name() string { return toolName }
 
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
-	preset := strings.TrimSpace(toStr(args["preset"]))
-	volume, ok := presetToPercent(preset)
+	volume, ok := toInt(args["volume_percent"])
 	if !ok {
-		return nil, fmt.Errorf("preset must be one of: small, normal, large")
+		return nil, fmt.Errorf("volume_percent must be an integer between 1 and 100")
 	}
 	return map[string]any{
-		"preset":         preset,
 		"volume_percent": volume,
 	}, nil
 }
@@ -34,39 +31,45 @@ func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        toolName,
-		"description": "ユーザーが音量変更を明示的に求めたときのみ呼び出します。presetは small / normal / large のみです。",
+		"description": "ユーザーが音量変更を明示的に求めたときのみ呼び出します。1から100までの整数を volume_percent に指定します。",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"preset": map[string]any{
-					"type":        "string",
-					"enum":        []string{"small", "normal", "large"},
-					"description": "small=小さめ, normal=普通, large=大きめ",
+				"volume_percent": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"maximum":     100,
+					"description": "再生音量のパーセント。1から100の整数。",
 				},
 			},
-			"required": []string{"preset"},
+			"required": []string{"volume_percent"},
 		},
 	}
 }
 
-func toStr(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
-func presetToPercent(preset string) (int, bool) {
-	switch preset {
-	case "small":
-		return 40, true
-	case "normal":
-		return 70, true
-	case "large":
-		return 100, true
+func toInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return validateVolumePercent(n)
+	case int32:
+		return validateVolumePercent(int(n))
+	case int64:
+		return validateVolumePercent(int(n))
+	case float64:
+		if n != float64(int(n)) {
+			return 0, false
+		}
+		return validateVolumePercent(int(n))
 	default:
 		return 0, false
 	}
+}
+
+func validateVolumePercent(volume int) (int, bool) {
+	if volume < 1 || volume > 100 {
+		return 0, false
+	}
+	return volume, true
 }
 
 var _ tools.Handler = (*Tool)(nil)

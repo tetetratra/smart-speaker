@@ -21,7 +21,7 @@ const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const wakeWord = '起きて'
-const defaultPlaybackVolumePercent = 70
+const defaultPlaybackVolumePercent = 50
 
 function getStatusTone(status: string): StatusTone {
   if (status.includes('失敗') || status.includes('エラー')) return 'error'
@@ -153,7 +153,7 @@ function App() {
     setSttError('')
   }, [appendMessage, nextMessageId])
 
-  const handleVolumePresetToolResult = useCallback((output: any) => {
+  const handleVolumeToolResult = useCallback((output: any) => {
     if (!output || typeof output !== 'object') return
     if ((output as any).error) return
 
@@ -264,8 +264,8 @@ function App() {
         case 'function_result': {
           if (raw.name === 'shutdown_mode') {
             handleShutdownToolResult(raw.output)
-          } else if (raw.name === 'set_volume_preset') {
-            handleVolumePresetToolResult(raw.output)
+          } else if (raw.name === 'set_volume') {
+            handleVolumeToolResult(raw.output)
           }
           appendMessage({
             id: nextMessageId(),
@@ -280,7 +280,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumePresetToolResult, isShutdownMode, nextMessageId],
+    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumeToolResult, isShutdownMode, nextMessageId],
   )
 
   useEffect(() => {
