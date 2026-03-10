@@ -1,7 +1,7 @@
 # Smart Speaker (Go) + WebSocket 音声 I/O
 
 ## 前提
-- Go 1.24 以降
+- Go 1.25 以降
 - Node 20 以降（フロント開発用）  
   ※ `npm install` でローカルに Vite が入ります（グローバルインストール不要）
 
@@ -18,6 +18,7 @@
   - `GOOGLE_CLIENT_SECRET`
   - `GOOGLE_REDIRECT_URL`（任意、デフォルト `http://localhost:8081/oauth/google/callback`）
   - `GOOGLE_OAUTH_SCOPE`（任意、デフォルト `https://www.googleapis.com/auth/calendar.events`）
+  - `GOOGLE_OAUTH_TOKEN_PATH`（任意、OAuthトークン保存先。デフォルト `data/google_oauth_token.json`）
 
 ## サーバー（Go）起動
 ```sh
@@ -32,13 +33,26 @@ Google Calendar を利用するには OAuth トークンが必要です。フロ
 http://localhost:8081/oauth/google/start
 ```
 
-認証が完了するとトークンはサーバープロセスのメモリに保存されます。  
-そのため、サーバープロセスの再起動・コンテナ再作成後は再認証が必要です。
+認証が完了するとトークンは永続ファイルに保存されます。  
+デフォルトの保存先は `data/google_oauth_token.json` です。必要であれば `GOOGLE_OAUTH_TOKEN_PATH` で変更できます。
+
+このトークンファイルを残したままなら、サーバープロセスの再起動・コンテナ再作成・通常のデプロイ後も再認証は不要です。
+
+再認証が必要になるのは主に以下の場合です。
+- `data/google_oauth_token.json` を削除した
+- `GOOGLE_OAUTH_TOKEN_PATH` を別の空ファイルパスへ変更した
+- Google 側で refresh token が失効・取り消しされた
+
+初回認証の流れ:
+1. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` を設定する
+2. `http://localhost:8081/oauth/google/start` を開いて認証する
+3. `data/google_oauth_token.json` が作成されたら完了
 
 （Docker で実行する場合）
 1. `docker-compose.yml` で `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` を渡す
 2. `GOOGLE_REDIRECT_URL` は `http://localhost:8081/oauth/google/callback`（または本番URL）に合わせる
 3. `http://localhost:8081/oauth/google/start` にブラウザでアクセスして認証
+4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
 ### Docker（開発）
 開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
