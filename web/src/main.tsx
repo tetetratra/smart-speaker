@@ -1005,6 +1005,13 @@ const rootEl = document.getElementById('root')
 if (!rootEl) {
   throw new Error('root element not found')
 }
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('service worker登録に失敗しました', err)
+    })
+  })
+}
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <App />

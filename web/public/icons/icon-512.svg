@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Smart Speaker">
+  <rect width="512" height="512" rx="96" fill="#f6f6f4"/>
+  <circle cx="256" cy="224" r="120" fill="#1f1f1f"/>
+  <rect x="140" y="332" width="232" height="44" rx="22" fill="#2f6fde"/>
+</svg>
