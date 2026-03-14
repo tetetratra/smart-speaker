@@ -123,7 +123,7 @@ const liveRootStyle = `
     padding: 12px;
     display: grid;
     grid-template-columns: 1.2fr 0.8fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 6fr 4fr;
     gap: 12px;
     align-items: start;
     min-height: 0;
@@ -165,6 +165,7 @@ const liveRootStyle = `
     line-height: 1.4;
     color: var(--live-text);
     box-shadow: inset 0 0 0 1px #f0f0f0;
+    white-space: pre-wrap;
   }
   .live-board-title {
     font-size: 11px;
@@ -175,7 +176,7 @@ const liveRootStyle = `
   }
   .live-mini {
     width: 220px;
-    height: 220px;
+    height: 100%;
     border-radius: 14px;
     border: 1px dashed var(--live-line);
     background: #fafafa;
@@ -266,6 +267,7 @@ type LiveViewProps = {
   sttStatus: string
   playbackVolumePercent: number
   lastAssistantMessage: string
+  boardText: string
   audioRef: React.RefObject<HTMLAudioElement>
   connect: () => Promise<void>
   disconnect: () => void
@@ -284,6 +286,7 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
+  const [boardText, setBoardText] = useState("")
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -339,6 +342,13 @@ function App() {
       source: 'volume',
     })
   }, [appendMessage, applyPlaybackVolume, nextMessageId])
+  const handleBoardToolResult = useCallback((output: any) => {
+    if (!output || typeof output !== 'object') return
+    if ((output as any).error) return
+    const content = (output as any).content
+    if (typeof content !== 'string') return
+    setBoardText(content)
+  }, [])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -426,6 +436,9 @@ function App() {
           if (raw.name === 'set_volume') {
             handleVolumeToolResult(raw.output)
           }
+          if (raw.name === 'set_whiteboard') {
+            handleBoardToolResult(raw.output)
+          }
           appendMessage({
             id: nextMessageId(),
             type: 'function_result',
@@ -439,7 +452,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleVolumeToolResult, nextMessageId],
+    [appendMessage, handleBoardToolResult, handleRTCSignal, handleVolumeToolResult, nextMessageId],
   )
 
   useEffect(() => {
@@ -784,6 +797,7 @@ function App() {
           sttStatus={sttStatus}
           playbackVolumePercent={playbackVolumePercent}
           lastAssistantMessage={lastAssistantMessage}
+          boardText={boardText}
           audioRef={audioRef}
           connect={connect}
           disconnect={disconnect}
@@ -964,6 +978,7 @@ function LiveView(props: LiveViewProps) {
     sttStatus,
     playbackVolumePercent,
     lastAssistantMessage,
+    boardText,
     audioRef,
     connect,
     disconnect,
@@ -992,9 +1007,9 @@ function LiveView(props: LiveViewProps) {
           <button onClick={goAdmin} className="live-switch-btn">管理画面へ</button>
         </div>
         <div className="live-main">
-          <div className="live-bubble">{lastAssistantMessage}</div>
+          <div className="live-board">{boardText}</div>
           <div className="live-mini"></div>
-          <div className="live-board"></div>
+          <div className="live-bubble">{lastAssistantMessage}</div>
         </div>
       </div>
       <audio ref={audioRef} autoPlay />
