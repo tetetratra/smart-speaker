@@ -201,13 +201,13 @@ func (r *runner) handleSpeechStart() {
 	r.clearPendingTimeline()
 	r.cancelPendingRequest()
 	r.invalidResponseRetries = 0
-	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
 		r.current.Status = UtteranceCanceled
 		r.emit(types.Event{Kind: types.EventTTSCancel, Payload: types.TTSCancel{ResponseID: r.current.ResponseID}})
 		delete(r.utteranceByResponseID, r.current.ResponseID)
 		r.current = nil
 	}
+	r.cancelUnplayedUtterances()
 }
 
 func (r *runner) handleHumanText(text string) {
@@ -314,11 +314,11 @@ func (r *runner) handleSessionClear() {
 	r.stopTimer()
 	r.clearPendingTimeline()
 	r.cancelPendingRequest()
-	r.cancelUnplayedUtterances()
 	if r.current != nil && r.current.Status == UtterancePlaying {
 		r.current.Status = UtteranceCanceled
 		r.emit(types.Event{Kind: types.EventTTSCancel, Payload: types.TTSCancel{ResponseID: r.current.ResponseID}})
 	}
+	r.cancelUnplayedUtterances()
 	r.current = nil
 	r.utteranceByResponseID = make(map[string]*Utterance)
 	r.conversation = nil
