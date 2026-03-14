@@ -1,7 +1,6 @@
 package conversation
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,16 +8,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"smart-speaker/internal/graph"
-	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
-	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
@@ -82,11 +77,9 @@ type runner struct {
 
 	seq int
 
-	logFile    *os.File
-	logWriter  *bufio.Writer
-	logEncoder *json.Encoder
-
-	calendarContextCache string
+	contexts   *contextProvider
+	projection *projection
+	logger     *conversationLogger
 }
 
 const (
@@ -100,24 +93,15 @@ const (
 	calendarFetchMaxResults   = 30
 )
 
-type logRecord struct {
-	Timestamp  string `json:"ts"`
-	Speaker    string `json:"speaker"`
-	Text       string `json:"text"`
-	ResponseID string `json:"response_id,omitempty"`
-	Source     string `json:"source,omitempty"`
-}
-
 // NewStage は会話タイミング管理のステージを作成します。
 func NewStage(cfg Config) *graph.Stage {
-	logWriter, logEncoder, logFile := openLogWriter(cfg.LogPath)
 	r := &runner{
 		upstream:              make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream:            make(chan types.Event, graph.DefaultChannelBufferSize),
 		utteranceByResponseID: make(map[string]*Utterance),
-		logWriter:             logWriter,
-		logEncoder:            logEncoder,
-		logFile:               logFile,
+		contexts:              newContextProvider(),
+		projection:            newProjection(),
+		logger:                newConversationLogger(cfg.LogPath),
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -220,7 +204,7 @@ func (r *runner) handleHumanText(text string) {
 		Content: text,
 		Status:  UtterancePlayed,
 	})
-	r.logRecord(logRecord{
+	r.logger.Write(logRecord{
 		Speaker: "human",
 		Text:    text,
 	})
@@ -283,7 +267,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		name = "unknown_tool"
 	}
 	if name == calendarCreateToolName || name == calendarUpdateToolName {
-		r.calendarContextCache = ""
+		r.contexts.InvalidateCalendar()
 	}
 	if name == "write_diary" {
 		return
@@ -301,7 +285,7 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 		Status:     UtterancePlayed,
 		ResponseID: strings.TrimSpace(resp.ResponseID),
 	})
-	r.logRecord(logRecord{
+	r.logger.Write(logRecord{
 		Speaker:    "tool",
 		Text:       content,
 		ResponseID: strings.TrimSpace(resp.ResponseID),
@@ -322,8 +306,8 @@ func (r *runner) handleSessionClear() {
 	r.current = nil
 	r.utteranceByResponseID = make(map[string]*Utterance)
 	r.conversation = nil
-	r.calendarContextCache = ""
-	state.ClearConversationMessages()
+	r.contexts.Clear()
+	r.projection.ClearConversation()
 }
 
 func (r *runner) handleTTSEnd(tts types.TTSEvent) {
@@ -343,7 +327,7 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 	if r.current == utt {
 		r.current = nil
 	}
-	state.SetLastActivityAt(time.Now())
+	r.projection.MarkActivity(time.Now())
 	if !r.hasPendingSpeech() {
 		r.clearPendingTimeline()
 		r.updateConversationState()
@@ -360,7 +344,7 @@ func (r *runner) handleTTSEnd(tts types.TTSEvent) {
 }
 
 func (r *runner) requestResponse(messages []types.ChatMessage) {
-	messages = r.withSystemContexts(messages)
+	messages = r.contexts.WithSystemContexts(r.ctx, messages)
 	if len(messages) == 0 {
 		return
 	}
@@ -374,78 +358,13 @@ func (r *runner) requestResponse(messages []types.ChatMessage) {
 	}})
 }
 
-func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
-	diary := strings.TrimSpace(state.GetDiaryContent())
-	if diary == "" {
-		return messages
-	}
-	withDiary := make([]types.ChatMessage, 0, len(messages)+1)
-	withDiary = append(withDiary, types.ChatMessage{
-		Role:    "system",
-		Content: diaryPromptPrefix + diary,
-	})
-	withDiary = append(withDiary, messages...)
-	return withDiary
-}
-
-func (r *runner) withSystemContexts(messages []types.ChatMessage) []types.ChatMessage {
-	out := r.withCalendarContext(messages)
-	return withDiaryContext(out)
-}
-
-func (r *runner) withCalendarContext(messages []types.ChatMessage) []types.ChatMessage {
-	content := strings.TrimSpace(r.calendarContextCache)
-	if content == "" {
-		built, err := r.buildCalendarContext()
-		if err != nil {
-			log.Printf("conversation: failed to build calendar context: %v", err)
-			return messages
-		}
-		content = strings.TrimSpace(built)
-		r.calendarContextCache = content
-	}
-	if content == "" {
-		return messages
-	}
-	withCalendar := make([]types.ChatMessage, 0, len(messages)+1)
-	withCalendar = append(withCalendar, types.ChatMessage{
-		Role:    "system",
-		Content: content,
-	})
-	withCalendar = append(withCalendar, messages...)
-	return withCalendar
-}
-
-func (r *runner) buildCalendarContext() (string, error) {
-	if _, err := oauthgooglecalendar.LoadToken(); err != nil {
-		return "", nil
-	}
-	if r.ctx == nil {
-		return "", nil
-	}
-	ctx, cancel := context.WithTimeout(r.ctx, 8*time.Second)
-	defer cancel()
-	token, err := oauthgooglecalendar.AccessToken(ctx)
-	if err != nil {
-		return "", err
-	}
-	now := time.Now()
-	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	dayN := day0.AddDate(0, 0, calendarPromptDays)
-	events, err := fetchPrimaryCalendarEvents(ctx, token, day0, dayN, calendarFetchMaxResults)
-	if err != nil {
-		return "", err
-	}
-	return formatCalendarPrompt(events, day0), nil
-}
-
 func (r *runner) retryInvalidResponse() bool {
 	if r.invalidResponseRetries >= maxInvalidResponseRetries {
 		log.Printf("conversation: invalid response retry exhausted (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
 		return false
 	}
 	messages := r.buildConversationMessages()
-	messages = r.withSystemContexts(messages)
+	messages = r.contexts.WithSystemContexts(r.ctx, messages)
 	if len(messages) == 0 {
 		return false
 	}
@@ -494,10 +413,10 @@ func (r *runner) playUtterance(utt *Utterance) {
 	utt.Status = UtterancePlaying
 	utt.StartAt = time.Now()
 	if strings.TrimSpace(utt.Content) == "" {
-		r.logRecord(r.buildLogRecord(utt))
+		r.logger.Write(r.buildLogRecord(utt))
 		utt.Status = UtterancePlayed
 		utt.DurationSeconds = 0
-		state.SetLastActivityAt(time.Now())
+		r.projection.MarkActivity(time.Now())
 		r.advanceTimeline()
 		return
 	}
@@ -506,8 +425,8 @@ func (r *runner) playUtterance(utt *Utterance) {
 	r.current = utt
 	r.utteranceByResponseID[utt.ResponseID] = utt
 
-	r.logRecord(r.buildLogRecord(utt))
-	state.SetLastActivityAt(time.Now())
+	r.logger.Write(r.buildLogRecord(utt))
+	r.projection.MarkActivity(time.Now())
 	line := types.OutputLine{
 		Role:       "assistant",
 		Text:       utt.Content,
@@ -524,7 +443,7 @@ func (r *runner) playUtterance(utt *Utterance) {
 }
 
 func (r *runner) updateConversationState() {
-	state.SetConversationMessages(r.buildConversationMessages())
+	r.projection.UpdateConversation(r.buildConversationMessages())
 }
 
 func (r *runner) appendUtterance(utt *Utterance) {
@@ -661,15 +580,8 @@ func (r *runner) close() error {
 	if r.cancel != nil {
 		r.cancel()
 	}
-	if r.logWriter != nil {
-		if err := r.logWriter.Flush(); err != nil {
-			log.Printf("conversation: log flush error: %v", err)
-		}
-	}
-	if r.logFile != nil {
-		if err := r.logFile.Close(); err != nil {
-			log.Printf("conversation: log close error: %v", err)
-		}
+	if err := r.logger.Close(); err != nil {
+		log.Printf("conversation: log close error: %v", err)
 	}
 	close(r.upstream)
 	return nil
@@ -960,47 +872,11 @@ func (r *runner) estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.
 	return remaining + waitDuration
 }
 
-func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
-	logPath := strings.TrimSpace(path)
-	if logPath == "" {
-		return nil, nil, nil
-	}
-	dir := filepath.Dir(logPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		log.Printf("conversation: failed to create log dir: %v", err)
-		return nil, nil, nil
-	}
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		log.Printf("conversation: failed to open log file: %v", err)
-		return nil, nil, nil
-	}
-	writer := bufio.NewWriter(file)
-	encoder := json.NewEncoder(writer)
-	return writer, encoder, file
-}
-
 func (r *runner) buildLogRecord(utt *Utterance) logRecord {
 	return logRecord{
 		Speaker:    "ai",
 		Text:       utt.Content,
 		ResponseID: utt.ResponseID,
 		Source:     utteranceSource(utt),
-	}
-}
-
-func (r *runner) logRecord(rec logRecord) {
-	if r.logEncoder == nil {
-		return
-	}
-	if rec.Timestamp == "" {
-		rec.Timestamp = time.Now().Format(time.RFC3339Nano)
-	}
-	if err := r.logEncoder.Encode(rec); err != nil {
-		log.Printf("conversation: log encode error: %v", err)
-		return
-	}
-	if err := r.logWriter.Flush(); err != nil {
-		log.Printf("conversation: log flush error: %v", err)
 	}
 }
