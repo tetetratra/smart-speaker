@@ -47,6 +47,7 @@ const liveRootStyle = `
     grid-template-rows: auto 1fr;
     gap: 10px;
     padding: 12px;
+    position: relative;
   }
   .live-status-bar {
     display: grid;
@@ -132,8 +133,8 @@ const liveRootStyle = `
     border: 1px solid var(--live-line);
     border-radius: 14px;
     padding: 12px 14px;
-    font-size: 16px;
-    line-height: 1.4;
+    font-size: 24px;
+    line-height: 1.3;
     position: relative;
     min-height: 120px;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
