@@ -61,21 +61,10 @@ type runner struct {
 	cancel     context.CancelFunc
 	once       bool
 
-	conversation          []*Utterance
-	current               *Utterance
-	utteranceByResponseID map[string]*Utterance
+	core *conversationCore
 
 	timer  *time.Timer
 	timerC <-chan time.Time
-
-	pendingTimeline    []aiSegment
-	pendingTimelineIdx int
-
-	pendingRequestID        string
-	pendingRequestCancelled bool
-	invalidResponseRetries  int
-
-	seq int
 
 	contexts   *contextProvider
 	projection *projection
@@ -96,12 +85,12 @@ const (
 // NewStage は会話タイミング管理のステージを作成します。
 func NewStage(cfg Config) *graph.Stage {
 	r := &runner{
-		upstream:              make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream:            make(chan types.Event, graph.DefaultChannelBufferSize),
-		utteranceByResponseID: make(map[string]*Utterance),
-		contexts:              newContextProvider(),
-		projection:            newProjection(),
-		logger:                newConversationLogger(cfg.LogPath),
+		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		contexts:   newContextProvider(),
+		projection: newProjection(),
+		logger:     newConversationLogger(cfg.LogPath),
+		core:       newConversationCore(),
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -132,407 +121,23 @@ func (r *runner) consume() {
 		case <-r.timerC:
 			r.timerC = nil
 			r.timer = nil
-			r.advanceTimeline()
+			r.applyEffects(r.core.Handle(timerElapsedSignal{}))
 		}
 	}
 }
 
 func (r *runner) handleEvent(evt types.Event) {
-	switch evt.Kind {
-	case types.EventSpeechStart:
-		r.handleSpeechStart()
-	case types.EventTextInput:
-		line, ok := evt.Payload.(types.OutputLine)
-		if !ok {
-			return
-		}
-		text := strings.TrimSpace(line.Text)
-		if text == "" {
-			return
-		}
-		r.handleHumanText(text)
-	case types.EventTimerFired:
-		timerEvt, ok := evt.Payload.(types.TimerFiredEvent)
-		if !ok {
-			return
-		}
-		r.handleTimerFired(timerEvt)
-	case types.EventResponsesResponse:
-		resp, ok := evt.Payload.(types.ResponsesResponse)
-		if !ok {
-			return
-		}
-		r.handleResponses(resp)
-	case types.EventToolResponse:
-		resp, ok := evt.Payload.(types.ToolResponse)
-		if !ok {
-			return
-		}
-		r.handleToolResponse(resp)
-	case types.EventSessionClear:
-		r.handleSessionClear()
-	case types.EventTTSEnd:
-		tts, ok := evt.Payload.(types.TTSEvent)
-		if !ok {
-			return
-		}
-		r.handleTTSEnd(tts)
-	}
-}
-
-func (r *runner) handleSpeechStart() {
-	r.stopTimer()
-	r.clearPendingTimeline()
-	r.cancelPendingRequest()
-	r.invalidResponseRetries = 0
-	if r.current != nil && r.current.Status == UtterancePlaying {
-		r.current.Status = UtteranceCanceled
-		r.emit(types.Event{Kind: types.EventTTSCancel, Payload: types.TTSCancel{ResponseID: r.current.ResponseID}})
-		delete(r.utteranceByResponseID, r.current.ResponseID)
-		r.current = nil
-	}
-	r.cancelUnplayedUtterances()
-}
-
-func (r *runner) handleHumanText(text string) {
-	r.handleSpeechStart()
-
-	r.appendUtterance(&Utterance{
-		ID:      r.nextID("human"),
-		Speaker: SpeakerHuman,
-		StartAt: time.Now(),
-		Content: text,
-		Status:  UtterancePlayed,
-	})
-	r.logger.Write(logRecord{
-		Speaker: "human",
-		Text:    text,
-	})
-	r.updateConversationState()
-	r.requestResponse(r.buildConversationMessages())
-}
-
-func (r *runner) handleTimerFired(evt types.TimerFiredEvent) {
-	text := strings.TrimSpace(evt.ReminderText)
-	if text == "" {
-		return
-	}
-	r.emit(types.Event{
-		Kind: types.EventRealtimeOutput,
-		Payload: types.OutputLine{
-			Role:   "assistant",
-			Text:   text,
-			Source: "timer",
-		},
-	})
-}
-
-func (r *runner) handleResponses(resp types.ResponsesResponse) {
-	if resp.RequestID == "" || resp.RequestID != r.pendingRequestID {
-		return
-	}
-	if r.pendingRequestCancelled {
-		r.pendingRequestCancelled = false
-		r.pendingRequestID = ""
-		return
-	}
-	if len(resp.ToolCalls) > 0 {
-		return
-	}
-	if !resp.HasResponse {
-		return
-	}
-	r.pendingRequestID = ""
-	out, ok := parseAIOutput(resp.Text)
+	sig, ok := signalFromEvent(evt)
 	if !ok {
-		log.Printf("conversation: invalid response: %s", strings.TrimSpace(resp.Text))
-		if r.retryInvalidResponse() {
-			return
-		}
 		return
 	}
-	r.invalidResponseRetries = 0
-	root := r.buildUtteranceChain(out)
-	if len(root) == 0 {
-		return
-	}
-	r.pendingTimeline = root
-	r.pendingTimelineIdx = 0
-	r.advanceTimeline()
-}
-
-func (r *runner) handleToolResponse(resp types.ToolResponse) {
-	name := strings.TrimSpace(resp.Name)
-	if name == "" {
-		name = "unknown_tool"
-	}
-	if name == calendarCreateToolName || name == calendarUpdateToolName {
-		r.contexts.InvalidateCalendar()
-	}
-	if name == "write_diary" {
-		return
-	}
-	output := strings.TrimSpace(string(resp.Output))
-	if output == "" {
-		return
-	}
-	content := "ツール実行結果(" + name + "): " + output
-	r.appendUtterance(&Utterance{
-		ID:         r.nextID("tool"),
-		Speaker:    SpeakerTool,
-		StartAt:    time.Now(),
-		Content:    content,
-		Status:     UtterancePlayed,
-		ResponseID: strings.TrimSpace(resp.ResponseID),
-	})
-	r.logger.Write(logRecord{
-		Speaker:    "tool",
-		Text:       content,
-		ResponseID: strings.TrimSpace(resp.ResponseID),
-		Source:     name,
-	})
-	r.updateConversationState()
-}
-
-func (r *runner) handleSessionClear() {
-	r.stopTimer()
-	r.clearPendingTimeline()
-	r.cancelPendingRequest()
-	if r.current != nil && r.current.Status == UtterancePlaying {
-		r.current.Status = UtteranceCanceled
-		r.emit(types.Event{Kind: types.EventTTSCancel, Payload: types.TTSCancel{ResponseID: r.current.ResponseID}})
-	}
-	r.cancelUnplayedUtterances()
-	r.current = nil
-	r.utteranceByResponseID = make(map[string]*Utterance)
-	r.conversation = nil
-	r.contexts.Clear()
-	r.projection.ClearConversation()
-}
-
-func (r *runner) handleTTSEnd(tts types.TTSEvent) {
-	respID := strings.TrimSpace(tts.ResponseID)
-	if respID == "" {
-		return
-	}
-	utt := r.utteranceByResponseID[respID]
-	if utt == nil {
-		return
-	}
-	if utt.Status == UtterancePlaying {
-		utt.Status = UtterancePlayed
-		utt.DurationSeconds = tts.DurationSeconds
-	}
-	delete(r.utteranceByResponseID, respID)
-	if r.current == utt {
-		r.current = nil
-	}
-	r.projection.MarkActivity(time.Now())
-	if !r.hasPendingSpeech() {
-		r.clearPendingTimeline()
-		r.updateConversationState()
-		return
-	}
-	waitSec := r.consumeLeadingWaitSeconds()
-	if !r.hasPendingSpeech() {
-		r.clearPendingTimeline()
-		r.updateConversationState()
-		return
-	}
-	r.startTimer(r.estimateWaitDuration(tts, waitSec))
-	r.updateConversationState()
-}
-
-func (r *runner) requestResponse(messages []types.ChatMessage) {
-	messages = r.contexts.WithSystemContexts(r.ctx, messages)
-	if len(messages) == 0 {
-		return
-	}
-	r.invalidResponseRetries = 0
-	reqID := r.nextID("req")
-	r.pendingRequestID = reqID
-	r.pendingRequestCancelled = false
-	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{
-		RequestID: reqID,
-		Messages:  messages,
-	}})
-}
-
-func (r *runner) retryInvalidResponse() bool {
-	if r.invalidResponseRetries >= maxInvalidResponseRetries {
-		log.Printf("conversation: invalid response retry exhausted (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
-		return false
-	}
-	messages := r.buildConversationMessages()
-	messages = r.contexts.WithSystemContexts(r.ctx, messages)
-	if len(messages) == 0 {
-		return false
-	}
-	messages = append(messages, types.ChatMessage{
-		Role:    "system",
-		Content: invalidResponseRetryHint,
-	})
-	r.invalidResponseRetries++
-	reqID := r.nextID("req")
-	r.pendingRequestID = reqID
-	r.pendingRequestCancelled = false
-	r.emit(types.Event{Kind: types.EventResponsesRequest, Payload: types.ResponsesRequest{
-		RequestID: reqID,
-		Messages:  messages,
-		Tools:     []any{},
-	}})
-	log.Printf("conversation: retrying due to invalid response (%d/%d)", r.invalidResponseRetries, maxInvalidResponseRetries)
-	return true
-}
-
-func (r *runner) buildConversationMessages() []types.ChatMessage {
-	var out []types.ChatMessage
-	for _, utt := range r.conversation {
-		if utt == nil {
-			continue
-		}
-		switch utt.Speaker {
-		case SpeakerHuman:
-			out = append(out, types.ChatMessage{Role: "user", Content: utt.Content})
-		case SpeakerAI:
-			if utt.Status != UtterancePlayed {
-				continue
-			}
-			out = append(out, types.ChatMessage{Role: "assistant", Content: utt.Content})
-		case SpeakerTool:
-			out = append(out, types.ChatMessage{Role: "system", Content: utt.Content})
-		}
-	}
-	return out
-}
-
-func (r *runner) playUtterance(utt *Utterance) {
-	if utt == nil {
-		return
-	}
-	utt.Status = UtterancePlaying
-	utt.StartAt = time.Now()
-	if strings.TrimSpace(utt.Content) == "" {
-		r.logger.Write(r.buildLogRecord(utt))
-		utt.Status = UtterancePlayed
-		utt.DurationSeconds = 0
-		r.projection.MarkActivity(time.Now())
-		r.advanceTimeline()
-		return
-	}
-
-	utt.ResponseID = r.nextID("resp")
-	r.current = utt
-	r.utteranceByResponseID[utt.ResponseID] = utt
-
-	r.logger.Write(r.buildLogRecord(utt))
-	r.projection.MarkActivity(time.Now())
-	line := types.OutputLine{
-		Role:       "assistant",
-		Text:       utt.Content,
-		ResponseID: utt.ResponseID,
-		Source:     utteranceSource(utt),
-	}
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: line})
-	r.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
-		Role:       "assistant",
-		ResponseID: utt.ResponseID,
-		Final:      true,
-		Source:     utteranceSource(utt),
-	}})
-}
-
-func (r *runner) updateConversationState() {
-	r.projection.UpdateConversation(r.buildConversationMessages())
-}
-
-func (r *runner) appendUtterance(utt *Utterance) {
-	if utt == nil {
-		return
-	}
-	r.conversation = append(r.conversation, utt)
-}
-
-func (r *runner) cancelPendingRequest() {
-	if r.pendingRequestID == "" {
-		return
-	}
-	r.pendingRequestCancelled = true
-}
-
-func (r *runner) cancelUnplayedUtterances() {
-	for _, utt := range r.conversation {
-		if utt == nil || utt.Speaker != SpeakerAI {
-			continue
-		}
-		if utt.Status == UtterancePlayed {
-			continue
-		}
-		utt.Status = UtteranceCanceled
-	}
-}
-
-func (r *runner) clearPendingTimeline() {
-	r.pendingTimeline = nil
-	r.pendingTimelineIdx = 0
-}
-
-func (r *runner) hasPendingSpeech() bool {
-	for i := r.pendingTimelineIdx; i < len(r.pendingTimeline); i++ {
-		if r.pendingTimeline[i].Type == "speech" {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *runner) consumeLeadingWaitSeconds() float64 {
-	var total float64
-	for r.pendingTimelineIdx < len(r.pendingTimeline) {
-		seg := r.pendingTimeline[r.pendingTimelineIdx]
-		if seg.Type != "wait" {
-			break
-		}
-		total += normalizeWaitSeconds(seg.Sec)
-		r.pendingTimelineIdx++
-	}
-	return total
-}
-
-func (r *runner) advanceTimeline() {
-	for r.pendingTimelineIdx < len(r.pendingTimeline) {
-		seg := r.pendingTimeline[r.pendingTimelineIdx]
-		r.pendingTimelineIdx++
-		switch seg.Type {
-		case "wait":
-			delay := waitDelay(seg.Sec)
-			if delay > 0 {
-				r.startTimer(delay)
-				return
-			}
-		case "speech":
-			speech := sanitizeSpeech(seg.Text)
-			if speech == "" {
-				continue
-			}
-			utt := &Utterance{
-				ID:      r.nextID("ai"),
-				Speaker: SpeakerAI,
-				Content: speech,
-				Status:  UtteranceUnplayed,
-			}
-			r.appendUtterance(utt)
-			r.playUtterance(utt)
-			return
-		}
-	}
-	r.clearPendingTimeline()
+	r.applyEffects(r.core.Handle(sig))
 }
 
 func (r *runner) startTimer(d time.Duration) {
 	if d <= 0 {
 		r.stopTimer()
-		r.advanceTimeline()
+		r.applyEffects(r.core.Handle(timerElapsedSignal{}))
 		return
 	}
 	if r.timer == nil {
@@ -585,11 +190,6 @@ func (r *runner) close() error {
 	}
 	close(r.upstream)
 	return nil
-}
-
-func (r *runner) nextID(prefix string) string {
-	r.seq++
-	return prefix + "_" + strconv.Itoa(r.seq)
 }
 
 type aiOutput struct {
@@ -650,32 +250,6 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 		return aiOutput{}, false
 	}
 	return out, true
-}
-
-func (r *runner) buildUtteranceChain(out aiOutput) []aiSegment {
-	if len(out.Timeline) == 0 {
-		return nil
-	}
-	timeline := make([]aiSegment, 0, len(out.Timeline))
-	speechCount := 0
-	for _, seg := range out.Timeline {
-		switch seg.Type {
-		case "wait":
-			wait := sanitizeWait(seg.Sec)
-			timeline = append(timeline, aiSegment{Type: "wait", Sec: &wait})
-		case "speech":
-			text := sanitizeSpeech(seg.Text)
-			if text == "" {
-				continue
-			}
-			timeline = append(timeline, aiSegment{Type: "speech", Text: text})
-			speechCount++
-		}
-	}
-	if speechCount == 0 {
-		return nil
-	}
-	return timeline
 }
 
 func postWaitDelay(value float64) time.Duration {
@@ -853,30 +427,4 @@ func formatCalendarEventClock(dt calendarEventDateTime, isEnd bool) string {
 		}
 	}
 	return ""
-}
-
-func (r *runner) estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
-	waitDuration := postWaitDelay(waitSec)
-	startAt := tts.AudioStartAt
-	if startAt.IsZero() {
-		return waitDuration
-	}
-	if tts.DurationSeconds <= 0 {
-		return waitDuration
-	}
-	endAt := startAt.Add(time.Duration(tts.DurationSeconds * float64(time.Second)))
-	remaining := time.Until(endAt)
-	if remaining < 0 {
-		remaining = 0
-	}
-	return remaining + waitDuration
-}
-
-func (r *runner) buildLogRecord(utt *Utterance) logRecord {
-	return logRecord{
-		Speaker:    "ai",
-		Text:       utt.Content,
-		ResponseID: utt.ResponseID,
-		Source:     utteranceSource(utt),
-	}
 }
