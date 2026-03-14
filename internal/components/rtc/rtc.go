@@ -33,7 +33,7 @@ const (
 	vadStartThreshold     = 200
 	vadEndThreshold       = 800
 	sttStopDelay          = 1500 * time.Millisecond
-	energySpeechThresh    = 200
+	energySpeechThresh    = 120
 	speechAudioChunkBytes = 25600
 	speechModel           = "chirp_3"
 	speechRegion          = "asia-northeast1"
