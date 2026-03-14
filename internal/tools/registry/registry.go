@@ -4,7 +4,6 @@ import (
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/googlecalendar"
-	"smart-speaker/internal/tools/functions/shutdown"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
 	"smart-speaker/internal/tools/functions/volume"
@@ -40,7 +39,6 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate()
 	googleCalendarUpdate := googlecalendar.NewUpdate()
 	timerTool := timer.New()
-	shutdownTool := shutdown.New()
 	volumeTool := volume.New()
 	toolEntries := []entry{
 		{def: airconTool.Definition(), handler: airconTool},
@@ -48,7 +46,6 @@ func New(cfg Config) *Registry {
 		{def: blindTool.Definition(), handler: blindTool},
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
-		{def: shutdownTool.Definition(), handler: shutdownTool},
 		{def: volumeTool.Definition(), handler: volumeTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},

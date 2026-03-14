@@ -20,7 +20,6 @@ const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
 const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
-const wakeWord = '起きて'
 const defaultPlaybackVolumePercent = 50
 
 function getStatusTone(status: string): StatusTone {
@@ -106,7 +105,6 @@ function App() {
   const [speechDetectStatus, setSpeechDetectStatus] = useState('待機中')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
-  const [isShutdownMode, setIsShutdownMode] = useState(false)
   const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -138,20 +136,6 @@ function App() {
       audioRef.current.volume = normalized / 100
     }
   }, [])
-
-  const handleShutdownToolResult = useCallback((output: any) => {
-    if (!output || typeof output !== 'object') return
-    if ((output as any).error) return
-    if ((output as any).shutdown_mode !== true) return
-    setIsShutdownMode(true)
-    appendMessage({
-      id: nextMessageId(),
-      type: 'system',
-      text: `シャットダウンモードに入りました。${wakeWord} で復帰します。`,
-      source: 'shutdown-mode',
-    })
-    setSttError('')
-  }, [appendMessage, nextMessageId])
 
   const handleVolumeToolResult = useCallback((output: any) => {
     if (!output || typeof output !== 'object') return
@@ -220,15 +204,6 @@ function App() {
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
           }
-          if (role === 'user' && isShutdownMode && text.trim() === wakeWord) {
-            setIsShutdownMode(false)
-            appendMessage({
-              id: nextMessageId(),
-              type: 'system',
-              text: 'シャットダウンモードを解除しました。',
-              source: 'shutdown-mode',
-            })
-          }
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
             id: nextMessageId(),
@@ -262,9 +237,7 @@ function App() {
           break
         }
         case 'function_result': {
-          if (raw.name === 'shutdown_mode') {
-            handleShutdownToolResult(raw.output)
-          } else if (raw.name === 'set_volume') {
+          if (raw.name === 'set_volume') {
             handleVolumeToolResult(raw.output)
           }
           appendMessage({
@@ -280,7 +253,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleShutdownToolResult, handleVolumeToolResult, isShutdownMode, nextMessageId],
+    [appendMessage, handleRTCSignal, handleVolumeToolResult, nextMessageId],
   )
 
   useEffect(() => {
@@ -538,19 +511,6 @@ function App() {
     const ws = wsChatRef.current
     const text = input.trim()
     if (!ws || !connected || !text) return
-    if (isShutdownMode) {
-      if (text === wakeWord) {
-        setIsShutdownMode(false)
-        appendMessage({
-          id: nextMessageId(),
-          type: 'system',
-          text: 'シャットダウンモードを解除しました。',
-          source: 'shutdown-mode',
-        })
-      }
-      setInput('')
-      return
-    }
     const msg = { type: 'message', role: 'user', text }
     ws.send(msg)
     setMessages((prev) => [
@@ -558,7 +518,7 @@ function App() {
       { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
     ])
     setInput('')
-  }, [appendMessage, connected, input, isShutdownMode, nextMessageId])
+  }, [appendMessage, connected, input, nextMessageId])
 
   const startGoogleAuth = useCallback(() => {
     const url = `${serverHTTPBaseUrl}/oauth/google/start`
@@ -649,9 +609,6 @@ function App() {
         )}
         <div>
           <strong>再生音量:</strong> {playbackVolumePercent}%
-        </div>
-        <div>
-          <strong>モード:</strong> {isShutdownMode ? `シャットダウン中（復帰ワード: ${wakeWord}）` : '通常'}
         </div>
         {sttError && (
           <div style={{ color: '#dc2626' }}>

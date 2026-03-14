@@ -87,7 +87,6 @@ type runner struct {
 	logEncoder *json.Encoder
 
 	calendarContextCache string
-	shutdownMode         bool
 }
 
 const (
@@ -99,7 +98,6 @@ const (
 	calendarUpdateToolName    = "google_calendar_update"
 	calendarPromptDays        = 3
 	calendarFetchMaxResults   = 30
-	shutdownWakeWord          = "起きて"
 )
 
 type logRecord struct {
@@ -213,13 +211,6 @@ func (r *runner) handleSpeechStart() {
 }
 
 func (r *runner) handleHumanText(text string) {
-	if r.shutdownMode {
-		if strings.TrimSpace(text) == shutdownWakeWord {
-			r.shutdownMode = false
-		} else {
-			return
-		}
-	}
 	r.handleSpeechStart()
 
 	r.appendUtterance(&Utterance{
@@ -291,14 +282,6 @@ func (r *runner) handleToolResponse(resp types.ToolResponse) {
 	if name == "" {
 		name = "unknown_tool"
 	}
-	if name == "shutdown_mode" {
-		var payload struct {
-			ShutdownMode bool `json:"shutdown_mode"`
-		}
-		if err := json.Unmarshal(resp.Output, &payload); err == nil && payload.ShutdownMode {
-			r.shutdownMode = true
-		}
-	}
 	if name == calendarCreateToolName || name == calendarUpdateToolName {
 		r.calendarContextCache = ""
 	}
@@ -340,7 +323,6 @@ func (r *runner) handleSessionClear() {
 	r.utteranceByResponseID = make(map[string]*Utterance)
 	r.conversation = nil
 	r.calendarContextCache = ""
-	r.shutdownMode = false
 	state.ClearConversationMessages()
 }
 
