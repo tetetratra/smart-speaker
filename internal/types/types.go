@@ -45,6 +45,7 @@ type RTCSignal struct {
 	Type      string           `json:"type"`
 	SDP       string           `json:"sdp,omitempty"`
 	Candidate *RTCIceCandidate `json:"candidate,omitempty"`
+	ClientID  string           `json:"-"`
 }
 
 // ChatMessage はResponses APIに渡す会話履歴の1メッセージです。

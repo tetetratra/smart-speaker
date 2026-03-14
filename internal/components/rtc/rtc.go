@@ -29,14 +29,14 @@ const (
 	webrtcChannels   = 1
 	opusFrameMs      = 20
 
-	prebufferSeconds   = 3
-	vadStartThreshold  = 200
-	vadEndThreshold    = 800
-	sttStopDelay       = 1500 * time.Millisecond
-	energySpeechThresh = 200
+	prebufferSeconds      = 3
+	vadStartThreshold     = 200
+	vadEndThreshold       = 800
+	sttStopDelay          = 1500 * time.Millisecond
+	energySpeechThresh    = 200
 	speechAudioChunkBytes = 25600
-	speechModel        = "chirp_3"
-	speechRegion       = "asia-northeast1"
+	speechModel           = "chirp_3"
+	speechRegion          = "asia-northeast1"
 )
 
 type Config struct {
@@ -76,20 +76,28 @@ type stage struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu           sync.Mutex
+	mu              sync.Mutex
+	peers           map[string]*peerState
+	activeSpeakerID string
+	closed          bool
+
+	speechClient *speech.Client
+	speechStream speechpb.Speech_StreamingRecognizeClient
+	speechCancel context.CancelFunc
+	speechTimer  *time.Timer
+}
+
+type peerState struct {
+	id string
+	mu sync.Mutex
+
 	peer         *webrtc.PeerConnection
 	track        *webrtc.TrackLocalStaticSample
 	encoder      *opus.Encoder
 	pendingICE   []webrtc.ICECandidateInit
 	audioBuf     []int16
 	connected    bool
-	closed       bool
 	opusChannels int
-
-	speechClient *speech.Client
-	speechStream speechpb.Speech_StreamingRecognizeClient
-	speechCancel context.CancelFunc
-	speechTimer  *time.Timer
 
 	inputSampleRate int
 	prebuffer       *pcmRingBuffer
@@ -119,28 +127,37 @@ func (s *stage) sendLoop() {
 
 func (s *stage) sendOpusFrame() {
 	s.mu.Lock()
-	if s.peer == nil || s.track == nil || s.encoder == nil || !s.connected {
-		s.mu.Unlock()
-		return
+	peers := make([]*peerState, 0, len(s.peers))
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
 	}
-	frameSize := webrtcSampleRate * opusFrameMs / 1000 * max(1, s.opusChannels)
-	if len(s.audioBuf) < frameSize {
-		s.mu.Unlock()
-		return
-	}
-	frame := make([]int16, frameSize)
-	copy(frame, s.audioBuf[:frameSize])
-	s.audioBuf = s.audioBuf[frameSize:]
-	track := s.track
-	encoder := s.encoder
 	s.mu.Unlock()
 
-	opusBuf := make([]byte, 4000)
-	n, err := encoder.Encode(frame, opusBuf)
-	if err != nil {
-		return
+	for _, peer := range peers {
+		peer.mu.Lock()
+		if peer.peer == nil || peer.track == nil || peer.encoder == nil || !peer.connected {
+			peer.mu.Unlock()
+			continue
+		}
+		frameSize := webrtcSampleRate * opusFrameMs / 1000 * max(1, peer.opusChannels)
+		if len(peer.audioBuf) < frameSize {
+			peer.mu.Unlock()
+			continue
+		}
+		frame := make([]int16, frameSize)
+		copy(frame, peer.audioBuf[:frameSize])
+		peer.audioBuf = peer.audioBuf[frameSize:]
+		track := peer.track
+		encoder := peer.encoder
+		peer.mu.Unlock()
+
+		opusBuf := make([]byte, 4000)
+		n, err := encoder.Encode(frame, opusBuf)
+		if err != nil {
+			continue
+		}
+		_ = track.WriteSample(media.Sample{Data: opusBuf[:n], Duration: time.Millisecond * opusFrameMs})
 	}
-	_ = track.WriteSample(media.Sample{Data: opusBuf[:n], Duration: time.Millisecond * opusFrameMs})
 }
 
 func (s *stage) consume() {
@@ -185,9 +202,9 @@ func (s *stage) handleSignal(sig types.RTCSignal) {
 }
 
 func (s *stage) handleOffer(sig types.RTCSignal) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.resetPeerLocked()
+	clientID := normalizeClientID(sig.ClientID)
+	peerState := s.getOrCreatePeer(clientID)
+	s.resetPeer(peerState)
 
 	peer, err := newPeerConnection(s.cfg.IceHostIPs)
 	if err != nil {
@@ -222,20 +239,21 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 				SDPMid:        init.SDPMid,
 				SDPMLineIndex: init.SDPMLineIndex,
 			},
+			ClientID: clientID,
 		}})
 	})
 	peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		log.Printf("rtc: connection state=%s", state.String())
 		if state == webrtc.PeerConnectionStateClosed || state == webrtc.PeerConnectionStateFailed {
-			s.mu.Lock()
-			s.connected = false
-			s.stopSpeechLocked()
-			s.mu.Unlock()
+			peerState.mu.Lock()
+			peerState.connected = false
+			peerState.mu.Unlock()
+			s.clearActiveSpeaker(clientID, true)
 		}
 	})
 	peer.OnTrack(func(trackRemote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		log.Printf("rtc: incoming track kind=%s codec=%s/%d channels=%d", trackRemote.Kind().String(), trackRemote.Codec().MimeType, trackRemote.Codec().ClockRate, trackRemote.Codec().Channels)
-		go s.handleIncomingTrack(trackRemote)
+		go s.handleIncomingTrack(clientID, trackRemote)
 	})
 
 	encoder, err := opus.NewEncoder(webrtcSampleRate, opusChannels, opus.AppVoIP)
@@ -244,12 +262,14 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	}
 	log.Printf("rtc: using opus channels=%d", opusChannels)
 
-	s.peer = peer
-	s.track = track
-	s.encoder = encoder
-	s.audioBuf = nil
-	s.connected = true
-	s.opusChannels = opusChannels
+	peerState.mu.Lock()
+	peerState.peer = peer
+	peerState.track = track
+	peerState.encoder = encoder
+	peerState.audioBuf = nil
+	peerState.connected = true
+	peerState.opusChannels = opusChannels
+	peerState.mu.Unlock()
 
 	if err := peer.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
@@ -258,12 +278,15 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		log.Printf("rtc: set remote desc error: %v", err)
 		return
 	}
-	for _, cand := range s.pendingICE {
+	peerState.mu.Lock()
+	pendingICE := append([]webrtc.ICECandidateInit(nil), peerState.pendingICE...)
+	peerState.pendingICE = nil
+	peerState.mu.Unlock()
+	for _, cand := range pendingICE {
 		if err := peer.AddICECandidate(cand); err != nil {
 			log.Printf("rtc: add pending ice error: %v", err)
 		}
 	}
-	s.pendingICE = nil
 
 	answer, err := peer.CreateAnswer(nil)
 	if err != nil {
@@ -275,8 +298,9 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		return
 	}
 	s.emit(types.Event{Kind: types.EventRTCSignal, Payload: types.RTCSignal{
-		Type: "webrtc.answer",
-		SDP:  answer.SDP,
+		Type:     "webrtc.answer",
+		SDP:      answer.SDP,
+		ClientID: clientID,
 	}})
 }
 
@@ -309,12 +333,18 @@ func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
 }
 
 func (s *stage) handleAnswer(sig types.RTCSignal) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.peer == nil {
+	clientID := normalizeClientID(sig.ClientID)
+	peerState := s.getPeer(clientID)
+	if peerState == nil {
 		return
 	}
-	if err := s.peer.SetRemoteDescription(webrtc.SessionDescription{
+	peerState.mu.Lock()
+	peer := peerState.peer
+	peerState.mu.Unlock()
+	if peer == nil {
+		return
+	}
+	if err := peer.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,
 		SDP:  sig.SDP,
 	}); err != nil {
@@ -326,23 +356,25 @@ func (s *stage) handleICE(sig types.RTCSignal) {
 	if sig.Candidate == nil {
 		return
 	}
+	clientID := normalizeClientID(sig.ClientID)
 	init := webrtc.ICECandidateInit{
 		Candidate:     sig.Candidate.Candidate,
 		SDPMid:        sig.Candidate.SDPMid,
 		SDPMLineIndex: sig.Candidate.SDPMLineIndex,
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.peer == nil {
-		s.pendingICE = append(s.pendingICE, init)
+	peerState := s.getOrCreatePeer(clientID)
+	peerState.mu.Lock()
+	defer peerState.mu.Unlock()
+	if peerState.peer == nil {
+		peerState.pendingICE = append(peerState.pendingICE, init)
 		return
 	}
-	if err := s.peer.AddICECandidate(init); err != nil {
+	if err := peerState.peer.AddICECandidate(init); err != nil {
 		log.Printf("rtc: add ice error: %v", err)
 	}
 }
 
-func (s *stage) handleIncomingTrack(trackRemote *webrtc.TrackRemote) {
+func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemote) {
 	codec := trackRemote.Codec()
 	sampleRate := int(codec.ClockRate)
 	if sampleRate <= 0 {
@@ -359,26 +391,28 @@ func (s *stage) handleIncomingTrack(trackRemote *webrtc.TrackRemote) {
 	}
 	pcmBuf := make([]int16, 5760*max(1, channels))
 
-	s.mu.Lock()
-	s.inputSampleRate = sampleRate
-	s.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
-	s.speechActive = false
-	s.voicedMs = 0
-	s.silenceMs = 0
-	s.cancelSpeechStopLocked()
-	s.stopSpeechLocked()
-	s.mu.Unlock()
+	peerState := s.getPeer(peerID)
+	if peerState == nil {
+		return
+	}
+	peerState.mu.Lock()
+	peerState.inputSampleRate = sampleRate
+	peerState.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
+	peerState.speechActive = false
+	peerState.voicedMs = 0
+	peerState.silenceMs = 0
+	peerState.mu.Unlock()
 
 	for {
 		pkt, _, err := trackRemote.ReadRTP()
 		if err != nil {
 			log.Printf("rtc: incoming audio read error: %v", err)
-			s.mu.Lock()
-			s.speechActive = false
-			s.voicedMs = 0
-			s.silenceMs = 0
-			s.stopSpeechLocked()
-			s.mu.Unlock()
+			peerState.mu.Lock()
+			peerState.speechActive = false
+			peerState.voicedMs = 0
+			peerState.silenceMs = 0
+			peerState.mu.Unlock()
+			s.clearActiveSpeaker(peerID, true)
 			return
 		}
 		nPerChannel, err := decoder.Decode(pkt.Payload, pcmBuf)
@@ -397,60 +431,75 @@ func (s *stage) handleIncomingTrack(trackRemote *webrtc.TrackRemote) {
 		durationMs := packetDurationMs(len(mono), sampleRate)
 		isSpeech := detectSpeech(mono)
 
+		if !s.canProcessAudio(peerID) {
+			continue
+		}
+
 		var shouldStart bool
 		var shouldEnd bool
 		var shouldSend bool
 		var prebuffer []byte
 
-		s.mu.Lock()
-		if s.prebuffer == nil || s.inputSampleRate != sampleRate {
-			s.inputSampleRate = sampleRate
-			s.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
+		peerState.mu.Lock()
+		if peerState.prebuffer == nil || peerState.inputSampleRate != sampleRate {
+			peerState.inputSampleRate = sampleRate
+			peerState.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
 		}
 
-		wasActive := s.speechActive
-		if !s.speechActive {
+		wasActive := peerState.speechActive
+		if !peerState.speechActive {
 			if isSpeech {
-				s.voicedMs += durationMs
+				peerState.voicedMs += durationMs
 			} else {
-				s.voicedMs = 0
+				peerState.voicedMs = 0
 			}
-			if s.voicedMs >= vadStartThreshold {
-				s.speechActive = true
-				s.voicedMs = 0
-				s.silenceMs = 0
+			if peerState.voicedMs >= vadStartThreshold {
+				peerState.speechActive = true
+				peerState.voicedMs = 0
+				peerState.silenceMs = 0
 				shouldStart = true
 				log.Printf("rtc: speech start sample_rate=%d avg_energy_trigger=%d", sampleRate, energySpeechThresh)
-				prebuffer = s.prebuffer.snapshot()
-				s.cancelSpeechStopLocked()
+				prebuffer = peerState.prebuffer.snapshot()
 			}
 		} else {
 			if isSpeech {
-				s.silenceMs = 0
+				peerState.silenceMs = 0
 			} else {
-				s.silenceMs += durationMs
+				peerState.silenceMs += durationMs
 			}
-			if s.silenceMs >= vadEndThreshold {
-				s.speechActive = false
-				s.silenceMs = 0
+			if peerState.silenceMs >= vadEndThreshold {
+				peerState.speechActive = false
+				peerState.silenceMs = 0
 				shouldEnd = true
 				log.Printf("rtc: speech end")
 			}
 		}
-		shouldSend = wasActive || s.speechActive
-		s.prebuffer.append(audio)
-		s.mu.Unlock()
+		shouldSend = wasActive || peerState.speechActive
+		peerState.prebuffer.append(audio)
+		peerState.mu.Unlock()
 
 		if shouldStart {
-			s.emit(types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: time.Now()}})
-			s.startSpeechStream(int32(sampleRate), 1, prebuffer)
+			if s.activateSpeaker(peerID) {
+				s.mu.Lock()
+				s.cancelSpeechStopLocked()
+				s.mu.Unlock()
+				s.emit(types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: time.Now()}})
+				s.startSpeechStream(int32(sampleRate), 1, prebuffer)
+			} else {
+				peerState.mu.Lock()
+				peerState.speechActive = false
+				peerState.voicedMs = 0
+				peerState.silenceMs = 0
+				peerState.mu.Unlock()
+			}
 		}
-		if shouldSend {
+		if shouldSend && s.isActiveSpeaker(peerID) {
 			s.sendSpeechAudio(audio)
 		}
-		if shouldEnd {
+		if shouldEnd && s.isActiveSpeaker(peerID) {
 			s.emit(types.Event{Kind: types.EventSpeechEnd, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: time.Now()}})
 			s.scheduleSpeechStop()
+			s.clearActiveSpeaker(peerID, false)
 		}
 	}
 }
@@ -619,13 +668,6 @@ func (s *stage) closeSpeechSendLocked() {
 }
 
 func (s *stage) handleTTSAudio(audio types.OutputAudio) {
-	s.mu.Lock()
-	if s.peer == nil || s.track == nil || s.encoder == nil || !s.connected {
-		s.mu.Unlock()
-		return
-	}
-	s.mu.Unlock()
-
 	raw, err := base64.StdEncoding.DecodeString(audio.Audio)
 	if err != nil {
 		return
@@ -638,19 +680,39 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 	if len(pcm) == 0 {
 		return
 	}
-	if s.opusChannels == 2 {
-		pcm = upmixToStereo(pcm)
-	}
-
 	s.mu.Lock()
-	s.audioBuf = append(s.audioBuf, pcm...)
+	peers := make([]*peerState, 0, len(s.peers))
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
+	}
 	s.mu.Unlock()
+	for _, peer := range peers {
+		peer.mu.Lock()
+		if peer.peer == nil || peer.track == nil || peer.encoder == nil || !peer.connected {
+			peer.mu.Unlock()
+			continue
+		}
+		localPCM := pcm
+		if peer.opusChannels == 2 {
+			localPCM = upmixToStereo(pcm)
+		}
+		peer.audioBuf = append(peer.audioBuf, localPCM...)
+		peer.mu.Unlock()
+	}
 }
 
 func (s *stage) handleTTSCancel() {
 	s.mu.Lock()
-	s.audioBuf = nil
+	peers := make([]*peerState, 0, len(s.peers))
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
+	}
 	s.mu.Unlock()
+	for _, peer := range peers {
+		peer.mu.Lock()
+		peer.audioBuf = nil
+		peer.mu.Unlock()
+	}
 }
 
 func bytesToInt16(b []byte) []int16 {
@@ -872,21 +934,113 @@ func min(a, b int) int {
 	return b
 }
 
-func (s *stage) resetPeerLocked() {
-	if s.peer != nil {
-		_ = s.peer.Close()
-		s.peer = nil
+func normalizeClientID(clientID string) string {
+	id := strings.TrimSpace(clientID)
+	if id == "" {
+		return "default"
 	}
-	s.stopSpeechLocked()
-	s.encoder = nil
-	s.track = nil
-	s.pendingICE = nil
-	s.audioBuf = nil
-	s.prebuffer = nil
-	s.speechActive = false
-	s.voicedMs = 0
-	s.silenceMs = 0
-	s.connected = false
+	return id
+}
+
+func (s *stage) getPeer(id string) *peerState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.peers == nil {
+		return nil
+	}
+	return s.peers[id]
+}
+
+func (s *stage) getOrCreatePeer(id string) *peerState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.peers == nil {
+		s.peers = map[string]*peerState{}
+	}
+	if peer, ok := s.peers[id]; ok && peer != nil {
+		return peer
+	}
+	peer := &peerState{id: id}
+	s.peers[id] = peer
+	return peer
+}
+
+func (s *stage) canProcessAudio(peerID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeSpeakerID == "" || s.activeSpeakerID == peerID
+}
+
+func (s *stage) isActiveSpeaker(peerID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeSpeakerID == peerID
+}
+
+func (s *stage) activateSpeaker(peerID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeSpeakerID == "" || s.activeSpeakerID == peerID {
+		s.activeSpeakerID = peerID
+		return true
+	}
+	return false
+}
+
+func (s *stage) clearActiveSpeaker(peerID string, forceStop bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeSpeakerID != peerID {
+		return
+	}
+	s.activeSpeakerID = ""
+	if forceStop {
+		s.stopSpeechLocked()
+	}
+}
+
+func (s *stage) resetPeer(peer *peerState) {
+	if peer == nil {
+		return
+	}
+	peer.mu.Lock()
+	if peer.peer != nil {
+		_ = peer.peer.Close()
+		peer.peer = nil
+	}
+	peer.encoder = nil
+	peer.track = nil
+	peer.pendingICE = nil
+	peer.audioBuf = nil
+	peer.prebuffer = nil
+	peer.speechActive = false
+	peer.voicedMs = 0
+	peer.silenceMs = 0
+	peer.connected = false
+	peer.mu.Unlock()
+	s.clearActiveSpeaker(peer.id, true)
+}
+
+func (s *stage) resetAllPeersLocked() {
+	for _, peer := range s.peers {
+		peer.mu.Lock()
+		if peer.peer != nil {
+			_ = peer.peer.Close()
+			peer.peer = nil
+		}
+		peer.encoder = nil
+		peer.track = nil
+		peer.pendingICE = nil
+		peer.audioBuf = nil
+		peer.prebuffer = nil
+		peer.speechActive = false
+		peer.voicedMs = 0
+		peer.silenceMs = 0
+		peer.connected = false
+		peer.mu.Unlock()
+	}
+	s.peers = nil
+	s.activeSpeakerID = ""
 }
 
 func (s *stage) emit(evt types.Event) {
@@ -914,7 +1068,7 @@ func (s *stage) close() error {
 		}
 		s.speechClient = nil
 	}
-	s.resetPeerLocked()
+	s.resetAllPeersLocked()
 	close(s.upstream)
 	return nil
 }

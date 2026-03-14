@@ -221,6 +221,9 @@ func formatRTCSignalDetail(evt types.Event) string {
 		fmt.Sprintf("type=%s", sig.Type),
 		fmt.Sprintf("sdp_chars=%d", utf8.RuneCountInString(sig.SDP)),
 	}
+	if sig.ClientID != "" {
+		parts = append(parts, fmt.Sprintf("client_id=%s", sig.ClientID))
+	}
 	if sig.Candidate != nil {
 		parts = append(parts, fmt.Sprintf("candidate_chars=%d", utf8.RuneCountInString(sig.Candidate.Candidate)))
 		if sig.Candidate.SDPMid != nil {

@@ -3,10 +3,12 @@ package wschat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -36,30 +38,59 @@ func NewStage(mux *http.ServeMux) *graph.Stage {
 }
 
 type connHolder struct {
-	mu   sync.Mutex
-	conn *websocket.Conn
+	mu    sync.RWMutex
+	conns map[string]*websocket.Conn
 }
 
-func (h *connHolder) swap(c *websocket.Conn) {
+func (h *connHolder) add(id string, c *websocket.Conn) {
 	h.mu.Lock()
-	if h.conn != nil && h.conn != c {
-		h.conn.Close(websocket.StatusNormalClosure, "bye")
+	if h.conns == nil {
+		h.conns = map[string]*websocket.Conn{}
 	}
-	h.conn = c
+	h.conns[id] = c
 	h.mu.Unlock()
 }
 
-func (h *connHolder) get() *websocket.Conn {
+func (h *connHolder) remove(id string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.conn
+	if h.conns != nil {
+		if conn, ok := h.conns[id]; ok {
+			conn.Close(websocket.StatusNormalClosure, "bye")
+			delete(h.conns, id)
+		}
+	}
+	h.mu.Unlock()
 }
 
-func (h *connHolder) clear() {
+func (h *connHolder) get(id string) *websocket.Conn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.conns == nil {
+		return nil
+	}
+	return h.conns[id]
+}
+
+func (h *connHolder) snapshot() map[string]*websocket.Conn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.conns == nil {
+		return nil
+	}
+	out := make(map[string]*websocket.Conn, len(h.conns))
+	for id, conn := range h.conns {
+		out[id] = conn
+	}
+	return out
+}
+
+func (h *connHolder) clearAll() {
 	h.mu.Lock()
-	if h.conn != nil {
-		h.conn.Close(websocket.StatusNormalClosure, "bye")
-		h.conn = nil
+	if h.conns != nil {
+		for id, conn := range h.conns {
+			conn.Close(websocket.StatusNormalClosure, "bye")
+			delete(h.conns, id)
+		}
 	}
 	h.mu.Unlock()
 }
@@ -72,6 +103,7 @@ type chatWS struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	closerWG   sync.WaitGroup
+	nextConnID uint64
 }
 
 func (c *chatWS) run(ctx context.Context) {
@@ -99,6 +131,7 @@ func (c *chatWS) consume(ctx context.Context) {
 
 func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	msg := map[string]any{}
+	targetID := ""
 	switch evt.Kind {
 	case types.EventRealtimeOutput:
 		line, ok := evt.Payload.(types.OutputLine)
@@ -156,6 +189,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		if !ok {
 			return
 		}
+		targetID = sig.ClientID
 		msg = map[string]any{
 			"type":      sig.Type,
 			"sdp":       sig.SDP,
@@ -185,16 +219,25 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		return
 	}
 
-	c.writeMessage(ctx, msg)
+	c.writeMessage(ctx, msg, targetID)
 }
 
-func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any) {
+func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("wschat: marshal error: %v", err)
 		return
 	}
-	if conn := c.holder.get(); conn != nil {
+	if c.holder == nil {
+		return
+	}
+	if targetID != "" {
+		if conn := c.holder.get(targetID); conn != nil {
+			_ = conn.Write(ctx, websocket.MessageText, data)
+		}
+		return
+	}
+	for _, conn := range c.holder.snapshot() {
 		_ = conn.Write(ctx, websocket.MessageText, data)
 	}
 }
@@ -205,12 +248,13 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		log.Printf("wschat accept error: %v", err)
 		return
 	}
+	connID := fmt.Sprintf("ws-%d", atomic.AddUint64(&c.nextConnID, 1))
 	if c.holder != nil {
-		c.holder.swap(conn)
+		c.holder.add(connID, conn)
 	}
 	defer func() {
 		if c.holder != nil {
-			c.holder.clear()
+			c.holder.remove(connID)
 		}
 	}()
 	for {
@@ -240,6 +284,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 				Type:      msg.Type,
 				SDP:       msg.SDP,
 				Candidate: msg.Candidate,
+				ClientID:  connID,
 			}
 			select {
 			case c.downstream <- types.Event{Kind: types.EventRTCSignal, Payload: sig}:
@@ -292,7 +337,7 @@ func (c *chatWS) close() error {
 		close(c.upstream)
 		close(c.downstream)
 		if c.holder != nil {
-			c.holder.clear()
+			c.holder.clearAll()
 		}
 	})
 	return err
