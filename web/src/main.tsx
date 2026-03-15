@@ -43,42 +43,76 @@ const liveRootStyle = `
   .live-frame {
     width: 100vw;
     height: 100vh;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    gap: 10px;
-    padding: 12px;
+    padding: 6px;
     position: relative;
   }
-  .live-status-bar {
-    display: grid;
-    grid-template-columns: auto repeat(3, auto) 1fr auto;
-    gap: 8px;
-    align-items: center;
+  .live-main {
+    width: 100%;
+    height: 100%;
     background: var(--live-panel);
     border: 1px solid var(--live-line);
+    border-radius: 14px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(248px, 40%);
+    gap: 12px;
+    min-height: 0;
+  }
+  .live-left {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: 6fr 4fr;
+    gap: 12px;
+  }
+  .live-right {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 8px;
+  }
+  .live-controls-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    width: 100%;
+    align-items: center;
+  }
+  .live-status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+  }
+  .live-status-card {
+    min-width: 0;
+    min-height: 40px;
+    padding: 4px 3px;
+    border: 1px solid var(--live-line);
     border-radius: 12px;
-    padding: 8px 10px;
-    font-size: 11px;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-align: center;
+  }
+  .live-status-label {
+    font-size: 10px;
+    line-height: 1.1;
     color: var(--live-muted);
   }
-  .live-status-item {
-    padding: 4px 8px;
-    border: 1px solid var(--live-line);
-    border-radius: 999px;
-    background: #fafafa;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .live-status-item.fixed {
-    min-width: 110px;
-    justify-content: center;
-  }
-  .live-status-item strong {
+  .live-status-value {
+    font-size: 11px;
+    line-height: 1.1;
+    font-weight: 700;
     color: var(--live-text);
+    white-space: nowrap;
   }
-  .live-switch-btn {
-    justify-self: end;
+  .live-control-btn,
+  .live-admin-btn {
     border-radius: 999px;
     padding: 4px 8px;
     font-size: 11px;
@@ -86,47 +120,50 @@ const liveRootStyle = `
     border: 1px solid var(--live-line);
     background: #f8f8f8;
     color: var(--live-muted);
+    align-self: center;
+    white-space: nowrap;
+    min-height: 30px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
-  .live-toggle {
+  .live-control-btn {
+    width: auto;
+    justify-content: flex-start;
+  }
+  .live-admin-btn {
+    width: auto;
+    padding-inline: 10px;
+  }
+  .live-toggle-switch {
     width: 36px;
-    height: 18px;
+    height: 20px;
     border-radius: 999px;
     background: #e9e9e9;
     border: 1px solid var(--live-line);
     position: relative;
     display: inline-flex;
     align-items: center;
-    padding: 2px;
-    cursor: pointer;
+    flex: 0 0 auto;
   }
-  .live-toggle::after {
+  .live-toggle-switch::after {
     content: "";
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 999px;
     background: #ffffff;
     border: 1px solid var(--live-line);
     position: absolute;
     left: 2px;
   }
-  .live-toggle.on::after {
-    left: 20px;
-  }
-  .live-toggle.on {
+  .live-toggle-switch.on {
     background: #2f6fde;
     border-color: #2f6fde;
   }
-  .live-main {
-    background: var(--live-panel);
-    border: 1px solid var(--live-line);
-    border-radius: 14px;
-    padding: 12px;
-    display: grid;
-    grid-template-columns: 1.2fr 0.8fr;
-    grid-template-rows: 6fr 4fr;
-    gap: 12px;
-    align-items: start;
-    min-height: 0;
+  .live-toggle-switch.on::after {
+    left: 18px;
   }
   .live-bubble {
     background: #ffffff;
@@ -160,12 +197,14 @@ const liveRootStyle = `
     border: 2px solid var(--live-line);
     border-radius: 10px;
     padding: 10px 12px;
-    min-height: 140px;
     font-size: 13px;
     line-height: 1.4;
     color: var(--live-text);
     box-shadow: inset 0 0 0 1px #f0f0f0;
     white-space: pre-wrap;
+    overflow: auto;
+    min-height: 0;
+    height: 100%;
   }
   .live-board-title {
     font-size: 11px;
@@ -175,7 +214,7 @@ const liveRootStyle = `
     text-transform: uppercase;
   }
   .live-mini {
-    width: 220px;
+    width: 100%;
     height: 100%;
     border-radius: 14px;
     border: 1px dashed var(--live-line);
@@ -184,8 +223,7 @@ const liveRootStyle = `
     display: grid;
     place-items: center;
     font-size: 11px;
-    justify-self: center;
-    grid-row: span 2;
+    min-height: 0;
   }
 `
 
@@ -263,9 +301,9 @@ function getPipelineStateOptions(label: string): string[] {
 
 type LiveViewProps = {
   connected: boolean
+  connecting: boolean
   speechDetectStatus: string
   sttStatus: string
-  playbackVolumePercent: number
   lastAssistantMessage: string
   boardText: string
   audioRef: React.RefObject<HTMLAudioElement>
@@ -789,9 +827,9 @@ function App() {
       <div style={{ display: uiMode === 'app' ? 'block' : 'none' }}>
         <LiveView
           connected={connected}
+          connecting={busy}
           speechDetectStatus={speechDetectStatus}
           sttStatus={sttStatus}
-          playbackVolumePercent={playbackVolumePercent}
           lastAssistantMessage={lastAssistantMessage}
           boardText={boardText}
           audioRef={audioRef}
@@ -970,9 +1008,9 @@ function App() {
 function LiveView(props: LiveViewProps) {
   const {
     connected,
+    connecting,
     speechDetectStatus,
     sttStatus,
-    playbackVolumePercent,
     lastAssistantMessage,
     boardText,
     audioRef,
@@ -987,25 +1025,40 @@ function LiveView(props: LiveViewProps) {
     }
     void connect()
   }, [connected, connect, disconnect])
+  const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   return (
     <>
       <style>{liveRootStyle}</style>
       <div className="live-frame">
-        <div className="live-status-bar">
-          <div className="live-status-item">
-            <span className={`live-toggle ${connected ? 'on' : ''}`} onClick={handleToggle} role="button" aria-label="接続切替"></span>
-            <strong>接続</strong>{connected ? 'オンライン' : 'オフライン'}
-          </div>
-          <div className="live-status-item fixed"><strong>マイク</strong>{speechDetectStatus}</div>
-          <div className="live-status-item fixed"><strong>認識</strong>{sttStatus}</div>
-          <div className="live-status-item fixed"><strong>音量</strong>{playbackVolumePercent}%</div>
-          <div></div>
-          <button onClick={goAdmin} className="live-switch-btn">管理画面へ</button>
-        </div>
         <div className="live-main">
-          <div className="live-board">{boardText}</div>
-          <div className="live-mini"></div>
-          <div className="live-bubble">{lastAssistantMessage}</div>
+          <div className="live-left">
+            <div className="live-board">{boardText}</div>
+            <div className="live-bubble">{lastAssistantMessage}</div>
+          </div>
+          <div className="live-right">
+            <div className="live-controls-row">
+              <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                接続
+              </button>
+              <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+            </div>
+            <div className="live-status-grid">
+              <div className="live-status-card">
+                <div className="live-status-label">接続</div>
+                <div className="live-status-value">{connectionStatus}</div>
+              </div>
+              <div className="live-status-card">
+                <div className="live-status-label">マイク</div>
+                <div className="live-status-value">{speechDetectStatus}</div>
+              </div>
+              <div className="live-status-card">
+                <div className="live-status-label">認識</div>
+                <div className="live-status-value">{sttStatus}</div>
+              </div>
+            </div>
+            <div className="live-mini"></div>
+          </div>
         </div>
       </div>
       <audio ref={audioRef} autoPlay />
