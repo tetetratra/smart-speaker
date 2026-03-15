@@ -73,7 +73,7 @@ type runner struct {
 
 const (
 	maxInvalidResponseRetries = 1
-	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}]} の形式に従ってください。"
+	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}],\"whiteboard\":{\"content\":\"文字列\"}} の形式に従ってください。whiteboard は不要なら省略可能です。"
 	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
 	calendarCreateToolName    = "google_calendar_create"
@@ -193,7 +193,12 @@ func (r *runner) close() error {
 }
 
 type aiOutput struct {
-	Timeline []aiSegment `json:"timeline"`
+	Timeline   []aiSegment   `json:"timeline"`
+	Whiteboard *aiWhiteboard `json:"whiteboard,omitempty"`
+}
+
+type aiWhiteboard struct {
+	Content string `json:"content"`
 }
 
 type calendarEventsResponse struct {
@@ -248,6 +253,12 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 	}
 	if speechCount == 0 {
 		return aiOutput{}, false
+	}
+	if out.Whiteboard != nil {
+		out.Whiteboard.Content = strings.TrimSpace(out.Whiteboard.Content)
+		if out.Whiteboard.Content == "" {
+			return aiOutput{}, false
+		}
 	}
 	return out, true
 }

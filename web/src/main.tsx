@@ -342,13 +342,6 @@ function App() {
       source: 'volume',
     })
   }, [appendMessage, applyPlaybackVolume, nextMessageId])
-  const handleBoardToolResult = useCallback((output: any) => {
-    if (!output || typeof output !== 'object') return
-    if ((output as any).error) return
-    const content = (output as any).content
-    if (typeof content !== 'string') return
-    setBoardText(content)
-  }, [])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -422,6 +415,12 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
+        case 'whiteboard_update': {
+          const content = typeof raw.content === 'string' ? raw.content.trim() : ''
+          if (!content) return
+          setBoardText(content)
+          break
+        }
         case 'function_call': {
           appendMessage({
             id: nextMessageId(),
@@ -436,9 +435,6 @@ function App() {
           if (raw.name === 'set_volume') {
             handleVolumeToolResult(raw.output)
           }
-          if (raw.name === 'set_whiteboard') {
-            handleBoardToolResult(raw.output)
-          }
           appendMessage({
             id: nextMessageId(),
             type: 'function_result',
@@ -452,7 +448,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleBoardToolResult, handleRTCSignal, handleVolumeToolResult, nextMessageId],
+    [appendMessage, handleRTCSignal, handleVolumeToolResult, nextMessageId],
   )
 
   useEffect(() => {

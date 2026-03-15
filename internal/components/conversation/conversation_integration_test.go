@@ -93,6 +93,47 @@ func TestConversationIntegration(t *testing.T) {
 
 		h.expectRealtimeOutputText("ふたつめ")
 	})
+
+	t.Run("レスポンスにwhiteboardが含まれる場合は白板更新イベントも出る", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("明日の予定を教えて")
+		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"明日の予定を確認したよ"}],"whiteboard":{"content":"- 10:00 定例会議"}}`)
+
+		h.expectWhiteboardUpdate("- 10:00 定例会議")
+		first := h.expectRealtimeOutputText("明日の予定を確認したよ")
+		h.expectFinalOutput(first.ResponseID)
+	})
+
+	t.Run("レスポンスにwhiteboardがない場合は白板更新イベントが出ない", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"やあ"}]}`)
+
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+		h.expectNoEvent(150 * time.Millisecond)
+	})
+
+	t.Run("whiteboardが不正な形式の場合はinvalid responseとして再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("予定を教えて")
+		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"確認したよ"}],"whiteboard":{"content":"   "}}`)
+
+		secondEvt := h.expectEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" {
+			t.Fatal("retry RequestID is empty")
+		}
+		if second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
+		}
+	})
 }
 
 type conversationHarness struct {
@@ -187,6 +228,19 @@ func (h *conversationHarness) expectFinalOutput(responseID string) {
 	}
 	if line.ResponseID != responseID {
 		h.t.Fatalf("final output response_id = %q, want %q", line.ResponseID, responseID)
+	}
+}
+
+func (h *conversationHarness) expectWhiteboardUpdate(content string) {
+	h.t.Helper()
+
+	evt := h.expectEvent(types.EventWhiteboardUpdate)
+	update, ok := evt.Payload.(types.WhiteboardUpdate)
+	if !ok {
+		h.t.Fatalf("WhiteboardUpdate payload type = %T", evt.Payload)
+	}
+	if update.Content != content {
+		h.t.Fatalf("whiteboard content = %q, want %q", update.Content, content)
 	}
 }
 

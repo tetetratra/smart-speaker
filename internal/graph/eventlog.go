@@ -24,6 +24,7 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventToolResponse:      formatToolResponseDetail,
 		types.EventResponsesRequest:  formatResponsesRequestDetail,
 		types.EventResponsesResponse: formatResponsesResponseDetail,
+		types.EventWhiteboardUpdate:  formatWhiteboardUpdateDetail,
 		types.EventTTSCancel:         formatTTSCancelDetail,
 		types.EventRTCSignal:         formatRTCSignalDetail,
 	}
@@ -210,6 +211,15 @@ func formatTTSCancelDetail(evt types.Event) string {
 		return ""
 	}
 	return fmt.Sprintf("response_id=%s", cancel.ResponseID)
+}
+
+func formatWhiteboardUpdateDetail(evt types.Event) string {
+	update, ok := evt.Payload.(types.WhiteboardUpdate)
+	if !ok {
+		return ""
+	}
+	text := strings.TrimSpace(update.Content)
+	return fmt.Sprintf("content=%s, chars=%d", quoteText(text), utf8.RuneCountInString(text))
 }
 
 func formatRTCSignalDetail(evt types.Event) string {

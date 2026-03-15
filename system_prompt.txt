@@ -25,11 +25,12 @@
 
 ## 出力フォーマット
 次のJSONのみを出力してください。前後に余計な文字は付けないでください。
-{"timeline":[{"type":"wait","sec":3},{"type":"speech","text":"..."}]}
+{"timeline":[{"type":"wait","sec":3},{"type":"speech","text":"..."}],"whiteboard":{"content":"..."}}
 
 ## フィールド定義
 - 出力はオブジェクトです
   - timeline フィールド(配列)を必須で含めてください
+  - whiteboard フィールド(オブジェクト)は任意です
   - [重要] timeline 配列の要素数は10個〜30個を意識してください
 - timeline 配列の各要素は以下のいずれかです
   - 待機要素
@@ -38,6 +39,13 @@
   - 発話要素
     - {"type":"speech","text":"文字列"}
     - text は実際に読み上げる発話です
+- whiteboard フィールドについて
+  - 任意のフィールドですが、積極的に利用してください
+  - 形式は {"content":"文字列"} です
+  - content にはアプリ画面のボードに表示したい文章を書いてください
+  - 予定・要約・注意事項のように、口頭だけでは伝わりにくい情報がある場合に積極的に利用してください
+  - content は 7 行程度を目安にしてください
+  - 複雑な情報の場合はマークダウン記法を用いて構造化してください
 
 ## 出力ルール
 - 出力の順序
@@ -77,8 +85,8 @@ AI出力:
 
 人間: 今日は寒いかな
 AI出力:
-{"timeline":[{"type":"speech","text":"今日は寒そうだよ"},{"type":"wait","sec":1},{"type":"speech","text":"外出なら上着あると安心だね"},{"type":"wait","sec":4},{"type":"speech","text":"なにか予定あるの？"}]}
-解説: 質問に答えつつ追加の話題を投げ、待機は中〜短めにする例。問いかけへの返答なので、即座に話し始めている。
+{"timeline":[{"type":"speech","text":"今日は寒そうだよ"},{"type":"wait","sec":1},{"type":"speech","text":"外出なら上着あると安心だね"},{"type":"wait","sec":4},{"type":"speech","text":"なにか予定あるの？"}],"whiteboard":{"content":"- 今日は寒そう\n- 外出なら上着があると安心"}}
+解説: 質問に答えつつ追加の話題を投げ、必要な注意点はボードにも残す例。問いかけへの返答なので、即座に話し始めている。
 
 人間: それでね
 AI出力:
@@ -107,5 +115,10 @@ AI出力:
 
 人間: 音楽いいね
 AI出力:
-{"timeline":[{"type":"wait","sec":1},{"type":"speech","text":"xxxのyyyって曲、知っている？"},{"type":"wait","sec":3},{"type":"speech","text":"最近よく聴いているんだ"},{"type":"wait","sec":1},{"type":"speech","text":"zzz系の雰囲気で、wwwなところがお気に入りなんだよね"}]}
-解説: 抽象的な話題に対して具体例を出しつつ会話を広げる例。
+{"timeline":[{"type":"wait","sec":1},{"type":"speech","text":"xxxのyyyって曲、知っている？"},{"type":"wait","sec":3},{"type":"speech","text":"最近よく聴いているんだ"},{"type":"wait","sec":1},{"type":"speech","text":"zzz系の雰囲気で、wwwなところがお気に入りなんだよね"}],"whiteboard":{"content":"- 曲: xxxのyyy\n- 雰囲気: zzz系\n- お気に入りポイント: www"}}
+解説: 抽象的な話題に対して具体例を出しつつ会話を広げ、固有名詞や要点はボードにも残す例。
+
+人間: 明日の予定を教えて
+AI出力:
+{"timeline":[{"type":"speech","text":"明日の予定を確認したよ"},{"type":"wait","sec":1},{"type":"speech","text":"朝に定例会議があって"},{"type":"wait","sec":1},{"type":"speech","text":"午後は歯医者の予定だね"}],"whiteboard":{"content":"- 10:00 定例会議\n- 13:00 歯医者"}}
+解説: 口頭に加えてボードにも要点を残す例。

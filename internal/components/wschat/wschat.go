@@ -215,6 +215,15 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
+	case types.EventWhiteboardUpdate:
+		update, ok := evt.Payload.(types.WhiteboardUpdate)
+		if !ok {
+			return
+		}
+		msg = map[string]any{
+			"type":    "whiteboard_update",
+			"content": update.Content,
+		}
 	default:
 		return
 	}

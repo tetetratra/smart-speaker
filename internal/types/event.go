@@ -19,6 +19,7 @@ const (
 	EventToolResponse
 	EventResponsesRequest
 	EventResponsesResponse
+	EventWhiteboardUpdate
 	EventTTSEnd
 	EventTTSCancel
 	EventReset
@@ -54,6 +55,8 @@ func (k EventKind) String() string {
 		return "EventResponsesRequest"
 	case EventResponsesResponse:
 		return "EventResponsesResponse"
+	case EventWhiteboardUpdate:
+		return "EventWhiteboardUpdate"
 	case EventTTSEnd:
 		return "EventTTSEnd"
 	case EventTTSCancel:

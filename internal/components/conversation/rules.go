@@ -109,13 +109,25 @@ func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 	}
 
 	core.state.invalidResponseRetries = 0
+	var effects []effect
+	if out.Whiteboard != nil {
+		effects = append(effects, emitEventEffect{
+			event: types.Event{
+				Kind: types.EventWhiteboardUpdate,
+				Payload: types.WhiteboardUpdate{
+					Content: out.Whiteboard.Content,
+				},
+			},
+		})
+	}
 	root := buildUtteranceChain(out)
 	if len(root) == 0 {
-		return nil, true
+		return effects, true
 	}
 	core.state.pendingTimeline = root
 	core.state.pendingTimelineIdx = 0
-	return core.advanceTimelineEffects(), true
+	effects = append(effects, core.advanceTimelineEffects()...)
+	return effects, true
 }
 
 type toolResponseRule struct{}

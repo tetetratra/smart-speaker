@@ -35,6 +35,11 @@ type TTSCancel struct {
 	ResponseID string
 }
 
+// WhiteboardUpdate はアプリ画面の白板表示更新を表します。
+type WhiteboardUpdate struct {
+	Content string
+}
+
 type RTCIceCandidate struct {
 	Candidate     string  `json:"candidate"`
 	SDPMid        *string `json:"sdpMid,omitempty"`
