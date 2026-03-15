@@ -15,5 +15,5 @@ restore_context() {
 trap restore_context EXIT
 
 docker context use "$CONTEXT_NAME"
-docker compose -f "$COMPOSE_FILE" up -d --build
-docker compose -f "$COMPOSE_FILE" logs -f
+docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+docker compose -f "$COMPOSE_FILE" logs -f server
