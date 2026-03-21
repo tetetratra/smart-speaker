@@ -41,17 +41,23 @@ func main() {
 
 	ensureGoogleCalendarToken()
 
-	stages, err := buildStages(cfg)
+	server, chatStage, err := buildHTTPServer(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer stages.close()
+	defer closeHTTPServer(server)
+
+	responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage, err := buildStages(cfg, chatStage)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer closeStages(responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage)
 
 	g := graph.New()
 	defer g.Close()
 
-	wireGraph(g, stages)
-	runHTTPServer(stages.server)
+	wireGraph(g, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage)
+	runHTTPServer(server)
 
 	log.Printf("main ctx err: %v", ctx.Err())
 
@@ -76,51 +82,38 @@ func ensureGoogleCalendarToken() {
 	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
 }
 
-type stages struct {
-	server    *http.Server
-	responses *graph.Stage
-	tts       *graph.Stage
-	chat      *graph.Stage
-	rtc       *graph.Stage
-	tool      *graph.Stage
-	conv      *graph.Stage
-	lifecycle *graph.Stage
+func closeHTTPServer(server *http.Server) {
+	if server != nil {
+		_ = server.Close()
+	}
 }
 
-func (s stages) close() {
-	if s.server != nil {
-		_ = s.server.Close()
-	}
-	for _, st := range []*graph.Stage{s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.lifecycle} {
+func closeStages(stages ...*graph.Stage) {
+	for _, st := range stages {
 		if st != nil {
 			st.Close()
 		}
 	}
 }
 
-func buildStages(cfg app.Config) (stages, error) {
-	server, chatStage, err := buildWSStages(cfg)
-	if err != nil {
-		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
-	}
+func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage *graph.Stage, err error) {
 	if chatStage != nil {
 		chatStage.Name = "wschat"
 	}
-	ttsStage, err := tts.NewStage(tts.Config{
+	ttsStage, err = tts.NewStage(tts.Config{
 		APIKey: cfg.ElevenLabs.APIKey,
 		Voice:  cfg.ElevenLabs.VoiceID,
 		Model:  cfg.ElevenLabs.Model,
 	})
 	if err != nil {
-		_ = server.Close()
-		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
 	diaryStore := newDiaryStore()
 	calendarClient := newCalendarClient()
-	convStage := conversation.NewStage(conversation.Config{
+	convStage = conversation.NewStage(conversation.Config{
 		LogPath:        "data/conversation.jsonl",
 		CalendarClient: calendarClient,
 		DiaryReader:    diaryStore,
@@ -140,34 +133,33 @@ func buildStages(cfg app.Config) (stages, error) {
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
 		writeDiaryTools = append(writeDiaryTools, def)
 	}
-	lifecycleStage := sessionlifecycle.NewStage(sessionlifecycle.Config{
+	lifecycleStage = sessionlifecycle.NewStage(sessionlifecycle.Config{
 		WriteDiaryTools: writeDiaryTools,
 		IdleThreshold:   10 * time.Minute,
 	})
 	if lifecycleStage != nil {
 		lifecycleStage.Name = "sessionlifecycle"
 	}
-	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
+	responsesStage, err = responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
-		_ = server.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
-		return stages{}, fmt.Errorf("failed to init responses stage: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init responses stage: %w", err)
 	}
 	if responsesStage != nil {
 		responsesStage.Name = "responsesapi"
 	}
-	toolStage := toolcaller.NewStage(toolRegistry.Handlers())
+	toolStage = toolcaller.NewStage(toolRegistry.Handlers())
 	if toolStage != nil {
 		toolStage.Name = "toolcaller"
 	}
-	rtcStage, err := rtc.NewStage(rtc.Config{
+	rtcStage, err = rtc.NewStage(rtc.Config{
 		IceHostIPs:       cfg.RTCIceHostIPs,
 		SpeechProjectID:  cfg.GoogleCloudProject,
 		SpeechRecognizer: cfg.GoogleRecognizer,
@@ -175,28 +167,18 @@ func buildStages(cfg app.Config) (stages, error) {
 		SpeechCredsJSON:  cfg.GoogleCredentials,
 	})
 	if err != nil {
-		_ = server.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
-		return stages{}, fmt.Errorf("failed to init rtc stage: %w", err)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init rtc stage: %w", err)
 	}
 	if rtcStage != nil {
 		rtcStage.Name = "rtc"
 	}
-	return stages{
-		server:    server,
-		responses: responsesStage,
-		tts:       ttsStage,
-		chat:      chatStage,
-		rtc:       rtcStage,
-		tool:      toolStage,
-		conv:      convStage,
-		lifecycle: lifecycleStage,
-	}, nil
+	return responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage, nil
 }
 
-func buildWSStages(cfg app.Config) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
@@ -227,7 +209,7 @@ func newDiaryStore() *diarystore.Store {
 	return diarystore.NewStore(diarystore.Config{})
 }
 
-func wireGraph(g *graph.Graph, st stages) {
+func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage *graph.Stage) {
 	add := func(stage *graph.Stage) *graph.Node {
 		if stage == nil {
 			return nil
@@ -235,12 +217,12 @@ func wireGraph(g *graph.Graph, st stages) {
 		return g.AddNode(stage)
 	}
 
-	responsesNode := add(st.responses)
-	convNode := add(st.conv)
-	lifecycleNode := add(st.lifecycle)
-	ttsNode := add(st.tts)
-	rtcNode := add(st.rtc)
-	chatNode := add(st.chat)
+	responsesNode := add(responsesStage)
+	convNode := add(convStage)
+	lifecycleNode := add(lifecycleStage)
+	ttsNode := add(ttsStage)
+	rtcNode := add(rtcStage)
+	chatNode := add(chatStage)
 
 	if lifecycleNode != nil {
 		if responsesNode != nil {
@@ -268,7 +250,7 @@ func wireGraph(g *graph.Graph, st stages) {
 		}
 	}
 	var toolNode *graph.Node
-	if node := add(st.tool); node != nil {
+	if node := add(toolStage); node != nil {
 		toolNode = node
 		if responsesNode != nil {
 			g.Connect(responsesNode, toolNode)
