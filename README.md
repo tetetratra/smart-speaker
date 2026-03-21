@@ -77,7 +77,8 @@ docker compose -f docker-compose.yml up --build
 ```
 `npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
-日記ファイルをホスト側に永続化するため、デプロイ前に本番ホストで以下を実行してください。
+日記は `internal/diary/store.go` を通して `data/diary.md` に永続化されます。  
+本番でこのファイルをホスト側に残すため、デプロイ前に以下を実行してください。
 ```sh
 sudo mkdir -p /var/lib/smart-speaker/data
 sudo chown root:root /var/lib/smart-speaker/data
@@ -128,6 +129,7 @@ flowchart LR
   toolcaller["toolcaller"]
   tts["tts (ElevenLabs)"]
   rtc["rtc (WebRTC)"]
+  diarystore["diary store (data/diary.md)"]
 
   wsserver -. "ServeMuxで /ws/chat と Web UI を公開（イベント接続なし）" .-> wschat
 
@@ -157,11 +159,21 @@ flowchart LR
 
   sessionlifecycle -- "EventResponsesRequest" --> responses
   sessionlifecycle -- "EventSessionClear" --> conversation
+
+  diarystore -. "Content()" .-> conversation
+  toolcaller -. "write_diary -> AppendEntry()" .-> diarystore
 ```
 
 - `wsserver` は HTTP サーバー起動専用ステージ（イベントグラフとは独立）
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはサーバー側で実施
+- diary は generic な shared state ではなく、`internal/diary/store.go` が担当する
+
+## diary の永続化
+- `conversation` は system context 付与時に `diary store` から diary 本文を読む
+- `write_diary` ツールは `diary store` に追記する
+- `main` で `diary store` を 1 回生成し、`conversation` と `write_diary` の両方に注入する
+- 旧 `internal/state` パッケージは削除済み
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`
