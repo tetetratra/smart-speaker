@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"smart-speaker/internal/state"
+	diarystore "smart-speaker/internal/diary"
 	"smart-speaker/internal/tools"
 )
 
@@ -26,10 +26,19 @@ const (
 )
 
 // Tool は会話の日記をファイルに保存します。
-type Tool struct{}
+type DiaryAppender interface {
+	AppendEntry(when time.Time, content string) (string, error)
+}
 
-func New() *Tool {
-	return &Tool{}
+type Tool struct {
+	appender DiaryAppender
+}
+
+func New(appender DiaryAppender) *Tool {
+	if appender == nil {
+		appender = diarystore.NewStore(diarystore.Config{})
+	}
+	return &Tool{appender: appender}
 }
 
 func (t *Tool) Name() string { return toolName }
@@ -41,7 +50,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("content is required")
 	}
 	when := time.Now()
-	path, err := state.AppendDiaryEntry(when, content)
+	path, err := t.appender.AppendEntry(when, content)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write diary: %w", err)
 	}

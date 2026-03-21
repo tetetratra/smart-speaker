@@ -6,30 +6,41 @@ import (
 	"strings"
 	"time"
 
+	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
-	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
 type contextProvider struct {
 	calendarClient calendarEventLister
+	diaryReader    DiaryReader
 }
 
 type calendarEventLister interface {
 	ListEvents(ctx context.Context, req calendarapi.ListEventsRequest) ([]calendarapi.Event, error)
 }
 
-func newContextProvider(client calendarEventLister) *contextProvider {
+type DiaryReader interface {
+	Content() (string, error)
+}
+
+func newContextProvider(client calendarEventLister, reader DiaryReader) *contextProvider {
 	if client == nil {
 		client = calendarapi.NewClient(calendarapi.Config{})
 	}
-	return &contextProvider{calendarClient: client}
+	if reader == nil {
+		reader = diarystore.NewStore(diarystore.Config{})
+	}
+	return &contextProvider{
+		calendarClient: client,
+		diaryReader:    reader,
+	}
 }
 
 func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
 	out := p.withCalendarContext(ctx, messages)
-	return withDiaryContext(out)
+	return p.withDiaryContext(out)
 }
 
 func (p *contextProvider) withCalendarContext(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
@@ -66,8 +77,16 @@ func (p *contextProvider) buildCalendarContext(ctx context.Context) (string, err
 	return buildCalendarContextWithClient(ctx, p.calendarClient, day0, dayN)
 }
 
-func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
-	diary := strings.TrimSpace(state.GetDiaryContent())
+func (p *contextProvider) withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
+	if p == nil || p.diaryReader == nil {
+		return messages
+	}
+	diary, err := p.diaryReader.Content()
+	if err != nil {
+		log.Printf("conversation: failed to read diary context: %v", err)
+		return messages
+	}
+	diary = strings.TrimSpace(diary)
 	if diary == "" {
 		return messages
 	}

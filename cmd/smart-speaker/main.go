@@ -22,6 +22,7 @@ import (
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/components/wsserver"
+	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
@@ -116,10 +117,12 @@ func buildStages(cfg app.Config) (stages, error) {
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
+	diaryStore := newDiaryStore()
 	calendarClient := newCalendarClient()
 	convStage := conversation.NewStage(conversation.Config{
 		LogPath:        "data/conversation.jsonl",
 		CalendarClient: calendarClient,
+		DiaryReader:    diaryStore,
 	})
 	if convStage != nil {
 		convStage.Name = "conversation"
@@ -130,6 +133,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
 		CalendarClient:     calendarClient,
+		DiaryStore:         diaryStore,
 	})
 	writeDiaryTools := []any{}
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
@@ -206,6 +210,10 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 
 func newCalendarClient() *calendarapi.Client {
 	return calendarapi.NewClient(calendarapi.Config{})
+}
+
+func newDiaryStore() *diarystore.Store {
+	return diarystore.NewStore(diarystore.Config{})
 }
 
 func wireGraph(g *graph.Graph, st stages) {

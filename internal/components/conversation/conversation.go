@@ -22,6 +22,7 @@ var (
 type Config struct {
 	LogPath        string
 	CalendarClient calendarEventLister
+	DiaryReader    DiaryReader
 }
 
 type Speaker string
@@ -81,7 +82,7 @@ func NewStage(cfg Config) *graph.Stage {
 	r := &runner{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		contexts:   newContextProvider(cfg.CalendarClient),
+		contexts:   newContextProvider(cfg.CalendarClient, cfg.DiaryReader),
 		logger:     newConversationLogger(cfg.LogPath),
 		core:       newConversationCore(),
 	}

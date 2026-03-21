@@ -1,9 +1,10 @@
 package registry
 
 import (
+	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/tools"
-	"smart-speaker/internal/tools/functions/diary"
+	diarytool "smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
@@ -26,6 +27,7 @@ type Config struct {
 	SwitchBotSecret    string
 	SwitchBotDeviceMap string
 	CalendarClient     *calendarapi.Client
+	DiaryStore         *diarystore.Store
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -36,7 +38,7 @@ func New(cfg Config) *Registry {
 	lightTool := switchbot.NewLight(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	blindTool := switchbot.NewBlindTilt(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	diaryTool := diary.New()
+	diaryTool := diarytool.New(cfg.DiaryStore)
 	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
 	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
