@@ -6,16 +6,25 @@ import (
 	"strings"
 	"time"
 
+	calendarapi "smart-speaker/internal/googlecalendar"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/state"
 	types "smart-speaker/internal/types"
 )
 
 type contextProvider struct {
+	calendarClient calendarEventLister
 }
 
-func newContextProvider() *contextProvider {
-	return &contextProvider{}
+type calendarEventLister interface {
+	ListEvents(ctx context.Context, req calendarapi.ListEventsRequest) ([]calendarapi.Event, error)
+}
+
+func newContextProvider(client calendarEventLister) *contextProvider {
+	if client == nil {
+		client = calendarapi.NewClient(calendarapi.Config{})
+	}
+	return &contextProvider{calendarClient: client}
 }
 
 func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
@@ -24,7 +33,7 @@ func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []typ
 }
 
 func (p *contextProvider) withCalendarContext(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
-	built, err := buildCalendarContext(ctx)
+	built, err := p.buildCalendarContext(ctx)
 	if err != nil {
 		log.Printf("conversation: failed to build calendar context: %v", err)
 		return messages
@@ -42,6 +51,21 @@ func (p *contextProvider) withCalendarContext(ctx context.Context, messages []ty
 	return withCalendar
 }
 
+func (p *contextProvider) buildCalendarContext(ctx context.Context) (string, error) {
+	if _, err := oauthgooglecalendar.LoadToken(); err != nil {
+		return "", nil
+	}
+	if ctx == nil {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	now := time.Now()
+	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	dayN := day0.AddDate(0, 0, calendarPromptDays)
+	return buildCalendarContextWithClient(ctx, p.calendarClient, day0, dayN)
+}
+
 func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
 	diary := strings.TrimSpace(state.GetDiaryContent())
 	if diary == "" {
@@ -56,23 +80,13 @@ func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
 	return withDiary
 }
 
-func buildCalendarContext(ctx context.Context) (string, error) {
-	if _, err := oauthgooglecalendar.LoadToken(); err != nil {
-		return "", nil
-	}
-	if ctx == nil {
-		return "", nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	token, err := oauthgooglecalendar.AccessToken(ctx)
-	if err != nil {
-		return "", err
-	}
-	now := time.Now()
-	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	dayN := day0.AddDate(0, 0, calendarPromptDays)
-	events, err := fetchPrimaryCalendarEvents(ctx, token, day0, dayN, calendarFetchMaxResults)
+func buildCalendarContextWithClient(ctx context.Context, client calendarEventLister, day0 time.Time, dayN time.Time) (string, error) {
+	events, err := client.ListEvents(ctx, calendarapi.ListEventsRequest{
+		CalendarID: "primary",
+		TimeMin:    day0,
+		TimeMax:    dayN,
+		MaxResults: calendarFetchMaxResults,
+	})
 	if err != nil {
 		return "", err
 	}

@@ -3,16 +3,12 @@ package conversation
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
 )
@@ -24,7 +20,8 @@ var (
 )
 
 type Config struct {
-	LogPath string
+	LogPath        string
+	CalendarClient calendarEventLister
 }
 
 type Speaker string
@@ -84,7 +81,7 @@ func NewStage(cfg Config) *graph.Stage {
 	r := &runner{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		contexts:   newContextProvider(),
+		contexts:   newContextProvider(cfg.CalendarClient),
 		logger:     newConversationLogger(cfg.LogPath),
 		core:       newConversationCore(),
 	}
@@ -197,21 +194,6 @@ type aiWhiteboard struct {
 	Content string `json:"content"`
 }
 
-type calendarEventsResponse struct {
-	Items []calendarEvent `json:"items"`
-}
-
-type calendarEvent struct {
-	Summary string                `json:"summary"`
-	Start   calendarEventDateTime `json:"start"`
-	End     calendarEventDateTime `json:"end"`
-}
-
-type calendarEventDateTime struct {
-	Date     string `json:"date"`
-	DateTime string `json:"dateTime"`
-}
-
 type aiSegment struct {
 	Type string `json:"type"`
 	Sec  *int   `json:"sec,omitempty"`
@@ -306,45 +288,7 @@ func utteranceSource(_ *Utterance) string {
 	return "conversation"
 }
 
-func fetchPrimaryCalendarEvents(ctx context.Context, token string, start time.Time, end time.Time, maxResults int) ([]calendarEvent, error) {
-	if maxResults <= 0 {
-		maxResults = calendarFetchMaxResults
-	}
-	query := url.Values{}
-	query.Set("timeMin", start.Format(time.RFC3339))
-	query.Set("timeMax", end.Format(time.RFC3339))
-	query.Set("singleEvents", "true")
-	query.Set("orderBy", "startTime")
-	query.Set("maxResults", strconv.Itoa(maxResults))
-	endpoint := "https://www.googleapis.com/calendar/v3/calendars/primary/events?" + query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		msg := strings.TrimSpace(string(body))
-		if len(msg) > 300 {
-			msg = msg[:300] + "..."
-		}
-		return nil, fmt.Errorf("google calendar events list failed: status=%d body=%s", resp.StatusCode, msg)
-	}
-	var parsed calendarEventsResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, err
-	}
-	return parsed.Items, nil
-}
-
-func formatCalendarPrompt(events []calendarEvent, day0 time.Time) string {
+func formatCalendarPrompt(events []calendarapi.Event, day0 time.Time) string {
 	labels := []string{"今日", "明日", "明後日"}
 	grouped := make([][]string, calendarPromptDays)
 	dayIndex := make(map[string]int, calendarPromptDays)
@@ -386,7 +330,7 @@ func formatCalendarPrompt(events []calendarEvent, day0 time.Time) string {
 	return strings.TrimSpace(b.String())
 }
 
-func formatCalendarEventLine(event calendarEvent) string {
+func formatCalendarEventLine(event calendarapi.Event) string {
 	title := strings.TrimSpace(event.Summary)
 	if title == "" {
 		title = "(タイトルなし)"
@@ -402,7 +346,7 @@ func formatCalendarEventLine(event calendarEvent) string {
 	return strings.TrimSpace(start + "-" + end + " " + title)
 }
 
-func eventStartTime(start calendarEventDateTime) (time.Time, bool) {
+func eventStartTime(start calendarapi.EventTime) (time.Time, bool) {
 	if start.DateTime != "" {
 		t, err := time.Parse(time.RFC3339, start.DateTime)
 		if err != nil {
@@ -421,7 +365,7 @@ func eventStartTime(start calendarEventDateTime) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func formatCalendarEventClock(dt calendarEventDateTime, isEnd bool) string {
+func formatCalendarEventClock(dt calendarapi.EventTime, isEnd bool) string {
 	if dt.Date != "" && dt.DateTime == "" {
 		if isEnd {
 			return ""

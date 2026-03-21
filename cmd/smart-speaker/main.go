@@ -22,8 +22,9 @@ import (
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wschat"
 	"smart-speaker/internal/components/wsserver"
+	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
-	"smart-speaker/internal/oauth/googlecalendar"
+	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/tools/registry"
 )
 
@@ -67,7 +68,7 @@ func setLocalTimeZone() {
 }
 
 func ensureGoogleCalendarToken() {
-	if _, err := googlecalendar.LoadToken(); err == nil {
+	if _, err := oauthgooglecalendar.LoadToken(); err == nil {
 		return
 	}
 	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
@@ -115,8 +116,10 @@ func buildStages(cfg app.Config) (stages, error) {
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
+	calendarClient := newCalendarClient()
 	convStage := conversation.NewStage(conversation.Config{
-		LogPath: "data/conversation.jsonl",
+		LogPath:        "data/conversation.jsonl",
+		CalendarClient: calendarClient,
 	})
 	if convStage != nil {
 		convStage.Name = "conversation"
@@ -126,6 +129,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		SwitchBotToken:     cfg.SwitchBot.Token,
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
+		CalendarClient:     calendarClient,
 	})
 	writeDiaryTools := []any{}
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
@@ -190,7 +194,7 @@ func buildStages(cfg app.Config) (stages, error) {
 func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
-	googlecalendar.RegisterHTTPHandlers(mux)
+	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
 		Addr:    cfg.WSAddr,
 		Handler: mux,
@@ -198,6 +202,10 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 	serverStage := wsserver.NewStage(server)
 	chat := wschat.NewStage(mux)
 	return serverStage, chat, nil
+}
+
+func newCalendarClient() *calendarapi.Client {
+	return calendarapi.NewClient(calendarapi.Config{})
 }
 
 func wireGraph(g *graph.Graph, st stages) {

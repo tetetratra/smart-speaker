@@ -1,6 +1,7 @@
 package registry
 
 import (
+	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/googlecalendar"
@@ -24,6 +25,7 @@ type Config struct {
 	SwitchBotToken     string
 	SwitchBotSecret    string
 	SwitchBotDeviceMap string
+	CalendarClient     *calendarapi.Client
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -35,9 +37,9 @@ func New(cfg Config) *Registry {
 	blindTool := switchbot.NewBlindTilt(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	diaryTool := diary.New()
-	googleCalendarList := googlecalendar.NewList()
-	googleCalendarCreate := googlecalendar.NewCreate()
-	googleCalendarUpdate := googlecalendar.NewUpdate()
+	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
+	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
+	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
 	timerTool := timer.New()
 	volumeTool := volume.New()
 	toolEntries := []entry{
