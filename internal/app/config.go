@@ -49,7 +49,7 @@ func LoadConfig(promptPath string) Config {
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
 		// realtime系のapiはコンテキストウィンドウが小さいのと高いため、response系のモデルを使う
-		responsesModel = "gpt-5.3-chat-latest"
+		responsesModel = "gpt-5.4-mini"
 	}
 
 	prompt := readSystemPrompt(promptPath)
