@@ -8,7 +8,7 @@ type ChatMessage =
   | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
 
 type StatusTone = 'idle' | 'active' | 'done' | 'error'
-type ButtonTone = 'primary' | 'secondary' | 'warning'
+type ButtonTone = 'primary' | 'secondary'
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -266,14 +266,6 @@ function getButtonStyle(tone: ButtonTone, disabled: boolean): React.CSSPropertie
       background: '#0f172a',
       color: '#f8fafc',
       borderColor: '#0f172a',
-    }
-  }
-  if (tone === 'warning') {
-    return {
-      ...base,
-      background: '#fff7ed',
-      color: '#c2410c',
-      borderColor: '#fdba74',
     }
   }
   return {
@@ -734,13 +726,6 @@ function App() {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
-
-  const sendReset = useCallback(() => {
-    const ws = wsChatRef.current
-    if (!ws || !connected) return
-    ws.send({ type: 'reset' })
-  }, [connected])
-
   const sendText = useCallback(() => {
     const ws = wsChatRef.current
     const text = input.trim()
@@ -854,9 +839,6 @@ function App() {
           </button>
           <button onClick={disconnect} disabled={!connected} style={getButtonStyle('secondary', !connected)}>
             切断
-          </button>
-          <button onClick={sendReset} disabled={!connected} style={getButtonStyle('warning', !connected)}>
-            おやすみ
           </button>
           <button onClick={startGoogleAuth} style={getButtonStyle('secondary', false)}>
             Google認証
