@@ -52,7 +52,10 @@ func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 		},
 	})
 	messages := core.state.buildConversationMessages()
-	effects = append(effects, updateConversationStateEffect{messages: messages})
+	effects = append(effects,
+		emitConversationActivityEffect(time.Now(), "human_turn_committed"),
+		emitConversationSnapshotEffect(messages),
+	)
 	effects = append(effects, core.buildResponseRequestEffect(messages, nil)...)
 	return effects, true
 }
@@ -143,9 +146,6 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 		name = "unknown_tool"
 	}
 	var effects []effect
-	if name == calendarCreateToolName || name == calendarUpdateToolName {
-		effects = append(effects, invalidateCalendarContextEffect{})
-	}
 	if name == "write_diary" {
 		return effects, true
 	}
@@ -170,9 +170,7 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 			Source:     name,
 		},
 	})
-	effects = append(effects, updateConversationStateEffect{
-		messages: core.state.buildConversationMessages(),
-	})
+	effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
 	return effects, true
 }
 
@@ -184,7 +182,7 @@ func (sessionClearRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 	}
 	effects := core.interruptCurrentConversationEffects()
 	core.state.resetConversation()
-	effects = append(effects, clearContextsEffect{}, clearConversationStateEffect{})
+	effects = append(effects, emitConversationSnapshotEffect(nil))
 	return effects, true
 }
 
@@ -211,25 +209,21 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	if core.state.current == utt {
 		core.state.current = nil
 	}
-	effects := []effect{markActivityEffect{at: time.Now()}}
+	effects := []effect{}
 	if !core.state.hasPendingSpeech() {
 		core.state.clearPendingTimeline()
-		effects = append(effects, updateConversationStateEffect{
-			messages: core.state.buildConversationMessages(),
-		})
+		effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
 		return effects, true
 	}
 	waitSec := core.state.consumeLeadingWaitSeconds()
 	if !core.state.hasPendingSpeech() {
 		core.state.clearPendingTimeline()
-		effects = append(effects, updateConversationStateEffect{
-			messages: core.state.buildConversationMessages(),
-		})
+		effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
 		return effects, true
 	}
 	effects = append(effects,
 		startTimerEffect{duration: estimateWaitDuration(s.event, waitSec)},
-		updateConversationStateEffect{messages: core.state.buildConversationMessages()},
+		emitConversationSnapshotEffect(core.state.buildConversationMessages()),
 	)
 	return effects, true
 }
@@ -291,4 +285,29 @@ func logRuntimeMessage(message string) {
 		return
 	}
 	log.Print(message)
+}
+
+func emitConversationSnapshotEffect(messages []types.ChatMessage) emitEventEffect {
+	cloned := make([]types.ChatMessage, len(messages))
+	copy(cloned, messages)
+	return emitEventEffect{
+		event: types.Event{
+			Kind: types.EventConversationSnapshotUpdated,
+			Payload: types.ConversationSnapshot{
+				Messages: cloned,
+			},
+		},
+	}
+}
+
+func emitConversationActivityEffect(at time.Time, source string) emitEventEffect {
+	return emitEventEffect{
+		event: types.Event{
+			Kind: types.EventConversationActivity,
+			Payload: types.ConversationActivity{
+				At:     at,
+				Source: source,
+			},
+		},
+	}
 }

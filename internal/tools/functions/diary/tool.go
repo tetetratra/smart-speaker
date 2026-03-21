@@ -40,10 +40,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	when := state.GetLastActivityAt()
-	if when.IsZero() {
-		when = time.Now()
-	}
+	when := time.Now()
 	path, err := state.AppendDiaryEntry(when, content)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write diary: %w", err)

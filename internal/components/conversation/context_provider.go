@@ -12,7 +12,6 @@ import (
 )
 
 type contextProvider struct {
-	calendarContextCache string
 }
 
 func newContextProvider() *contextProvider {
@@ -25,16 +24,12 @@ func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []typ
 }
 
 func (p *contextProvider) withCalendarContext(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
-	content := strings.TrimSpace(p.calendarContextCache)
-	if content == "" {
-		built, err := buildCalendarContext(ctx)
-		if err != nil {
-			log.Printf("conversation: failed to build calendar context: %v", err)
-			return messages
-		}
-		content = strings.TrimSpace(built)
-		p.calendarContextCache = content
+	built, err := buildCalendarContext(ctx)
+	if err != nil {
+		log.Printf("conversation: failed to build calendar context: %v", err)
+		return messages
 	}
+	content := strings.TrimSpace(built)
 	if content == "" {
 		return messages
 	}
@@ -45,14 +40,6 @@ func (p *contextProvider) withCalendarContext(ctx context.Context, messages []ty
 	})
 	withCalendar = append(withCalendar, messages...)
 	return withCalendar
-}
-
-func (p *contextProvider) InvalidateCalendar() {
-	p.calendarContextCache = ""
-}
-
-func (p *contextProvider) Clear() {
-	p.calendarContextCache = ""
 }
 
 func withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {

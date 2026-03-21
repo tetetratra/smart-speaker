@@ -11,6 +11,41 @@ import (
 )
 
 func TestConversationIntegration(t *testing.T) {
+	t.Run("人の確定発話で活動イベントと会話スナップショットが出る", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTextInput,
+			Payload: types.OutputLine{
+				Role: "user",
+				Text: "こんにちは",
+			},
+		})
+
+		activityEvt := h.expectEvent(types.EventConversationActivity)
+		activity, ok := activityEvt.Payload.(types.ConversationActivity)
+		if !ok {
+			t.Fatalf("ConversationActivity payload type = %T", activityEvt.Payload)
+		}
+		if activity.Source != "human_turn_committed" {
+			t.Fatalf("activity source = %q, want human_turn_committed", activity.Source)
+		}
+
+		snapshotEvt := h.expectEvent(types.EventConversationSnapshotUpdated)
+		snapshot, ok := snapshotEvt.Payload.(types.ConversationSnapshot)
+		if !ok {
+			t.Fatalf("ConversationSnapshot payload type = %T", snapshotEvt.Payload)
+		}
+		if len(snapshot.Messages) != 1 {
+			t.Fatalf("snapshot messages len = %d, want 1", len(snapshot.Messages))
+		}
+		if snapshot.Messages[0].Role != "user" || snapshot.Messages[0].Content != "こんにちは" {
+			t.Fatalf("snapshot message = %+v", snapshot.Messages[0])
+		}
+
+		h.expectMainEvent(types.EventResponsesRequest)
+	})
+
 	t.Run("人の発話開始で再生中assistantがcancelされる", func(t *testing.T) {
 		h := newConversationHarness(t)
 
@@ -22,7 +57,7 @@ func TestConversationIntegration(t *testing.T) {
 
 		h.sendEvent(types.Event{Kind: types.EventSpeechStart})
 
-		cancelEvt := h.expectEvent(types.EventTTSCancel)
+		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
 		cancel, ok := cancelEvt.Payload.(types.TTSCancel)
 		if !ok {
 			t.Fatalf("TTSCancel payload type = %T", cancelEvt.Payload)
@@ -57,7 +92,7 @@ func TestConversationIntegration(t *testing.T) {
 		first := h.sendTextInput("テスト")
 		h.sendResponse(first.RequestID, `{"timeline":[}`)
 
-		secondEvt := h.expectEvent(types.EventResponsesRequest)
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
 		if !ok {
 			t.Fatalf("retry payload type = %T", secondEvt.Payload)
@@ -122,7 +157,7 @@ func TestConversationIntegration(t *testing.T) {
 		first := h.sendTextInput("予定を教えて")
 		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"確認したよ"}],"whiteboard":{"content":"   "}}`)
 
-		secondEvt := h.expectEvent(types.EventResponsesRequest)
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
 		if !ok {
 			t.Fatalf("retry payload type = %T", secondEvt.Payload)
@@ -173,7 +208,7 @@ func (h *conversationHarness) sendTextInput(text string) types.ResponsesRequest 
 		},
 	})
 
-	evt := h.expectEvent(types.EventResponsesRequest)
+	evt := h.expectMainEvent(types.EventResponsesRequest)
 	req, ok := evt.Payload.(types.ResponsesRequest)
 	if !ok {
 		h.t.Fatalf("ResponsesRequest payload type = %T", evt.Payload)
@@ -201,7 +236,7 @@ func (h *conversationHarness) sendEvent(evt types.Event) {
 func (h *conversationHarness) expectRealtimeOutputText(text string) types.OutputLine {
 	h.t.Helper()
 
-	evt := h.expectEvent(types.EventRealtimeOutput)
+	evt := h.expectMainEvent(types.EventRealtimeOutput)
 	line, ok := evt.Payload.(types.OutputLine)
 	if !ok {
 		h.t.Fatalf("RealtimeOutput payload type = %T", evt.Payload)
@@ -218,7 +253,7 @@ func (h *conversationHarness) expectRealtimeOutputText(text string) types.Output
 func (h *conversationHarness) expectFinalOutput(responseID string) {
 	h.t.Helper()
 
-	evt := h.expectEvent(types.EventRealtimeOutput)
+	evt := h.expectMainEvent(types.EventRealtimeOutput)
 	line, ok := evt.Payload.(types.OutputLine)
 	if !ok {
 		h.t.Fatalf("final RealtimeOutput payload type = %T", evt.Payload)
@@ -234,7 +269,7 @@ func (h *conversationHarness) expectFinalOutput(responseID string) {
 func (h *conversationHarness) expectWhiteboardUpdate(content string) {
 	h.t.Helper()
 
-	evt := h.expectEvent(types.EventWhiteboardUpdate)
+	evt := h.expectMainEvent(types.EventWhiteboardUpdate)
 	update, ok := evt.Payload.(types.WhiteboardUpdate)
 	if !ok {
 		h.t.Fatalf("WhiteboardUpdate payload type = %T", evt.Payload)
@@ -259,12 +294,46 @@ func (h *conversationHarness) expectEvent(kind types.EventKind) types.Event {
 	}
 }
 
+func (h *conversationHarness) expectMainEvent(kind types.EventKind) types.Event {
+	h.t.Helper()
+
+	for {
+		evt := h.expectAnyEvent()
+		if evt.Kind == kind {
+			return evt
+		}
+		switch evt.Kind {
+		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
+			continue
+		default:
+			h.t.Fatalf("event kind = %s, want %s", evt.Kind, kind)
+		}
+	}
+}
+
 func (h *conversationHarness) expectNoEvent(wait time.Duration) {
 	h.t.Helper()
 
 	select {
 	case evt := <-h.stage.Downstream:
-		h.t.Fatalf("unexpected event: %s %#v", evt.Kind, evt.Payload)
+		switch evt.Kind {
+		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
+			h.expectNoEvent(wait)
+		default:
+			h.t.Fatalf("unexpected event: %s %#v", evt.Kind, evt.Payload)
+		}
 	case <-time.After(wait):
+	}
+}
+
+func (h *conversationHarness) expectAnyEvent() types.Event {
+	h.t.Helper()
+
+	select {
+	case evt := <-h.stage.Downstream:
+		return evt
+	case <-time.After(3 * time.Second):
+		h.t.Fatal("timed out waiting for event")
+		return types.Event{}
 	}
 }

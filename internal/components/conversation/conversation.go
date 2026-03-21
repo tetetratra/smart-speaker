@@ -66,9 +66,8 @@ type runner struct {
 	timer  *time.Timer
 	timerC <-chan time.Time
 
-	contexts   *contextProvider
-	projection *projection
-	logger     *conversationLogger
+	contexts *contextProvider
+	logger   *conversationLogger
 }
 
 const (
@@ -76,8 +75,6 @@ const (
 	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}],\"whiteboard\":{\"content\":\"文字列\"}} の形式に従ってください。whiteboard は不要なら省略可能です。"
 	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
-	calendarCreateToolName    = "google_calendar_create"
-	calendarUpdateToolName    = "google_calendar_update"
 	calendarPromptDays        = 3
 	calendarFetchMaxResults   = 30
 )
@@ -88,7 +85,6 @@ func NewStage(cfg Config) *graph.Stage {
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		contexts:   newContextProvider(),
-		projection: newProjection(),
 		logger:     newConversationLogger(cfg.LogPath),
 		core:       newConversationCore(),
 	}

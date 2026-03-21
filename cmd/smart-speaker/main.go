@@ -15,9 +15,9 @@ import (
 
 	"smart-speaker/internal/app"
 	"smart-speaker/internal/components/conversation"
-	"smart-speaker/internal/components/reset"
 	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/rtc"
+	"smart-speaker/internal/components/sessionlifecycle"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wschat"
@@ -81,11 +81,11 @@ type stages struct {
 	rtc       *graph.Stage
 	tool      *graph.Stage
 	conv      *graph.Stage
-	reset     *graph.Stage
+	lifecycle *graph.Stage
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.reset} {
+	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.lifecycle} {
 		if st != nil {
 			st.Close()
 		}
@@ -131,9 +131,12 @@ func buildStages(cfg app.Config) (stages, error) {
 	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
 		writeDiaryTools = append(writeDiaryTools, def)
 	}
-	resetStage := reset.NewStage(reset.Config{WriteDiaryTools: writeDiaryTools})
-	if resetStage != nil {
-		resetStage.Name = "reset"
+	lifecycleStage := sessionlifecycle.NewStage(sessionlifecycle.Config{
+		WriteDiaryTools: writeDiaryTools,
+		IdleThreshold:   10 * time.Minute,
+	})
+	if lifecycleStage != nil {
+		lifecycleStage.Name = "sessionlifecycle"
 	}
 	responsesStage, err := responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
@@ -180,7 +183,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		rtc:       rtcStage,
 		tool:      toolStage,
 		conv:      convStage,
-		reset:     resetStage,
+		lifecycle: lifecycleStage,
 	}, nil
 }
 
@@ -210,18 +213,19 @@ func wireGraph(g *graph.Graph, st stages) {
 	}
 	responsesNode := add(st.responses)
 	convNode := add(st.conv)
-	resetNode := add(st.reset)
+	lifecycleNode := add(st.lifecycle)
 	ttsNode := add(st.tts)
 	rtcNode := add(st.rtc)
 	chatNode := add(st.chat)
 
-	if resetNode != nil {
+	if lifecycleNode != nil {
 		if responsesNode != nil {
-			g.Connect(resetNode, responsesNode)
+			g.Connect(lifecycleNode, responsesNode)
 		}
 	}
-	if resetNode != nil && convNode != nil {
-		g.Connect(resetNode, convNode)
+	if lifecycleNode != nil && convNode != nil {
+		g.Connect(lifecycleNode, convNode)
+		g.Connect(convNode, lifecycleNode)
 	}
 	if responsesNode != nil && chatNode != nil {
 		g.Connect(responsesNode, chatNode)
@@ -259,13 +263,12 @@ func wireGraph(g *graph.Graph, st stages) {
 			g.Connect(chatNode, rtcNode)
 			g.Connect(rtcNode, chatNode)
 		}
-		if resetNode != nil {
-			g.Connect(resetNode, chatNode)
-			g.Connect(chatNode, resetNode)
-		}
 		if toolNode != nil {
 			g.Connect(toolNode, chatNode)
 		}
+	}
+	if toolNode != nil && lifecycleNode != nil {
+		g.Connect(toolNode, lifecycleNode)
 	}
 	if rtcNode != nil && responsesNode != nil {
 		g.Connect(rtcNode, responsesNode)

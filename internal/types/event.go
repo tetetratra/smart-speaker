@@ -13,6 +13,8 @@ const (
 	EventSpeechStart
 	EventSpeechEnd
 	EventTimerFired
+	EventConversationSnapshotUpdated
+	EventConversationActivity
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
@@ -22,7 +24,6 @@ const (
 	EventWhiteboardUpdate
 	EventTTSEnd
 	EventTTSCancel
-	EventReset
 	EventSessionClear
 	EventRTCSignal
 )
@@ -43,6 +44,10 @@ func (k EventKind) String() string {
 		return "EventSpeechEnd"
 	case EventTimerFired:
 		return "EventTimerFired"
+	case EventConversationSnapshotUpdated:
+		return "EventConversationSnapshotUpdated"
+	case EventConversationActivity:
+		return "EventConversationActivity"
 	case EventRealtimeOutput:
 		return "EventRealtimeOutput"
 	case EventRealtimeAudio:
@@ -61,8 +66,6 @@ func (k EventKind) String() string {
 		return "EventTTSEnd"
 	case EventTTSCancel:
 		return "EventTTSCancel"
-	case EventReset:
-		return "EventReset"
 	case EventSessionClear:
 		return "EventSessionClear"
 	case EventRTCSignal:

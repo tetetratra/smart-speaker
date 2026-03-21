@@ -115,14 +115,14 @@ sudo chmod 755 /var/lib/smart-speaker/data
 docker compose up web
 ```
 ポートは `http://localhost:5173/` です。依存は `node_modules` ボリュームに保持されます。
-ブラウザは getUserMedia のマイク音声を Web Speech API で文字起こしし、/ws/chat に送信します。TTS 音声は WebRTC で受信して再生します。
+ブラウザは getUserMedia のマイク音声を WebRTC でサーバーに送信します。文字起こしはサーバー側で行い、TTS 音声は WebRTC で受信して再生します。
 
 ## 構成図（ステージ接続）
 ```mermaid
 flowchart LR
   wsserver["wsserver (HTTP server)"]
   wschat["wschat (/ws/chat)"]
-  reset["reset"]
+  sessionlifecycle["sessionlifecycle"]
   conversation["conversation"]
   responses["responsesapi"]
   toolcaller["toolcaller"]
@@ -140,11 +140,13 @@ flowchart LR
   responses -- "EventToolRequest" --> toolcaller
   responses -- "EventToolRequest (function_call表示)" --> wschat
   toolcaller -- "EventToolResponse" --> responses
+  toolcaller -- "EventToolResponse" --> sessionlifecycle
 
   toolcaller -- "EventToolResponse / EventTimerFired" --> conversation
   toolcaller -- "EventToolResponse (function_result表示)" --> wschat
 
   conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
+  conversation -- "EventConversationSnapshotUpdated / EventConversationActivity" --> sessionlifecycle
   tts -- "EventTTSEnd" --> conversation
   tts -- "EventRealtimeAudio" --> rtc
   conversation -- "EventTTSCancel" --> rtc
@@ -153,15 +155,13 @@ flowchart LR
   rtc -- "EventRTCSignal" --> wschat
   rtc -. "EventRTCSignal（現状 responsesapi では未処理）" .-> responses
 
-  wschat -- "EventReset" --> reset
-  reset -- "EventRealtimeOutput" --> wschat
-  reset -- "EventResponsesRequest" --> responses
-  reset -- "EventSessionClear" --> conversation
+  sessionlifecycle -- "EventResponsesRequest" --> responses
+  sessionlifecycle -- "EventSessionClear" --> conversation
 ```
 
 - `wsserver` は HTTP サーバー起動専用ステージ（イベントグラフとは独立）
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
-- 文字起こしはブラウザの Web Speech API で実施
+- 文字起こしはサーバー側で実施
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`

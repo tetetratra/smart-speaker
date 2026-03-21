@@ -35,6 +35,17 @@ type TTSCancel struct {
 	ResponseID string
 }
 
+// ConversationSnapshot は会話履歴のスナップショットを表します。
+type ConversationSnapshot struct {
+	Messages []ChatMessage
+}
+
+// ConversationActivity は会話活動の発生を表します。
+type ConversationActivity struct {
+	At     time.Time
+	Source string
+}
+
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
 type WhiteboardUpdate struct {
 	Content string

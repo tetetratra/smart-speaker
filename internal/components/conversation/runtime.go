@@ -30,16 +30,6 @@ func (r *runner) applyEffects(effects []effect) {
 			})
 		case logRecordEffect:
 			r.logger.Write(e.record)
-		case markActivityEffect:
-			r.projection.MarkActivity(e.at)
-		case updateConversationStateEffect:
-			r.projection.UpdateConversation(e.messages)
-		case clearConversationStateEffect:
-			r.projection.ClearConversation()
-		case invalidateCalendarContextEffect:
-			r.contexts.InvalidateCalendar()
-		case clearContextsEffect:
-			r.contexts.Clear()
 		case runtimeLogEffect:
 			if e.message != "" {
 				log.Print(e.message)
