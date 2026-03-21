@@ -121,7 +121,6 @@ docker compose up web
 ## 構成図（ステージ接続）
 ```mermaid
 flowchart LR
-  wsserver["wsserver (HTTP server)"]
   wschat["wschat (/ws/chat)"]
   sessionlifecycle["sessionlifecycle"]
   conversation["conversation"]
@@ -130,8 +129,6 @@ flowchart LR
   tts["tts (ElevenLabs)"]
   rtc["rtc (WebRTC)"]
   diarystore["diary store (data/diary.md)"]
-
-  wsserver -. "ServeMuxで /ws/chat と Web UI を公開（イベント接続なし）" .-> wschat
 
   wschat -- "EventTextInput / EventSpeechStart / EventSpeechEnd" --> conversation
   conversation -- "EventRealtimeOutput" --> wschat
@@ -164,7 +161,7 @@ flowchart LR
   toolcaller -. "write_diary -> AppendEntry()" .-> diarystore
 ```
 
-- `wsserver` は HTTP サーバー起動専用ステージ（イベントグラフとは独立）
+- HTTP サーバー起動は `main` が直接担当し、`ServeMux` に `wschat` と Web UI をぶら下げる
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはサーバー側で実施
 - diary は generic な shared state ではなく、`internal/diary/store.go` が担当する

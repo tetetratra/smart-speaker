@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,7 +22,6 @@ import (
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wschat"
-	"smart-speaker/internal/components/wsserver"
 	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
@@ -51,6 +51,7 @@ func main() {
 	defer g.Close()
 
 	wireGraph(g, stages)
+	runHTTPServer(stages.server)
 
 	log.Printf("main ctx err: %v", ctx.Err())
 
@@ -76,7 +77,7 @@ func ensureGoogleCalendarToken() {
 }
 
 type stages struct {
-	wsserver  *graph.Stage
+	server    *http.Server
 	responses *graph.Stage
 	tts       *graph.Stage
 	chat      *graph.Stage
@@ -87,7 +88,10 @@ type stages struct {
 }
 
 func (s stages) close() {
-	for _, st := range []*graph.Stage{s.wsserver, s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.lifecycle} {
+	if s.server != nil {
+		_ = s.server.Close()
+	}
+	for _, st := range []*graph.Stage{s.responses, s.tts, s.chat, s.rtc, s.tool, s.conv, s.lifecycle} {
 		if st != nil {
 			st.Close()
 		}
@@ -95,12 +99,9 @@ func (s stages) close() {
 }
 
 func buildStages(cfg app.Config) (stages, error) {
-	serverStage, chatStage, err := buildWSStages(cfg)
+	server, chatStage, err := buildWSStages(cfg)
 	if err != nil {
 		return stages{}, fmt.Errorf("failed to init ws stages: %w", err)
-	}
-	if serverStage != nil {
-		serverStage.Name = "wsserver"
 	}
 	if chatStage != nil {
 		chatStage.Name = "wschat"
@@ -111,7 +112,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		Model:  cfg.ElevenLabs.Model,
 	})
 	if err != nil {
-		serverStage.Close()
+		_ = server.Close()
 		return stages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
 	if ttsStage != nil {
@@ -153,7 +154,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
 	})
 	if err != nil {
-		serverStage.Close()
+		_ = server.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
@@ -174,7 +175,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		SpeechCredsJSON:  cfg.GoogleCredentials,
 	})
 	if err != nil {
-		serverStage.Close()
+		_ = server.Close()
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
@@ -184,7 +185,7 @@ func buildStages(cfg app.Config) (stages, error) {
 		rtcStage.Name = "rtc"
 	}
 	return stages{
-		wsserver:  serverStage,
+		server:    server,
 		responses: responsesStage,
 		tts:       ttsStage,
 		chat:      chatStage,
@@ -195,7 +196,7 @@ func buildStages(cfg app.Config) (stages, error) {
 	}, nil
 }
 
-func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
+func buildWSStages(cfg app.Config) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
@@ -203,9 +204,19 @@ func buildWSStages(cfg app.Config) (*graph.Stage, *graph.Stage, error) {
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	serverStage := wsserver.NewStage(server)
 	chat := wschat.NewStage(mux)
-	return serverStage, chat, nil
+	return server, chat, nil
+}
+
+func runHTTPServer(server *http.Server) {
+	if server == nil {
+		return
+	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("http server listen error: %v", err)
+		}
+	}()
 }
 
 func newCalendarClient() *calendarapi.Client {
@@ -224,9 +235,6 @@ func wireGraph(g *graph.Graph, st stages) {
 		return g.AddNode(stage)
 	}
 
-	if node := add(st.wsserver); node == nil {
-		return
-	}
 	responsesNode := add(st.responses)
 	convNode := add(st.conv)
 	lifecycleNode := add(st.lifecycle)
