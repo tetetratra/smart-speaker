@@ -48,7 +48,7 @@ func LoadConfig(promptPath string) Config {
 	}
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
-		responsesModel = "gpt-5.2-chat-latest"
+		responsesModel = "gpt-5.3-chat-latest"
 	}
 
 	prompt := readSystemPrompt(promptPath)
