@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
@@ -29,6 +30,10 @@ type peerState struct {
 	speechActive    bool
 	voicedMs        int
 	silenceMs       int
+
+	backgroundEnergies       []energySample
+	speechThreshold          int
+	speechThresholdUpdatedAt time.Time
 }
 
 func (s *stage) handleSignal(sig types.RTCSignal) {
@@ -318,6 +323,9 @@ func (s *stage) resetPeer(peer *peerState) {
 	peer.speechActive = false
 	peer.voicedMs = 0
 	peer.silenceMs = 0
+	peer.backgroundEnergies = nil
+	peer.speechThreshold = 0
+	peer.speechThresholdUpdatedAt = time.Time{}
 	peer.connected = false
 	peer.mu.Unlock()
 	s.clearActiveSpeaker(peer.id, true)
@@ -338,6 +346,9 @@ func (s *stage) resetAllPeersLocked() {
 		peer.speechActive = false
 		peer.voicedMs = 0
 		peer.silenceMs = 0
+		peer.backgroundEnergies = nil
+		peer.speechThreshold = 0
+		peer.speechThresholdUpdatedAt = time.Time{}
 		peer.connected = false
 		peer.mu.Unlock()
 	}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,6 +47,9 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 	peerState.speechActive = false
 	peerState.voicedMs = 0
 	peerState.silenceMs = 0
+	peerState.backgroundEnergies = nil
+	peerState.speechThreshold = adaptiveVADMinThreshold
+	peerState.speechThresholdUpdatedAt = time.Time{}
 	peerState.mu.Unlock()
 
 	for {
@@ -73,7 +78,8 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 		}
 		audio := int16ToBytes(mono)
 		durationMs := packetDurationMs(len(mono), sampleRate)
-		isSpeech := detectSpeech(mono)
+		now := time.Now()
+		frameEnergy := measureFrameEnergy(mono)
 
 		if !s.canProcessAudio(peerID) {
 			continue
@@ -89,6 +95,17 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 			peerState.inputSampleRate = sampleRate
 			peerState.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
 		}
+		if !peerState.speechActive {
+			peerState.backgroundEnergies = appendEnergySample(peerState.backgroundEnergies, now, frameEnergy)
+		} else {
+			peerState.backgroundEnergies = pruneEnergySamples(peerState.backgroundEnergies, now)
+		}
+		if shouldRefreshSpeechThreshold(peerState.speechThresholdUpdatedAt, now) {
+			peerState.speechThreshold = computeAdaptiveSpeechThreshold(peerState.backgroundEnergies)
+			peerState.speechThresholdUpdatedAt = now
+		}
+		currentThreshold := effectiveSpeechThreshold(peerState.speechThreshold)
+		isSpeech := isSpeechFrame(frameEnergy, currentThreshold)
 
 		wasActive := peerState.speechActive
 		if !peerState.speechActive {
@@ -102,7 +119,7 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 				peerState.voicedMs = 0
 				peerState.silenceMs = 0
 				shouldStart = true
-				log.Printf("rtc: speech start sample_rate=%d avg_energy_trigger=%d", sampleRate, energySpeechThresh)
+				log.Printf("rtc: speech start sample_rate=%d energy=%d threshold=%d", sampleRate, frameEnergy, currentThreshold)
 				prebuffer = peerState.prebuffer.snapshot()
 			}
 		} else {
@@ -335,9 +352,14 @@ func downmixToMono(in []int16, channels int) []int16 {
 	return out
 }
 
-func detectSpeech(pcm []int16) bool {
+type energySample struct {
+	energy     int
+	capturedAt time.Time
+}
+
+func measureFrameEnergy(pcm []int16) int {
 	if len(pcm) == 0 {
-		return false
+		return 0
 	}
 	var sum int64
 	for _, sample := range pcm {
@@ -347,8 +369,71 @@ func detectSpeech(pcm []int16) bool {
 		}
 		sum += v
 	}
-	avg := sum / int64(len(pcm))
-	return avg >= energySpeechThresh
+	return int(sum / int64(len(pcm)))
+}
+
+func appendEnergySample(samples []energySample, capturedAt time.Time, energy int) []energySample {
+	if energy < 0 {
+		energy = 0
+	}
+	samples = append(samples, energySample{energy: energy, capturedAt: capturedAt})
+	return pruneEnergySamples(samples, capturedAt)
+}
+
+func pruneEnergySamples(samples []energySample, now time.Time) []energySample {
+	if len(samples) == 0 {
+		return nil
+	}
+	cutoff := now.Add(-adaptiveVADHistoryWindow)
+	first := 0
+	for first < len(samples) && samples[first].capturedAt.Before(cutoff) {
+		first++
+	}
+	if first == 0 {
+		return samples
+	}
+	if first >= len(samples) {
+		return nil
+	}
+	pruned := make([]energySample, len(samples)-first)
+	copy(pruned, samples[first:])
+	return pruned
+}
+
+func computeAdaptiveSpeechThreshold(samples []energySample) int {
+	if len(samples) == 0 {
+		return adaptiveVADMinThreshold
+	}
+	energies := make([]int, len(samples))
+	for i, sample := range samples {
+		energies[i] = sample.energy
+	}
+	sort.Ints(energies)
+	mid := len(energies) / 2
+	median := energies[mid]
+	if len(energies)%2 == 0 {
+		median = (energies[mid-1] + energies[mid]) / 2
+	}
+	threshold := int(math.Round(float64(median) * adaptiveVADThresholdMultiplier))
+	return effectiveSpeechThreshold(threshold)
+}
+
+func effectiveSpeechThreshold(threshold int) int {
+	if threshold < adaptiveVADMinThreshold {
+		return adaptiveVADMinThreshold
+	}
+	return threshold
+}
+
+func shouldRefreshSpeechThreshold(last, now time.Time) bool {
+	if last.IsZero() {
+		return true
+	}
+	return !last.Add(adaptiveVADThresholdRefreshInterval).After(now)
+}
+
+func isSpeechFrame(energy int, threshold int) bool {
+	return energy >= effectiveSpeechThreshold(threshold)
 }
 
 func packetDurationMs(sampleCount int, sampleRate int) int {

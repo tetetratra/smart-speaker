@@ -23,10 +23,14 @@ const (
 	vadStartThreshold     = 200
 	vadEndThreshold       = 500
 	sttStopDelay          = 1500 * time.Millisecond
-	energySpeechThresh    = 120
 	speechAudioChunkBytes = 25600
 	speechModel           = "chirp_3"
 	speechRegion          = "asia-northeast1"
+
+	adaptiveVADHistoryWindow            = time.Minute
+	adaptiveVADThresholdRefreshInterval = time.Second
+	adaptiveVADThresholdMultiplier      = 1.5
+	adaptiveVADMinThreshold             = 30
 )
 
 type Config struct {
