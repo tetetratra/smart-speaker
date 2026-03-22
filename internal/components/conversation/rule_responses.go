@@ -57,3 +57,29 @@ func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 	effects = append(effects, core.advanceTimelineEffects()...)
 	return effects, true
 }
+
+func buildUtteranceChain(out aiOutput) []aiSegment {
+	if len(out.Timeline) == 0 {
+		return nil
+	}
+	timeline := make([]aiSegment, 0, len(out.Timeline))
+	speechCount := 0
+	for _, seg := range out.Timeline {
+		switch seg.Type {
+		case "wait":
+			wait := sanitizeWait(seg.Sec)
+			timeline = append(timeline, aiSegment{Type: "wait", Sec: &wait})
+		case "speech":
+			text := sanitizeSpeech(seg.Text)
+			if text == "" {
+				continue
+			}
+			timeline = append(timeline, aiSegment{Type: "speech", Text: text})
+			speechCount++
+		}
+	}
+	if speechCount == 0 {
+		return nil
+	}
+	return timeline
+}
