@@ -21,7 +21,7 @@ const (
 
 	prebufferSeconds      = 3
 	vadStartThreshold     = 200
-	vadEndThreshold       = 800
+	vadEndThreshold       = 500
 	sttStopDelay          = 1500 * time.Millisecond
 	energySpeechThresh    = 120
 	speechAudioChunkBytes = 25600
