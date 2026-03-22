@@ -50,7 +50,7 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 }
 
 func estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
-	waitDuration := postWaitDelay(waitSec)
+	waitDuration := time.Duration(waitSec * float64(time.Second))
 	startAt := tts.AudioStartAt
 	if startAt.IsZero() {
 		return waitDuration

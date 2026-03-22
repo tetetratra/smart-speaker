@@ -99,19 +99,15 @@ func (c *conversationCore) advanceTimelineEffects() []effect {
 		c.state.pendingTimelineIdx++
 		switch seg.Type {
 		case "wait":
-			delay := waitDelay(seg.Sec)
+			delay := time.Duration(seg.WaitSec) * time.Second
 			if delay > 0 {
 				return []effect{startTimerEffect{duration: delay}}
 			}
 		case "speech":
-			speech := sanitizeSpeech(seg.Text)
-			if speech == "" {
-				continue
-			}
 			utt := &Utterance{
 				ID:      c.state.nextID("ai"),
 				Speaker: SpeakerAI,
-				Content: speech,
+				Content: seg.Text,
 				Status:  UtteranceUnplayed,
 			}
 			c.state.appendUtterance(utt)
@@ -174,4 +170,8 @@ func buildAIUtteranceLogRecord(utt *Utterance) logRecord {
 		ResponseID: utt.ResponseID,
 		Source:     utteranceSource(utt),
 	}
+}
+
+func utteranceSource(_ *Utterance) string {
+	return "conversation"
 }

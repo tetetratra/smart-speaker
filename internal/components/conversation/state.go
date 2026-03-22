@@ -11,7 +11,7 @@ type sessionState struct {
 	current               *Utterance
 	utteranceByResponseID map[string]*Utterance
 
-	pendingTimeline    []aiSegment
+	pendingTimeline    []timelineSegment
 	pendingTimelineIdx int
 
 	pendingRequestID        string
@@ -19,6 +19,12 @@ type sessionState struct {
 	invalidResponseRetries  int
 
 	seq int
+}
+
+type timelineSegment struct {
+	Type    string
+	WaitSec int
+	Text    string
 }
 
 func newSessionState() *sessionState {
@@ -100,7 +106,7 @@ func (s *sessionState) consumeLeadingWaitSeconds() float64 {
 		if seg.Type != "wait" {
 			break
 		}
-		total += normalizeWaitSeconds(seg.Sec)
+		total += float64(seg.WaitSec)
 		s.pendingTimelineIdx++
 	}
 	return total

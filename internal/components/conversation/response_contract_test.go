@@ -41,3 +41,47 @@ func TestParseAIOutput(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildTimelineSegments(t *testing.T) {
+	t.Run("speechのURLとcitationを除去する", func(t *testing.T) {
+		out := aiOutput{
+			Timeline: []aiSegment{
+				{Type: "speech", Text: "確認して https://example.com [link](https://example.com) citeturn0search0"},
+			},
+		}
+
+		got := buildTimelineSegments(out)
+		if len(got) != 1 {
+			t.Fatalf("timeline len = %d, want 1", len(got))
+		}
+		if got[0].Type != "speech" {
+			t.Fatalf("segment type = %q, want speech", got[0].Type)
+		}
+		if got[0].Text != "確認して" {
+			t.Fatalf("segment text = %q, want %q", got[0].Text, "確認して")
+		}
+	})
+
+	t.Run("waitを0から5秒へ正規化する", func(t *testing.T) {
+		neg := -1
+		large := 9
+		out := aiOutput{
+			Timeline: []aiSegment{
+				{Type: "wait", Sec: &neg},
+				{Type: "wait", Sec: &large},
+				{Type: "speech", Text: "こんにちは"},
+			},
+		}
+
+		got := buildTimelineSegments(out)
+		if len(got) != 3 {
+			t.Fatalf("timeline len = %d, want 3", len(got))
+		}
+		if got[0].WaitSec != 0 {
+			t.Fatalf("first wait = %d, want 0", got[0].WaitSec)
+		}
+		if got[1].WaitSec != 5 {
+			t.Fatalf("second wait = %d, want 5", got[1].WaitSec)
+		}
+	})
+}
