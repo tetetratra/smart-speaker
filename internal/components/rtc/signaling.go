@@ -34,6 +34,7 @@ type peerState struct {
 	backgroundEnergies       []energySample
 	speechThreshold          int
 	speechThresholdUpdatedAt time.Time
+	lastVADStatusSentAt      time.Time
 }
 
 func (s *stage) handleSignal(sig types.RTCSignal) {
@@ -326,6 +327,7 @@ func (s *stage) resetPeer(peer *peerState) {
 	peer.backgroundEnergies = nil
 	peer.speechThreshold = 0
 	peer.speechThresholdUpdatedAt = time.Time{}
+	peer.lastVADStatusSentAt = time.Time{}
 	peer.connected = false
 	peer.mu.Unlock()
 	s.clearActiveSpeaker(peer.id, true)
@@ -349,6 +351,7 @@ func (s *stage) resetAllPeersLocked() {
 		peer.backgroundEnergies = nil
 		peer.speechThreshold = 0
 		peer.speechThresholdUpdatedAt = time.Time{}
+		peer.lastVADStatusSentAt = time.Time{}
 		peer.connected = false
 		peer.mu.Unlock()
 	}

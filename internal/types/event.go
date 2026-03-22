@@ -12,6 +12,7 @@ const (
 	EventTextInput EventKind = iota
 	EventSpeechStart
 	EventSpeechEnd
+	EventRTCVADStatus
 	EventTimerFired
 	EventConversationSnapshotUpdated
 	EventConversationActivity
@@ -42,6 +43,8 @@ func (k EventKind) String() string {
 		return "EventSpeechStart"
 	case EventSpeechEnd:
 		return "EventSpeechEnd"
+	case EventRTCVADStatus:
+		return "EventRTCVADStatus"
 	case EventTimerFired:
 		return "EventTimerFired"
 	case EventConversationSnapshotUpdated:

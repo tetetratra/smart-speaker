@@ -50,6 +50,7 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 	peerState.backgroundEnergies = nil
 	peerState.speechThreshold = adaptiveVADMinThreshold
 	peerState.speechThresholdUpdatedAt = time.Time{}
+	peerState.lastVADStatusSentAt = time.Time{}
 	peerState.mu.Unlock()
 
 	for {
@@ -106,6 +107,10 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 		}
 		currentThreshold := effectiveSpeechThreshold(peerState.speechThreshold)
 		isSpeech := isSpeechFrame(frameEnergy, currentThreshold)
+		shouldEmitStatus := shouldEmitVADStatus(peerState.lastVADStatusSentAt, now)
+		if shouldEmitStatus {
+			peerState.lastVADStatusSentAt = now
+		}
 
 		wasActive := peerState.speechActive
 		if !peerState.speechActive {
@@ -138,6 +143,17 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 		shouldSend = wasActive || peerState.speechActive
 		peerState.prebuffer.append(audio)
 		peerState.mu.Unlock()
+
+		if shouldEmitStatus {
+			s.emit(types.Event{
+				Kind: types.EventRTCVADStatus,
+				Payload: types.RTCVADStatus{
+					InputLevel: frameEnergy,
+					Threshold:  currentThreshold,
+					CapturedAt: now,
+				},
+			})
+		}
 
 		if shouldStart {
 			if s.activateSpeaker(peerID) {
@@ -430,6 +446,13 @@ func shouldRefreshSpeechThreshold(last, now time.Time) bool {
 		return true
 	}
 	return !last.Add(adaptiveVADThresholdRefreshInterval).After(now)
+}
+
+func shouldEmitVADStatus(last, now time.Time) bool {
+	if last.IsZero() {
+		return true
+	}
+	return !last.Add(adaptiveVADStatusEmitInterval).After(now)
 }
 
 func isSpeechFrame(energy int, threshold int) bool {

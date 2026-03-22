@@ -23,6 +23,13 @@ type SpeechEvent struct {
 	CapturedAt time.Time
 }
 
+// RTCVADStatus はサーバー側VADの現在音量としきい値を表します。
+type RTCVADStatus struct {
+	InputLevel int
+	Threshold  int
+	CapturedAt time.Time
+}
+
 // TTSEvent はTTSストリーム完了を表します。
 type TTSEvent struct {
 	ResponseID      string

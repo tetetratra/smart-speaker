@@ -29,6 +29,7 @@ const (
 
 	adaptiveVADHistoryWindow            = time.Minute
 	adaptiveVADThresholdRefreshInterval = time.Second
+	adaptiveVADStatusEmitInterval       = 250 * time.Millisecond
 	adaptiveVADThresholdMultiplier      = 1.5
 	adaptiveVADMinThreshold             = 30
 )

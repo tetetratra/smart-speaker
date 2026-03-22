@@ -74,10 +74,41 @@ const liveRootStyle = `
   }
   .live-controls-row {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 6px;
     width: 100%;
     align-items: center;
+  }
+  .live-controls-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .live-audio-stats {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .live-audio-stat {
+    border: 1px solid var(--live-line);
+    background: #fafafa;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--live-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .live-audio-stat strong {
+    color: var(--live-text);
+    font-weight: 700;
   }
   .live-status-grid {
     display: grid;
@@ -296,6 +327,8 @@ type LiveViewProps = {
   connecting: boolean
   speechDetectStatus: string
   sttStatus: string
+  inputLevel: number
+  speechThreshold: number
   lastAssistantMessage: string
   boardText: string
   audioRef: React.RefObject<HTMLAudioElement>
@@ -316,6 +349,8 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
+  const [inputLevel, setInputLevel] = useState(0)
+  const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardText, setBoardText] = useState("")
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -445,6 +480,13 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
+        case 'rtc_vad_status': {
+          const nextInputLevel = typeof raw.input_level === 'number' ? Math.max(0, Math.round(raw.input_level)) : 0
+          const nextThreshold = typeof raw.threshold === 'number' ? Math.max(0, Math.round(raw.threshold)) : 0
+          setInputLevel(nextInputLevel)
+          setSpeechThreshold(nextThreshold)
+          break
+        }
         case 'whiteboard_update': {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
@@ -509,6 +551,8 @@ function App() {
     setSpeechDetectStatus('待機中')
     setRtcError('')
     setSttStatus('停止中')
+    setInputLevel(0)
+    setSpeechThreshold(0)
   }, [])
 
   const clearReconnectTimer = useCallback(() => {
@@ -815,6 +859,8 @@ function App() {
           connecting={busy}
           speechDetectStatus={speechDetectStatus}
           sttStatus={sttStatus}
+          inputLevel={inputLevel}
+          speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           boardText={boardText}
           audioRef={audioRef}
@@ -993,6 +1039,8 @@ function LiveView(props: LiveViewProps) {
     connecting,
     speechDetectStatus,
     sttStatus,
+    inputLevel,
+    speechThreshold,
     lastAssistantMessage,
     boardText,
     audioRef,
@@ -1019,11 +1067,17 @@ function LiveView(props: LiveViewProps) {
           </div>
           <div className="live-right">
             <div className="live-controls-row">
-              <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
-                <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
-                接続
-              </button>
-              <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+              <div className="live-audio-stats" aria-label="VAD状態">
+                <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
+                <div className="live-audio-stat">しきい値 <strong>{speechThreshold}</strong></div>
+              </div>
+              <div className="live-controls-actions">
+                <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                  <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                  接続
+                </button>
+                <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+              </div>
             </div>
             <div className="live-status-grid">
               <div className="live-status-card">

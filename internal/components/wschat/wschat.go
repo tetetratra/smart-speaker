@@ -214,6 +214,17 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
+	case types.EventRTCVADStatus:
+		status, ok := evt.Payload.(types.RTCVADStatus)
+		if !ok {
+			return
+		}
+		msg = map[string]any{
+			"type":        "rtc_vad_status",
+			"input_level": status.InputLevel,
+			"threshold":   status.Threshold,
+			"captured_at": status.CapturedAt.Format(time.RFC3339Nano),
+		}
 	case types.EventWhiteboardUpdate:
 		update, ok := evt.Payload.(types.WhiteboardUpdate)
 		if !ok {
