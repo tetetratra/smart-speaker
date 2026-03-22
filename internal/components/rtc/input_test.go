@@ -35,12 +35,12 @@ func TestComputeAdaptiveSpeechThreshold(t *testing.T) {
 		}
 	})
 
-	t.Run("中央値1.5倍が最低しきい値未満の場合", func(t *testing.T) {
+	t.Run("中央値プラス50が最低しきい値未満の場合", func(t *testing.T) {
 		now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 		samples := []energySample{
-			{energy: 10, capturedAt: now},
-			{energy: 12, capturedAt: now},
-			{energy: 14, capturedAt: now},
+			{energy: 0, capturedAt: now},
+			{energy: 0, capturedAt: now},
+			{energy: 0, capturedAt: now},
 		}
 
 		got := computeAdaptiveSpeechThreshold(samples)
@@ -70,7 +70,7 @@ func TestAppendEnergySample(t *testing.T) {
 
 func TestIsSpeechFrame(t *testing.T) {
 	t.Run("静かな環境で小声入力の場合", func(t *testing.T) {
-		if !isSpeechFrame(35, adaptiveVADMinThreshold) {
+		if !isSpeechFrame(55, adaptiveVADMinThreshold) {
 			t.Fatal("expected quiet voice to be treated as speech")
 		}
 	})

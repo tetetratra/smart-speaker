@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -96,11 +95,7 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 			peerState.inputSampleRate = sampleRate
 			peerState.prebuffer = newPCMRingBuffer(prebufferBytes(sampleRate, 1, prebufferSeconds))
 		}
-		if !peerState.speechActive {
-			peerState.backgroundEnergies = appendEnergySample(peerState.backgroundEnergies, now, frameEnergy)
-		} else {
-			peerState.backgroundEnergies = pruneEnergySamples(peerState.backgroundEnergies, now)
-		}
+		peerState.backgroundEnergies = appendEnergySample(peerState.backgroundEnergies, now, frameEnergy)
 		if shouldRefreshSpeechThreshold(peerState.speechThresholdUpdatedAt, now) {
 			peerState.speechThreshold = computeAdaptiveSpeechThreshold(peerState.backgroundEnergies)
 			peerState.speechThresholdUpdatedAt = now
@@ -430,7 +425,7 @@ func computeAdaptiveSpeechThreshold(samples []energySample) int {
 	if len(energies)%2 == 0 {
 		median = (energies[mid-1] + energies[mid]) / 2
 	}
-	threshold := int(math.Round(float64(median) * adaptiveVADThresholdMultiplier))
+	threshold := median + adaptiveVADThresholdOffset
 	return effectiveSpeechThreshold(threshold)
 }
 
