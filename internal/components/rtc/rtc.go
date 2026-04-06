@@ -19,10 +19,12 @@ const (
 	webrtcChannels   = 1
 	opusFrameMs      = 20
 
-	prebufferSeconds      = 3
-	vadStartThreshold     = 200
-	vadEndThreshold       = 500
-	sttStopDelay          = 1500 * time.Millisecond
+	prebufferSeconds  = 3
+	vadStartThreshold = 200
+	vadEndThreshold   = 500
+	// final-only の現行 STT では CloseSend が遅いほど final の見え方も遅くなる。
+	// 無音 500ms の speech end 判定は別で入っているため、応答速度優先で追加待ちを 0ms にする。
+	sttStopDelay          = 0 * time.Millisecond
 	speechAudioChunkBytes = 25600
 	speechModel           = "chirp_3"
 	speechRegion          = "asia-northeast1"
