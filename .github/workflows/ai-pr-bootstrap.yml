@@ -13,7 +13,7 @@ on:
         type: string
       autonomy_level:
         description: 自律レベル
-        required: false
+        required: true
         default: level1
         type: string
       codex_model:

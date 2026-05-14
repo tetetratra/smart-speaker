@@ -34,31 +34,7 @@ git push --set-upstream origin "$branch_name"
 body_file="$(mktemp)"
 comment_file="$(mktemp)"
 
-cat > "$body_file" <<'EOF'
-## 目的・背景
-
-作業開始後に更新します。
-
-## 要求定義
-
-作業開始後に更新します。
-
-## 要件定義
-
-作業開始後に更新します。
-
-## 対応方針
-
-作業開始後に更新します。
-
-## 設計
-
-作業開始後に更新します。
-
-## 未決事項
-
-必要に応じて更新します。
-EOF
+: > "$body_file"
 
 {
   printf '/ai\n\n'

@@ -9,7 +9,7 @@ on:
         type: string
       bootstrap_instruction:
         description: 初回起動時の依頼文
-        required: false
+        required: true
         type: string
       bootstrap_actor:
         description: 初回起動者
@@ -44,6 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
+      AUTONOMY_LEVEL: ${{ inputs.autonomy_level }}
       CODEX_MODEL: ${{ inputs.codex_model }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -169,6 +170,7 @@ jobs:
           cp "${{ steps.context.outputs.instruction_file }}" "${STATE_ROOT}/run/instruction.txt"
           docker run --rm \
             -e CODEX_HOME=/codex-home \
+            -e AUTONOMY_LEVEL="${AUTONOMY_LEVEL}" \
             -e CODEX_MODEL="${CODEX_MODEL}" \
             -e GH_TOKEN="${GH_TOKEN}" \
             -e GITHUB_TOKEN="${GH_TOKEN}" \
