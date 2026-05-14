@@ -75,6 +75,13 @@ EOF
 
 cat "$INSTRUCTION_FILE" >> "$prompt_file"
 
+skills_src="/workspace/.codex/skills"
+skills_dest="${CODEX_HOME}/skills"
+if [ -d "$skills_src" ]; then
+  mkdir -p "$skills_dest"
+  cp -R "$skills_src"/. "$skills_dest"/
+fi
+
 cmd=(
   codex exec
   --dangerously-bypass-approvals-and-sandbox
