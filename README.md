@@ -55,7 +55,7 @@ http://localhost:8081/oauth/google/start
 4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
 ## AI PR 自動化
-GitHub Actions で issue 作成時に Draft PR を作り、PR コメントの初回依頼文と `/ai` で Codex を起動する簡易自動化を入れています。
+GitHub Actions で issue 作成時に Draft PR を作り、`<AI主導開発>` ラベル付きの PR では通常コメント、ラベルなしの PR では `/ai` コメントで Codex を起動する簡易自動化を入れています。
 初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
 ### Codex 認証の更新

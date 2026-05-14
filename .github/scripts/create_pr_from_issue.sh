@@ -17,6 +17,7 @@ issue_title="$(printf '%s' "$issue_json" | jq -r '.title')"
 issue_body="$(printf '%s' "$issue_json" | jq -r '.body // ""')"
 issue_url="$(printf '%s' "$issue_json" | jq -r '.url')"
 issue_author_login="$(printf '%s' "$issue_json" | jq -r '.author.login // empty')"
+ai_label_name="AI主導開発"
 
 timestamp="$(date +%Y%m%d%H%M%S)"
 slug="$(printf '%s' "$issue_title" \
@@ -56,6 +57,14 @@ pr_url="$(gh pr create \
   --body-file "$body_file")"
 
 pr_number="$(gh pr view "$pr_url" --json number --jq '.number')"
+
+if ! gh label list --limit 1000 --json name --jq '.[].name' | grep -Fxq "$ai_label_name"; then
+  gh label create "$ai_label_name" \
+    --color "BFD4F2" \
+    --description "AI 主導で扱う PR に付けるラベル" >/dev/null
+fi
+
+gh pr edit "$pr_number" --add-label "$ai_label_name" >/dev/null
 
 if [ -n "$issue_author_login" ] && [ "$issue_author_login" != "github-actions[bot]" ]; then
   if ! gh pr edit "$pr_number" --add-reviewer "$issue_author_login" >/dev/null; then

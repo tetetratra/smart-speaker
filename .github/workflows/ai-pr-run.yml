@@ -62,6 +62,9 @@ jobs:
             not_ai_comment)
               echo "/ai コメントではないためスキップします"
               ;;
+            bot_comment)
+              echo "bot コメントのためスキップします"
+              ;;
             *)
               echo "条件を満たさないためスキップします"
               ;;

@@ -15,6 +15,7 @@ pr_number=""
 skip_reason=""
 autonomy_level="level1"
 request_body=""
+ai_label_name="AI主導開発"
 
 case "$GITHUB_EVENT_NAME" in
   workflow_dispatch)
@@ -29,24 +30,56 @@ case "$GITHUB_EVENT_NAME" in
     else
       pr_number="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
       trigger_actor="$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")"
+      trigger_actor_type="$(jq -r '.comment.user.type // ""' "$GITHUB_EVENT_PATH")"
       comment_body="$(jq -r '.comment.body' "$GITHUB_EVENT_PATH")"
-      first_line="$(printf '%s\n' "$comment_body" | head -n 1)"
-      if [[ "$first_line" =~ ^/ai($|[[:space:]].*) ]]; then
-        should_run="true"
-        first_line_rest="$(printf '%s' "$first_line" | sed -E 's#^/ai[[:space:]]*##')"
-        remaining_lines="$(printf '%s\n' "$comment_body" | tail -n +2)"
-        {
-          printf '%s' "$first_line_rest"
-          if [ -n "$remaining_lines" ]; then
-            if [ -n "$first_line_rest" ]; then
-              printf '\n'
-            fi
-            printf '%s' "$remaining_lines"
-          fi
-        } > "$instruction_file"
-        request_body="$(cat "$instruction_file")"
+      if [ "$trigger_actor_type" = "Bot" ] || [ "$trigger_actor" = "github-actions[bot]" ]; then
+        should_run="false"
+        skip_reason="bot_comment"
       else
-        skip_reason="not_ai_comment"
+        pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOid,body,labels)"
+        pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
+        pr_labels="$(printf '%s' "$pr_json" | jq -r '.labels[].name // empty')"
+        pr_has_ai_label="false"
+        if printf '%s\n' "$pr_labels" | grep -Fxq "$ai_label_name"; then
+          pr_has_ai_label="true"
+        fi
+        first_line="$(printf '%s\n' "$comment_body" | head -n 1)"
+        if [ "$pr_has_ai_label" = "true" ]; then
+          should_run="true"
+          if [[ "$first_line" =~ ^/ai($|[[:space:]].*) ]]; then
+            first_line_rest="$(printf '%s' "$first_line" | sed -E 's#^/ai[[:space:]]*##')"
+            remaining_lines="$(printf '%s\n' "$comment_body" | tail -n +2)"
+            {
+              printf '%s' "$first_line_rest"
+              if [ -n "$remaining_lines" ]; then
+                if [ -n "$first_line_rest" ]; then
+                  printf '\n'
+                fi
+                printf '%s' "$remaining_lines"
+              fi
+            } > "$instruction_file"
+            request_body="$(cat "$instruction_file")"
+          else
+            request_body="$comment_body"
+            printf '%s' "$request_body" > "$instruction_file"
+          fi
+        elif [[ "$first_line" =~ ^/ai($|[[:space:]].*) ]]; then
+          should_run="true"
+          first_line_rest="$(printf '%s' "$first_line" | sed -E 's#^/ai[[:space:]]*##')"
+          remaining_lines="$(printf '%s\n' "$comment_body" | tail -n +2)"
+          {
+            printf '%s' "$first_line_rest"
+            if [ -n "$remaining_lines" ]; then
+              if [ -n "$first_line_rest" ]; then
+                printf '\n'
+              fi
+              printf '%s' "$remaining_lines"
+            fi
+          } > "$instruction_file"
+          request_body="$(cat "$instruction_file")"
+        else
+          skip_reason="not_ai_comment"
+        fi
       fi
     fi
     ;;
