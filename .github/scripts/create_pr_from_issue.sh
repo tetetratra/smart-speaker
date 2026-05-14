@@ -11,11 +11,12 @@ if [ -z "${DEFAULT_BRANCH:-}" ]; then
   exit 1
 fi
 
-issue_json="$(gh issue view "$INPUT_ISSUE_NUMBER" --json number,title,body,url)"
+issue_json="$(gh issue view "$INPUT_ISSUE_NUMBER" --json number,title,body,url,author)"
 issue_number="$(printf '%s' "$issue_json" | jq -r '.number')"
 issue_title="$(printf '%s' "$issue_json" | jq -r '.title')"
 issue_body="$(printf '%s' "$issue_json" | jq -r '.body // ""')"
 issue_url="$(printf '%s' "$issue_json" | jq -r '.url')"
+issue_author_login="$(printf '%s' "$issue_json" | jq -r '.author.login // empty')"
 
 timestamp="$(date +%Y%m%d%H%M%S)"
 slug="$(printf '%s' "$issue_title" \
@@ -55,6 +56,12 @@ pr_url="$(gh pr create \
   --body-file "$body_file")"
 
 pr_number="$(gh pr view "$pr_url" --json number --jq '.number')"
+
+if [ -n "$issue_author_login" ] && [ "$issue_author_login" != "github-actions[bot]" ]; then
+  if ! gh pr edit "$pr_number" --add-reviewer "$issue_author_login" >/dev/null; then
+    echo "warning: failed to add reviewer: $issue_author_login" >&2
+  fi
+fi
 
 gh pr comment "$pr_number" --body-file "$comment_file" >/dev/null
 
