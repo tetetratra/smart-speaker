@@ -1,29 +1,9 @@
 name: AI PR Run
 
 on:
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 対象PR番号
-        required: true
-        type: string
-      bootstrap_instruction:
-        description: 初回起動時の依頼文
-        required: true
-        type: string
-      bootstrap_actor:
-        description: 初回起動者
-        required: false
-        type: string
-      autonomy_level:
-        description: 自律レベル
-        required: false
-        default: level1
-        type: string
-      codex_model:
-        description: Codexモデル名
-        required: false
-        type: string
+  pull_request:
+    types:
+      - opened
   issue_comment:
     types:
       - created
@@ -35,17 +15,15 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ai-pr-run-${{ inputs.pr_number || github.event.issue.number || github.run_id }}
+  group: ai-pr-run-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   run:
-    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
+    if: github.event_name == 'pull_request' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     env:
       CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
-      AUTONOMY_LEVEL: ${{ inputs.autonomy_level }}
-      CODEX_MODEL: ${{ inputs.codex_model }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       STATE_ROOT: ${{ github.workspace }}/.tmp/codex-state
@@ -65,10 +43,6 @@ jobs:
       - name: PR コンテキストを解決する
         id: context
         shell: bash
-        env:
-          INPUT_BOOTSTRAP_ACTOR: ${{ inputs.bootstrap_actor }}
-          INPUT_BOOTSTRAP_INSTRUCTION: ${{ inputs.bootstrap_instruction }}
-          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           "$RUNNER_TEMP/ai-pr-helpers/resolve_pr_context.sh"
 
@@ -76,7 +50,17 @@ jobs:
         if: steps.context.outputs.should_run != 'true'
         shell: bash
         run: |
-          echo "/ai コメントではないためスキップします"
+          case "${{ steps.context.outputs.skip_reason }}" in
+            missing_request)
+              echo "PR 本文に依頼内容が見つからないためスキップします"
+              ;;
+            not_ai_comment)
+              echo "/ai コメントではないためスキップします"
+              ;;
+            *)
+              echo "条件を満たさないためスキップします"
+              ;;
+          esac
 
       - name: 実行権限を確認する
         id: permission
@@ -170,8 +154,8 @@ jobs:
           cp "${{ steps.context.outputs.instruction_file }}" "${STATE_ROOT}/run/instruction.txt"
           docker run --rm \
             -e CODEX_HOME=/codex-home \
-            -e AUTONOMY_LEVEL="${AUTONOMY_LEVEL}" \
-            -e CODEX_MODEL="${CODEX_MODEL}" \
+            -e AUTONOMY_LEVEL="${{ steps.context.outputs.autonomy_level }}" \
+            -e CODEX_MODEL="${{ steps.context.outputs.codex_model }}" \
             -e GH_TOKEN="${GH_TOKEN}" \
             -e GITHUB_TOKEN="${GH_TOKEN}" \
             -e HEAD_SHA="${{ steps.context.outputs.head_sha }}" \

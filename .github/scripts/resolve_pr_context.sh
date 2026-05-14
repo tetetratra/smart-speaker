@@ -12,17 +12,50 @@ instruction_file="${RUNNER_TEMP:-/tmp}/ai_instruction.txt"
 should_run="false"
 trigger_actor=""
 pr_number=""
+skip_reason=""
+autonomy_level="level1"
+codex_model=""
+
+extract_request_from_body() {
+  local body="$1"
+  printf '%s\n' "$body" | awk '
+    BEGIN {
+      capture = 0
+      saw_label = 0
+    }
+    /^依頼内容:[[:space:]]*$/ {
+      capture = 1
+      saw_label = 1
+      next
+    }
+    /^依頼内容:[[:space:]]+/ {
+      sub(/^依頼内容:[[:space:]]*/, "")
+      print
+      capture = 1
+      saw_label = 1
+      next
+    }
+    /^---[[:space:]]*$/ { exit }
+    {
+      if (capture) {
+        print
+      } else if (!saw_label) {
+        print
+      }
+    }
+  '
+}
 
 case "$GITHUB_EVENT_NAME" in
-  workflow_dispatch)
+  pull_request)
     should_run="true"
-    pr_number="${INPUT_PR_NUMBER:-}"
-    trigger_actor="${INPUT_BOOTSTRAP_ACTOR:-${GITHUB_ACTOR:-}}"
-    printf '%s' "${INPUT_BOOTSTRAP_INSTRUCTION:-}" > "$instruction_file"
+    pr_number="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+    trigger_actor="$(jq -r '.pull_request.user.login' "$GITHUB_EVENT_PATH")"
     ;;
   issue_comment)
     if ! jq -e '.issue.pull_request' "$GITHUB_EVENT_PATH" >/dev/null; then
       should_run="false"
+      skip_reason="not_pr_comment"
     else
       pr_number="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
       trigger_actor="$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")"
@@ -41,6 +74,8 @@ case "$GITHUB_EVENT_NAME" in
             printf '%s' "$remaining_lines"
           fi
         } > "$instruction_file"
+      else
+        skip_reason="not_ai_comment"
       fi
     fi
     ;;
@@ -53,6 +88,7 @@ esac
 if [ "$should_run" != "true" ]; then
   {
     echo "should_run=false"
+    echo "skip_reason=$skip_reason"
     echo "instruction_file=$instruction_file"
   } >> "$GITHUB_OUTPUT"
   exit 0
@@ -63,7 +99,37 @@ if [ -z "$pr_number" ]; then
   exit 1
 fi
 
-pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOid)"
+pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOid,body)"
+pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
+request_body="$(extract_request_from_body "$pr_body")"
+autonomy_level_from_body="$(printf '%s\n' "$pr_body" | sed -n 's/^自律レベル:[[:space:]]*//p' | head -n 1)"
+codex_model_from_body="$(printf '%s\n' "$pr_body" | sed -n 's/^Codexモデル:[[:space:]]*//p' | head -n 1)"
+
+if [ -n "$autonomy_level_from_body" ]; then
+  autonomy_level="$autonomy_level_from_body"
+fi
+
+if [ -n "$codex_model_from_body" ]; then
+  codex_model="$codex_model_from_body"
+fi
+
+if [ "$(printf '%s' "$request_body" | tr -d '[:space:]')" = "" ]; then
+  should_run="false"
+  skip_reason="missing_request"
+fi
+
+if [ "$should_run" != "true" ]; then
+  {
+    echo "should_run=false"
+    echo "skip_reason=$skip_reason"
+    echo "instruction_file=$instruction_file"
+  } >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
+if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+  printf '%s' "$request_body" > "$instruction_file"
+fi
 
 {
   echo "should_run=true"
@@ -73,5 +139,7 @@ pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOi
   echo "branch_name=$(printf '%s' "$pr_json" | jq -r '.headRefName')"
   echo "head_sha=$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
   echo "trigger_actor=$trigger_actor"
+  echo "autonomy_level=$autonomy_level"
+  echo "codex_model=$codex_model"
   echo "instruction_file=$instruction_file"
 } >> "$GITHUB_OUTPUT"
