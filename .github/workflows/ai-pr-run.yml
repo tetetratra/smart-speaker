@@ -145,14 +145,20 @@ jobs:
         run: |
           "$RUNNER_TEMP/ai-pr-helpers/restore_state_artifact.sh"
 
+      - name: Docker Buildx を設定する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        uses: docker/setup-buildx-action@v4
+
       - name: Codex runner イメージを build する
         if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
-        shell: bash
-        run: |
-          docker build \
-            -f "$RUNNER_TEMP/ai-pr-helpers/codex-runner.Dockerfile" \
-            -t "codex-runner:${GITHUB_RUN_ID}" \
-            .
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/ai-pr-helpers
+          file: ${{ runner.temp }}/ai-pr-helpers/codex-runner.Dockerfile
+          load: true
+          tags: codex-runner:${{ github.run_id }}
+          cache-from: type=gha,scope=codex-runner
+          cache-to: type=gha,mode=max,scope=codex-runner
 
       - name: Codex を実行する
         id: codex
