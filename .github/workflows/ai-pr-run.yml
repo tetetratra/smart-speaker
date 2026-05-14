@@ -92,6 +92,20 @@ jobs:
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
+      - name: "コメントへ :+1: を付ける"
+        if: github.event_name == 'issue_comment' && steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
+        shell: bash
+        env:
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          if ! gh api \
+            -X POST \
+            "/repos/${REPO}/issues/comments/${COMMENT_ID}/reactions" \
+            -H "Accept: application/vnd.github+json" \
+            -f content='+1' >/dev/null; then
+            echo "warning: failed to add reaction" >&2
+          fi
+
       - name: 対象ブランチを checkout する
         if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
         uses: actions/checkout@v4
