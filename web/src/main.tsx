@@ -208,8 +208,10 @@ const liveRootStyle = `
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     text-align: center;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 8px;
   }
   .live-bubble::after {
     content: "";
@@ -243,6 +245,18 @@ const liveRootStyle = `
     margin-bottom: 6px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+  .live-last-user {
+    max-width: 100%;
+    color: var(--live-muted);
+    font-size: 16px;
+    line-height: 1.35;
+    opacity: 0.65;
+    overflow-wrap: anywhere;
+  }
+  .live-assistant-message {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
   .live-mini {
     width: 100%;
@@ -329,6 +343,7 @@ type LiveViewProps = {
   sttStatus: string
   inputLevel: number
   speechThreshold: number
+  lastUserMessage: string
   lastAssistantMessage: string
   boardText: string
   audioRef: React.RefObject<HTMLAudioElement>
@@ -804,6 +819,13 @@ function App() {
     }
     return ''
   }, [messages])
+  const lastUserMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i]
+      if (msg.type === 'user') return msg.text
+    }
+    return ''
+  }, [messages])
   const [uiMode, setUiMode] = useState<'admin' | 'app'>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ui') === 'admin') return 'admin'
@@ -861,6 +883,7 @@ function App() {
           sttStatus={sttStatus}
           inputLevel={inputLevel}
           speechThreshold={speechThreshold}
+          lastUserMessage={lastUserMessage}
           lastAssistantMessage={lastAssistantMessage}
           boardText={boardText}
           audioRef={audioRef}
@@ -1041,6 +1064,7 @@ function LiveView(props: LiveViewProps) {
     sttStatus,
     inputLevel,
     speechThreshold,
+    lastUserMessage,
     lastAssistantMessage,
     boardText,
     audioRef,
@@ -1063,7 +1087,10 @@ function LiveView(props: LiveViewProps) {
         <div className="live-main">
           <div className="live-left">
             <div className="live-board">{boardText}</div>
-            <div className="live-bubble">{lastAssistantMessage}</div>
+            <div className="live-bubble">
+              {lastUserMessage && <div className="live-last-user">{lastUserMessage}</div>}
+              <div className="live-assistant-message">{lastAssistantMessage}</div>
+            </div>
           </div>
           <div className="live-right">
             <div className="live-controls-row">
