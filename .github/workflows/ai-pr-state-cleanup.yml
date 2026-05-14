@@ -1,0 +1,26 @@
+name: AI PR State Cleanup
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 状態 Artifact を削除する
+        shell: bash
+        run: |
+          chmod +x .github/scripts/delete_state_artifact.sh
+          .github/scripts/delete_state_artifact.sh
