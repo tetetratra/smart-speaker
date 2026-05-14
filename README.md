@@ -68,6 +68,9 @@ base64 < "$AUTH_FILE" | tr -d '\n' | gh secret set CODEX_AUTH_JSON_B64
 
 `CODEX_AUTH_JSON_B64` が未設定の場合、`/ai` 実行時に認証未設定のコメントが返ります。
 
+### Codex 用スキルの配置
+このリポジトリでは Codex 用スキルを `.codex/skills/` に置き、実行時に `$CODEX_HOME/skills/` へ同期しています。
+
 ### Docker（開発）
 開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
 
