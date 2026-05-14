@@ -43,11 +43,11 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     env:
-      CODEX_HOME: ${{ runner.temp }}/.codex
+      CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
       CODEX_MODEL: ${{ inputs.codex_model }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      STATE_ROOT: ${{ runner.temp }}/codex-state
+      STATE_ROOT: ${{ github.workspace }}/.tmp/codex-state
     steps:
       - uses: actions/checkout@v4
         with:
