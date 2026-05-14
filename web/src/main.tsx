@@ -215,12 +215,12 @@ const liveRootStyle = `
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     width: 100%;
   }
   .live-bubble-user {
     color: var(--live-muted);
-    font-size: 16px;
+    font-size: 18px;
     line-height: 1.35;
     opacity: 0.72;
     overflow-wrap: anywhere;
