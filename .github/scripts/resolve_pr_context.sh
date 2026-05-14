@@ -15,42 +15,13 @@ pr_number=""
 skip_reason=""
 autonomy_level="level1"
 codex_model=""
-
-extract_request_from_body() {
-  local body="$1"
-  printf '%s\n' "$body" | awk '
-    BEGIN {
-      capture = 0
-      saw_label = 0
-    }
-    /^依頼内容:[[:space:]]*$/ {
-      capture = 1
-      saw_label = 1
-      next
-    }
-    /^依頼内容:[[:space:]]+/ {
-      sub(/^依頼内容:[[:space:]]*/, "")
-      print
-      capture = 1
-      saw_label = 1
-      next
-    }
-    /^---[[:space:]]*$/ { exit }
-    {
-      if (capture) {
-        print
-      } else if (!saw_label) {
-        print
-      }
-    }
-  '
-}
+request_body=""
 
 case "$GITHUB_EVENT_NAME" in
-  pull_request)
+  workflow_dispatch)
     should_run="true"
-    pr_number="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
-    trigger_actor="$(jq -r '.pull_request.user.login' "$GITHUB_EVENT_PATH")"
+    pr_number="${INPUT_PR_NUMBER:-}"
+    trigger_actor="${GITHUB_ACTOR:-}"
     ;;
   issue_comment)
     if ! jq -e '.issue.pull_request' "$GITHUB_EVENT_PATH" >/dev/null; then
@@ -74,6 +45,7 @@ case "$GITHUB_EVENT_NAME" in
             printf '%s' "$remaining_lines"
           fi
         } > "$instruction_file"
+        request_body="$(cat "$instruction_file")"
       else
         skip_reason="not_ai_comment"
       fi
@@ -101,9 +73,32 @@ fi
 
 pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOid,body)"
 pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
-request_body="$(extract_request_from_body "$pr_body")"
-autonomy_level_from_body="$(printf '%s\n' "$pr_body" | sed -n 's/^自律レベル:[[:space:]]*//p' | head -n 1)"
-codex_model_from_body="$(printf '%s\n' "$pr_body" | sed -n 's/^Codexモデル:[[:space:]]*//p' | head -n 1)"
+
+if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ -z "$request_body" ]; then
+  for _ in $(seq 1 10); do
+    request_body="$(
+      gh api "/repos/${REPO}/issues/${pr_number}/comments?per_page=100" \
+        --jq 'sort_by(.created_at) | .[0].body // empty'
+    )"
+    if [ -n "$request_body" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$request_body" ]; then
+    request_body="$pr_body"
+  fi
+fi
+
+if [ "$GITHUB_EVENT_NAME" = "issue_comment" ] && [ -z "$request_body" ]; then
+  request_body="$pr_body"
+  if [ -n "$request_body" ]; then
+    printf '%s' "$request_body" > "$instruction_file"
+  fi
+fi
+
+autonomy_level_from_body="$(printf '%s\n' "$request_body" | sed -n 's/^自律レベル:[[:space:]]*//p' | head -n 1)"
+codex_model_from_body="$(printf '%s\n' "$request_body" | sed -n 's/^Codexモデル:[[:space:]]*//p' | head -n 1)"
 
 if [ -n "$autonomy_level_from_body" ]; then
   autonomy_level="$autonomy_level_from_body"
@@ -127,7 +122,7 @@ if [ "$should_run" != "true" ]; then
   exit 0
 fi
 
-if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
   printf '%s' "$request_body" > "$instruction_file"
 fi
 

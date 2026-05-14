@@ -55,8 +55,8 @@ http://localhost:8081/oauth/google/start
 4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
 ## AI PR 自動化
-GitHub Actions で PR 作成時に Codex を起動し、PR コメントの `/ai` で再実行する簡易自動化を入れています。
-PR 本文の `依頼内容:` に依頼を書き、必要なら `自律レベル:` や `Codexモデル:` も同じ本文に追記できます。`---` より下は AI が中間成果物として更新します。やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
+GitHub Actions で issue 作成時に Draft PR を作り、PR コメントの初回依頼文と `/ai` で Codex を起動する簡易自動化を入れています。
+初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
 ### Codex 認証の更新
 CI では `CODEX_AUTH_JSON_B64` を GitHub Secret として使います。認証が切れたら、trusted machine で `codex login` をやり直してから Secret を更新してください。

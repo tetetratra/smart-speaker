@@ -1,9 +1,12 @@
 name: AI PR Run
 
 on:
-  pull_request:
-    types:
-      - opened
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 対象PR番号
+        required: true
+        type: string
   issue_comment:
     types:
       - created
@@ -15,12 +18,12 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ai-pr-run-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: ai-pr-run-${{ inputs.pr_number || github.event.issue.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   run:
-    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     env:
       CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
@@ -43,6 +46,8 @@ jobs:
       - name: PR コンテキストを解決する
         id: context
         shell: bash
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           "$RUNNER_TEMP/ai-pr-helpers/resolve_pr_context.sh"
 
@@ -52,7 +57,7 @@ jobs:
         run: |
           case "${{ steps.context.outputs.skip_reason }}" in
             missing_request)
-              echo "PR 本文に依頼内容が見つからないためスキップします"
+              echo "PR に依頼内容が見つからないためスキップします"
               ;;
             not_ai_comment)
               echo "/ai コメントではないためスキップします"

@@ -1,0 +1,43 @@
+name: AI PR Issue Bootstrap
+
+on:
+  issues:
+    types:
+      - opened
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GH_TOKEN: ${{ github.token }}
+      INPUT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Draft PR を作成して issue コメントを残す
+        id: create
+        shell: bash
+        run: |
+          chmod +x .github/scripts/create_pr_from_issue.sh
+          .github/scripts/create_pr_from_issue.sh
+
+      - name: 初回 AI 実行を dispatch する
+        shell: bash
+        run: |
+          gh workflow run ai-pr-run.yml \
+            --ref "${DEFAULT_BRANCH}" \
+            -f pr_number="${{ steps.create.outputs.pr_number }}"
+
+      - name: 元 issue を close する
+        shell: bash
+        run: |
+          gh issue close "${{ steps.create.outputs.issue_number }}"
