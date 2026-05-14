@@ -99,6 +99,13 @@ jobs:
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
+      - name: 対象ブランチを checkout する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.context.outputs.branch_name }}
+
       - name: Codex 認証を復元する
         id: auth
         if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
@@ -121,13 +128,6 @@ jobs:
         shell: bash
         run: |
           gh pr comment "${{ steps.context.outputs.pr_number }}" --body "Codex 認証情報が未設定です。trusted machine で Codex にログインし、\`CODEX_AUTH_JSON_B64\` を設定してください。"
-
-      - name: 対象ブランチを checkout する
-        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ steps.context.outputs.branch_name }}
 
       - name: Git ユーザーを設定する
         if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
@@ -180,7 +180,6 @@ jobs:
             -v "${STATE_ROOT}:/state" \
             "codex-runner:${GITHUB_RUN_ID}" \
             bash -lc '
-              chmod +x /helpers/run_codex.sh
               /helpers/run_codex.sh
             '
 
