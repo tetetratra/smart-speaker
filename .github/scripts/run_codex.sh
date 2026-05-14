@@ -93,10 +93,6 @@ cmd=(
   -C /workspace
 )
 
-if [ -n "${CODEX_MODEL:-}" ]; then
-  cmd+=( -m "$CODEX_MODEL" )
-fi
-
 cmd+=( - )
 
 "${cmd[@]}" < "$prompt_file" | tee "$events_file"

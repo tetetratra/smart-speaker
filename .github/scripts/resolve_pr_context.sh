@@ -14,7 +14,6 @@ trigger_actor=""
 pr_number=""
 skip_reason=""
 autonomy_level="level1"
-codex_model=""
 request_body=""
 
 case "$GITHUB_EVENT_NAME" in
@@ -98,14 +97,9 @@ if [ "$GITHUB_EVENT_NAME" = "issue_comment" ] && [ -z "$request_body" ]; then
 fi
 
 autonomy_level_from_body="$(printf '%s\n' "$request_body" | sed -n 's/^自律レベル:[[:space:]]*//p' | head -n 1)"
-codex_model_from_body="$(printf '%s\n' "$request_body" | sed -n 's/^Codexモデル:[[:space:]]*//p' | head -n 1)"
 
 if [ -n "$autonomy_level_from_body" ]; then
   autonomy_level="$autonomy_level_from_body"
-fi
-
-if [ -n "$codex_model_from_body" ]; then
-  codex_model="$codex_model_from_body"
 fi
 
 if [ "$(printf '%s' "$request_body" | tr -d '[:space:]')" = "" ]; then
@@ -135,6 +129,5 @@ fi
   echo "head_sha=$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
   echo "trigger_actor=$trigger_actor"
   echo "autonomy_level=$autonomy_level"
-  echo "codex_model=$codex_model"
   echo "instruction_file=$instruction_file"
 } >> "$GITHUB_OUTPUT"

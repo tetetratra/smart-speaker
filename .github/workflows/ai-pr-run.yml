@@ -160,7 +160,6 @@ jobs:
           docker run --rm \
             -e CODEX_HOME=/codex-home \
             -e AUTONOMY_LEVEL="${{ steps.context.outputs.autonomy_level }}" \
-            -e CODEX_MODEL="${{ steps.context.outputs.codex_model }}" \
             -e GH_TOKEN="${GH_TOKEN}" \
             -e GITHUB_TOKEN="${GH_TOKEN}" \
             -e HEAD_SHA="${{ steps.context.outputs.head_sha }}" \
