@@ -54,6 +54,20 @@ http://localhost:8081/oauth/google/start
 3. `http://localhost:8081/oauth/google/start` にブラウザでアクセスして認証
 4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
+## AI PR 自動化
+GitHub Actions で `workflow_dispatch` から Draft PR を作り、PR コメントの `/ai` で Codex を起動する簡易自動化を入れています。  
+PR 本文には中間成果物の要約を置き、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
+
+### Codex 認証の更新
+CI では `CODEX_AUTH_JSON_B64` を GitHub Secret として使います。認証が切れたら、trusted machine で `codex login` をやり直してから Secret を更新してください。
+
+```sh
+AUTH_FILE="${CODEX_HOME:-$HOME/.codex}/auth.json"
+base64 < "$AUTH_FILE" | tr -d '\n' | gh secret set CODEX_AUTH_JSON_B64
+```
+
+`CODEX_AUTH_JSON_B64` が未設定の場合、`/ai` 実行時に認証未設定のコメントが返ります。
+
 ### Docker（開発）
 開発時は `docker-compose.override.yml` を使って `go run` で起動します（コードは bind mount）。
 
