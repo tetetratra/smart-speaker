@@ -1,0 +1,206 @@
+name: AI PR Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 対象PR番号
+        required: true
+        type: string
+      bootstrap_instruction:
+        description: 初回起動時の依頼文
+        required: false
+        type: string
+      bootstrap_actor:
+        description: 初回起動者
+        required: false
+        type: string
+      autonomy_level:
+        description: 自律レベル
+        required: false
+        default: level1
+        type: string
+      codex_model:
+        description: Codexモデル名
+        required: false
+        type: string
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ai-pr-run-${{ inputs.pr_number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    env:
+      CODEX_HOME: ${{ runner.temp }}/.codex
+      CODEX_MODEL: ${{ inputs.codex_model }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      STATE_ROOT: ${{ runner.temp }}/codex-state
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: helper を退避する
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ai-pr-helpers"
+          cp .github/scripts/*.sh "$RUNNER_TEMP/ai-pr-helpers/"
+          cp .github/docker/codex-runner.Dockerfile "$RUNNER_TEMP/ai-pr-helpers/codex-runner.Dockerfile"
+          chmod +x "$RUNNER_TEMP"/ai-pr-helpers/*.sh
+
+      - name: PR コンテキストを解決する
+        id: context
+        shell: bash
+        env:
+          INPUT_BOOTSTRAP_ACTOR: ${{ inputs.bootstrap_actor }}
+          INPUT_BOOTSTRAP_INSTRUCTION: ${{ inputs.bootstrap_instruction }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          "$RUNNER_TEMP/ai-pr-helpers/resolve_pr_context.sh"
+
+      - name: 対象外コメントをスキップする
+        if: steps.context.outputs.should_run != 'true'
+        shell: bash
+        run: |
+          echo "/ai コメントではないためスキップします"
+
+      - name: 実行権限を確認する
+        id: permission
+        if: steps.context.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          allowed="true"
+          if [ "${GITHUB_EVENT_NAME}" = "issue_comment" ]; then
+            if permission="$(gh api "/repos/${REPO}/collaborators/${{ steps.context.outputs.trigger_actor }}/permission" --jq '.permission' 2>/dev/null)"; then
+              case "$permission" in
+                admin|maintain|write) ;;
+                *)
+                  allowed="false"
+                  gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この /ai 実行は書き込み権限を持つユーザーのみ利用できます。"
+                  ;;
+              esac
+            else
+              allowed="false"
+              gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この /ai 実行は書き込み権限を持つユーザーのみ利用できます。"
+            fi
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+      - name: Codex 認証を復元する
+        id: auth
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
+        shell: bash
+        env:
+          CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+        run: |
+          if [ -z "${CODEX_AUTH_JSON_B64:-}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p "$CODEX_HOME"
+          chmod 700 "$CODEX_HOME"
+          printf '%s' "$CODEX_AUTH_JSON_B64" | base64 --decode > "$CODEX_HOME/auth.json"
+          chmod 600 "$CODEX_HOME/auth.json"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: 認証未設定を通知する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available != 'true'
+        shell: bash
+        run: |
+          gh pr comment "${{ steps.context.outputs.pr_number }}" --body "Codex 認証情報が未設定です。trusted machine で Codex にログインし、\`CODEX_AUTH_JSON_B64\` を設定してください。"
+
+      - name: 対象ブランチを checkout する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.context.outputs.branch_name }}
+
+      - name: Git ユーザーを設定する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 状態 Artifact を復元する
+        id: state
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+        run: |
+          "$RUNNER_TEMP/ai-pr-helpers/restore_state_artifact.sh"
+
+      - name: Codex runner イメージを build する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        shell: bash
+        run: |
+          docker build \
+            -f "$RUNNER_TEMP/ai-pr-helpers/codex-runner.Dockerfile" \
+            -t "codex-runner:${GITHUB_RUN_ID}" \
+            .
+
+      - name: Codex を実行する
+        id: codex
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          cp "${{ steps.context.outputs.instruction_file }}" "${STATE_ROOT}/run/instruction.txt"
+          docker run --rm \
+            -e CODEX_HOME=/codex-home \
+            -e CODEX_MODEL="${CODEX_MODEL}" \
+            -e GH_TOKEN="${GH_TOKEN}" \
+            -e GITHUB_TOKEN="${GH_TOKEN}" \
+            -e HEAD_SHA="${{ steps.context.outputs.head_sha }}" \
+            -e INSTRUCTION_FILE=/state/run/instruction.txt \
+            -e PR_BRANCH="${{ steps.context.outputs.branch_name }}" \
+            -e PR_NUMBER="${{ steps.context.outputs.pr_number }}" \
+            -e PR_URL="${{ steps.context.outputs.pr_url }}" \
+            -e REPO="${REPO}" \
+            -e STATE_ROOT=/state \
+            -e TRIGGER_ACTOR="${{ steps.context.outputs.trigger_actor }}" \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${CODEX_HOME}:/codex-home" \
+            -v "${RUNNER_TEMP}/ai-pr-helpers:/helpers:ro" \
+            -v "${STATE_ROOT}:/state" \
+            "codex-runner:${GITHUB_RUN_ID}" \
+            bash -lc '
+              chmod +x /helpers/run_codex.sh
+              /helpers/run_codex.sh
+            '
+
+      - name: 状態 Artifact を保存する
+        if: always() && steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.auth.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact_name }}
+          path: ${{ env.STATE_ROOT }}
+          retention-days: 30
+          overwrite: true
+
+      - name: 失敗時のフォールバックコメントを投稿する
+        if: steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true' && steps.codex.outcome == 'failure'
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/ai-run-failure-comment.md" <<'EOF'
+          AI 実行に失敗しました。
+
+          - 認証切れの可能性がある場合は、trusted machine で `codex login` をやり直して `CODEX_AUTH_JSON_B64` を再設定してください。
+          - それ以外の場合は、この workflow run のログを確認してください。
+          EOF
+          gh pr comment "${{ steps.context.outputs.pr_number }}" --body-file "$RUNNER_TEMP/ai-run-failure-comment.md"
