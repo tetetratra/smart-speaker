@@ -37,7 +37,6 @@ comment_file="$(mktemp)"
 : > "$body_file"
 
 {
-  printf '/ai\n\n'
   printf '依頼内容:\n'
   printf '%s\n' "$INPUT_REQUEST_TEXT"
 } > "$comment_file"
