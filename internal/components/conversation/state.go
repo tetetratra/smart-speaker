@@ -18,6 +18,11 @@ type sessionState struct {
 	pendingRequestCancelled bool
 	invalidResponseRetries  int
 
+	pendingRequestStreaming     bool
+	pendingStreamSpeechStarted  bool
+	pendingStreamFailed         bool
+	pendingTimelineTimerWaiting bool
+
 	seq int
 }
 
@@ -48,7 +53,9 @@ func (s *sessionState) buildConversationMessages() []types.ChatMessage {
 		case SpeakerHuman:
 			out = append(out, types.ChatMessage{Role: "user", Content: utt.Content})
 		case SpeakerAI:
-			if utt.Status != UtterancePlayed {
+			// assistant 発話は EventRealtimeOutput を出した時点で利用者に提示済みなので、
+			// TTS 完了前の追い質問でも文脈に残す。
+			if utt.Status == UtteranceUnplayed {
 				continue
 			}
 			out = append(out, types.ChatMessage{Role: "assistant", Content: utt.Content})
@@ -88,6 +95,7 @@ func (s *sessionState) cancelUnplayedUtterances() {
 func (s *sessionState) clearPendingTimeline() {
 	s.pendingTimeline = nil
 	s.pendingTimelineIdx = 0
+	s.pendingTimelineTimerWaiting = false
 }
 
 func (s *sessionState) hasPendingSpeech() bool {
@@ -120,4 +128,7 @@ func (s *sessionState) resetConversation() {
 	s.pendingRequestID = ""
 	s.pendingRequestCancelled = false
 	s.invalidResponseRetries = 0
+	s.pendingRequestStreaming = false
+	s.pendingStreamSpeechStarted = false
+	s.pendingStreamFailed = false
 }

@@ -21,13 +21,24 @@ const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const defaultPlaybackVolumePercent = 50
+const nightModeStartHour = 22
+const nightModeEndHour = 6
+const minuteMs = 60 * 1000
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
     --live-panel: #ffffff;
+    --live-panel-soft: #fafafa;
+    --live-panel-raised: #ffffff;
     --live-text: #1f1f1f;
     --live-muted: #6f6f6f;
     --live-line: #e2e2e2;
+    --live-line-strong: #e2e2e2;
+    --live-shadow: rgba(0,0,0,0.04);
+    --live-inset-line: #f0f0f0;
+    --live-toggle-bg: #e9e9e9;
+    --live-toggle-on: #2f6fde;
+    --live-toggle-knob: #ffffff;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -45,6 +56,23 @@ const liveRootStyle = `
     height: 100vh;
     padding: 6px;
     position: relative;
+    background: var(--live-bg);
+    color: var(--live-text);
+  }
+  .live-frame.live-night-mode {
+    --live-bg: #050608;
+    --live-panel: #101217;
+    --live-panel-soft: #171a21;
+    --live-panel-raised: #1b1f28;
+    --live-text: #f4f7fb;
+    --live-muted: #aab2c0;
+    --live-line: #2a2f3a;
+    --live-line-strong: #3a4250;
+    --live-shadow: rgba(0,0,0,0.38);
+    --live-inset-line: #202632;
+    --live-toggle-bg: #303643;
+    --live-toggle-on: #4f8cff;
+    --live-toggle-knob: #f4f7fb;
   }
   .live-main {
     width: 100%;
@@ -95,7 +123,7 @@ const liveRootStyle = `
   }
   .live-audio-stat {
     border: 1px solid var(--live-line);
-    background: #fafafa;
+    background: var(--live-panel-soft);
     border-radius: 999px;
     padding: 4px 8px;
     font-size: 10px;
@@ -122,7 +150,7 @@ const liveRootStyle = `
     padding: 4px 3px;
     border: 1px solid var(--live-line);
     border-radius: 12px;
-    background: #fafafa;
+    background: var(--live-panel-soft);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -149,7 +177,7 @@ const liveRootStyle = `
     font-size: 11px;
     font-weight: 700;
     border: 1px solid var(--live-line);
-    background: #f8f8f8;
+    background: var(--live-panel-soft);
     color: var(--live-muted);
     align-self: center;
     white-space: nowrap;
@@ -172,7 +200,7 @@ const liveRootStyle = `
     width: 36px;
     height: 20px;
     border-radius: 999px;
-    background: #e9e9e9;
+    background: var(--live-toggle-bg);
     border: 1px solid var(--live-line);
     position: relative;
     display: inline-flex;
@@ -184,20 +212,20 @@ const liveRootStyle = `
     width: 14px;
     height: 14px;
     border-radius: 999px;
-    background: #ffffff;
+    background: var(--live-toggle-knob);
     border: 1px solid var(--live-line);
     position: absolute;
     left: 2px;
   }
   .live-toggle-switch.on {
-    background: #2f6fde;
-    border-color: #2f6fde;
+    background: var(--live-toggle-on);
+    border-color: var(--live-toggle-on);
   }
   .live-toggle-switch.on::after {
     left: 18px;
   }
   .live-bubble {
-    background: #ffffff;
+    background: var(--live-panel-raised);
     border: 1px solid var(--live-line);
     border-radius: 14px;
     padding: 12px 14px;
@@ -205,7 +233,7 @@ const liveRootStyle = `
     line-height: 1.3;
     position: relative;
     min-height: 120px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    box-shadow: 0 1px 2px var(--live-shadow);
     text-align: center;
     display: flex;
     align-items: center;
@@ -237,20 +265,20 @@ const liveRootStyle = `
     top: 40%;
     width: 14px;
     height: 14px;
-    background: #ffffff;
+    background: var(--live-panel-raised);
     border-right: 1px solid var(--live-line);
     border-top: 1px solid var(--live-line);
     transform: rotate(45deg);
   }
   .live-board {
-    background: #fcfcfc;
-    border: 2px solid var(--live-line);
+    background: var(--live-panel-soft);
+    border: 2px solid var(--live-line-strong);
     border-radius: 10px;
     padding: 10px 12px;
     font-size: 13px;
     line-height: 1.4;
     color: var(--live-text);
-    box-shadow: inset 0 0 0 1px #f0f0f0;
+    box-shadow: inset 0 0 0 1px var(--live-inset-line);
     white-space: pre-wrap;
     overflow: auto;
     min-height: 0;
@@ -268,7 +296,7 @@ const liveRootStyle = `
     height: 100%;
     border-radius: 14px;
     border: 1px dashed var(--live-line);
-    background: #fafafa;
+    background: var(--live-panel-soft);
     color: var(--live-muted);
     display: grid;
     place-items: center;
@@ -324,6 +352,11 @@ function getButtonStyle(tone: ButtonTone, disabled: boolean): React.CSSPropertie
     color: '#334155',
     borderColor: '#cbd5e1',
   }
+}
+
+function isNightModeTime(date: Date): boolean {
+  const hour = date.getHours()
+  return hour >= nightModeStartHour || hour < nightModeEndHour
 }
 
 function getPipelineStateOptions(label: string): string[] {
@@ -1077,6 +1110,7 @@ function LiveView(props: LiveViewProps) {
     disconnect,
     goAdmin,
   } = props
+  const [isNightMode, setIsNightMode] = useState(() => isNightModeTime(new Date()))
   const handleToggle = useCallback(() => {
     if (connected) {
       disconnect()
@@ -1084,11 +1118,17 @@ function LiveView(props: LiveViewProps) {
     }
     void connect()
   }, [connected, connect, disconnect])
+  useEffect(() => {
+    const updateNightMode = () => setIsNightMode(isNightModeTime(new Date()))
+    updateNightMode()
+    const timer = window.setInterval(updateNightMode, minuteMs)
+    return () => window.clearInterval(timer)
+  }, [])
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   return (
     <>
       <style>{liveRootStyle}</style>
-      <div className="live-frame">
+      <div className={`live-frame ${isNightMode ? 'live-night-mode' : ''}`}>
         <div className="live-main">
           <div className="live-left">
             <div className="live-board">{boardText}</div>

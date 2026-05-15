@@ -46,7 +46,7 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectMainEvent(types.EventResponsesRequest)
 	})
 
-	t.Run("人の発話開始で再生中assistantがcancelされる", func(t *testing.T) {
+	t.Run("人の発話開始だけでは再生中assistantをcancelしない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("こんにちは")
@@ -56,6 +56,15 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectFinalOutput(first.ResponseID)
 
 		h.sendEvent(types.Event{Kind: types.EventSpeechStart})
+		h.expectNoEvent(150 * time.Millisecond)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTextInput,
+			Payload: types.OutputLine{
+				Role: "user",
+				Text: "割り込む",
+			},
+		})
 
 		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
 		cancel, ok := cancelEvt.Payload.(types.TTSCancel)
@@ -84,6 +93,49 @@ func TestConversationIntegration(t *testing.T) {
 		}
 
 		h.expectNoEvent(150 * time.Millisecond)
+	})
+
+	t.Run("TTS完了前の追い質問でも直前assistant発話を会話履歴に含める", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("明日の予定を教えて")
+		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"明日は10時から会議があります"}]}`)
+
+		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
+		h.expectFinalOutput(firstOutput.ResponseID)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTextInput,
+			Payload: types.OutputLine{
+				Role: "user",
+				Text: "それについて調べて教えて",
+			},
+		})
+		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
+		cancel, ok := cancelEvt.Payload.(types.TTSCancel)
+		if !ok {
+			t.Fatalf("TTSCancel payload type = %T", cancelEvt.Payload)
+		}
+		if cancel.ResponseID != firstOutput.ResponseID {
+			t.Fatalf("cancel response_id = %q, want %q", cancel.ResponseID, firstOutput.ResponseID)
+		}
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("ResponsesRequest payload type = %T", secondEvt.Payload)
+		}
+		if len(second.Messages) != 3 {
+			t.Fatalf("messages len = %d, want 3", len(second.Messages))
+		}
+		if second.Messages[0].Role != "user" || second.Messages[0].Content != "明日の予定を教えて" {
+			t.Fatalf("first message = %+v", second.Messages[0])
+		}
+		if second.Messages[1].Role != "assistant" || second.Messages[1].Content != "明日は10時から会議があります" {
+			t.Fatalf("second message = %+v", second.Messages[1])
+		}
+		if second.Messages[2].Role != "user" || second.Messages[2].Content != "それについて調べて教えて" {
+			t.Fatalf("third message = %+v", second.Messages[2])
+		}
 	})
 
 	t.Run("invalid responseでretryが1回だけ走る", func(t *testing.T) {
@@ -169,6 +221,125 @@ func TestConversationIntegration(t *testing.T) {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
 	})
+
+	t.Run("streaming speech chunk到着時点で発話を開始する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
+
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+	})
+
+	t.Run("streaming wait後のspeechはtimer経過まで発話しない", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("少し待って")
+		h.sendStreamLine(req.RequestID, `{"type":"wait","sec":1}`)
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"待ったよ"}`)
+
+		h.expectNoEvent(150 * time.Millisecond)
+		first := h.expectRealtimeOutputText("待ったよ")
+		h.expectFinalOutput(first.ResponseID)
+	})
+
+	t.Run("streaming whiteboard chunkは到着時点で白板更新する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("明日の予定")
+		h.sendStreamLine(req.RequestID, `{"type":"whiteboard","content":"- 10:00 会議"}`)
+		h.expectWhiteboardUpdate("- 10:00 会議")
+	})
+
+	t.Run("streaming中はTTS完了後もdoneまで後続chunkを待つ", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("続けて")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"ひとつめ"}`)
+		first := h.expectRealtimeOutputText("ひとつめ")
+		h.expectFinalOutput(first.ResponseID)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		h.expectNoEvent(150 * time.Millisecond)
+
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"ふたつめ"}`)
+		second := h.expectRealtimeOutputText("ふたつめ")
+		h.expectFinalOutput(second.ResponseID)
+	})
+
+	t.Run("streaming invalid chunkが発話前なら再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("テスト")
+		h.sendStreamLine(first.RequestID, `{"type":"speech","text":" "}`)
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" {
+			t.Fatal("retry RequestID is empty")
+		}
+		if second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
+		}
+	})
+
+	t.Run("streaming doneまでspeechがなければ再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("テスト")
+		h.sendStreamDone(first.RequestID)
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" || second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
+		}
+	})
+
+	t.Run("streaming done後は会話スナップショットを更新する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		h.sendStreamDone(req.RequestID)
+		h.expectEvent(types.EventConversationSnapshotUpdated)
+	})
+
+	t.Run("streaming invalid chunkが発話後なら再試行しない", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("テスト")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"先に話す"}`)
+		first := h.expectRealtimeOutputText("先に話す")
+		h.expectFinalOutput(first.ResponseID)
+
+		h.sendStreamLine(req.RequestID, `{"type":"unknown"}`)
+		h.expectNoEvent(150 * time.Millisecond)
+	})
 }
 
 type conversationHarness struct {
@@ -224,6 +395,28 @@ func (h *conversationHarness) sendResponse(requestID string, raw string) {
 			RequestID:   requestID,
 			Text:        raw,
 			HasResponse: true,
+		},
+	})
+}
+
+func (h *conversationHarness) sendStreamLine(requestID string, line string) {
+	h.t.Helper()
+	h.sendEvent(types.Event{
+		Kind: types.EventResponsesStreamChunk,
+		Payload: types.ResponsesStreamChunk{
+			RequestID: requestID,
+			Line:      line,
+		},
+	})
+}
+
+func (h *conversationHarness) sendStreamDone(requestID string) {
+	h.t.Helper()
+	h.sendEvent(types.Event{
+		Kind: types.EventResponsesStreamChunk,
+		Payload: types.ResponsesStreamChunk{
+			RequestID: requestID,
+			Done:      true,
 		},
 	})
 }

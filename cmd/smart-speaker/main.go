@@ -146,7 +146,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 	}
 	lifecycleStage = sessionlifecycle.NewStage(sessionlifecycle.Config{
 		WriteDiaryTools: writeDiaryTools,
-		IdleThreshold:   10 * time.Minute,
+		IdleThreshold:   60 * time.Minute,
 	})
 	if lifecycleStage != nil {
 		lifecycleStage.Name = "sessionlifecycle"

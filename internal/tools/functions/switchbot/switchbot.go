@@ -35,6 +35,12 @@ type Scene struct {
 	SceneName string
 }
 
+type apiResponse[T any] struct {
+	StatusCode int    `json:"statusCode"`
+	Message    string `json:"message"`
+	Body       T      `json:"body"`
+}
+
 // function calling から受け取るパラメータの構造
 type Command struct {
 	DeviceAlias string
@@ -117,13 +123,17 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 	}
 	defer resp.Body.Close()
 
-	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	out, err := decodeAPIResponse[map[string]any](resp)
+	if err != nil {
 		return nil, err
 	}
-	out["http_status"] = resp.StatusCode
-	out["device_id"] = deviceID
-	return out, nil
+	return map[string]any{
+		"statusCode":  out.StatusCode,
+		"message":     out.Message,
+		"body":        out.Body,
+		"http_status": resp.StatusCode,
+		"device_id":   deviceID,
+	}, nil
 }
 
 // GetStatus はデバイスのステータスを取得します。
@@ -152,13 +162,17 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 	}
 	defer resp.Body.Close()
 
-	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	out, err := decodeAPIResponse[map[string]any](resp)
+	if err != nil {
 		return nil, err
 	}
-	out["http_status"] = resp.StatusCode
-	out["device_id"] = resolvedID
-	return out, nil
+	return map[string]any{
+		"statusCode":  out.StatusCode,
+		"message":     out.Message,
+		"body":        out.Body,
+		"http_status": resp.StatusCode,
+		"device_id":   resolvedID,
+	}, nil
 }
 
 func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
@@ -177,13 +191,11 @@ func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
 	}
 	defer resp.Body.Close()
 
-	var out struct {
-		Body []struct {
-			SceneID   string `json:"sceneId"`
-			SceneName string `json:"sceneName"`
-		} `json:"body"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	out, err := decodeAPIResponse[[]struct {
+		SceneID   string `json:"sceneId"`
+		SceneName string `json:"sceneName"`
+	}](resp)
+	if err != nil {
 		return nil, err
 	}
 
@@ -220,13 +232,17 @@ func (c *Client) ExecuteScene(ctx context.Context, sceneID string) (map[string]a
 	}
 	defer resp.Body.Close()
 
-	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	out, err := decodeAPIResponse[map[string]any](resp)
+	if err != nil {
 		return nil, err
 	}
-	out["http_status"] = resp.StatusCode
-	out["scene_id"] = sceneID
-	return out, nil
+	return map[string]any{
+		"statusCode":  out.StatusCode,
+		"message":     out.Message,
+		"body":        out.Body,
+		"http_status": resp.StatusCode,
+		"scene_id":    sceneID,
+	}, nil
 }
 
 func (c *Client) signPayload(timestamp, nonce string) (string, error) {
@@ -280,6 +296,32 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func decodeAPIResponse[T any](resp *http.Response) (apiResponse[T], error) {
+	var out apiResponse[T]
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return out, fmt.Errorf(
+			"SwitchBot API request failed: http_status=%d status_code=%d message=%q request_id=%q",
+			resp.StatusCode,
+			out.StatusCode,
+			out.Message,
+			resp.Header.Get("switchbot-request-id"),
+		)
+	}
+	if out.StatusCode != 100 {
+		return out, fmt.Errorf(
+			"SwitchBot API returned failure: http_status=%d status_code=%d message=%q request_id=%q",
+			resp.StatusCode,
+			out.StatusCode,
+			out.Message,
+			resp.Header.Get("switchbot-request-id"),
+		)
+	}
+	return out, nil
 }
 
 func parseDeviceMap(raw string) map[string]string {

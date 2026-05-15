@@ -32,6 +32,10 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	}
 	effects := []effect{}
 	if !core.state.hasPendingSpeech() {
+		if core.state.pendingRequestStreaming {
+			effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
+			return effects, true
+		}
 		core.state.clearPendingTimeline()
 		effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
 		return effects, true
@@ -46,6 +50,7 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 		startTimerEffect{duration: estimateWaitDuration(s.event, waitSec)},
 		emitConversationSnapshotEffect(core.state.buildConversationMessages()),
 	)
+	core.state.pendingTimelineTimerWaiting = true
 	return effects, true
 }
 

@@ -40,7 +40,11 @@ func TestSceneToolRun(t *testing.T) {
 		if r.URL.Path != "/v1.1/scenes/scene-1/execute" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"message": "success"})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 100,
+			"message":    "success",
+			"body":       map[string]any{},
+		})
 	}))
 	defer server.Close()
 
