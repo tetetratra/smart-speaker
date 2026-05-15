@@ -2,6 +2,7 @@ package switchbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,8 @@ const hub2ToolName = "hub2_get_environment"
 
 const hub2Alias = "hub2"
 
+var errNotConfigured = errors.New("SwitchBot が設定されていません")
+
 // Hub2Tool は温度/湿度/照度を取得するツールです。
 type Hub2Tool struct {
 	client *Client
@@ -20,6 +23,13 @@ type Hub2Tool struct {
 
 func NewHub2(token, secret, deviceMap string) *Hub2Tool {
 	client := NewSwitchbotClient(token, secret, deviceMap)
+	if client == nil {
+		return nil
+	}
+	return &Hub2Tool{client: client}
+}
+
+func NewHub2WithClient(client *Client) *Hub2Tool {
 	if client == nil {
 		return nil
 	}
