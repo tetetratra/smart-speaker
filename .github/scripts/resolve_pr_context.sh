@@ -15,13 +15,110 @@ pr_number=""
 skip_reason=""
 autonomy_level="level1"
 request_body=""
+reaction_comment_id=""
 ai_label_name="AI主導開発"
+
+is_write_collaborator() {
+  local login="$1"
+  local permission
+
+  if [ -z "$login" ]; then
+    return 1
+  fi
+
+  if ! permission="$(gh api "/repos/${REPO}/collaborators/${login}/permission" --jq '.permission' 2>/dev/null)"; then
+    return 1
+  fi
+
+  case "$permission" in
+    admin|maintain|write)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+comment_has_bot_reaction() {
+  local comment_id="$1"
+  local content="$2"
+
+  gh api "/repos/${REPO}/issues/comments/${comment_id}/reactions?content=${content}&per_page=100" \
+    --jq 'any(.[]; .user.type == "Bot" or .user.login == "github-actions[bot]" or .user.login == "github-actions")' \
+    2>/dev/null
+}
+
+first_authorized_thumbs_up_user() {
+  local comment_id="$1"
+  local reactions_json
+  local login
+
+  if ! reactions_json="$(gh api "/repos/${REPO}/issues/comments/${comment_id}/reactions?content=%2B1&per_page=100" 2>/dev/null)"; then
+    return 1
+  fi
+
+  while IFS= read -r login; do
+    if is_write_collaborator "$login"; then
+      printf '%s' "$login"
+      return 0
+    fi
+  done < <(printf '%s' "$reactions_json" | jq -r '.[] | select(.user.type != "Bot") | .user.login')
+
+  return 1
+}
 
 case "$GITHUB_EVENT_NAME" in
   workflow_dispatch)
     should_run="true"
     pr_number="${INPUT_PR_NUMBER:-}"
     trigger_actor="${GITHUB_ACTOR:-}"
+    ;;
+  schedule)
+    while IFS= read -r candidate_pr_number; do
+      comments_json="$(
+        gh api "/repos/${REPO}/issues/${candidate_pr_number}/comments?per_page=100" \
+          --jq 'sort_by(.created_at) | reverse'
+      )"
+
+      while IFS= read -r encoded_comment; do
+        comment_json="$(printf '%s' "$encoded_comment" | base64 -d)"
+        comment_id="$(printf '%s' "$comment_json" | jq -r '.id')"
+        comment_body="$(printf '%s' "$comment_json" | jq -r '.body // ""')"
+
+        if printf '%s\n' "$comment_body" | grep -Eq '^[[:space:]]*(依頼文言:|Codex 認証情報が未設定です。|AI 実行に失敗しました。)'; then
+          continue
+        fi
+
+        if [ "$(comment_has_bot_reaction "$comment_id" "eyes")" = "true" ]; then
+          continue
+        fi
+
+        if reactor="$(first_authorized_thumbs_up_user "$comment_id")"; then
+          should_run="true"
+          pr_number="$candidate_pr_number"
+          trigger_actor="$reactor"
+          reaction_comment_id="$comment_id"
+          {
+            printf 'PR 上の AI コメントに %s が +1 リアクションしました。\n' "$reactor"
+            printf 'これは、対象コメントに対する「OKです」「了承します」と同等の返答として扱ってください。\n\n'
+            printf '対象AIコメント:\n'
+            printf '%s' "$comment_body"
+          } > "$instruction_file"
+          request_body="$(cat "$instruction_file")"
+          break 2
+        fi
+      done < <(
+        printf '%s' "$comments_json" \
+          | jq -r '.[] | select(.user.type == "Bot") | @base64'
+      )
+    done < <(
+      gh pr list --state open --label "$ai_label_name" --limit 100 --json number --jq '.[].number'
+    )
+
+    if [ "$should_run" != "true" ]; then
+      skip_reason="no_pending_reaction"
+    fi
     ;;
   issue_comment)
     if ! jq -e '.issue.pull_request' "$GITHUB_EVENT_PATH" >/dev/null; then
@@ -163,4 +260,5 @@ fi
   echo "trigger_actor=$trigger_actor"
   echo "autonomy_level=$autonomy_level"
   echo "instruction_file=$instruction_file"
+  echo "reaction_comment_id=$reaction_comment_id"
 } >> "$GITHUB_OUTPUT"

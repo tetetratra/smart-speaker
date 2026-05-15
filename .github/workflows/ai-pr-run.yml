@@ -10,6 +10,8 @@ on:
   issue_comment:
     types:
       - created
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
   actions: write
@@ -23,7 +25,7 @@ concurrency:
 
 jobs:
   run:
-    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.issue.pull_request
     runs-on: ubuntu-latest
     env:
       CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
@@ -59,6 +61,9 @@ jobs:
             missing_request)
               echo "PR に依頼内容が見つからないためスキップします"
               ;;
+            no_pending_reaction)
+              echo "未処理の +1 リアクションがないためスキップします"
+              ;;
             not_ai_comment)
               echo "/ai コメントではないためスキップします"
               ;;
@@ -76,7 +81,7 @@ jobs:
         shell: bash
         run: |
           allowed="true"
-          if [ "${GITHUB_EVENT_NAME}" = "issue_comment" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "issue_comment" ] || [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
             if permission="$(gh api "/repos/${REPO}/collaborators/${{ steps.context.outputs.trigger_actor }}/permission" --jq '.permission' 2>/dev/null)"; then
               case "$permission" in
                 admin|maintain|write) ;;
@@ -104,6 +109,24 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -f content='+1' >/dev/null; then
             echo "warning: failed to add reaction" >&2
+          fi
+
+      - name: "処理対象リアクションを既読にする"
+        if: github.event_name == 'schedule' && steps.context.outputs.should_run == 'true' && steps.permission.outputs.allowed == 'true'
+        shell: bash
+        env:
+          COMMENT_ID: ${{ steps.context.outputs.reaction_comment_id }}
+        run: |
+          if [ -z "${COMMENT_ID:-}" ]; then
+            echo "warning: reaction comment id is empty" >&2
+            exit 0
+          fi
+          if ! gh api \
+            -X POST \
+            "/repos/${REPO}/issues/comments/${COMMENT_ID}/reactions" \
+            -H "Accept: application/vnd.github+json" \
+            -f content='eyes' >/dev/null; then
+            echo "warning: failed to mark reaction as read" >&2
           fi
 
       - name: 対象ブランチを checkout する
