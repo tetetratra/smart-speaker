@@ -57,6 +57,7 @@ const liveRootStyle = `
     padding: 6px;
     position: relative;
     background: var(--live-bg);
+    color: var(--live-text);
   }
   .live-frame.live-night-mode {
     --live-bg: #050608;
