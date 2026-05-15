@@ -53,7 +53,9 @@ func (s *sessionState) buildConversationMessages() []types.ChatMessage {
 		case SpeakerHuman:
 			out = append(out, types.ChatMessage{Role: "user", Content: utt.Content})
 		case SpeakerAI:
-			if utt.Status != UtterancePlayed {
+			// assistant 発話は EventRealtimeOutput を出した時点で利用者に提示済みなので、
+			// TTS 完了前の追い質問でも文脈に残す。
+			if utt.Status == UtteranceUnplayed {
 				continue
 			}
 			out = append(out, types.ChatMessage{Role: "assistant", Content: utt.Content})

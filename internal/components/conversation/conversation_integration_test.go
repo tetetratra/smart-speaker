@@ -86,6 +86,49 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectNoEvent(150 * time.Millisecond)
 	})
 
+	t.Run("TTS完了前の追い質問でも直前assistant発話を会話履歴に含める", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("明日の予定を教えて")
+		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"明日は10時から会議があります"}]}`)
+
+		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
+		h.expectFinalOutput(firstOutput.ResponseID)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTextInput,
+			Payload: types.OutputLine{
+				Role: "user",
+				Text: "それについて調べて教えて",
+			},
+		})
+		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
+		cancel, ok := cancelEvt.Payload.(types.TTSCancel)
+		if !ok {
+			t.Fatalf("TTSCancel payload type = %T", cancelEvt.Payload)
+		}
+		if cancel.ResponseID != firstOutput.ResponseID {
+			t.Fatalf("cancel response_id = %q, want %q", cancel.ResponseID, firstOutput.ResponseID)
+		}
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("ResponsesRequest payload type = %T", secondEvt.Payload)
+		}
+		if len(second.Messages) != 3 {
+			t.Fatalf("messages len = %d, want 3", len(second.Messages))
+		}
+		if second.Messages[0].Role != "user" || second.Messages[0].Content != "明日の予定を教えて" {
+			t.Fatalf("first message = %+v", second.Messages[0])
+		}
+		if second.Messages[1].Role != "assistant" || second.Messages[1].Content != "明日は10時から会議があります" {
+			t.Fatalf("second message = %+v", second.Messages[1])
+		}
+		if second.Messages[2].Role != "user" || second.Messages[2].Content != "それについて調べて教えて" {
+			t.Fatalf("third message = %+v", second.Messages[2])
+		}
+	})
+
 	t.Run("invalid responseでretryが1回だけ走る", func(t *testing.T) {
 		h := newConversationHarness(t)
 
