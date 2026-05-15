@@ -26,7 +26,13 @@ type Client struct {
 	token     string
 	secret    string
 	http      *http.Client
+	baseURL   string
 	deviceMap map[string]string
+}
+
+type Scene struct {
+	SceneID   string
+	SceneName string
 }
 
 // function calling から受け取るパラメータの構造
@@ -52,6 +58,7 @@ func NewSwitchbotClient(token, secret, deviceMapRaw string) *Client {
 		token:     token,
 		secret:    secret,
 		http:      &http.Client{Timeout: 10 * time.Second},
+		baseURL:   baseURL,
 		deviceMap: deviceMap,
 	}
 	return client
@@ -89,7 +96,7 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", baseURL, deviceID)
+	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", c.baseURL, deviceID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -125,7 +132,7 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/v1.1/devices/%s/status", baseURL, resolvedID)
+	url := fmt.Sprintf("%s/v1.1/devices/%s/status", c.baseURL, resolvedID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -151,6 +158,74 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 	}
 	out["http_status"] = resp.StatusCode
 	out["device_id"] = resolvedID
+	return out, nil
+}
+
+func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
+	url := fmt.Sprintf("%s/v1.1/scenes", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.applyAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out struct {
+		Body []struct {
+			SceneID   string `json:"sceneId"`
+			SceneName string `json:"sceneName"`
+		} `json:"body"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+
+	scenes := make([]Scene, 0, len(out.Body))
+	for _, item := range out.Body {
+		sceneID := strings.TrimSpace(item.SceneID)
+		sceneName := strings.TrimSpace(item.SceneName)
+		if sceneID == "" || sceneName == "" {
+			continue
+		}
+		scenes = append(scenes, Scene{SceneID: sceneID, SceneName: sceneName})
+	}
+	return scenes, nil
+}
+
+func (c *Client) ExecuteScene(ctx context.Context, sceneID string) (map[string]any, error) {
+	sceneID = strings.TrimSpace(sceneID)
+	if sceneID == "" {
+		return nil, errors.New("scene_id を指定してください")
+	}
+
+	url := fmt.Sprintf("%s/v1.1/scenes/%s/execute", c.baseURL, sceneID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.applyAuth(req); err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	out["http_status"] = resp.StatusCode
+	out["scene_id"] = sceneID
 	return out, nil
 }
 
@@ -184,6 +259,27 @@ func (c *Client) applyAuthHeaders(req *http.Request, timestamp, nonce, signature
 	req.Header.Set("t", timestamp)
 	req.Header.Set("nonce", nonce)
 	req.Header.Set("sign", signature)
+}
+
+func (c *Client) applyAuth(req *http.Request) error {
+	nonce := uuid.NewString()
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	signature, err := c.signPayload(timestamp, nonce)
+	if err != nil {
+		return err
+	}
+	c.applyAuthHeaders(req, timestamp, nonce, signature)
+	return nil
+}
+
+func asString(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func parseDeviceMap(raw string) map[string]string {

@@ -9,6 +9,7 @@ permissions:
   actions: write
   contents: write
   issues: write
+  models: read
   pull-requests: write
 
 jobs:
@@ -23,9 +24,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Issue タイトルから branch slug を生成する
+        id: branch_slug_ai
+        continue-on-error: true
+        uses: actions/ai-inference@v1
+        with:
+          prompt-file: ./.github/prompts/issue-branch-slug.prompt.yml
+          input: |
+            issue_title: |
+              ${{ github.event.issue.title }}
+
+      - name: AI 生成 slug を正規化する
+        id: branch_slug
+        shell: bash
+        env:
+          AI_RESPONSE: ${{ steps.branch_slug_ai.outputs.response }}
+        run: |
+          slug="$(printf '%s' "$AI_RESPONSE" | jq -r '.slug // empty' 2>/dev/null || true)"
+          slug="$(printf '%s' "$slug" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+          slug="${slug:0:48}"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
       - name: Draft PR を作成して issue コメントを残す
         id: create
         shell: bash
+        env:
+          INPUT_BRANCH_SLUG: ${{ steps.branch_slug.outputs.slug }}
         run: |
           chmod +x .github/scripts/create_pr_from_issue.sh
           .github/scripts/create_pr_from_issue.sh

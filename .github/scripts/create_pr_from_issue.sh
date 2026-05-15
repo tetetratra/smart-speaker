@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+sanitize_slug() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
+}
+
 if [ -z "${INPUT_ISSUE_NUMBER:-}" ]; then
   echo "INPUT_ISSUE_NUMBER is required" >&2
   exit 1
@@ -19,13 +25,17 @@ issue_url="$(printf '%s' "$issue_json" | jq -r '.url')"
 issue_author_login="$(printf '%s' "$issue_json" | jq -r '.author.login // empty')"
 ai_label_name="AI主導開発"
 
-timestamp="$(date +%Y%m%d%H%M%S)"
-slug="$(printf '%s' "$issue_title" \
-  | tr '[:upper:]' '[:lower:]' \
-  | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+slug="$(sanitize_slug "${INPUT_BRANCH_SLUG:-}")"
+if [ -z "$slug" ]; then
+  slug="$(sanitize_slug "$issue_title")"
+fi
 slug="${slug:-issue}"
-slug="${slug:0:40}"
-branch_name="ai/${timestamp}-${issue_number}-${slug}"
+slug="${slug:0:48}"
+branch_name="ai/${issue_number}-${slug}"
+
+if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+  branch_name="ai/${issue_number}-issue"
+fi
 
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

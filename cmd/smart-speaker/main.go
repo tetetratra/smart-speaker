@@ -26,6 +26,7 @@ import (
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
+	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/registry"
 )
 
@@ -122,10 +123,20 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		convStage.Name = "conversation"
 	}
 
+	switchBotClient := switchbot.NewSwitchbotClient(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
+	switchBotScenes, err := switchBotClient.ListScenes(context.Background())
+	if err != nil {
+		log.Printf("failed to list SwitchBot scenes: %v", err)
+		switchBotScenes = nil
+	} else {
+		log.Printf("loaded %d SwitchBot scenes", len(switchBotScenes))
+	}
 	toolRegistry := registry.New(registry.Config{
 		SwitchBotToken:     cfg.SwitchBot.Token,
 		SwitchBotSecret:    cfg.SwitchBot.Secret,
 		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
+		SwitchBotClient:    switchBotClient,
+		SwitchBotScenes:    switchBotScenes,
 		CalendarClient:     calendarClient,
 		DiaryStore:         diaryStore,
 	})

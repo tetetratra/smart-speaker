@@ -1,0 +1,31 @@
+messages:
+  - role: system
+    content: >-
+      GitHub issue タイトルを、簡潔な英語の kebab-case な branch slug に変換してください。
+      スキーマに一致する JSON だけを返してください。開発現場で自然な表現を優先し、
+      重要な技術用語は保ちつつ、英小文字、数字、ハイフンのみを使ってください。
+      ai のような接頭辞や issue 番号は含めないでください。
+  - role: user
+    content: >-
+      次の GitHub issue タイトルを英語の kebab-case な branch slug に変換してください:
+      {{issue_title}}
+model: openai/gpt-4o
+responseFormat: json_schema
+jsonSchema: |-
+  {
+    "name": "issue_branch_slug",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "接頭辞を含まない英語の kebab-case な branch slug"
+        }
+      },
+      "required": ["slug"]
+    }
+  }
+modelParameters:
+  temperature: 0

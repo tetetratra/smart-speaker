@@ -14,6 +14,9 @@ const (
 	defaultIdleThreshold = 10 * time.Minute
 	diaryPrompt          = `今回の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください。
 すでに過去の日記に書かれていることではなく、今回の会話で話した内容にのみ触れてください。`
+	shortDiaryInstruction  = "今回の会話は短いため、日記は1行程度で簡潔に書いてください。"
+	mediumDiaryInstruction = "今回の会話は中程度の長さのため、日記は2〜3行程度で書いてください。"
+	longDiaryInstruction   = "今回の会話は長いため、日記は3〜5行程度で必要な内容をまとめてください。"
 )
 
 type Config struct {
@@ -153,13 +156,48 @@ func (r *runner) handleIdleTimeout() {
 		Kind: types.EventResponsesRequest,
 		Payload: types.ResponsesRequest{
 			Role:         "system",
-			Text:         diaryPrompt,
+			Text:         buildDiaryPrompt(r.state.snapshot),
 			Messages:     cloneMessages(r.state.snapshot),
 			SystemPrompt: &emptySystem,
 			ToolChoice:   map[string]any{"type": "function", "name": "write_diary"},
 			Tools:        r.tools,
 		},
 	})
+}
+
+func buildDiaryPrompt(messages []types.ChatMessage) string {
+	instruction := diaryLengthInstruction(messages)
+	if instruction == "" {
+		return diaryPrompt
+	}
+	return diaryPrompt + "\n" + instruction
+}
+
+func diaryLengthInstruction(messages []types.ChatMessage) string {
+	count := conversationMessageCount(messages)
+	switch {
+	case count <= 0:
+		return ""
+	case count <= 6:
+		return shortDiaryInstruction
+	case count <= 12:
+		return mediumDiaryInstruction
+	default:
+		return longDiaryInstruction
+	}
+}
+
+func conversationMessageCount(messages []types.ChatMessage) int {
+	count := 0
+	for _, msg := range messages {
+		switch strings.TrimSpace(msg.Role) {
+		case "user", "assistant":
+			if strings.TrimSpace(msg.Content) != "" {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func (r *runner) startTimer(d time.Duration) {

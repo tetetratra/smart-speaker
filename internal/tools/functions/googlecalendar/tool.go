@@ -17,7 +17,7 @@ const (
 	updateToolName = "google_calendar_update"
 )
 
-var calendarDateLocation = time.FixedZone("JST", 9*60*60)
+var defaultLocation = time.FixedZone("Asia/Tokyo", 9*60*60)
 
 type calendarClient interface {
 	ListEvents(ctx context.Context, req calendarapi.ListEventsRequest) ([]calendarapi.Event, error)
@@ -88,7 +88,7 @@ func (t *listTool) Run(args map[string]any) (map[string]any, error) {
 		timeMin = minParsed
 		timeMax = maxParsed
 	} else if dateRaw != "" {
-		start, err := time.ParseInLocation("2006-01-02", dateRaw, calendarDateLocation)
+		start, err := time.ParseInLocation("2006-01-02", dateRaw, defaultLocation)
 		if err != nil {
 			return nil, fmt.Errorf("date はYYYY-MM-DDで指定してください")
 		}
@@ -424,7 +424,7 @@ func parseTimeOrDate(raw string) (time.Time, error) {
 	if strings.Contains(trimmed, "T") {
 		return time.Parse(time.RFC3339, trimmed)
 	}
-	return time.ParseInLocation("2006-01-02", trimmed, calendarDateLocation)
+	return time.ParseInLocation("2006-01-02", trimmed, defaultLocation)
 }
 
 func asString(v any) string {
