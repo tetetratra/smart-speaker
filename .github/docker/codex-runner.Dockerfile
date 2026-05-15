@@ -36,6 +36,10 @@ RUN set -eux; \
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 RUN set -eux; \
+  ln -sf /usr/local/go/bin/go /usr/local/bin/go; \
+  ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+RUN set -eux; \
   arch="$(dpkg --print-architecture)"; \
   case "$arch" in \
     amd64) gh_arch="amd64" ;; \
