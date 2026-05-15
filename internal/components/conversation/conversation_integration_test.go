@@ -46,7 +46,7 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectMainEvent(types.EventResponsesRequest)
 	})
 
-	t.Run("人の発話開始で再生中assistantがcancelされる", func(t *testing.T) {
+	t.Run("人の発話開始だけでは再生中assistantをcancelしない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("こんにちは")
@@ -56,6 +56,15 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectFinalOutput(first.ResponseID)
 
 		h.sendEvent(types.Event{Kind: types.EventSpeechStart})
+		h.expectNoEvent(150 * time.Millisecond)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTextInput,
+			Payload: types.OutputLine{
+				Role: "user",
+				Text: "割り込む",
+			},
+		})
 
 		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
 		cancel, ok := cancelEvt.Payload.(types.TTSCancel)

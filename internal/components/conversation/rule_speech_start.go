@@ -2,9 +2,11 @@ package conversation
 
 type speechStartRule struct{}
 
-func (speechStartRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
+func (speechStartRule) Apply(_ *conversationCore, sig signal) ([]effect, bool) {
 	if _, ok := sig.(speechStartSignal); !ok {
 		return nil, false
 	}
-	return core.interruptCurrentConversationEffects(), true
+	// 発話検知だけでは中断しない。確定した文字起こし(EventTextInput)が来た時点で
+	// humanTextRule 側が中断と次リクエスト生成を担当する。
+	return nil, true
 }
