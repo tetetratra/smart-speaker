@@ -14,6 +14,9 @@ var (
 	citationPattern     = regexp.MustCompile("cite[^]+")
 )
 
+// ここから下は、会話イベントを処理するルールを実行順に列挙する領域です。
+
+// 会話イベントに適用するルールを実行順に返す。
 func defaultConversationRules() []Rule {
 	return []Rule{
 		speechStartRule{},
@@ -30,6 +33,7 @@ func defaultConversationRules() []Rule {
 
 type speechStartRule struct{}
 
+// 発話開始時に進行中の会話処理を中断する。
 func (speechStartRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	if _, ok := sig.(speechStartSignal); !ok {
 		return nil, false
@@ -39,6 +43,7 @@ func (speechStartRule) Apply(core *conversationCore, sig signal) ([]effect, bool
 
 type humanTextRule struct{}
 
+// 人間の入力を履歴に追加し、AI応答リクエストを開始する。
 func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(humanTextSignal)
 	if !ok {
@@ -69,6 +74,7 @@ func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 
 type timerFiredRule struct{}
 
+// タイマー通知の読み上げテキストを出力イベントとして流す。
 func (timerFiredRule) Apply(_ *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(timerFiredSignal)
 	if !ok {
@@ -90,6 +96,7 @@ func (timerFiredRule) Apply(_ *conversationCore, sig signal) ([]effect, bool) {
 
 type responsesRule struct{}
 
+// AI応答を検証し、ホワイトボード更新や読み上げタイムラインへ変換する。
 func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(responsesSignal)
 	if !ok {
@@ -140,6 +147,7 @@ func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 	return effects, true
 }
 
+// AI応答のtimelineを、実行可能な待機・発話セグメントへ変換する。
 func buildTimelineSegments(out aiOutput) []timelineSegment {
 	if len(out.Timeline) == 0 {
 		return nil
@@ -168,6 +176,7 @@ func buildTimelineSegments(out aiOutput) []timelineSegment {
 	return timeline
 }
 
+// 読み上げ本文からURLや引用表記を取り除く。
 func sanitizeSpeech(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -179,6 +188,7 @@ func sanitizeSpeech(text string) string {
 	return strings.TrimSpace(out)
 }
 
+// 待機秒数を許容範囲に丸める。
 func sanitizeWait(value *int) int {
 	if value == nil {
 		return 0
@@ -194,6 +204,7 @@ func sanitizeWait(value *int) int {
 
 type responsesStreamRule struct{}
 
+// AI応答ストリームの各チャンクを処理し、逐次タイムラインへ反映する。
 func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(responsesStreamChunkSignal)
 	if !ok {
@@ -260,6 +271,7 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 	}
 }
 
+// ストリーム失敗時に状態を片付け、必要なら再試行effectを作る。
 func (c *conversationCore) failStream(message string, retryInvalid bool) []effect {
 	effects := []effect{runtimeLogEffect{message: message}}
 	c.state.pendingStreamFailed = true
@@ -277,6 +289,7 @@ func (c *conversationCore) failStream(message string, retryInvalid bool) []effec
 	return effects
 }
 
+// ストリーム完了時に状態を確定し、必要なら会話スナップショットを通知する。
 func (c *conversationCore) completeStream() []effect {
 	c.state.pendingRequestStreaming = false
 	c.state.pendingRequestID = ""
@@ -298,6 +311,7 @@ func (c *conversationCore) completeStream() []effect {
 
 type toolResponseRule struct{}
 
+// ツール実行結果を会話履歴とログへ反映する。
 func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(toolResponseSignal)
 	if !ok {
@@ -339,6 +353,7 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 
 type sessionClearRule struct{}
 
+// セッション消去時に会話状態をリセットして空のスナップショットを通知する。
 func (sessionClearRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	if _, ok := sig.(sessionClearSignal); !ok {
 		return nil, false
@@ -351,6 +366,7 @@ func (sessionClearRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 
 type ttsEndRule struct{}
 
+// TTS終了時に発話状態を更新し、次の待機または発話へ進める。
 func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	s, ok := sig.(ttsEndSignal)
 	if !ok {
@@ -396,6 +412,7 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	return effects, true
 }
 
+// TTS再生終了時刻を考慮して、次の待機時間を見積もる。
 func estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
 	waitDuration := time.Duration(waitSec * float64(time.Second))
 	startAt := tts.AudioStartAt
@@ -415,6 +432,7 @@ func estimateWaitDuration(tts types.TTSEvent, waitSec float64) time.Duration {
 
 type timerElapsedRule struct{}
 
+// 待機タイマー終了時にタイムラインの次の発話へ進める。
 func (timerElapsedRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 	if _, ok := sig.(timerElapsedSignal); !ok {
 		return nil, false
@@ -422,3 +440,5 @@ func (timerElapsedRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 	core.state.pendingTimelineTimerWaiting = false
 	return core.advanceTimelineEffects(), true
 }
+
+// 会話イベントを処理するルールの列挙はここまでです。

@@ -25,6 +25,7 @@ type DiaryReader interface {
 	Content() (string, error)
 }
 
+// contextProviderを依存未指定時のdefault実装つきで作る。
 func newContextProvider(client calendarEventLister, reader DiaryReader) *contextProvider {
 	if client == nil {
 		client = calendarapi.NewClient(calendarapi.Config{})
@@ -38,11 +39,13 @@ func newContextProvider(client calendarEventLister, reader DiaryReader) *context
 	}
 }
 
+// 会話messagesの先頭にカレンダーと日記のsystem contextを追加する。
 func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
 	out := p.withCalendarContext(ctx, messages)
 	return p.withDiaryContext(out)
 }
 
+// カレンダー予定をsystem messageとしてmessagesの先頭へ追加する。
 func (p *contextProvider) withCalendarContext(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
 	built, err := p.buildCalendarContext(ctx)
 	if err != nil {
@@ -62,6 +65,7 @@ func (p *contextProvider) withCalendarContext(ctx context.Context, messages []ty
 	return withCalendar
 }
 
+// Google Calendarから直近予定のprompt本文を組み立てる。
 func (p *contextProvider) buildCalendarContext(ctx context.Context) (string, error) {
 	if _, err := oauthgooglecalendar.LoadToken(); err != nil {
 		return "", nil
@@ -77,6 +81,7 @@ func (p *contextProvider) buildCalendarContext(ctx context.Context) (string, err
 	return buildCalendarContextWithClient(ctx, p.calendarClient, day0, dayN)
 }
 
+// 日記本文をsystem messageとしてmessagesの先頭へ追加する。
 func (p *contextProvider) withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
 	if p == nil || p.diaryReader == nil {
 		return messages
@@ -99,6 +104,7 @@ func (p *contextProvider) withDiaryContext(messages []types.ChatMessage) []types
 	return withDiary
 }
 
+// 指定期間のカレンダー予定を取得してprompt本文へ整形する。
 func buildCalendarContextWithClient(ctx context.Context, client calendarEventLister, day0 time.Time, dayN time.Time) (string, error) {
 	events, err := client.ListEvents(ctx, calendarapi.ListEventsRequest{
 		CalendarID: "primary",
@@ -112,6 +118,7 @@ func buildCalendarContextWithClient(ctx context.Context, client calendarEventLis
 	return formatCalendarPrompt(events, day0), nil
 }
 
+// カレンダー予定を日別の箇条書きpromptへ整形する。
 func formatCalendarPrompt(events []calendarapi.Event, day0 time.Time) string {
 	labels := []string{"今日", "明日", "明後日"}
 	grouped := make([][]string, calendarPromptDays)
@@ -154,6 +161,7 @@ func formatCalendarPrompt(events []calendarapi.Event, day0 time.Time) string {
 	return strings.TrimSpace(b.String())
 }
 
+// カレンダー予定1件を時刻つきの1行表示へ整形する。
 func formatCalendarEventLine(event calendarapi.Event) string {
 	title := strings.TrimSpace(event.Summary)
 	if title == "" {
@@ -170,6 +178,7 @@ func formatCalendarEventLine(event calendarapi.Event) string {
 	return strings.TrimSpace(start + "-" + end + " " + title)
 }
 
+// 予定開始日をローカル日付の0時として取り出す。
 func eventStartTime(start calendarapi.EventTime) (time.Time, bool) {
 	if start.DateTime != "" {
 		t, err := time.Parse(time.RFC3339, start.DateTime)
@@ -189,6 +198,7 @@ func eventStartTime(start calendarapi.EventTime) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// カレンダー予定時刻をHH:MMまたは終日表記へ整形する。
 func formatCalendarEventClock(dt calendarapi.EventTime, isEnd bool) string {
 	if dt.Date != "" && dt.DateTime == "" {
 		if isEnd {

@@ -27,6 +27,7 @@ type conversationLogger struct {
 	encoder *json.Encoder
 }
 
+// 会話ログを書き込むloggerを初期化する。
 func newConversationLogger(path string) *conversationLogger {
 	writer, encoder, file := openLogWriter(path)
 	return &conversationLogger{
@@ -36,6 +37,7 @@ func newConversationLogger(path string) *conversationLogger {
 	}
 }
 
+// loggerのbufferとfileを閉じる。
 func (l *conversationLogger) Close() error {
 	if l == nil {
 		return nil
@@ -53,6 +55,7 @@ func (l *conversationLogger) Close() error {
 	return nil
 }
 
+// 会話ログ1件をJSON Linesとして書き込む。
 func (l *conversationLogger) Write(rec logRecord) {
 	if l == nil || l.encoder == nil {
 		return
@@ -69,6 +72,7 @@ func (l *conversationLogger) Write(rec logRecord) {
 	}
 }
 
+// ログ出力先のディレクトリとファイルを開く。
 func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
 	logPath := strings.TrimSpace(path)
 	if logPath == "" {
@@ -89,11 +93,13 @@ func openLogWriter(path string) (*bufio.Writer, *json.Encoder, *os.File) {
 	return writer, encoder, file
 }
 
+// runnerのcontextを準備してイベント消費ループを起動する。
 func (r *runner) run(parent context.Context) {
 	r.ctx, r.cancel = context.WithCancel(parent)
 	go r.consume()
 }
 
+// upstreamイベントとタイマーイベントを受け取り続ける。
 func (r *runner) consume() {
 	defer close(r.downstream)
 	for {
@@ -115,6 +121,7 @@ func (r *runner) consume() {
 	}
 }
 
+// 外部イベントを内部signalへ変換してcoreへ渡す。
 func (r *runner) handleEvent(evt types.Event) {
 	sig, ok := signalFromEvent(evt)
 	if !ok {
@@ -123,6 +130,7 @@ func (r *runner) handleEvent(evt types.Event) {
 	r.applyEffects(r.core.Handle(sig))
 }
 
+// runnerを停止して入力チャネルとloggerを閉じる。
 func (r *runner) close() error {
 	if r.once {
 		return nil
@@ -138,6 +146,9 @@ func (r *runner) close() error {
 	return nil
 }
 
+// ここから下は、coreが返したeffectをruntime処理へ割り当てる領域です。
+
+// effectの種類ごとにruntime処理を実行する。
 func (r *runner) applyEffects(effects []effect) {
 	for _, eff := range effects {
 		switch e := eff.(type) {
@@ -157,6 +168,7 @@ func (r *runner) applyEffects(effects []effect) {
 	}
 }
 
+// 会話スナップショット更新イベントを作る。
 func emitConversationSnapshotEffect(messages []types.ChatMessage) emitEventEffect {
 	cloned := make([]types.ChatMessage, len(messages))
 	copy(cloned, messages)
@@ -170,6 +182,7 @@ func emitConversationSnapshotEffect(messages []types.ChatMessage) emitEventEffec
 	}
 }
 
+// 会話アクティビティ通知イベントを作る。
 func emitConversationActivityEffect(at time.Time, source string) emitEventEffect {
 	return emitEventEffect{
 		event: types.Event{
@@ -182,6 +195,7 @@ func emitConversationActivityEffect(at time.Time, source string) emitEventEffect
 	}
 }
 
+// downstreamへイベントを送る。
 func (r *runner) emit(evt types.Event) {
 	select {
 	case <-r.ctx.Done():
@@ -190,16 +204,19 @@ func (r *runner) emit(evt types.Event) {
 	}
 }
 
+// 会話ログeffectをloggerへ書き込む。
 func (r *runner) applyLogRecordEffect(e logRecordEffect) {
 	r.logger.Write(e.record)
 }
 
+// runtimeログeffectを標準loggerへ出力する。
 func (r *runner) applyRuntimeLogEffect(e runtimeLogEffect) {
 	if e.message != "" {
 		log.Print(e.message)
 	}
 }
 
+// AI応答リクエストeffectを外部イベントとして送る。
 func (r *runner) applyRequestResponseEffect(e requestResponseEffect) {
 	messages := r.contexts.WithSystemContexts(r.ctx, e.messages)
 	if len(messages) == 0 {
@@ -215,6 +232,7 @@ func (r *runner) applyRequestResponseEffect(e requestResponseEffect) {
 	})
 }
 
+// 指定時間後にtimerElapsedSignalを発火するタイマーを開始する。
 func (r *runner) startTimer(d time.Duration) {
 	if d <= 0 {
 		r.stopTimer()
@@ -236,6 +254,7 @@ func (r *runner) startTimer(d time.Duration) {
 	r.timerC = r.timer.C
 }
 
+// 実行中のタイマーを停止して参照を消す。
 func (r *runner) stopTimer() {
 	if r.timer == nil {
 		return
@@ -249,3 +268,5 @@ func (r *runner) stopTimer() {
 	r.timer = nil
 	r.timerC = nil
 }
+
+// coreが返したeffectをruntime処理へ割り当てる領域はここまでです。
