@@ -99,13 +99,40 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 		systemPrompt = strings.TrimSpace(*req.SystemPrompt)
 	}
 	systemPrompt = appendCurrentTimestamp(systemPrompt)
-	resp, err := r.client.CreateResponse(r.ctx, messages, systemPrompt, req.ToolChoice, req.Tools)
+	resp, err := r.client.CreateResponseStream(r.ctx, messages, systemPrompt, req.ToolChoice, req.Tools, func(line string) error {
+		r.emit(types.Event{
+			Kind: types.EventResponsesStreamChunk,
+			Payload: types.ResponsesStreamChunk{
+				RequestID: req.RequestID,
+				Line:      line,
+			},
+		})
+		return nil
+	})
 	if err != nil {
 		log.Printf("responsesapi: request error: %v", err)
+		r.emit(types.Event{
+			Kind: types.EventResponsesStreamChunk,
+			Payload: types.ResponsesStreamChunk{
+				RequestID: req.RequestID,
+				Err:       err.Error(),
+			},
+		})
 		return
 	}
 	resp.RequestID = req.RequestID
-	r.handleResponsesResponse(resp)
+	if len(resp.ToolCalls) > 0 {
+		r.handleResponsesResponse(resp)
+		return
+	}
+	r.emit(types.Event{
+		Kind: types.EventResponsesStreamChunk,
+		Payload: types.ResponsesStreamChunk{
+			RequestID:  req.RequestID,
+			ResponseID: resp.ResponseID,
+			Done:       true,
+		},
+	})
 }
 
 func appendCurrentTimestamp(prompt string) string {

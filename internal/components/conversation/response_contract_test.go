@@ -85,3 +85,54 @@ func TestBuildTimelineSegments(t *testing.T) {
 		}
 	})
 }
+
+func TestParseAIChunk(t *testing.T) {
+	t.Run("speech chunkを解釈できる", func(t *testing.T) {
+		chunk, ok := parseAIChunk(`{"type":"speech","text":"こんにちは"}`)
+		if !ok {
+			t.Fatal("parseAIChunk returned false")
+		}
+		if chunk.Type != "speech" || chunk.Text != "こんにちは" {
+			t.Fatalf("chunk = %+v", chunk)
+		}
+	})
+
+	t.Run("wait chunkを解釈できる", func(t *testing.T) {
+		chunk, ok := parseAIChunk(`{"type":"wait","sec":2}`)
+		if !ok {
+			t.Fatal("parseAIChunk returned false")
+		}
+		if chunk.Type != "wait" || chunk.Sec == nil || *chunk.Sec != 2 {
+			t.Fatalf("chunk = %+v", chunk)
+		}
+	})
+
+	t.Run("whiteboard chunkを解釈できる", func(t *testing.T) {
+		chunk, ok := parseAIChunk(`{"type":"whiteboard","content":"- 10:00 会議"}`)
+		if !ok {
+			t.Fatal("parseAIChunk returned false")
+		}
+		if chunk.Type != "whiteboard" || chunk.Content != "- 10:00 会議" {
+			t.Fatalf("chunk = %+v", chunk)
+		}
+	})
+
+	t.Run("未知typeは無効", func(t *testing.T) {
+		if _, ok := parseAIChunk(`{"type":"unknown","text":"x"}`); ok {
+			t.Fatal("parseAIChunk returned true, want false")
+		}
+	})
+
+	t.Run("必須field欠落は無効", func(t *testing.T) {
+		cases := []string{
+			`{"type":"speech","text":" "}`,
+			`{"type":"wait"}`,
+			`{"type":"whiteboard","content":" "}`,
+		}
+		for _, tc := range cases {
+			if _, ok := parseAIChunk(tc); ok {
+				t.Fatalf("parseAIChunk(%s) returned true, want false", tc)
+			}
+		}
+	})
+}

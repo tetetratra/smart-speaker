@@ -26,6 +26,7 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventToolResponse:                formatToolResponseDetail,
 		types.EventResponsesRequest:            formatResponsesRequestDetail,
 		types.EventResponsesResponse:           formatResponsesResponseDetail,
+		types.EventResponsesStreamChunk:        formatResponsesStreamChunkDetail,
 		types.EventWhiteboardUpdate:            formatWhiteboardUpdateDetail,
 		types.EventTTSCancel:                   formatTTSCancelDetail,
 		types.EventRTCSignal:                   formatRTCSignalDetail,
@@ -136,6 +137,28 @@ func formatResponsesResponseDetail(evt types.Event) string {
 	}
 	if resp.RequestID != "" {
 		parts = append(parts, fmt.Sprintf("request_id=%s", resp.RequestID))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatResponsesStreamChunkDetail(evt types.Event) string {
+	chunk, ok := evt.Payload.(types.ResponsesStreamChunk)
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("line=%s", quoteText(chunk.Line)),
+		fmt.Sprintf("chars=%d", utf8.RuneCountInString(chunk.Line)),
+		fmt.Sprintf("done=%t", chunk.Done),
+	}
+	if chunk.RequestID != "" {
+		parts = append(parts, fmt.Sprintf("request_id=%s", chunk.RequestID))
+	}
+	if chunk.ResponseID != "" {
+		parts = append(parts, fmt.Sprintf("response_id=%s", chunk.ResponseID))
+	}
+	if chunk.Err != "" {
+		parts = append(parts, fmt.Sprintf("err=%s", quoteText(chunk.Err)))
 	}
 	return strings.Join(parts, ", ")
 }

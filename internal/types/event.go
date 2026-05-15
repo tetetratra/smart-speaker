@@ -22,6 +22,7 @@ const (
 	EventToolResponse
 	EventResponsesRequest
 	EventResponsesResponse
+	EventResponsesStreamChunk
 	EventWhiteboardUpdate
 	EventTTSEnd
 	EventTTSCancel
@@ -63,6 +64,8 @@ func (k EventKind) String() string {
 		return "EventResponsesRequest"
 	case EventResponsesResponse:
 		return "EventResponsesResponse"
+	case EventResponsesStreamChunk:
+		return "EventResponsesStreamChunk"
 	case EventWhiteboardUpdate:
 		return "EventWhiteboardUpdate"
 	case EventTTSEnd:

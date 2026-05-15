@@ -64,6 +64,9 @@ func (c *conversationCore) buildResponseRequestEffect(messages []types.ChatMessa
 	reqID := c.state.nextID("req")
 	c.state.pendingRequestID = reqID
 	c.state.pendingRequestCancelled = false
+	c.state.pendingRequestStreaming = false
+	c.state.pendingStreamSpeechStarted = false
+	c.state.pendingStreamFailed = false
 	return []effect{requestResponseEffect{
 		requestID: reqID,
 		messages:  messages,
@@ -101,6 +104,7 @@ func (c *conversationCore) advanceTimelineEffects() []effect {
 		case "wait":
 			delay := time.Duration(seg.WaitSec) * time.Second
 			if delay > 0 {
+				c.state.pendingTimelineTimerWaiting = true
 				return []effect{startTimerEffect{duration: delay}}
 			}
 		case "speech":
