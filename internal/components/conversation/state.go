@@ -18,6 +18,11 @@ type sessionState struct {
 	pendingRequestCancelled bool
 	invalidResponseRetries  int
 
+	pendingRequestStreaming     bool
+	pendingStreamSpeechStarted  bool
+	pendingStreamFailed         bool
+	pendingTimelineTimerWaiting bool
+
 	seq int
 }
 
@@ -88,6 +93,7 @@ func (s *sessionState) cancelUnplayedUtterances() {
 func (s *sessionState) clearPendingTimeline() {
 	s.pendingTimeline = nil
 	s.pendingTimelineIdx = 0
+	s.pendingTimelineTimerWaiting = false
 }
 
 func (s *sessionState) hasPendingSpeech() bool {
@@ -120,4 +126,7 @@ func (s *sessionState) resetConversation() {
 	s.pendingRequestID = ""
 	s.pendingRequestCancelled = false
 	s.invalidResponseRetries = 0
+	s.pendingRequestStreaming = false
+	s.pendingStreamSpeechStarted = false
+	s.pendingStreamFailed = false
 }

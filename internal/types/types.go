@@ -96,3 +96,12 @@ type ResponsesResponse struct {
 	HasResponse bool
 	ToolCalls   []ToolRequest
 }
+
+// ResponsesStreamChunk はResponses API streamingから復元済みの1行、完了、エラーを表します。
+type ResponsesStreamChunk struct {
+	RequestID  string
+	ResponseID string
+	Line       string
+	Done       bool
+	Err        string
+}
