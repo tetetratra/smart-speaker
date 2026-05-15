@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,8 @@ func TestClientListScenes(t *testing.T) {
 			t.Fatalf("missing auth headers: %#v", r.Header)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 100,
+			"message":    "success",
 			"body": []map[string]string{
 				{"sceneId": "scene-1", "sceneName": "換気扇をつける"},
 				{"sceneId": "", "sceneName": "IDなし"},
@@ -60,6 +63,25 @@ func TestClientListScenesDecodeError(t *testing.T) {
 	}
 }
 
+func TestClientListScenesRejectsUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("switchbot-request-id", "req-scenes-401")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"message": "Unauthorized",
+		})
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(server).ListScenes(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "http_status=401", "Unauthorized", "req-scenes-401") {
+		t.Fatalf("unexpected error = %v", err)
+	}
+}
+
 func TestClientExecuteScene(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1.1/scenes/scene-1/execute" {
@@ -68,7 +90,11 @@ func TestClientExecuteScene(t *testing.T) {
 		if r.Header.Get("Authorization") == "" || r.Header.Get("sign") == "" {
 			t.Fatalf("missing auth headers: %#v", r.Header)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"message": "success"})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 100,
+			"message":    "success",
+			"body":       map[string]any{},
+		})
 	}))
 	defer server.Close()
 
@@ -93,4 +119,52 @@ func TestClientExecuteSceneRequiresSceneID(t *testing.T) {
 	if _, err := newTestClient(server).ExecuteScene(context.Background(), " "); err == nil {
 		t.Fatal("expected error, got nil")
 	}
+}
+
+func TestClientExecuteSceneRejectsAPIFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("switchbot-request-id", "req-scene-190")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 190,
+			"message":    "System error",
+			"body":       map[string]any{},
+		})
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(server).ExecuteScene(context.Background(), "scene-1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "status_code=190", "System error", "req-scene-190") {
+		t.Fatalf("unexpected error = %v", err)
+	}
+}
+
+func TestClientGetStatusRejectsUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("switchbot-request-id", "req-status-401")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"message": "Unauthorized",
+		})
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(server).GetStatus(context.Background(), "", "hub2")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "http_status=401", "Unauthorized", "req-status-401") {
+		t.Fatalf("unexpected error = %v", err)
+	}
+}
+
+func containsAll(text string, substrings ...string) bool {
+	for _, s := range substrings {
+		if !strings.Contains(text, s) {
+			return false
+		}
+	}
+	return true
 }
