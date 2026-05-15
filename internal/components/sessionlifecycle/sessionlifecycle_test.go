@@ -2,6 +2,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,51 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 		if len(req.Tools) != 1 {
 			t.Fatalf("tools len = %d, want 1", len(req.Tools))
+		}
+		if !strings.Contains(req.Text, shortDiaryInstruction) {
+			t.Fatalf("request text = %q, want short diary instruction", req.Text)
+		}
+	})
+
+	t.Run("会話量に応じて日記の文量指示を変える", func(t *testing.T) {
+		tests := []struct {
+			name string
+			n    int
+			want string
+		}{
+			{name: "short", n: 6, want: shortDiaryInstruction},
+			{name: "medium", n: 7, want: mediumDiaryInstruction},
+			{name: "long", n: 13, want: longDiaryInstruction},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var messages []types.ChatMessage
+				for i := 0; i < tt.n; i++ {
+					role := "user"
+					if i%2 == 1 {
+						role = "assistant"
+					}
+					messages = append(messages, types.ChatMessage{Role: role, Content: "会話"})
+				}
+
+				got := buildDiaryPrompt(messages)
+				if !strings.Contains(got, tt.want) {
+					t.Fatalf("buildDiaryPrompt() = %q, want instruction %q", got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("文量判定ではsystem messageを数えない", func(t *testing.T) {
+		messages := []types.ChatMessage{
+			{Role: "system", Content: "ツール実行結果"},
+			{Role: "user", Content: "短い会話"},
+			{Role: "assistant", Content: "返答"},
+		}
+
+		got := buildDiaryPrompt(messages)
+		if !strings.Contains(got, shortDiaryInstruction) {
+			t.Fatalf("buildDiaryPrompt() = %q, want short diary instruction", got)
 		}
 	})
 
