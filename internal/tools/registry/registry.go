@@ -26,6 +26,8 @@ type Config struct {
 	SwitchBotToken     string
 	SwitchBotSecret    string
 	SwitchBotDeviceMap string
+	SwitchBotClient    *switchbot.Client
+	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client
 	DiaryStore         *diarystore.Store
 }
@@ -34,10 +36,12 @@ type Config struct {
 func New(cfg Config) *Registry {
 	var entries []entry
 
-	airconTool := switchbot.NewAircon(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	lightTool := switchbot.NewLight(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	blindTool := switchbot.NewBlindTilt(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	hub2Tool := switchbot.NewHub2(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	switchBotClient := cfg.SwitchBotClient
+	if switchBotClient == nil {
+		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
+	}
+	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
+	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
 	diaryTool := diarytool.New(cfg.DiaryStore)
 	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
 	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
@@ -45,9 +49,6 @@ func New(cfg Config) *Registry {
 	timerTool := timer.New()
 	volumeTool := volume.New()
 	toolEntries := []entry{
-		{def: airconTool.Definition(), handler: airconTool},
-		{def: lightTool.Definition(), handler: lightTool},
-		{def: blindTool.Definition(), handler: blindTool},
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
 		{def: volumeTool.Definition(), handler: volumeTool},
@@ -56,6 +57,9 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
 		{def: map[string]any{"type": "web_search"}},
+	}
+	if sceneTool != nil {
+		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
 	}
 	for _, e := range toolEntries {
 		entries = append(entries, e)
