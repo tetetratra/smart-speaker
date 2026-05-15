@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultIdleThreshold = 10 * time.Minute
+	defaultIdleThreshold = 60 * time.Minute
 	diaryPrompt          = `今回の会話を日記としてまとめ、write_diary ツールを呼び出して書いてください。
 すでに過去の日記に書かれていることではなく、今回の会話で話した内容にのみ触れてください。`
 	shortDiaryInstruction  = "今回の会話は短いため、日記は1行程度で簡潔に書いてください。"
