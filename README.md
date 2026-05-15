@@ -55,7 +55,7 @@ http://localhost:8081/oauth/google/start
 4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
 ## AI PR 自動化
-GitHub Actions で issue 作成時に Draft PR を作り、`<AI主導開発>` ラベル付きの PR では通常コメント、ラベルなしの PR では `/ai` コメントで Codex を起動する簡易自動化を入れています。
+GitHub Actions で issue 作成時に Draft PR を作り、`<AI主導開発>` ラベル付きの PR に対する通常コメントで Codex を起動する簡易自動化を入れています。
 初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
 ### Codex 認証の更新
@@ -66,7 +66,7 @@ AUTH_FILE="${CODEX_HOME:-$HOME/.codex}/auth.json"
 base64 < "$AUTH_FILE" | tr -d '\n' | gh secret set CODEX_AUTH_JSON_B64
 ```
 
-`CODEX_AUTH_JSON_B64` が未設定の場合、`/ai` 実行時に認証未設定のコメントが返ります。
+`CODEX_AUTH_JSON_B64` が未設定の場合、AI 実行時に認証未設定のコメントが返ります。
 
 ### Codex 用スキルの配置
 このリポジトリでは Codex 用スキルを `.codex/skills/` に置き、実行時に `$CODEX_HOME/skills/` へ同期しています。

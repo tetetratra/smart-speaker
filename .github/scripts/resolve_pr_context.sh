@@ -63,22 +63,8 @@ case "$GITHUB_EVENT_NAME" in
             request_body="$comment_body"
             printf '%s' "$request_body" > "$instruction_file"
           fi
-        elif [[ "$first_line" =~ ^/ai($|[[:space:]].*) ]]; then
-          should_run="true"
-          first_line_rest="$(printf '%s' "$first_line" | sed -E 's#^/ai[[:space:]]*##')"
-          remaining_lines="$(printf '%s\n' "$comment_body" | tail -n +2)"
-          {
-            printf '%s' "$first_line_rest"
-            if [ -n "$remaining_lines" ]; then
-              if [ -n "$first_line_rest" ]; then
-                printf '\n'
-              fi
-              printf '%s' "$remaining_lines"
-            fi
-          } > "$instruction_file"
-          request_body="$(cat "$instruction_file")"
         else
-          skip_reason="not_ai_comment"
+          skip_reason="missing_ai_label"
         fi
       fi
     fi
