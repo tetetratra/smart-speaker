@@ -89,7 +89,7 @@ func (c *conversationCore) retryInvalidResponseEffects() []effect {
 		Content: invalidResponseRetryHint,
 	})
 	c.state.invalidResponseRetries++
-	effects := c.buildResponseRequestEffect(messages, []any{})
+	effects := c.buildResponseRequestEffect(messages, nil)
 	effects = append(effects, runtimeLogEffect{
 		message: "conversation: retrying due to invalid response (1/1)",
 	})

@@ -155,6 +155,9 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		if second.Tools != nil {
+			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
+		}
 
 		h.sendResponse(second.RequestID, `{"timeline":[}`)
 		h.expectNoEvent(150 * time.Millisecond)
@@ -343,6 +346,9 @@ func TestConversationIntegration(t *testing.T) {
 		}
 		if second.RequestID == "" || second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
+		}
+		if second.Tools != nil {
+			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
 		}
 	})
 
