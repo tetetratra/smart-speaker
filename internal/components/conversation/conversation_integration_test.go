@@ -50,7 +50,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("こんにちは")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"最初の返答です"}]}`)
+		h.sendResponse(req.RequestID, `{"type":"speech","text":"最初の返答です"}`)
 
 		first := h.expectRealtimeOutputText("最初の返答です")
 		h.expectFinalOutput(first.ResponseID)
@@ -99,7 +99,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendTextInput("明日の予定を教えて")
-		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"明日は10時から会議があります"}]}`)
+		h.sendResponse(first.RequestID, `{"type":"speech","text":"明日は10時から会議があります"}`)
 
 		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
 		h.expectFinalOutput(firstOutput.ResponseID)
@@ -184,7 +184,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("次の発話を待って")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"wait","sec":1},{"type":"speech","text":"ふたつめ"}]}`)
+		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"ひとつめ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"ふたつめ\"}")
 
 		first := h.expectRealtimeOutputText("ひとつめ")
 		h.expectFinalOutput(first.ResponseID)
@@ -205,7 +205,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("明日の予定を教えて")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"明日の予定を確認したよ"}],"whiteboard":{"content":"- 10:00 定例会議"}}`)
+		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
 
 		h.expectWhiteboardUpdate("- 10:00 定例会議")
 		first := h.expectRealtimeOutputText("明日の予定を確認したよ")
@@ -216,7 +216,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("こんにちは")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"やあ"}]}`)
+		h.sendResponse(req.RequestID, `{"type":"speech","text":"やあ"}`)
 
 		first := h.expectRealtimeOutputText("やあ")
 		h.expectFinalOutput(first.ResponseID)
@@ -227,7 +227,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendTextInput("予定を教えて")
-		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"確認したよ"}],"whiteboard":{"content":"   "}}`)
+		h.sendResponse(first.RequestID, "{\"type\":\"speech\",\"text\":\"確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"   \"}")
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
@@ -314,24 +314,20 @@ func TestConversationIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("streaming timeline objectも解釈できる", func(t *testing.T) {
+	t.Run("streaming timeline objectはinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("テスト")
-		h.sendStreamLine(req.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
+		first := h.sendTextInput("テスト")
+		h.sendStreamLine(first.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
 
-		first := h.expectRealtimeOutputText("ひとつめ")
-		h.expectFinalOutput(first.ResponseID)
-		h.sendEvent(types.Event{
-			Kind: types.EventTTSEnd,
-			Payload: types.TTSEvent{
-				ResponseID:      first.ResponseID,
-				AudioStartAt:    time.Now().Add(-2 * time.Second),
-				DurationSeconds: 1,
-			},
-		})
-		second := h.expectRealtimeOutputText("ふたつめ")
-		h.expectFinalOutput(second.ResponseID)
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" || second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
+		}
 	})
 
 	t.Run("streaming plain textはinvalid responseとして再試行する", func(t *testing.T) {

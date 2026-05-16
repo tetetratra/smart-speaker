@@ -32,27 +32,11 @@ func parseAIOutput(raw string) (aiOutput, bool) {
 	if trimmed == "" {
 		return aiOutput{}, false
 	}
-	if out, ok := parseAIStructuredOutput(trimmed); ok {
-		return out, true
-	}
 	chunks, ok := parseAIChunks(trimmed)
 	if !ok {
 		return aiOutput{}, false
 	}
 	return buildAIOutputFromChunks(chunks)
-}
-
-func parseAIStructuredOutput(raw string) (aiOutput, bool) {
-	var out aiOutput
-	dec := json.NewDecoder(strings.NewReader(raw))
-	if err := dec.Decode(&out); err != nil {
-		return aiOutput{}, false
-	}
-	var extra any
-	if err := dec.Decode(&extra); err == nil {
-		return aiOutput{}, false
-	}
-	return validateAIOutput(out)
 }
 
 func validateAIOutput(out aiOutput) (aiOutput, bool) {
@@ -138,9 +122,6 @@ func parseAIChunks(raw string) ([]aiChunk, bool) {
 	if chunk, ok := parseAIChunkObject(trimmed); ok {
 		return []aiChunk{chunk}, true
 	}
-	if out, ok := parseAIStructuredOutput(trimmed); ok {
-		return flattenAIOutput(out), true
-	}
 
 	lines := strings.Split(trimmed, "\n")
 	chunks := make([]aiChunk, 0, len(lines))
@@ -149,10 +130,7 @@ func parseAIChunks(raw string) ([]aiChunk, bool) {
 		if line == "" {
 			continue
 		}
-		switch {
-		case tryAppendChunkObject(&chunks, line):
-		case tryAppendStructuredOutput(&chunks, line):
-		default:
+		if !tryAppendChunkObject(&chunks, line) {
 			return nil, false
 		}
 	}
@@ -169,33 +147,6 @@ func tryAppendChunkObject(chunks *[]aiChunk, raw string) bool {
 	}
 	*chunks = append(*chunks, chunk)
 	return true
-}
-
-func tryAppendStructuredOutput(chunks *[]aiChunk, raw string) bool {
-	out, ok := parseAIStructuredOutput(raw)
-	if !ok {
-		return false
-	}
-	*chunks = append(*chunks, flattenAIOutput(out)...)
-	return true
-}
-
-func flattenAIOutput(out aiOutput) []aiChunk {
-	chunks := make([]aiChunk, 0, len(out.Timeline)+1)
-	for _, seg := range out.Timeline {
-		chunks = append(chunks, aiChunk{
-			Type: seg.Type,
-			Sec:  seg.Sec,
-			Text: seg.Text,
-		})
-	}
-	if out.Whiteboard != nil {
-		chunks = append(chunks, aiChunk{
-			Type:    "whiteboard",
-			Content: out.Whiteboard.Content,
-		})
-	}
-	return chunks
 }
 
 func buildAIOutputFromChunks(chunks []aiChunk) (aiOutput, bool) {
