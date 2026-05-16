@@ -22,11 +22,15 @@ type Graph struct {
 	nodes []*Node
 	edges []*Edge
 
-	eventDetailFormatters map[types.EventKind]EventDetailFormatter
+	eventDetailFormatters     map[types.EventKind]EventDetailFormatter
+	suppressedForwardLogKinds map[types.EventKind]struct{}
 }
 
 func New() *Graph {
-	return &Graph{eventDetailFormatters: defaultEventDetailFormatters()}
+	return &Graph{
+		eventDetailFormatters:     defaultEventDetailFormatters(),
+		suppressedForwardLogKinds: defaultSuppressedForwardLogKinds(),
+	}
 }
 
 func (g *Graph) AddNode(stage *Stage) *Node {
@@ -73,7 +77,7 @@ func (g *Graph) Run(ctx context.Context) error {
 					if !ok {
 						return
 					}
-					if len(downstreams) > 0 {
+					if len(downstreams) > 0 && g.shouldLogForwardEvent(val.Kind) {
 						log.Printf("%s", g.formatForwardLog(node.Stage, downstreams, val))
 					}
 					for _, dst := range downstreams {
