@@ -1,5 +1,7 @@
 # Smart Speaker (Go) + WebSocket 音声 I/O
 
+補足の設計資料や学習用ドキュメントは `docs/` 配下で管理しています。
+
 ## 前提
 - Go 1.25 以降
 - Node 20 以降（フロント開発用）  
