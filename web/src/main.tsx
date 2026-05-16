@@ -20,10 +20,18 @@ const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
 const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
-const defaultPlaybackVolumePercent = 50
 const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
+
+type PlaybackVolumeLevel = 'low' | 'medium' | 'high'
+
+const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: number }> = {
+  low: { label: '小', gain: 0.3 },
+  medium: { label: '中', gain: 0.6 },
+  high: { label: '大', gain: 1.0 },
+}
+const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'medium'
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
@@ -113,6 +121,42 @@ const liveRootStyle = `
     gap: 6px;
     align-items: center;
     flex: 0 0 auto;
+  }
+  .live-volume-control {
+    border: 1px solid var(--live-line);
+    background: var(--live-panel-soft);
+    border-radius: 10px;
+    padding: 6px;
+    display: grid;
+    gap: 6px;
+  }
+  .live-volume-label {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--live-muted);
+    font-weight: 700;
+  }
+  .live-volume-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .live-volume-btn {
+    min-width: 0;
+    min-height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--live-line);
+    background: var(--live-panel-raised);
+    color: var(--live-muted);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .live-volume-btn.active {
+    background: var(--live-toggle-on);
+    border-color: var(--live-toggle-on);
+    color: var(--live-toggle-knob);
   }
   .live-audio-stats {
     display: flex;
@@ -384,7 +428,8 @@ type LiveViewProps = {
   lastAssistantMessage: string
   lastUserMessage: string
   boardText: string
-  audioRef: React.RefObject<HTMLAudioElement>
+  playbackVolumeLevel: PlaybackVolumeLevel
+  onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
   disconnect: () => void
   goAdmin: () => void
@@ -401,14 +446,16 @@ function App() {
   const [speechDetectStatus, setSpeechDetectStatus] = useState('待機中')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
-  const [playbackVolumePercent, setPlaybackVolumePercent] = useState(defaultPlaybackVolumePercent)
+  const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
   const [inputLevel, setInputLevel] = useState(0)
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardText, setBoardText] = useState("")
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const playbackGainRef = useRef<GainNode | null>(null)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -429,37 +476,52 @@ function App() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
-  const applyPlaybackVolume = useCallback((percent: number) => {
-    const normalized = Math.max(0, Math.min(100, Math.round(percent)))
-    setPlaybackVolumePercent(normalized)
-    if (audioRef.current) {
-      audioRef.current.volume = normalized / 100
+  const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
+
+  const stopRemoteAudioGraph = useCallback(() => {
+    if (remoteSourceRef.current) {
+      remoteSourceRef.current.disconnect()
+      remoteSourceRef.current = null
+    }
+    if (playbackGainRef.current) {
+      playbackGainRef.current.disconnect()
+      playbackGainRef.current = null
+    }
+    if (audioContextRef.current) {
+      void audioContextRef.current.close()
+      audioContextRef.current = null
     }
   }, [])
-  const attachRemoteStream = useCallback(() => {
+
+  const connectRemoteStreamToAudioGraph = useCallback(async () => {
     const stream = remoteStreamRef.current
-    if (!stream || !audioRef.current) return
-    audioRef.current.srcObject = stream
-    audioRef.current.volume = playbackVolumePercent / 100
-    audioRef.current.play().catch(() => {})
-  }, [playbackVolumePercent])
+    if (!stream) return
 
-  const handleVolumeToolResult = useCallback((output: any) => {
-    if (!output || typeof output !== 'object') return
-    if ((output as any).error) return
+    stopRemoteAudioGraph()
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) {
+      throw new Error('Web Audio APIを利用できません')
+    }
 
-    const nextPercent = (output as any).volume_percent
-    if (typeof nextPercent !== 'number') return
+    const audioContext = new AudioContextClass()
+    const source = audioContext.createMediaStreamSource(stream)
+    const gain = audioContext.createGain()
+    gain.gain.value = selectedPlaybackVolume.gain
+    source.connect(gain)
+    gain.connect(audioContext.destination)
 
-    applyPlaybackVolume(nextPercent)
-    const normalized = Math.max(0, Math.min(100, Math.round(nextPercent)))
-    appendMessage({
-      id: nextMessageId(),
-      type: 'system',
-      text: `再生音量を${normalized}%に設定しました。`,
-      source: 'volume',
-    })
-  }, [appendMessage, applyPlaybackVolume, nextMessageId])
+    audioContextRef.current = audioContext
+    remoteSourceRef.current = source
+    playbackGainRef.current = gain
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+  }, [selectedPlaybackVolume.gain, stopRemoteAudioGraph])
+
+  useEffect(() => {
+    if (!playbackGainRef.current) return
+    playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
+  }, [selectedPlaybackVolume.gain])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -557,9 +619,6 @@ function App() {
           break
         }
         case 'function_result': {
-          if (raw.name === 'set_volume') {
-            handleVolumeToolResult(raw.output)
-          }
           appendMessage({
             id: nextMessageId(),
             type: 'function_result',
@@ -573,13 +632,8 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, handleVolumeToolResult, nextMessageId],
+    [appendMessage, handleRTCSignal, nextMessageId],
   )
-
-  useEffect(() => {
-    if (!audioRef.current) return
-    audioRef.current.volume = playbackVolumePercent / 100
-  }, [playbackVolumePercent])
 
   const stopRTC = useCallback(() => {
     if (peerRef.current) {
@@ -594,9 +648,7 @@ function App() {
       micStreamRef.current = null
     }
     remoteStreamRef.current = null
-    if (audioRef.current) {
-      audioRef.current.srcObject = null
-    }
+    stopRemoteAudioGraph()
     pendingICERef.current = []
     lastAudioBytesSentRef.current = null
     setRtcStatus('停止中')
@@ -606,7 +658,7 @@ function App() {
     setSttStatus('停止中')
     setInputLevel(0)
     setSpeechThreshold(0)
-  }, [])
+  }, [stopRemoteAudioGraph])
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current === null) return
@@ -659,7 +711,11 @@ function App() {
     peer.ontrack = (event) => {
       const stream = event.streams?.[0] ?? new MediaStream([event.track])
       remoteStreamRef.current = stream
-      attachRemoteStream()
+      connectRemoteStreamToAudioGraph().catch((err) => {
+        setRtcStatus('失敗')
+        setRtcError(err instanceof Error ? err.message : 'audio playback error')
+        stopRTC()
+      })
     }
 
     let stream: MediaStream
@@ -701,7 +757,7 @@ function App() {
       setRtcError(err instanceof Error ? err.message : 'RTC start error')
       stopRTC()
     }
-  }, [attachRemoteStream, stopRTC])
+  }, [connectRemoteStreamToAudioGraph, stopRTC])
 
   const openConnection = useCallback(async (isAutoReconnect: boolean) => {
     if (connected || busy) return
@@ -895,9 +951,6 @@ function App() {
     }
     return () => body.classList.remove('admin-mode')
   }, [uiMode])
-  useEffect(() => {
-    attachRemoteStream()
-  }, [attachRemoteStream, uiMode])
   const setMode = useCallback((mode: 'admin' | 'app') => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
@@ -924,7 +977,8 @@ function App() {
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
           boardText={boardText}
-          audioRef={audioRef}
+          playbackVolumeLevel={playbackVolumeLevel}
+          onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
           disconnect={disconnect}
           goAdmin={() => setMode('admin')}
@@ -1011,7 +1065,7 @@ function App() {
             </div>
           )}
           <div>
-            <strong>再生音量:</strong> {playbackVolumePercent}%
+            <strong>再生音量:</strong> {selectedPlaybackVolume.label} (gain {selectedPlaybackVolume.gain})
           </div>
           {sttError && (
             <div style={{ color: '#dc2626' }}>
@@ -1019,7 +1073,6 @@ function App() {
             </div>
           )}
         </div>
-        <audio ref={audioRef} autoPlay />
         <div
           style={{
             border: '1px solid #ddd',
@@ -1105,7 +1158,8 @@ function LiveView(props: LiveViewProps) {
     lastAssistantMessage,
     lastUserMessage,
     boardText,
-    audioRef,
+    playbackVolumeLevel,
+    onPlaybackVolumeChange,
     connect,
     disconnect,
     goAdmin,
@@ -1169,11 +1223,30 @@ function LiveView(props: LiveViewProps) {
                 <div className="live-status-value">{sttStatus}</div>
               </div>
             </div>
+            <div className="live-volume-control" aria-label="再生音量">
+              <div className="live-volume-label">再生音量</div>
+              <div className="live-volume-buttons">
+                {(Object.keys(playbackVolumePresets) as PlaybackVolumeLevel[]).map((level) => {
+                  const preset = playbackVolumePresets[level]
+                  const active = level === playbackVolumeLevel
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      className={`live-volume-btn ${active ? 'active' : ''}`}
+                      aria-pressed={active}
+                      onClick={() => onPlaybackVolumeChange(level)}
+                    >
+                      {preset.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <div className="live-mini"></div>
           </div>
         </div>
       </div>
-      <audio ref={audioRef} autoPlay />
     </>
   )
 }
