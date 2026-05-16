@@ -160,6 +160,26 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectNoEvent(150 * time.Millisecond)
 	})
 
+	t.Run("non streamingのNDJSON応答も解釈できる", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"やあ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
+
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		second := h.expectRealtimeOutputText("元気？")
+		h.expectFinalOutput(second.ResponseID)
+	})
+
 	t.Run("waitとspeechを含む応答でTTS完了後に次発話へ進む", func(t *testing.T) {
 		h := newConversationHarness(t)
 
@@ -291,6 +311,42 @@ func TestConversationIntegration(t *testing.T) {
 		}
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
+		}
+	})
+
+	t.Run("streaming timeline objectも解釈できる", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("テスト")
+		h.sendStreamLine(req.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
+
+		first := h.expectRealtimeOutputText("ひとつめ")
+		h.expectFinalOutput(first.ResponseID)
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		second := h.expectRealtimeOutputText("ふたつめ")
+		h.expectFinalOutput(second.ResponseID)
+	})
+
+	t.Run("streaming plain textはinvalid responseとして再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("テスト")
+		h.sendStreamLine(first.RequestID, `うん、わかった、だよ`)
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" || second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
 		}
 	})
 

@@ -40,6 +40,22 @@ func TestParseAIOutput(t *testing.T) {
 			t.Fatal("parseAIOutput returned true, want false")
 		}
 	})
+
+	t.Run("NDJSON形式も解釈できる", func(t *testing.T) {
+		out, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
+		if !ok {
+			t.Fatal("parseAIOutput returned false")
+		}
+		if len(out.Timeline) != 3 {
+			t.Fatalf("timeline len = %d, want 3", len(out.Timeline))
+		}
+	})
+
+	t.Run("plain text 1行は無効", func(t *testing.T) {
+		if _, ok := parseAIOutput("こんにちは"); ok {
+			t.Fatal("parseAIOutput returned true, want false")
+		}
+	})
 }
 
 func TestBuildTimelineSegments(t *testing.T) {
@@ -133,6 +149,27 @@ func TestParseAIChunk(t *testing.T) {
 			if _, ok := parseAIChunk(tc); ok {
 				t.Fatalf("parseAIChunk(%s) returned true, want false", tc)
 			}
+		}
+	})
+}
+
+func TestParseAIChunks(t *testing.T) {
+	t.Run("timeline objectをchunk列へ展開できる", func(t *testing.T) {
+		chunks, ok := parseAIChunks(`{"timeline":[{"type":"speech","text":"こんにちは"},{"type":"wait","sec":1}],"whiteboard":{"content":"- 10:00 会議"}}`)
+		if !ok {
+			t.Fatal("parseAIChunks returned false")
+		}
+		if len(chunks) != 3 {
+			t.Fatalf("chunks len = %d, want 3", len(chunks))
+		}
+		if chunks[2].Type != "whiteboard" {
+			t.Fatalf("chunks[2] = %+v, want whiteboard", chunks[2])
+		}
+	})
+
+	t.Run("plain textは無効", func(t *testing.T) {
+		if _, ok := parseAIChunks("うん、わかった、だよ"); ok {
+			t.Fatal("parseAIChunks returned true, want false")
 		}
 	})
 }
