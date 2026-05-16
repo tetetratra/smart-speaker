@@ -225,6 +225,21 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"threshold":   status.Threshold,
 			"captured_at": status.CapturedAt.Format(time.RFC3339Nano),
 		}
+	case types.EventConversationReaction:
+		reaction, ok := evt.Payload.(types.ConversationReaction)
+		if !ok {
+			return
+		}
+		msg = map[string]any{
+			"type":          "conversation_reaction",
+			"text":          reaction.Text,
+			"source":        reaction.Source,
+			"level":         reaction.Level,
+			"reasons":       reaction.Reasons,
+			"score":         reaction.Score,
+			"passed_to_llm": reaction.PassedToLLM,
+			"at":            reaction.At.Format(time.RFC3339Nano),
+		}
 	case types.EventWhiteboardUpdate:
 		update, ok := evt.Payload.(types.WhiteboardUpdate)
 		if !ok {

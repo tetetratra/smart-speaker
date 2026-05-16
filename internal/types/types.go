@@ -53,6 +53,17 @@ type ConversationActivity struct {
 	Source string
 }
 
+// ConversationReaction は入力発話に対する応答可否の判定結果を表します。
+type ConversationReaction struct {
+	At          time.Time
+	Text        string
+	Source      string
+	Level       string
+	Reasons     []string
+	Score       int
+	PassedToLLM bool
+}
+
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
 type WhiteboardUpdate struct {
 	Content string

@@ -30,3 +30,22 @@ func emitConversationActivityEffect(at time.Time, source string) emitEventEffect
 		},
 	}
 }
+
+func emitConversationReactionEffect(decision reactionDecision) emitEventEffect {
+	reasons := make([]string, len(decision.Reasons))
+	copy(reasons, decision.Reasons)
+	return emitEventEffect{
+		event: types.Event{
+			Kind: types.EventConversationReaction,
+			Payload: types.ConversationReaction{
+				At:          decision.At,
+				Text:        decision.Text,
+				Source:      decision.Source,
+				Level:       string(decision.Level),
+				Reasons:     reasons,
+				Score:       decision.Score,
+				PassedToLLM: decision.Level == reactionVoiceReply,
+			},
+		},
+	}
+}

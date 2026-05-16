@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ func TestConversationIntegration(t *testing.T) {
 			},
 		})
 
+		h.expectReaction()
 		activityEvt := h.expectEvent(types.EventConversationActivity)
 		activity, ok := activityEvt.Payload.(types.ConversationActivity)
 		if !ok {
@@ -93,6 +95,73 @@ func TestConversationIntegration(t *testing.T) {
 		}
 
 		h.expectNoEvent(150 * time.Millisecond)
+	})
+
+	t.Run("server-stt由来のignore判定では応答リクエストを出さない", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		h.emitTextInputWithSource("まじか", "server-stt")
+
+		reaction := h.expectReaction()
+		if reaction.Level != string(reactionIgnore) {
+			t.Fatalf("reaction level = %q, want %q", reaction.Level, reactionIgnore)
+		}
+		if reaction.PassedToLLM {
+			t.Fatal("reaction PassedToLLM = true, want false")
+		}
+		h.expectNoEvent(150 * time.Millisecond)
+	})
+
+	t.Run("server-stt由来のsilent_observeは次の明確な発話時だけ文脈に添える", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		h.emitTextInputWithSource("明日どうしようかな", "server-stt")
+		reaction := h.expectReaction()
+		if reaction.Level != string(reactionSilentObserve) {
+			t.Fatalf("reaction level = %q, want %q", reaction.Level, reactionSilentObserve)
+		}
+		h.expectNoEvent(150 * time.Millisecond)
+
+		req := h.sendTextInputWithSource("ねえ、明日の予定どう思う？", "server-stt")
+		if len(req.Messages) != 2 {
+			t.Fatalf("messages len = %d, want 2; messages = %+v", len(req.Messages), req.Messages)
+		}
+		if req.Messages[0].Role != "system" || !strings.Contains(req.Messages[0].Content, "明日どうしようかな") {
+			t.Fatalf("observed context message = %+v", req.Messages[0])
+		}
+
+		second := h.sendTextInputWithSource("今何時？", "server-stt")
+		for _, msg := range second.Messages {
+			if strings.Contains(msg.Content, "明日どうしようかな") {
+				t.Fatalf("observed context was reused in messages: %+v", second.Messages)
+			}
+		}
+	})
+
+	t.Run("server-stt由来のvoice_replyは既存通り応答リクエストを出す", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInputWithSource("今何時？", "server-stt")
+		if len(req.Messages) == 0 {
+			t.Fatal("ResponsesRequest.Messages is empty")
+		}
+		last := req.Messages[len(req.Messages)-1]
+		if last.Role != "user" || last.Content != "今何時？" {
+			t.Fatalf("last message = %+v, want user message", last)
+		}
+	})
+
+	t.Run("Web UI手入力は短い文でも従来通り応答される", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInputWithSource("眠い", "")
+		if len(req.Messages) == 0 {
+			t.Fatal("ResponsesRequest.Messages is empty")
+		}
+		last := req.Messages[len(req.Messages)-1]
+		if last.Role != "user" || last.Content != "眠い" {
+			t.Fatalf("last message = %+v, want user message", last)
+		}
 	})
 
 	t.Run("TTS完了前の追い質問でも直前assistant発話を会話履歴に含める", func(t *testing.T) {
@@ -370,14 +439,13 @@ func newConversationHarness(t *testing.T) *conversationHarness {
 
 func (h *conversationHarness) sendTextInput(text string) types.ResponsesRequest {
 	h.t.Helper()
+	return h.sendTextInputWithSource(text, "")
+}
 
-	h.sendEvent(types.Event{
-		Kind: types.EventTextInput,
-		Payload: types.OutputLine{
-			Role: "user",
-			Text: text,
-		},
-	})
+func (h *conversationHarness) sendTextInputWithSource(text string, source string) types.ResponsesRequest {
+	h.t.Helper()
+
+	h.emitTextInputWithSource(text, source)
 
 	evt := h.expectMainEvent(types.EventResponsesRequest)
 	req, ok := evt.Payload.(types.ResponsesRequest)
@@ -385,6 +453,19 @@ func (h *conversationHarness) sendTextInput(text string) types.ResponsesRequest 
 		h.t.Fatalf("ResponsesRequest payload type = %T", evt.Payload)
 	}
 	return req
+}
+
+func (h *conversationHarness) emitTextInputWithSource(text string, source string) {
+	h.t.Helper()
+
+	h.sendEvent(types.Event{
+		Kind: types.EventTextInput,
+		Payload: types.OutputLine{
+			Role:   "user",
+			Text:   text,
+			Source: source,
+		},
+	})
 }
 
 func (h *conversationHarness) sendResponse(requestID string, raw string) {
@@ -496,7 +577,7 @@ func (h *conversationHarness) expectMainEvent(kind types.EventKind) types.Event 
 			return evt
 		}
 		switch evt.Kind {
-		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
+		case types.EventConversationActivity, types.EventConversationSnapshotUpdated, types.EventConversationReaction:
 			continue
 		default:
 			h.t.Fatalf("event kind = %s, want %s", evt.Kind, kind)
@@ -510,13 +591,24 @@ func (h *conversationHarness) expectNoEvent(wait time.Duration) {
 	select {
 	case evt := <-h.stage.Downstream:
 		switch evt.Kind {
-		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
+		case types.EventConversationActivity, types.EventConversationSnapshotUpdated, types.EventConversationReaction:
 			h.expectNoEvent(wait)
 		default:
 			h.t.Fatalf("unexpected event: %s %#v", evt.Kind, evt.Payload)
 		}
 	case <-time.After(wait):
 	}
+}
+
+func (h *conversationHarness) expectReaction() types.ConversationReaction {
+	h.t.Helper()
+
+	evt := h.expectEvent(types.EventConversationReaction)
+	reaction, ok := evt.Payload.(types.ConversationReaction)
+	if !ok {
+		h.t.Fatalf("ConversationReaction payload type = %T", evt.Payload)
+	}
+	return reaction
 }
 
 func (h *conversationHarness) expectAnyEvent() types.Event {

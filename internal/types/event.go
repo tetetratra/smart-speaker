@@ -16,6 +16,7 @@ const (
 	EventTimerFired
 	EventConversationSnapshotUpdated
 	EventConversationActivity
+	EventConversationReaction
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
@@ -52,6 +53,8 @@ func (k EventKind) String() string {
 		return "EventConversationSnapshotUpdated"
 	case EventConversationActivity:
 		return "EventConversationActivity"
+	case EventConversationReaction:
+		return "EventConversationReaction"
 	case EventRealtimeOutput:
 		return "EventRealtimeOutput"
 	case EventRealtimeAudio:

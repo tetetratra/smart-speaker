@@ -12,7 +12,8 @@ type signal interface {
 
 type speechStartSignal struct{}
 type humanTextSignal struct {
-	text string
+	text   string
+	source string
 }
 type timerFiredSignal struct {
 	event types.TimerFiredEvent
@@ -55,7 +56,7 @@ func signalFromEvent(evt types.Event) (signal, bool) {
 		if text == "" {
 			return nil, false
 		}
-		return humanTextSignal{text: text}, true
+		return humanTextSignal{text: text, source: strings.TrimSpace(line.Source)}, true
 	case types.EventTimerFired:
 		timerEvt, ok := evt.Payload.(types.TimerFiredEvent)
 		if !ok {

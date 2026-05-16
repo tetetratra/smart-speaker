@@ -11,11 +11,15 @@ import (
 )
 
 type logRecord struct {
-	Timestamp  string `json:"ts"`
-	Speaker    string `json:"speaker"`
-	Text       string `json:"text"`
-	ResponseID string `json:"response_id,omitempty"`
-	Source     string `json:"source,omitempty"`
+	Timestamp       string   `json:"ts"`
+	Speaker         string   `json:"speaker"`
+	Text            string   `json:"text"`
+	ResponseID      string   `json:"response_id,omitempty"`
+	Source          string   `json:"source,omitempty"`
+	ReactionLevel   string   `json:"reaction_level,omitempty"`
+	ReactionReasons []string `json:"reaction_reasons,omitempty"`
+	ReactionScore   *int     `json:"reaction_score,omitempty"`
+	PassedToLLM     *bool    `json:"passed_to_llm,omitempty"`
 }
 
 type conversationLogger struct {

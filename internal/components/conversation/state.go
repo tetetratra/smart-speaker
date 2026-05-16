@@ -8,6 +8,7 @@ import (
 
 type sessionState struct {
 	conversation          []*Utterance
+	observedMonologues    []observedMonologue
 	current               *Utterance
 	utteranceByResponseID map[string]*Utterance
 
@@ -124,6 +125,7 @@ func (s *sessionState) resetConversation() {
 	s.current = nil
 	s.utteranceByResponseID = make(map[string]*Utterance)
 	s.conversation = nil
+	s.observedMonologues = nil
 	s.clearPendingTimeline()
 	s.pendingRequestID = ""
 	s.pendingRequestCancelled = false

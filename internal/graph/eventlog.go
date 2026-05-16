@@ -20,6 +20,7 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventTimerFired:                  formatTimerFiredDetail,
 		types.EventConversationSnapshotUpdated: formatConversationSnapshotDetail,
 		types.EventConversationActivity:        formatConversationActivityDetail,
+		types.EventConversationReaction:        formatConversationReactionDetail,
 		types.EventRealtimeOutput:              formatOutputLineDetail,
 		types.EventRealtimeAudio:               formatRealtimeAudioDetail,
 		types.EventToolRequest:                 formatToolRequestDetail,
@@ -256,6 +257,26 @@ func formatConversationActivityDetail(evt types.Event) string {
 	}
 	if activity.Source != "" {
 		parts = append(parts, fmt.Sprintf("source=%s", activity.Source))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatConversationReactionDetail(evt types.Event) string {
+	reaction, ok := evt.Payload.(types.ConversationReaction)
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("level=%s", reaction.Level),
+		fmt.Sprintf("text=%s", quoteText(reaction.Text)),
+		fmt.Sprintf("score=%d", reaction.Score),
+		fmt.Sprintf("passed_to_llm=%t", reaction.PassedToLLM),
+	}
+	if reaction.Source != "" {
+		parts = append(parts, fmt.Sprintf("source=%s", reaction.Source))
+	}
+	if len(reaction.Reasons) > 0 {
+		parts = append(parts, fmt.Sprintf("reasons=%s", strings.Join(reaction.Reasons, "|")))
 	}
 	return strings.Join(parts, ", ")
 }
