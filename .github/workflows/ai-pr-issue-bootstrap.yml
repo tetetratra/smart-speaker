@@ -4,6 +4,7 @@ on:
   issues:
     types:
       - opened
+      - labeled
 
 permissions:
   actions: write
@@ -14,6 +15,14 @@ permissions:
 
 jobs:
   bootstrap:
+    if: >-
+      (
+        github.event.action == 'opened' &&
+        contains(github.event.issue.labels.*.name, 'AI主導開発')
+      ) || (
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'AI主導開発'
+      )
     runs-on: ubuntu-latest
     env:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -47,7 +56,7 @@ jobs:
           slug="${slug:0:48}"
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
 
-      - name: Draft PR を作成して issue コメントを残す
+      - name: PR を作成する
         id: create
         shell: bash
         env:
@@ -67,3 +76,9 @@ jobs:
         shell: bash
         run: |
           gh issue close "${{ steps.create.outputs.issue_number }}"
+
+      - name: 作成した PR へのリンクを元 issue に残す
+        shell: bash
+        run: |
+          gh issue comment "${{ steps.create.outputs.issue_number }}" \
+            --body "対応用 PR を作成しました: ${{ steps.create.outputs.pr_url }}"
