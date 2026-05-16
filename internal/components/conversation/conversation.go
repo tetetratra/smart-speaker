@@ -59,7 +59,7 @@ type runner struct {
 
 const (
 	maxInvalidResponseRetries = 1
-	invalidResponseRetryHint  = "前回の出力は契約違反でした。必ず 1 行 1 JSON object の NDJSON 風テキストだけを返してください。各行は {\"type\":\"speech\",\"text\":\"文字列\"} / {\"type\":\"wait\",\"sec\":整数} / {\"type\":\"whiteboard\",\"content\":\"文字列\"} のいずれかにしてください。"
+	importantRetryPrefix      = "**[重要]** "
 	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
 	calendarPromptDays        = 3

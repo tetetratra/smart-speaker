@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -67,6 +68,7 @@ func (c *conversationCore) buildResponseRequestEffect(messages []types.ChatMessa
 	c.state.pendingRequestStreaming = false
 	c.state.pendingStreamSpeechStarted = false
 	c.state.pendingStreamFailed = false
+	c.state.clearPendingStreamLines()
 	return []effect{requestResponseEffect{
 		requestID: reqID,
 		messages:  messages,
@@ -74,7 +76,7 @@ func (c *conversationCore) buildResponseRequestEffect(messages []types.ChatMessa
 	}}
 }
 
-func (c *conversationCore) retryInvalidResponseEffects() []effect {
+func (c *conversationCore) retryInvalidResponseEffects(invalidRaw string) []effect {
 	if c.state.invalidResponseRetries >= maxInvalidResponseRetries {
 		return []effect{runtimeLogEffect{
 			message: "conversation: invalid response retry exhausted (1/1)",
@@ -84,16 +86,31 @@ func (c *conversationCore) retryInvalidResponseEffects() []effect {
 	if len(messages) == 0 {
 		return nil
 	}
-	messages = append(messages, types.ChatMessage{
+	messages = append([]types.ChatMessage{{
 		Role:    "system",
-		Content: invalidResponseRetryHint,
-	})
+		Content: buildInvalidResponseRetryHint(invalidRaw),
+	}}, messages...)
 	c.state.invalidResponseRetries++
 	effects := c.buildResponseRequestEffect(messages, nil)
 	effects = append(effects, runtimeLogEffect{
 		message: "conversation: retrying due to invalid response (1/1)",
 	})
 	return effects
+}
+
+func buildInvalidResponseRetryHint(invalidRaw string) string {
+	raw := strings.TrimSpace(invalidRaw)
+	if raw == "" {
+		raw = "(空)"
+	}
+	quoted, err := json.Marshal(raw)
+	if err != nil {
+		quoted = []byte(`"(エスケープ失敗)"`)
+	}
+	return importantRetryPrefix +
+		"直近のレスポンスは契約違反でした。必ず 1 行 1 JSON object の NDJSON だけを返してください。各行は " +
+		"{\"type\":\"speech\",\"text\":\"文字列\"} / {\"type\":\"wait\",\"sec\":整数} / {\"type\":\"whiteboard\",\"content\":\"文字列\"} " +
+		"のいずれかにしてください。直近の違反レスポンス文字列は " + string(quoted) + " です。"
 }
 
 func (c *conversationCore) advanceTimelineEffects() []effect {

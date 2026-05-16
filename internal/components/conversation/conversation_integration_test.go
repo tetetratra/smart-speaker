@@ -2,7 +2,9 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,6 +160,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.Tools != nil {
 			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
 		}
+		assertRetryHintFirst(t, second.Messages, `{"timeline":[}`)
 
 		h.sendResponse(second.RequestID, `{"timeline":[}`)
 		h.expectNoEvent(150 * time.Millisecond)
@@ -243,6 +246,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, "{\"type\":\"speech\",\"text\":\"確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"   \"}")
 	})
 
 	t.Run("streaming speech chunk到着時点で発話を開始する", func(t *testing.T) {
@@ -315,6 +319,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, `{"type":"speech","text":" "}`)
 	})
 
 	t.Run("streaming timeline objectはinvalid responseとして再試行する", func(t *testing.T) {
@@ -331,6 +336,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == "" || second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
 	})
 
 	t.Run("streaming plain textはinvalid responseとして再試行する", func(t *testing.T) {
@@ -350,6 +356,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.Tools != nil {
 			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
 		}
+		assertRetryHintFirst(t, second.Messages, `うん、わかった、だよ`)
 	})
 
 	t.Run("streaming doneまでspeechがなければ再試行する", func(t *testing.T) {
@@ -366,6 +373,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == "" || second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, "(空)")
 	})
 
 	t.Run("streaming done後は会話スナップショットを更新する", func(t *testing.T) {
@@ -527,6 +535,33 @@ func (h *conversationHarness) expectWhiteboardUpdate(content string) {
 	}
 	if update.Content != content {
 		h.t.Fatalf("whiteboard content = %q, want %q", update.Content, content)
+	}
+}
+
+func assertRetryHintFirst(t *testing.T, messages []types.ChatMessage, invalidRaw string) {
+	t.Helper()
+	if len(messages) == 0 {
+		t.Fatal("retry messages are empty")
+	}
+	first := messages[0]
+	if first.Role != "system" {
+		t.Fatalf("retry first role = %q, want system", first.Role)
+	}
+	if !strings.HasPrefix(first.Content, importantRetryPrefix) {
+		t.Fatalf("retry first message = %q, want important retry prefix", first.Content)
+	}
+	if !strings.Contains(first.Content, "NDJSON") {
+		t.Fatalf("retry first message = %q, want NDJSON guidance", first.Content)
+	}
+	if !strings.Contains(first.Content, "契約違反") {
+		t.Fatalf("retry first message = %q, want contract violation note", first.Content)
+	}
+	quoted, err := json.Marshal(invalidRaw)
+	if err != nil {
+		t.Fatalf("json.Marshal(%q): %v", invalidRaw, err)
+	}
+	if !strings.Contains(first.Content, string(quoted)) {
+		t.Fatalf("retry first message = %q, want invalid raw %q", first.Content, invalidRaw)
 	}
 }
 

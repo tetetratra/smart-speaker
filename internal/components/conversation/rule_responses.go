@@ -39,7 +39,7 @@ func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 		effects := []effect{runtimeLogEffect{
 			message: "conversation: invalid response: " + strings.TrimSpace(resp.Text),
 		}}
-		effects = append(effects, core.retryInvalidResponseEffects()...)
+		effects = append(effects, core.retryInvalidResponseEffects(resp.Text)...)
 		return effects, true
 	}
 
