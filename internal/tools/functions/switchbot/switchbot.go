@@ -108,14 +108,9 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 		return nil, err
 	}
 
-	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	signature, err := c.signPayload(timestamp, nonce)
-	if err != nil {
+	if err := c.applyAuth(req); err != nil {
 		return nil, err
 	}
-
-	c.applyAuthHeaders(req, timestamp, nonce, signature)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -148,13 +143,9 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 		return nil, err
 	}
 
-	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	signature, err := c.signPayload(timestamp, nonce)
-	if err != nil {
+	if err := c.applyAuth(req); err != nil {
 		return nil, err
 	}
-	c.applyAuthHeaders(req, timestamp, nonce, signature)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -303,25 +294,54 @@ func decodeAPIResponse[T any](resp *http.Response) (apiResponse[T], error) {
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return out, err
 	}
+	diagnosticCategory := switchBotDiagnosticCategory(resp.StatusCode, out.StatusCode, out.Message)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return out, fmt.Errorf(
-			"SwitchBot API request failed: http_status=%d status_code=%d message=%q request_id=%q",
+			"SwitchBot API request failed: http_status=%d status_code=%d message=%q request_id=%q diagnostic_category=%q",
 			resp.StatusCode,
 			out.StatusCode,
 			out.Message,
 			resp.Header.Get("switchbot-request-id"),
+			diagnosticCategory,
 		)
 	}
 	if out.StatusCode != 100 {
 		return out, fmt.Errorf(
-			"SwitchBot API returned failure: http_status=%d status_code=%d message=%q request_id=%q",
+			"SwitchBot API returned failure: http_status=%d status_code=%d message=%q request_id=%q diagnostic_category=%q",
 			resp.StatusCode,
 			out.StatusCode,
 			out.Message,
 			resp.Header.Get("switchbot-request-id"),
+			diagnosticCategory,
 		)
 	}
 	return out, nil
+}
+
+func switchBotDiagnosticCategory(httpStatus, statusCode int, message string) string {
+	normalized := strings.ToLower(message)
+	if httpStatus == http.StatusTooManyRequests || strings.Contains(normalized, "rate") || strings.Contains(normalized, "too many") {
+		return "rate_limited"
+	}
+	if strings.Contains(normalized, "sign") ||
+		strings.Contains(normalized, "signature") ||
+		strings.Contains(normalized, "timestamp") ||
+		strings.Contains(normalized, "nonce") ||
+		strings.Contains(normalized, "clock") ||
+		strings.Contains(normalized, "time") {
+		return "clock_skew_or_signature"
+	}
+	if httpStatus == http.StatusUnauthorized ||
+		httpStatus == http.StatusForbidden ||
+		strings.Contains(normalized, "unauthorized") ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "auth") {
+		return "auth_failed"
+	}
+	if statusCode == 190 && strings.Contains(normalized, "request limit") {
+		return "rate_limited"
+	}
+	return "api_failure"
 }
 
 func parseDeviceMap(raw string) map[string]string {
