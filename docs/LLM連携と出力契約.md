@@ -6,13 +6,13 @@
 - **解決する課題**: 音声会話向け assistant 応答では、自由文をそのまま返すだけでは制御しづらい。待機、短い連続発話、tool call、whiteboard 表示、tool 実行後の継続をアプリ側で安定して扱うためには、LLM 出力に明確な契約が必要になる。
 - **ターゲットユーザー**: スマートスピーカー利用者、OpenAI Responses API 連携を保守する開発者、会話契約や tool 追加を行う開発者。
 - **価値定義**: LLM の生成能力を使いつつ、会話進行はアプリ側で制御できる。通常応答、tool call、tool result 後の follow-up を一貫して扱える。
-- **現在の設計方針**: OpenAI Responses API を使い、通常応答は `timeline + optional whiteboard` の JSON を返させる。外部操作が必要なときだけ function call を使う。JSON 契約は API の `response_format` ではなく system prompt により強制し、invalid response は `conversation` 側で 1 回だけ retry する。
+- **現在の設計方針**: OpenAI Responses API を使い、通常応答は speech / wait の NDJSON を返させる。whiteboard 更新や外部操作が必要なときは function call を使う。JSON 契約は API の `response_format` ではなく system prompt により強制し、invalid response は `conversation` 側で 1 回だけ retry する。
 
 ## 2. 論理構造・機能俯瞰
 **主要なモデル・コンポーネント**
 - **`system_prompt.txt`**
   - assistant の会話スタイルと JSON 出力契約を定義する。
-  - `timeline` / `whiteboard` の形式、speech / wait の使い分け、tool 利用方針を指示する。
+  - speech / wait の形式、使い分け、tool 利用方針を指示する。
 - **`responsesapi.Client`**
   - OpenAI Responses API への HTTP 通信を行う。
   - `CreateResponse` と `SubmitToolOutput` を持つ。
@@ -23,7 +23,7 @@
   - `conversation` と `responsesapi` の間でやり取りする内部 DTO。
   - 通常会話、tool 強制実行、tool 継続応答の共通入力/出力になる。
 - **`conversation`**
-  - JSON 契約の検証、timeline 化、whiteboard event emit、invalid retry を担当する。
+  - JSON 契約の検証、timeline 化、invalid retry を担当する。
   - LLM が返した `aiSegment` を正規化済み `timelineSegment` に変換して internal state へ積む。
 - **`toolcaller`**
   - `ToolRequest` を受けてローカル handler を実行し、`ToolResponse` を返す。
@@ -44,8 +44,8 @@
 2. **API 呼び出し**: `responsesapi.runner` が system prompt を付加し、`Client.CreateResponse` を呼ぶ。
 3. **応答抽出**: `Client` が Responses API の `output` 配列から text と function call を抽出する。
 4. **内部イベント化**: `runner` が `EventResponsesResponse` を `conversation` へ返す。
-5. **契約検証**: `conversation` が `parseAIOutput` で `timeline + optional whiteboard` を検証する。
-6. **会話進行反映**: valid なら timeline を internal state に積み、whiteboard があれば `EventWhiteboardUpdate` を emit する。
+5. **契約検証**: `conversation` が `parseAIOutput` で speech / wait の NDJSON を検証する。
+6. **会話進行反映**: valid なら timeline を internal state に積む。whiteboard 更新は `set_whiteboard` tool が `EventWhiteboardUpdate` を emit する。
 
 ```mermaid
 sequenceDiagram
@@ -111,9 +111,9 @@ sequenceDiagram
         - `executeTool`: 引数 decode、handler 実行、結果 encode を行う。
     - `conversation/`
       - `response_contract.go`: LLM 応答 JSON の DTO と妥当性検証。
-        - `parseAIOutput`: `timeline + optional whiteboard` 契約を検証する。
+        - `parseAIOutput`: speech / wait の NDJSON 契約を検証する。
       - `rule_responses.go`: LLM 応答を会話 state へ反映する rule。
-        - `Apply`: invalid retry、whiteboard emit、timeline 反映を行う。
+        - `Apply`: invalid retry、timeline 反映を行う。
         - `buildTimelineSegments`: `aiSegment` を正規化済み internal timeline へ変換する。
     - `sessionlifecycle/`
       - `sessionlifecycle.go`: idle timeout 時に `write_diary` 専用 request を生成する。
@@ -132,21 +132,13 @@ sequenceDiagram
 ### 出力契約
 **通常応答**
 ```json
-{
-  "timeline": [
-    {"type":"wait","sec":1},
-    {"type":"speech","text":"こんにちは"}
-  ],
-  "whiteboard": {
-    "content": "- 10:00 会議"
-  }
-}
+{"type":"wait","sec":1}
+{"type":"speech","text":"こんにちは"}
 ```
-- `timeline` は必須。
-- `whiteboard` は任意。
+- 通常応答は 1 行 1 JSON object の NDJSON。
 - `speech` は読み上げる本文。
 - `wait` は会話の間。
-- `whiteboard` はアプリ画面の補助表示であり、tool call ではない。
+- whiteboard は通常応答に含めず、`set_whiteboard` tool call で更新する。
 
 **tool call**
 - OpenAI Responses API の `function_call` として返る。
@@ -156,8 +148,8 @@ sequenceDiagram
 - `toolcaller` が返した `ToolResponse.Output` を `function_call_output` として再投入する。
 
 ### 設計上の重要ポイント
-- **通常応答は JSON 契約で扱う**: 自由文ではなく `timeline` を返させることで、会話の間と短文発話をアプリ側で制御できる。
-- **whiteboard は通常応答の一部**: `set_whiteboard` のような tool ではなく、通常応答 JSON の optional field になっている。
+- **通常応答は NDJSON 契約で扱う**: 自由文ではなく speech / wait chunk を返させることで、会話の間と短文発話をアプリ側で制御できる。
+- **whiteboard は tool**: `set_whiteboard` の function call で更新し、通常応答 JSON には含めない。
 - **tool call は必要時だけ使う**: 外部状態の変更や外部取得が必要なときだけ function call を使う。
 - **invalid response の回復は conversation 側で行う**: Responses API 側ではなく `conversation` 側が 1 回だけ retry する。
 - **`write_diary` は通常会話から分離する**: idle timeout の会話終了処理としてだけ使い、通常会話用 tool 定義からは除外する。
@@ -173,5 +165,6 @@ sequenceDiagram
 - `internal/tools/registry/registry.go`
 - `internal/tools/functions/diary/tool.go`
 - `internal/tools/functions/googlecalendar/tool.go`
+- `internal/tools/functions/whiteboard/tool.go`
 - `internal/types/event.go`
 - `internal/types/types.go`

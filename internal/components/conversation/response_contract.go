@@ -6,12 +6,7 @@ import (
 )
 
 type aiOutput struct {
-	Timeline   []aiSegment   `json:"timeline"`
-	Whiteboard *aiWhiteboard `json:"whiteboard,omitempty"`
-}
-
-type aiWhiteboard struct {
-	Content string `json:"content"`
+	Timeline []aiSegment `json:"timeline"`
 }
 
 type aiSegment struct {
@@ -21,10 +16,9 @@ type aiSegment struct {
 }
 
 type aiChunk struct {
-	Type    string `json:"type"`
-	Sec     *int   `json:"sec,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Content string `json:"content,omitempty"`
+	Type string `json:"type"`
+	Sec  *int   `json:"sec,omitempty"`
+	Text string `json:"text,omitempty"`
 }
 
 func parseAIOutput(raw string) (aiOutput, bool) {
@@ -62,12 +56,6 @@ func validateAIOutput(out aiOutput) (aiOutput, bool) {
 	if speechCount == 0 {
 		return aiOutput{}, false
 	}
-	if out.Whiteboard != nil {
-		out.Whiteboard.Content = strings.TrimSpace(out.Whiteboard.Content)
-		if out.Whiteboard.Content == "" {
-			return aiOutput{}, false
-		}
-	}
 	return out, true
 }
 
@@ -101,11 +89,6 @@ func validateAIChunk(chunk aiChunk) (aiChunk, bool) {
 		}
 	case "wait":
 		if chunk.Sec == nil {
-			return aiChunk{}, false
-		}
-	case "whiteboard":
-		chunk.Content = strings.TrimSpace(chunk.Content)
-		if chunk.Content == "" {
 			return aiChunk{}, false
 		}
 	default:
@@ -159,13 +142,6 @@ func buildAIOutputFromChunks(chunks []aiChunk) (aiOutput, bool) {
 			out.Timeline = append(out.Timeline, aiSegment{Type: "speech", Text: chunk.Text})
 		case "wait":
 			out.Timeline = append(out.Timeline, aiSegment{Type: "wait", Sec: chunk.Sec})
-		case "whiteboard":
-			if out.Whiteboard == nil {
-				out.Whiteboard = &aiWhiteboard{}
-			}
-			if out.Whiteboard.Content == "" {
-				out.Whiteboard.Content = chunk.Content
-			}
 		default:
 			return aiOutput{}, false
 		}
