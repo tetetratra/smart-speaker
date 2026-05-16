@@ -60,7 +60,6 @@ comment_file="$(mktemp)"
 } > "$comment_file"
 
 pr_url="$(gh pr create \
-  --draft \
   --base "$DEFAULT_BRANCH" \
   --head "$branch_name" \
   --title "$issue_title" \
