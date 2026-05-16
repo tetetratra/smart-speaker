@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestClient(server *httptest.Server) *Client {
@@ -195,6 +196,53 @@ func TestClientAppliesFreshAuthPerRequest(t *testing.T) {
 			t.Fatalf("request %d reused nonce %q", i, nonce)
 		}
 		seenNonce[nonce] = true
+	}
+}
+
+func TestClientRetriesWithServerDateOnUnauthorized(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		timestamp := r.Header.Get("t")
+		millis, err := strconv.ParseInt(timestamp, 10, 64)
+		if err != nil {
+			t.Fatalf("timestamp parse error: %v", err)
+		}
+		requestTime := time.UnixMilli(millis)
+		skew := time.Since(requestTime)
+		if skew < -2*time.Minute || skew > 2*time.Minute {
+			w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"message": "Unauthorized",
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 100,
+			"message":    "success",
+			"body": []map[string]string{
+				{"sceneId": "scene-1", "sceneName": "換気扇をつける"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server)
+	client.clockSkew.Store((-10 * time.Minute).Nanoseconds())
+
+	scenes, err := client.ListScenes(context.Background())
+	if err != nil {
+		t.Fatalf("ListScenes() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if len(scenes) != 1 || scenes[0].SceneID != "scene-1" {
+		t.Fatalf("scenes = %#v", scenes)
+	}
+	if got := time.Duration(client.clockSkew.Load()); got < -2*time.Minute || got > 2*time.Minute {
+		t.Fatalf("clockSkew = %s, want near zero", got)
 	}
 }
 

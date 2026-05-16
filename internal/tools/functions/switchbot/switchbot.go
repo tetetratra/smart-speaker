@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ type Client struct {
 	http      *http.Client
 	baseURL   string
 	deviceMap map[string]string
+	clockSkew atomic.Int64
 }
 
 type Scene struct {
@@ -112,7 +114,7 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +149,7 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +178,7 @@ func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +219,7 @@ func (c *Client) ExecuteScene(ctx context.Context, sceneID string) (map[string]a
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -270,13 +272,66 @@ func (c *Client) applyAuthHeaders(req *http.Request, timestamp, nonce, signature
 
 func (c *Client) applyAuth(req *http.Request) error {
 	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	timestamp := strconv.FormatInt(c.currentTime().UnixMilli(), 10)
 	signature, err := c.signPayload(timestamp, nonce)
 	if err != nil {
 		return err
 	}
 	c.applyAuthHeaders(req, timestamp, nonce, signature)
 	return nil
+}
+
+func (c *Client) currentTime() time.Time {
+	return time.Now().Add(time.Duration(c.clockSkew.Load()))
+}
+
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if !shouldRetrySwitchBotAuth(resp) {
+		return resp, nil
+	}
+	serverTime, ok := parseHTTPDate(resp.Header.Get("Date"))
+	if !ok {
+		return resp, nil
+	}
+
+	c.clockSkew.Store(serverTime.Sub(time.Now()).Nanoseconds())
+	resp.Body.Close()
+
+	retryReq := req.Clone(req.Context())
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		retryReq.Body = body
+	}
+	if err := c.applyAuth(retryReq); err != nil {
+		return nil, err
+	}
+	return c.http.Do(retryReq)
+}
+
+func shouldRetrySwitchBotAuth(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	return resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden
+}
+
+func parseHTTPDate(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(http.TimeFormat, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func asString(v any) string {
