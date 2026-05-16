@@ -8,7 +8,6 @@ import (
 	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/timer"
-	"smart-speaker/internal/tools/functions/volume"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。
@@ -47,11 +46,9 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
 	timerTool := timer.New()
-	volumeTool := volume.New()
 	toolEntries := []entry{
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: timerTool.Definition(), handler: timerTool},
-		{def: volumeTool.Definition(), handler: volumeTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
