@@ -24,14 +24,16 @@ const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
 
-type PlaybackVolumeLevel = 'low' | 'medium' | 'high'
+type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
 const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: number }> = {
-  low: { label: '小', gain: 0.3 },
-  medium: { label: '中', gain: 0.6 },
-  high: { label: '大', gain: 1.0 },
+  quiet: { label: '0.3倍', gain: 0.3 },
+  low: { label: '0.6倍', gain: 0.6 },
+  normal: { label: '1倍', gain: 1.0 },
+  boost: { label: '1.5倍', gain: 1.5 },
 }
-const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'medium'
+const playbackVolumeLevels: PlaybackVolumeLevel[] = ['quiet', 'low', 'normal', 'boost']
+const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'low'
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
@@ -126,37 +128,53 @@ const liveRootStyle = `
     border: 1px solid var(--live-line);
     background: var(--live-panel-soft);
     border-radius: 10px;
-    padding: 6px;
+    padding: 8px 10px 7px;
     display: grid;
-    gap: 6px;
+    gap: 8px;
   }
-  .live-volume-label {
+  .live-volume-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .live-volume-label,
+  .live-volume-current {
     font-size: 10px;
     line-height: 1;
     color: var(--live-muted);
     font-weight: 700;
   }
-  .live-volume-buttons {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
+  .live-volume-current {
+    color: var(--live-text);
+    white-space: nowrap;
   }
-  .live-volume-btn {
-    min-width: 0;
-    min-height: 30px;
-    border-radius: 8px;
-    border: 1px solid var(--live-line);
-    background: var(--live-panel-raised);
-    color: var(--live-muted);
+  .live-volume-slider {
+    width: 100%;
+    accent-color: var(--live-toggle-on);
+    cursor: pointer;
+    margin: 0;
+  }
+  .live-volume-marks {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2px;
     font-size: 12px;
     font-weight: 700;
     line-height: 1;
-    cursor: pointer;
+    color: var(--live-muted);
+    text-align: center;
   }
-  .live-volume-btn.active {
-    background: var(--live-toggle-on);
-    border-color: var(--live-toggle-on);
-    color: var(--live-toggle-knob);
+  .live-volume-mark {
+    min-width: 0;
+    min-height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .live-volume-mark.active {
+    color: var(--live-toggle-on);
   }
   .live-audio-stats {
     display: flex;
@@ -1179,6 +1197,8 @@ function LiveView(props: LiveViewProps) {
     return () => window.clearInterval(timer)
   }, [])
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
+  const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
+  const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1224,21 +1244,31 @@ function LiveView(props: LiveViewProps) {
               </div>
             </div>
             <div className="live-volume-control" aria-label="再生音量">
-              <div className="live-volume-label">再生音量</div>
-              <div className="live-volume-buttons">
-                {(Object.keys(playbackVolumePresets) as PlaybackVolumeLevel[]).map((level) => {
+              <div className="live-volume-heading">
+                <div className="live-volume-label">再生音量</div>
+                <div className="live-volume-current">{selectedPlaybackVolume.label}</div>
+              </div>
+              <input
+                className="live-volume-slider"
+                type="range"
+                min={0}
+                max={playbackVolumeLevels.length - 1}
+                step={1}
+                value={playbackVolumeIndex}
+                aria-label="再生音量"
+                aria-valuetext={selectedPlaybackVolume.label}
+                onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+              />
+              <div className="live-volume-marks" aria-hidden="true">
+                {playbackVolumeLevels.map((level) => {
                   const preset = playbackVolumePresets[level]
-                  const active = level === playbackVolumeLevel
                   return (
-                    <button
+                    <span
                       key={level}
-                      type="button"
-                      className={`live-volume-btn ${active ? 'active' : ''}`}
-                      aria-pressed={active}
-                      onClick={() => onPlaybackVolumeChange(level)}
+                      className={`live-volume-mark ${level === playbackVolumeLevel ? 'active' : ''}`}
                     >
                       {preset.label}
-                    </button>
+                    </span>
                   )
                 })}
               </div>
