@@ -1,10 +1,6 @@
 package conversation
 
-import (
-	"strings"
-
-	types "smart-speaker/internal/types"
-)
+import "strings"
 
 type responsesStreamRule struct{}
 
@@ -25,7 +21,7 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 	}
 	core.state.pendingRequestStreaming = true
 	if strings.TrimSpace(chunk.Err) != "" {
-		return core.failStream(chunk.Err, false), true
+		return core.failStream(chunk.Err, false, chunk.Err), true
 	}
 	if chunk.Done {
 		return core.completeStream(), true
@@ -34,60 +30,58 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 		return nil, true
 	}
 	line := strings.TrimSpace(chunk.Line)
-	parsed, ok := parseAIChunk(line)
+	if line != "" {
+		core.state.pendingStreamLines = append(core.state.pendingStreamLines, line)
+	}
+	parsedChunks, ok := parseAIChunks(line)
 	if !ok {
-		return core.failStream("conversation: invalid stream chunk: "+line, true), true
+		return core.failStream("conversation: invalid stream chunk: "+line, true, line), true
 	}
 
-	switch parsed.Type {
-	case "speech":
-		text := sanitizeSpeech(parsed.Text)
-		if text == "" {
-			return core.failStream("conversation: invalid stream speech after sanitize: "+line, true), true
+	var effects []effect
+	shouldAdvance := false
+	for _, parsed := range parsedChunks {
+		switch parsed.Type {
+		case "speech":
+			text := sanitizeSpeech(parsed.Text)
+			if text == "" {
+				return core.failStream("conversation: invalid stream speech after sanitize: "+line, true, line), true
+			}
+			core.state.pendingStreamSpeechStarted = true
+			core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{Type: "speech", Text: text})
+			shouldAdvance = true
+		case "wait":
+			core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{
+				Type:    "wait",
+				WaitSec: sanitizeWait(parsed.Sec),
+			})
+			shouldAdvance = true
+		default:
+			return core.failStream("conversation: invalid stream chunk: "+line, true, line), true
 		}
-		core.state.pendingStreamSpeechStarted = true
-		core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{Type: "speech", Text: text})
-		if core.state.current == nil && !core.state.pendingTimelineTimerWaiting {
-			return core.advanceTimelineEffects(), true
-		}
-		return nil, true
-	case "wait":
-		core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{
-			Type:    "wait",
-			WaitSec: sanitizeWait(parsed.Sec),
-		})
-		if core.state.current == nil && !core.state.pendingTimelineTimerWaiting {
-			return core.advanceTimelineEffects(), true
-		}
-		return nil, true
-	case "whiteboard":
-		return []effect{emitEventEffect{
-			event: types.Event{
-				Kind: types.EventWhiteboardUpdate,
-				Payload: types.WhiteboardUpdate{
-					Content: parsed.Content,
-				},
-			},
-		}}, true
-	default:
-		return core.failStream("conversation: invalid stream chunk: "+line, true), true
 	}
+	if shouldAdvance && core.state.current == nil && !core.state.pendingTimelineTimerWaiting {
+		effects = append(effects, core.advanceTimelineEffects()...)
+	}
+	return effects, true
 }
 
-func (c *conversationCore) failStream(message string, retryInvalid bool) []effect {
+func (c *conversationCore) failStream(message string, retryInvalid bool, invalidRaw string) []effect {
 	effects := []effect{runtimeLogEffect{message: message}}
 	c.state.pendingStreamFailed = true
 	c.state.pendingRequestStreaming = false
 	if c.state.pendingStreamSpeechStarted {
 		c.state.pendingRequestID = ""
 		c.state.clearPendingTimeline()
+		c.state.clearPendingStreamLines()
 		return effects
 	}
 	c.state.pendingRequestID = ""
 	c.state.clearPendingTimeline()
 	if retryInvalid {
-		effects = append(effects, c.retryInvalidResponseEffects()...)
+		effects = append(effects, c.retryInvalidResponseEffects(invalidRaw)...)
 	}
+	c.state.clearPendingStreamLines()
 	return effects
 }
 
@@ -95,14 +89,17 @@ func (c *conversationCore) completeStream() []effect {
 	c.state.pendingRequestStreaming = false
 	c.state.pendingRequestID = ""
 	if !c.state.pendingStreamSpeechStarted {
+		invalidRaw := strings.Join(c.state.pendingStreamLines, "\n")
 		c.state.clearPendingTimeline()
 		effects := []effect{runtimeLogEffect{
 			message: "conversation: invalid stream response: no speech chunk",
 		}}
-		effects = append(effects, c.retryInvalidResponseEffects()...)
+		effects = append(effects, c.retryInvalidResponseEffects(invalidRaw)...)
+		c.state.clearPendingStreamLines()
 		return effects
 	}
 	c.state.invalidResponseRetries = 0
+	c.state.clearPendingStreamLines()
 	if c.state.current != nil || c.state.hasPendingSpeech() || c.state.pendingTimelineTimerWaiting {
 		return nil
 	}

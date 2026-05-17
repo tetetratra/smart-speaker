@@ -22,6 +22,7 @@ type sessionState struct {
 	pendingStreamSpeechStarted  bool
 	pendingStreamFailed         bool
 	pendingTimelineTimerWaiting bool
+	pendingStreamLines          []string
 
 	seq int
 }
@@ -98,6 +99,10 @@ func (s *sessionState) clearPendingTimeline() {
 	s.pendingTimelineTimerWaiting = false
 }
 
+func (s *sessionState) clearPendingStreamLines() {
+	s.pendingStreamLines = nil
+}
+
 func (s *sessionState) hasPendingSpeech() bool {
 	for i := s.pendingTimelineIdx; i < len(s.pendingTimeline); i++ {
 		if s.pendingTimeline[i].Type == "speech" {
@@ -131,4 +136,5 @@ func (s *sessionState) resetConversation() {
 	s.pendingRequestStreaming = false
 	s.pendingStreamSpeechStarted = false
 	s.pendingStreamFailed = false
+	s.clearPendingStreamLines()
 }

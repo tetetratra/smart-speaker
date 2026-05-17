@@ -171,8 +171,8 @@ sequenceDiagram
   - app/admin を別ページではなく、同一 state 上の別表示として扱う
 - **PWA 対応済み**
   - `display: standalone` でホーム画面起動時にブラウザ UI を薄くできる
-- **whiteboard は tool result ではなく専用イベントで更新する**
-  - 現在は `function_result(set_whiteboard)` ではなく、通常応答から派生した `whiteboard_update` を受ける
+- **whiteboard は `set_whiteboard` tool 由来の専用イベントで更新する**
+  - `set_whiteboard` 実行時にサーバーが `EventWhiteboardUpdate` を発火し、フロントは `whiteboard_update` を受ける
 - **文字起こしはサーバー側**
   - ブラウザの Web Speech API ではなく、サーバー側 Google STT を使う
 

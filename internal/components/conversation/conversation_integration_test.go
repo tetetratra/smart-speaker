@@ -2,7 +2,9 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +52,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("こんにちは")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"最初の返答です"}]}`)
+		h.sendResponse(req.RequestID, `{"type":"speech","text":"最初の返答です"}`)
 
 		first := h.expectRealtimeOutputText("最初の返答です")
 		h.expectFinalOutput(first.ResponseID)
@@ -99,7 +101,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendTextInput("明日の予定を教えて")
-		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"明日は10時から会議があります"}]}`)
+		h.sendResponse(first.RequestID, `{"type":"speech","text":"明日は10時から会議があります"}`)
 
 		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
 		h.expectFinalOutput(firstOutput.ResponseID)
@@ -155,16 +157,40 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		if second.Tools != nil {
+			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
+		}
+		assertRetryHintFirst(t, second.Messages, `{"timeline":[}`)
 
 		h.sendResponse(second.RequestID, `{"timeline":[}`)
 		h.expectNoEvent(150 * time.Millisecond)
+	})
+
+	t.Run("non streamingのNDJSON応答も解釈できる", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"やあ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
+
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		second := h.expectRealtimeOutputText("元気？")
+		h.expectFinalOutput(second.ResponseID)
 	})
 
 	t.Run("waitとspeechを含む応答でTTS完了後に次発話へ進む", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("次の発話を待って")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"wait","sec":1},{"type":"speech","text":"ふたつめ"}]}`)
+		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"ひとつめ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"ふたつめ\"}")
 
 		first := h.expectRealtimeOutputText("ひとつめ")
 		h.expectFinalOutput(first.ResponseID)
@@ -181,33 +207,11 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectRealtimeOutputText("ふたつめ")
 	})
 
-	t.Run("レスポンスにwhiteboardが含まれる場合は白板更新イベントも出る", func(t *testing.T) {
+	t.Run("レスポンスにwhiteboard chunkが含まれる場合はinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("明日の予定を教えて")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"明日の予定を確認したよ"}],"whiteboard":{"content":"- 10:00 定例会議"}}`)
-
-		h.expectWhiteboardUpdate("- 10:00 定例会議")
-		first := h.expectRealtimeOutputText("明日の予定を確認したよ")
-		h.expectFinalOutput(first.ResponseID)
-	})
-
-	t.Run("レスポンスにwhiteboardがない場合は白板更新イベントが出ない", func(t *testing.T) {
-		h := newConversationHarness(t)
-
-		req := h.sendTextInput("こんにちは")
-		h.sendResponse(req.RequestID, `{"timeline":[{"type":"speech","text":"やあ"}]}`)
-
-		first := h.expectRealtimeOutputText("やあ")
-		h.expectFinalOutput(first.ResponseID)
-		h.expectNoEvent(150 * time.Millisecond)
-	})
-
-	t.Run("whiteboardが不正な形式の場合はinvalid responseとして再試行する", func(t *testing.T) {
-		h := newConversationHarness(t)
-
-		first := h.sendTextInput("予定を教えて")
-		h.sendResponse(first.RequestID, `{"timeline":[{"type":"speech","text":"確認したよ"}],"whiteboard":{"content":"   "}}`)
+		first := h.sendTextInput("明日の予定を教えて")
+		h.sendResponse(first.RequestID, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
@@ -220,6 +224,18 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
+	})
+
+	t.Run("レスポンスにwhiteboardがない場合は白板更新イベントが出ない", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendTextInput("こんにちは")
+		h.sendResponse(req.RequestID, `{"type":"speech","text":"やあ"}`)
+
+		first := h.expectRealtimeOutputText("やあ")
+		h.expectFinalOutput(first.ResponseID)
+		h.expectNoEvent(150 * time.Millisecond)
 	})
 
 	t.Run("streaming speech chunk到着時点で発話を開始する", func(t *testing.T) {
@@ -244,12 +260,24 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectFinalOutput(first.ResponseID)
 	})
 
-	t.Run("streaming whiteboard chunkは到着時点で白板更新する", func(t *testing.T) {
+	t.Run("streaming whiteboard chunkはinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendTextInput("明日の予定")
 		h.sendStreamLine(req.RequestID, `{"type":"whiteboard","content":"- 10:00 会議"}`)
-		h.expectWhiteboardUpdate("- 10:00 会議")
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" {
+			t.Fatal("retry RequestID is empty")
+		}
+		if second.RequestID == req.RequestID {
+			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
+		}
+		assertRetryHintFirst(t, second.Messages, `{"type":"whiteboard","content":"- 10:00 会議"}`)
 	})
 
 	t.Run("streaming中はTTS完了後もdoneまで後続chunkを待つ", func(t *testing.T) {
@@ -292,6 +320,44 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, `{"type":"speech","text":" "}`)
+	})
+
+	t.Run("streaming timeline objectはinvalid responseとして再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("テスト")
+		h.sendStreamLine(first.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" || second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
+		}
+		assertRetryHintFirst(t, second.Messages, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
+	})
+
+	t.Run("streaming plain textはinvalid responseとして再試行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		first := h.sendTextInput("テスト")
+		h.sendStreamLine(first.RequestID, `うん、わかった、だよ`)
+
+		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
+		second, ok := secondEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("retry payload type = %T", secondEvt.Payload)
+		}
+		if second.RequestID == "" || second.RequestID == first.RequestID {
+			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
+		}
+		if second.Tools != nil {
+			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
+		}
+		assertRetryHintFirst(t, second.Messages, `うん、わかった、だよ`)
 	})
 
 	t.Run("streaming doneまでspeechがなければ再試行する", func(t *testing.T) {
@@ -308,6 +374,7 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == "" || second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
 		}
+		assertRetryHintFirst(t, second.Messages, "(空)")
 	})
 
 	t.Run("streaming done後は会話スナップショットを更新する", func(t *testing.T) {
@@ -469,6 +536,33 @@ func (h *conversationHarness) expectWhiteboardUpdate(content string) {
 	}
 	if update.Content != content {
 		h.t.Fatalf("whiteboard content = %q, want %q", update.Content, content)
+	}
+}
+
+func assertRetryHintFirst(t *testing.T, messages []types.ChatMessage, invalidRaw string) {
+	t.Helper()
+	if len(messages) == 0 {
+		t.Fatal("retry messages are empty")
+	}
+	first := messages[0]
+	if first.Role != "system" {
+		t.Fatalf("retry first role = %q, want system", first.Role)
+	}
+	if !strings.HasPrefix(first.Content, importantRetryPrefix) {
+		t.Fatalf("retry first message = %q, want important retry prefix", first.Content)
+	}
+	if !strings.Contains(first.Content, "NDJSON") {
+		t.Fatalf("retry first message = %q, want NDJSON guidance", first.Content)
+	}
+	if !strings.Contains(first.Content, "契約違反") {
+		t.Fatalf("retry first message = %q, want contract violation note", first.Content)
+	}
+	quoted, err := json.Marshal(invalidRaw)
+	if err != nil {
+		t.Fatalf("json.Marshal(%q): %v", invalidRaw, err)
+	}
+	if !strings.Contains(first.Content, string(quoted)) {
+		t.Fatalf("retry first message = %q, want invalid raw %q", first.Content, invalidRaw)
 	}
 }
 

@@ -59,7 +59,7 @@ type runner struct {
 
 const (
 	maxInvalidResponseRetries = 1
-	invalidResponseRetryHint  = "前回の出力はJSONとして無効でした。必ずJSONのみを返してください。出力は {\"timeline\":[{\"type\":\"wait\",\"sec\":整数},{\"type\":\"speech\",\"text\":\"文字列\"}],\"whiteboard\":{\"content\":\"文字列\"}} の形式に従ってください。whiteboard は不要なら省略可能です。"
+	importantRetryPrefix      = "**[重要]** "
 	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
 	calendarPromptDays        = 3

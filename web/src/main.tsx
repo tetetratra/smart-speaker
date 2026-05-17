@@ -107,7 +107,7 @@ const liveRootStyle = `
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto auto 1fr;
     gap: 8px;
   }
   .live-controls-row {
@@ -132,49 +132,11 @@ const liveRootStyle = `
     display: grid;
     gap: 8px;
   }
-  .live-volume-heading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .live-volume-label,
-  .live-volume-current {
-    font-size: 10px;
-    line-height: 1;
-    color: var(--live-muted);
-    font-weight: 700;
-  }
-  .live-volume-current {
-    color: var(--live-text);
-    white-space: nowrap;
-  }
   .live-volume-slider {
     width: 100%;
     accent-color: var(--live-toggle-on);
     cursor: pointer;
     margin: 0;
-  }
-  .live-volume-marks {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 2px;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--live-muted);
-    text-align: center;
-  }
-  .live-volume-mark {
-    min-width: 0;
-    min-height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-  }
-  .live-volume-mark.active {
-    color: var(--live-toggle-on);
   }
   .live-audio-stats {
     display: flex;
@@ -1243,35 +1205,17 @@ function LiveView(props: LiveViewProps) {
                 <div className="live-status-value">{sttStatus}</div>
               </div>
             </div>
-            <div className="live-volume-control" aria-label="再生音量">
-              <div className="live-volume-heading">
-                <div className="live-volume-label">再生音量</div>
-                <div className="live-volume-current">{selectedPlaybackVolume.label}</div>
-              </div>
-              <input
-                className="live-volume-slider"
-                type="range"
-                min={0}
-                max={playbackVolumeLevels.length - 1}
-                step={1}
-                value={playbackVolumeIndex}
-                aria-label="再生音量"
-                aria-valuetext={selectedPlaybackVolume.label}
-                onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-              />
-              <div className="live-volume-marks" aria-hidden="true">
-                {playbackVolumeLevels.map((level) => {
-                  const preset = playbackVolumePresets[level]
-                  return (
-                    <span
-                      key={level}
-                      className={`live-volume-mark ${level === playbackVolumeLevel ? 'active' : ''}`}
-                    >
-                      {preset.label}
-                    </span>
-                  )
-                })}
-              </div>
+            <input
+              className="live-volume-slider"
+              type="range"
+              min={0}
+              max={playbackVolumeLevels.length - 1}
+              step={1}
+              value={playbackVolumeIndex}
+              aria-label="再生音量"
+              onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+            />
+            <div className="live-volume-control" aria-label="キャラクターエリア">
             </div>
             <div className="live-mini"></div>
           </div>
