@@ -22,5 +22,4 @@ jobs:
       - name: 状態 Artifact を削除する
         shell: bash
         run: |
-          chmod +x .github/scripts/delete_state_artifact.sh
-          .github/scripts/delete_state_artifact.sh
+          bash .github/scripts/ai_pr/state/delete_state_artifact.sh
