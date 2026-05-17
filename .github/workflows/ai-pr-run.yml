@@ -10,6 +10,9 @@ on:
   issue_comment:
     types:
       - created
+  pull_request:
+    types:
+      - closed
 
 permissions:
   actions: write
@@ -18,12 +21,12 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ai-pr-run-${{ inputs.pr_number || github.event.issue.number || github.run_id }}
+  group: ai-pr-run-${{ inputs.pr_number || github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   run:
-    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.pull_request || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
@@ -64,6 +67,15 @@ jobs:
               ;;
             bot_comment)
               echo "bot コメントのためスキップします"
+              ;;
+            docs_update_pr)
+              echo "AIドキュメント更新ラベル付き PR のためスキップします"
+              ;;
+            not_merged)
+              echo "マージされていない PR close のためスキップします"
+              ;;
+            not_main_base)
+              echo "main 以外へのマージのためスキップします"
               ;;
             *)
               echo "条件を満たさないためスキップします"
@@ -184,6 +196,7 @@ jobs:
             -e PR_NUMBER="${{ steps.context.outputs.pr_number }}" \
             -e PR_URL="${{ steps.context.outputs.pr_url }}" \
             -e REPO="${REPO}" \
+            -e RUN_MODE="${{ steps.context.outputs.run_mode }}" \
             -e STATE_ROOT=/state \
             -e TRIGGER_ACTOR="${{ steps.context.outputs.trigger_actor }}" \
             -v "${GITHUB_WORKSPACE}:/workspace" \

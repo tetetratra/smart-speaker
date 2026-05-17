@@ -23,6 +23,7 @@ fi
 
 mkdir -p "$STATE_ROOT/run" "$STATE_ROOT/result"
 
+run_mode="${RUN_MODE:-normal}"
 prompt_file="$STATE_ROOT/run/prompt.txt"
 events_file="$STATE_ROOT/run/events.jsonl"
 final_file="$STATE_ROOT/result/final.md"
@@ -34,6 +35,7 @@ cat > "$meta_file" <<EOF
   "pr_url": "${PR_URL:-}",
   "branch_name": "${PR_BRANCH:-}",
   "head_sha": "${HEAD_SHA:-}",
+  "run_mode": "${run_mode}",
   "trigger_actor": "${TRIGGER_ACTOR:-}",
   "run_started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
@@ -83,8 +85,29 @@ cat > "$prompt_file" <<EOF
 - PR コメント:
   - 使用したスキルに返答例などがあれば、そのフォーマットを参考にして書くこと
 
+EOF
+
+if [ "$run_mode" = "docs_update" ]; then
+  cat >> "$prompt_file" <<EOF
+docs 更新モードの追加ルール:
+- この run の対象 PR は「作業中 PR」ではなく、すでに main にマージ済みの元 PR です。
+- 現在の checkout は main です。main へ直接 push しないでください。
+- \`gh pr view ${PR_NUMBER}\`、\`gh pr diff ${PR_NUMBER}\`、\`git show ${HEAD_SHA:-}\`、docs 配下、関連する実装ファイルを読んで、docs 更新が必要か判断してください。
+- docs 更新が不要、または判断不能な場合は、新規 PR を作らずに終了してください。元 PR へのコメント投稿は必須ではありません。
+- docs 更新が必要な場合だけ、\`ai/docs-update-pr-${PR_NUMBER}\` を基本に docs 更新用ブランチを作成し、docs 配下を編集して commit / push し、新規 PR を作成してください。
+- docs 更新 PR にはラベル \`AIドキュメント更新\` のみを付けてください。ラベルが存在しない場合は \`gh label create "AIドキュメント更新" --color BFD4F2 --description "AI によるドキュメント更新 PR"\` で作成してください。
+- docs 更新 PR 本文には、元 PR URL、更新が必要と判断した理由、更新ファイル、AI による判断・更新であることを含めてください。
+- docs 配下以外の変更は原則行わないでください。どうしても必要な場合は、作成する PR 本文で理由を明記してください。
+- docs 更新 PR 自体がマージされたときの再帰発火は、\`AIドキュメント更新\` ラベルで workflow 側がスキップします。
+- このモードでは、PR 本文を中間成果物として更新する必要はありません。作成した docs 更新 PR の本文をストック型の成果物として扱ってください。
+
 今回の指示:
 EOF
+else
+  cat >> "$prompt_file" <<EOF
+今回の指示:
+EOF
+fi
 
 cat "$INSTRUCTION_FILE" >> "$prompt_file"
 
