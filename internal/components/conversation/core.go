@@ -109,7 +109,7 @@ func buildInvalidResponseRetryHint(invalidRaw string) string {
 	}
 	return importantRetryPrefix +
 		"直近のレスポンスは契約違反でした。必ず 1 行 1 JSON object の NDJSON だけを返してください。各行は " +
-		"{\"type\":\"speech\",\"text\":\"文字列\"} / {\"type\":\"wait\",\"sec\":整数} / {\"type\":\"whiteboard\",\"content\":\"文字列\"} " +
+		"{\"type\":\"speech\",\"text\":\"文字列\"} / {\"type\":\"wait\",\"sec\":整数} " +
 		"のいずれかにしてください。直近の違反レスポンス文字列は " + string(quoted) + " です。"
 }
 

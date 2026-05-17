@@ -3,8 +3,6 @@ package conversation
 import (
 	"regexp"
 	"strings"
-
-	types "smart-speaker/internal/types"
 )
 
 var (
@@ -45,16 +43,6 @@ func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 
 	core.state.invalidResponseRetries = 0
 	var effects []effect
-	if out.Whiteboard != nil {
-		effects = append(effects, emitEventEffect{
-			event: types.Event{
-				Kind: types.EventWhiteboardUpdate,
-				Payload: types.WhiteboardUpdate{
-					Content: out.Whiteboard.Content,
-				},
-			},
-		})
-	}
 	root := buildTimelineSegments(out)
 	if len(root) == 0 {
 		return effects, true

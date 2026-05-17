@@ -1,10 +1,6 @@
 package conversation
 
-import (
-	"strings"
-
-	types "smart-speaker/internal/types"
-)
+import "strings"
 
 type responsesStreamRule struct{}
 
@@ -60,15 +56,6 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 				WaitSec: sanitizeWait(parsed.Sec),
 			})
 			shouldAdvance = true
-		case "whiteboard":
-			effects = append(effects, emitEventEffect{
-				event: types.Event{
-					Kind: types.EventWhiteboardUpdate,
-					Payload: types.WhiteboardUpdate{
-						Content: parsed.Content,
-					},
-				},
-			})
 		default:
 			return core.failStream("conversation: invalid stream chunk: "+line, true, line), true
 		}

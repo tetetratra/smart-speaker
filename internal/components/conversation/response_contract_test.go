@@ -11,26 +11,10 @@ func TestParseAIOutput(t *testing.T) {
 		if len(out.Timeline) != 1 {
 			t.Fatalf("timeline len = %d, want 1", len(out.Timeline))
 		}
-		if out.Whiteboard != nil {
-			t.Fatalf("whiteboard = %#v, want nil", out.Whiteboard)
-		}
 	})
 
-	t.Run("speechとwhiteboardがある場合はwhiteboardを取得できる", func(t *testing.T) {
-		out, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 会議\"}")
-		if !ok {
-			t.Fatal("parseAIOutput returned false")
-		}
-		if out.Whiteboard == nil {
-			t.Fatal("whiteboard is nil")
-		}
-		if out.Whiteboard.Content != "- 10:00 会議" {
-			t.Fatalf("whiteboard content = %q", out.Whiteboard.Content)
-		}
-	})
-
-	t.Run("whiteboardが空文字の場合は無効", func(t *testing.T) {
-		if _, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"whiteboard\",\"content\":\"   \"}"); ok {
+	t.Run("whiteboard chunkは無効", func(t *testing.T) {
+		if _, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 会議\"}"); ok {
 			t.Fatal("parseAIOutput returned true, want false")
 		}
 	})
@@ -123,16 +107,6 @@ func TestParseAIChunk(t *testing.T) {
 		}
 	})
 
-	t.Run("whiteboard chunkを解釈できる", func(t *testing.T) {
-		chunk, ok := parseAIChunk(`{"type":"whiteboard","content":"- 10:00 会議"}`)
-		if !ok {
-			t.Fatal("parseAIChunk returned false")
-		}
-		if chunk.Type != "whiteboard" || chunk.Content != "- 10:00 会議" {
-			t.Fatalf("chunk = %+v", chunk)
-		}
-	})
-
 	t.Run("未知typeは無効", func(t *testing.T) {
 		if _, ok := parseAIChunk(`{"type":"unknown","text":"x"}`); ok {
 			t.Fatal("parseAIChunk returned true, want false")
@@ -143,7 +117,6 @@ func TestParseAIChunk(t *testing.T) {
 		cases := []string{
 			`{"type":"speech","text":" "}`,
 			`{"type":"wait"}`,
-			`{"type":"whiteboard","content":" "}`,
 		}
 		for _, tc := range cases {
 			if _, ok := parseAIChunk(tc); ok {
