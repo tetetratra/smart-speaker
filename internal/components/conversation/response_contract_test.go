@@ -3,40 +3,40 @@ package conversation
 import "testing"
 
 func TestParseAIOutput(t *testing.T) {
-	t.Run("timelineのみがある場合は正常に解釈できる", func(t *testing.T) {
-		out, ok := parseAIOutput(`{"timeline":[{"type":"speech","text":"こんにちは"}]}`)
+	t.Run("speech 1行のみでも正常に解釈できる", func(t *testing.T) {
+		out, ok := parseAIOutput(`{"type":"speech","text":"こんにちは"}`)
 		if !ok {
 			t.Fatal("parseAIOutput returned false")
 		}
 		if len(out.Timeline) != 1 {
 			t.Fatalf("timeline len = %d, want 1", len(out.Timeline))
 		}
-		if out.Whiteboard != nil {
-			t.Fatalf("whiteboard = %#v, want nil", out.Whiteboard)
-		}
 	})
 
-	t.Run("timelineとwhiteboardがある場合はwhiteboardを取得できる", func(t *testing.T) {
-		out, ok := parseAIOutput(`{"timeline":[{"type":"speech","text":"こんにちは"}],"whiteboard":{"content":"- 10:00 会議"}}`)
-		if !ok {
-			t.Fatal("parseAIOutput returned false")
-		}
-		if out.Whiteboard == nil {
-			t.Fatal("whiteboard is nil")
-		}
-		if out.Whiteboard.Content != "- 10:00 会議" {
-			t.Fatalf("whiteboard content = %q", out.Whiteboard.Content)
-		}
-	})
-
-	t.Run("whiteboardが空文字の場合は無効", func(t *testing.T) {
-		if _, ok := parseAIOutput(`{"timeline":[{"type":"speech","text":"こんにちは"}],"whiteboard":{"content":"   "}}`); ok {
+	t.Run("whiteboard chunkは無効", func(t *testing.T) {
+		if _, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 会議\"}"); ok {
 			t.Fatal("parseAIOutput returned true, want false")
 		}
 	})
 
-	t.Run("timelineが無効な場合は全体を無効として扱う", func(t *testing.T) {
-		if _, ok := parseAIOutput(`{"timeline":[{"type":"wait"}],"whiteboard":{"content":"test"}}`); ok {
+	t.Run("timeline objectは無効", func(t *testing.T) {
+		if _, ok := parseAIOutput(`{"timeline":[{"type":"speech","text":"こんにちは"}]}`); ok {
+			t.Fatal("parseAIOutput returned true, want false")
+		}
+	})
+
+	t.Run("NDJSON形式も解釈できる", func(t *testing.T) {
+		out, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"こんにちは\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
+		if !ok {
+			t.Fatal("parseAIOutput returned false")
+		}
+		if len(out.Timeline) != 3 {
+			t.Fatalf("timeline len = %d, want 3", len(out.Timeline))
+		}
+	})
+
+	t.Run("plain text 1行は無効", func(t *testing.T) {
+		if _, ok := parseAIOutput("こんにちは"); ok {
 			t.Fatal("parseAIOutput returned true, want false")
 		}
 	})
@@ -107,16 +107,6 @@ func TestParseAIChunk(t *testing.T) {
 		}
 	})
 
-	t.Run("whiteboard chunkを解釈できる", func(t *testing.T) {
-		chunk, ok := parseAIChunk(`{"type":"whiteboard","content":"- 10:00 会議"}`)
-		if !ok {
-			t.Fatal("parseAIChunk returned false")
-		}
-		if chunk.Type != "whiteboard" || chunk.Content != "- 10:00 会議" {
-			t.Fatalf("chunk = %+v", chunk)
-		}
-	})
-
 	t.Run("未知typeは無効", func(t *testing.T) {
 		if _, ok := parseAIChunk(`{"type":"unknown","text":"x"}`); ok {
 			t.Fatal("parseAIChunk returned true, want false")
@@ -127,12 +117,25 @@ func TestParseAIChunk(t *testing.T) {
 		cases := []string{
 			`{"type":"speech","text":" "}`,
 			`{"type":"wait"}`,
-			`{"type":"whiteboard","content":" "}`,
 		}
 		for _, tc := range cases {
 			if _, ok := parseAIChunk(tc); ok {
 				t.Fatalf("parseAIChunk(%s) returned true, want false", tc)
 			}
+		}
+	})
+}
+
+func TestParseAIChunks(t *testing.T) {
+	t.Run("timeline objectは無効", func(t *testing.T) {
+		if _, ok := parseAIChunks(`{"timeline":[{"type":"speech","text":"こんにちは"},{"type":"wait","sec":1}]}`); ok {
+			t.Fatal("parseAIChunks returned true, want false")
+		}
+	})
+
+	t.Run("plain textは無効", func(t *testing.T) {
+		if _, ok := parseAIChunks("うん、わかった、だよ"); ok {
+			t.Fatal("parseAIChunks returned true, want false")
 		}
 	})
 }

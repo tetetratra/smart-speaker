@@ -12,6 +12,13 @@ import (
 
 type EventDetailFormatter func(types.Event) string
 
+func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
+	return map[types.EventKind]struct{}{
+		types.EventRTCVADStatus:  {},
+		types.EventRealtimeAudio: {},
+	}
+}
+
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
 		types.EventTextInput:                   formatOutputLineDetail,
@@ -32,6 +39,14 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventTTSCancel:                   formatTTSCancelDetail,
 		types.EventRTCSignal:                   formatRTCSignalDetail,
 	}
+}
+
+func (g *Graph) shouldLogForwardEvent(kind types.EventKind) bool {
+	if g == nil || g.suppressedForwardLogKinds == nil {
+		return true
+	}
+	_, suppressed := g.suppressedForwardLogKinds[kind]
+	return !suppressed
 }
 
 func (g *Graph) RegisterEventDetailFormatter(kind types.EventKind, fn EventDetailFormatter) {

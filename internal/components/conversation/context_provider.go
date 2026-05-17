@@ -39,8 +39,33 @@ func newContextProvider(client calendarEventLister, reader DiaryReader) *context
 }
 
 func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
-	out := p.withCalendarContext(ctx, messages)
-	return p.withDiaryContext(out)
+	leadingImportant, rest := splitLeadingImportantSystemMessages(messages)
+	out := p.withCalendarContext(ctx, rest)
+	out = p.withDiaryContext(out)
+	if len(leadingImportant) == 0 {
+		return out
+	}
+	merged := make([]types.ChatMessage, 0, len(leadingImportant)+len(out))
+	merged = append(merged, leadingImportant...)
+	merged = append(merged, out...)
+	return merged
+}
+
+func splitLeadingImportantSystemMessages(messages []types.ChatMessage) ([]types.ChatMessage, []types.ChatMessage) {
+	idx := 0
+	for idx < len(messages) {
+		msg := messages[idx]
+		if msg.Role != "system" || !strings.HasPrefix(msg.Content, importantRetryPrefix) {
+			break
+		}
+		idx++
+	}
+	if idx == 0 {
+		return nil, messages
+	}
+	leading := make([]types.ChatMessage, idx)
+	copy(leading, messages[:idx])
+	return leading, messages[idx:]
 }
 
 func (p *contextProvider) withCalendarContext(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {

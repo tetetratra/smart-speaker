@@ -13,7 +13,6 @@ should_run="false"
 trigger_actor=""
 pr_number=""
 skip_reason=""
-autonomy_level="level1"
 request_body=""
 ai_label_name="AI主導開発"
 
@@ -63,22 +62,8 @@ case "$GITHUB_EVENT_NAME" in
             request_body="$comment_body"
             printf '%s' "$request_body" > "$instruction_file"
           fi
-        elif [[ "$first_line" =~ ^/ai($|[[:space:]].*) ]]; then
-          should_run="true"
-          first_line_rest="$(printf '%s' "$first_line" | sed -E 's#^/ai[[:space:]]*##')"
-          remaining_lines="$(printf '%s\n' "$comment_body" | tail -n +2)"
-          {
-            printf '%s' "$first_line_rest"
-            if [ -n "$remaining_lines" ]; then
-              if [ -n "$first_line_rest" ]; then
-                printf '\n'
-              fi
-              printf '%s' "$remaining_lines"
-            fi
-          } > "$instruction_file"
-          request_body="$(cat "$instruction_file")"
         else
-          skip_reason="not_ai_comment"
+          skip_reason="missing_ai_label"
         fi
       fi
     fi
@@ -129,12 +114,6 @@ if [ "$GITHUB_EVENT_NAME" = "issue_comment" ] && [ -z "$request_body" ]; then
   fi
 fi
 
-autonomy_level_from_body="$(printf '%s\n' "$request_body" | sed -n 's/^自律レベル:[[:space:]]*//p' | head -n 1)"
-
-if [ -n "$autonomy_level_from_body" ]; then
-  autonomy_level="$autonomy_level_from_body"
-fi
-
 if [ "$(printf '%s' "$request_body" | tr -d '[:space:]')" = "" ]; then
   should_run="false"
   skip_reason="missing_request"
@@ -161,6 +140,5 @@ fi
   echo "branch_name=$(printf '%s' "$pr_json" | jq -r '.headRefName')"
   echo "head_sha=$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
   echo "trigger_actor=$trigger_actor"
-  echo "autonomy_level=$autonomy_level"
   echo "instruction_file=$instruction_file"
 } >> "$GITHUB_OUTPUT"

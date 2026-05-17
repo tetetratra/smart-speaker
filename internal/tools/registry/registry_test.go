@@ -19,6 +19,12 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 	if _, ok := reg.DefinitionByName("hub2_get_environment"); !ok {
 		t.Fatal("hub2_get_environment should be registered")
 	}
+	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
+		t.Fatal("set_whiteboard should be registered")
+	}
+	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
+		t.Fatal("set_whiteboard handler should be registered")
+	}
 	for _, name := range []string{"aircon_control", "light_control", "blind_control", "switchbot_control_device"} {
 		if _, ok := reg.DefinitionByName(name); ok {
 			t.Fatalf("%s should not be registered", name)
@@ -35,5 +41,17 @@ func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
 	}
 	if _, ok := reg.DefinitionByName("hub2_get_environment"); !ok {
 		t.Fatal("hub2_get_environment should be registered")
+	}
+}
+
+func TestRegistryOmitsSetVolumeTool(t *testing.T) {
+	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	reg := New(Config{SwitchBotClient: client})
+
+	if _, ok := reg.DefinitionByName("set_volume"); ok {
+		t.Fatal("set_volume should not be registered")
+	}
+	if _, ok := reg.Handlers()["set_volume"]; ok {
+		t.Fatal("set_volume handler should not be registered")
 	}
 }

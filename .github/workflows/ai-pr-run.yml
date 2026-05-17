@@ -59,8 +59,8 @@ jobs:
             missing_request)
               echo "PR に依頼内容が見つからないためスキップします"
               ;;
-            not_ai_comment)
-              echo "/ai コメントではないためスキップします"
+            missing_ai_label)
+              echo "AI主導開発ラベル付き PR ではないためスキップします"
               ;;
             bot_comment)
               echo "bot コメントのためスキップします"
@@ -82,12 +82,12 @@ jobs:
                 admin|maintain|write) ;;
                 *)
                   allowed="false"
-                  gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この /ai 実行は書き込み権限を持つユーザーのみ利用できます。"
+                  gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この AI 実行は書き込み権限を持つユーザーのみ利用できます。"
                   ;;
               esac
             else
               allowed="false"
-              gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この /ai 実行は書き込み権限を持つユーザーのみ利用できます。"
+              gh pr comment "${{ steps.context.outputs.pr_number }}" --body "この AI 実行は書き込み権限を持つユーザーのみ利用できます。"
             fi
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
@@ -176,7 +176,6 @@ jobs:
           cp "${{ steps.context.outputs.instruction_file }}" "${STATE_ROOT}/run/instruction.txt"
           docker run --rm \
             -e CODEX_HOME=/codex-home \
-            -e AUTONOMY_LEVEL="${{ steps.context.outputs.autonomy_level }}" \
             -e GH_TOKEN="${GH_TOKEN}" \
             -e GITHUB_TOKEN="${GH_TOKEN}" \
             -e HEAD_SHA="${{ steps.context.outputs.head_sha }}" \

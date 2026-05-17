@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ type Client struct {
 	http      *http.Client
 	baseURL   string
 	deviceMap map[string]string
+	clockSkew atomic.Int64
 }
 
 type Scene struct {
@@ -108,16 +110,11 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 		return nil, err
 	}
 
-	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	signature, err := c.signPayload(timestamp, nonce)
-	if err != nil {
+	if err := c.applyAuth(req); err != nil {
 		return nil, err
 	}
 
-	c.applyAuthHeaders(req, timestamp, nonce, signature)
-
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -148,15 +145,11 @@ func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (m
 		return nil, err
 	}
 
-	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	signature, err := c.signPayload(timestamp, nonce)
-	if err != nil {
+	if err := c.applyAuth(req); err != nil {
 		return nil, err
 	}
-	c.applyAuthHeaders(req, timestamp, nonce, signature)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +178,7 @@ func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +219,7 @@ func (c *Client) ExecuteScene(ctx context.Context, sceneID string) (map[string]a
 		return nil, err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -279,13 +272,66 @@ func (c *Client) applyAuthHeaders(req *http.Request, timestamp, nonce, signature
 
 func (c *Client) applyAuth(req *http.Request) error {
 	nonce := uuid.NewString()
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	timestamp := strconv.FormatInt(c.currentTime().UnixMilli(), 10)
 	signature, err := c.signPayload(timestamp, nonce)
 	if err != nil {
 		return err
 	}
 	c.applyAuthHeaders(req, timestamp, nonce, signature)
 	return nil
+}
+
+func (c *Client) currentTime() time.Time {
+	return time.Now().Add(time.Duration(c.clockSkew.Load()))
+}
+
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if !shouldRetrySwitchBotAuth(resp) {
+		return resp, nil
+	}
+	serverTime, ok := parseHTTPDate(resp.Header.Get("Date"))
+	if !ok {
+		return resp, nil
+	}
+
+	c.clockSkew.Store(serverTime.Sub(time.Now()).Nanoseconds())
+	resp.Body.Close()
+
+	retryReq := req.Clone(req.Context())
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		retryReq.Body = body
+	}
+	if err := c.applyAuth(retryReq); err != nil {
+		return nil, err
+	}
+	return c.http.Do(retryReq)
+}
+
+func shouldRetrySwitchBotAuth(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	return resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden
+}
+
+func parseHTTPDate(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(http.TimeFormat, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func asString(v any) string {
@@ -303,25 +349,54 @@ func decodeAPIResponse[T any](resp *http.Response) (apiResponse[T], error) {
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return out, err
 	}
+	diagnosticCategory := switchBotDiagnosticCategory(resp.StatusCode, out.StatusCode, out.Message)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return out, fmt.Errorf(
-			"SwitchBot API request failed: http_status=%d status_code=%d message=%q request_id=%q",
+			"SwitchBot API request failed: http_status=%d status_code=%d message=%q request_id=%q diagnostic_category=%q",
 			resp.StatusCode,
 			out.StatusCode,
 			out.Message,
 			resp.Header.Get("switchbot-request-id"),
+			diagnosticCategory,
 		)
 	}
 	if out.StatusCode != 100 {
 		return out, fmt.Errorf(
-			"SwitchBot API returned failure: http_status=%d status_code=%d message=%q request_id=%q",
+			"SwitchBot API returned failure: http_status=%d status_code=%d message=%q request_id=%q diagnostic_category=%q",
 			resp.StatusCode,
 			out.StatusCode,
 			out.Message,
 			resp.Header.Get("switchbot-request-id"),
+			diagnosticCategory,
 		)
 	}
 	return out, nil
+}
+
+func switchBotDiagnosticCategory(httpStatus, statusCode int, message string) string {
+	normalized := strings.ToLower(message)
+	if httpStatus == http.StatusTooManyRequests || strings.Contains(normalized, "rate") || strings.Contains(normalized, "too many") {
+		return "rate_limited"
+	}
+	if strings.Contains(normalized, "sign") ||
+		strings.Contains(normalized, "signature") ||
+		strings.Contains(normalized, "timestamp") ||
+		strings.Contains(normalized, "nonce") ||
+		strings.Contains(normalized, "clock") ||
+		strings.Contains(normalized, "time") {
+		return "clock_skew_or_signature"
+	}
+	if httpStatus == http.StatusUnauthorized ||
+		httpStatus == http.StatusForbidden ||
+		strings.Contains(normalized, "unauthorized") ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "auth") {
+		return "auth_failed"
+	}
+	if statusCode == 190 && strings.Contains(normalized, "request limit") {
+		return "rate_limited"
+	}
+	return "api_failure"
 }
 
 func parseDeviceMap(raw string) map[string]string {
