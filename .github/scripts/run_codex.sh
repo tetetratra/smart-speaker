@@ -88,11 +88,26 @@ EOF
 
 cat "$INSTRUCTION_FILE" >> "$prompt_file"
 
-skills_src="/workspace/.codex/skills"
+git config --global --add safe.directory /workspace || true
+git -C /workspace submodule update --init vendor/skills
+
+skills_src="/workspace/vendor/skills/skills"
 skills_dest="${CODEX_HOME}/skills"
 if [ -d "$skills_src" ]; then
+  rm -rf "$skills_dest"
   mkdir -p "$skills_dest"
-  cp -R "$skills_src"/. "$skills_dest"/
+
+  shopt -s nullglob
+  for skill_dir in "$skills_src"/*; do
+    [ -d "$skill_dir" ] || continue
+
+    skill_name="$(basename "$skill_dir")"
+    if [ "${#skill_name}" -eq 1 ]; then
+      continue
+    fi
+
+    cp -R "$skill_dir" "$skills_dest/"
+  done
 fi
 
 cmd=(
