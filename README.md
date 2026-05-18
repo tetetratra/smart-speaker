@@ -70,14 +70,14 @@ base64 < "${CODEX_HOME:-$HOME/.codex}/auth.json" | tr -d '\n' | gh secret set CO
 `CODEX_AUTH_JSON_B64` が未設定の場合、AI 実行時に認証未設定のコメントが返ります。
 
 ### Codex 用スキルの配置
-このリポジトリでは Codex 用スキルを `vendor/skills` submodule から利用します。
-`vendor/skills` は `https://github.com/tetetratra/skills` を参照し、実行時に `vendor/skills/skills/` から `$CODEX_HOME/skills/` へ同期します。
+このリポジトリでは Codex 用スキルを `external/skills` submodule から利用します。
+`external/skills` は `https://github.com/tetetratra/skills` を参照し、実行時に `external/skills/skills/` から `$CODEX_HOME/skills/` へ同期します。
 同期時はディレクトリ名が1文字のスキルを除外するため、`r`, `p`, `c` などは Codex に渡されません。
 
 ローカルで submodule を初期化する場合:
 
 ```sh
-git submodule update --init vendor/skills
+git submodule update --init external/skills
 ```
 
 ### Docker（開発）

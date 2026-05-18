@@ -113,9 +113,9 @@ fi
 cat "$INSTRUCTION_FILE" >> "$prompt_file"
 
 git config --global --add safe.directory /workspace || true
-git -C /workspace submodule update --init vendor/skills
+git -C /workspace submodule update --init external/skills
 
-skills_src="/workspace/vendor/skills/skills"
+skills_src="/workspace/external/skills/skills"
 skills_dest="${CODEX_HOME}/skills"
 if [ -d "$skills_src" ]; then
   rm -rf "$skills_dest"
