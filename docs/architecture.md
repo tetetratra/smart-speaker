@@ -44,7 +44,7 @@ flowchart LR
 
 ## 主要 component の関係
 
-システムの接続は `wireGraph` で明示されており、構成上は「ブラウザ境界」「会話制御」「LLM / tool」「音声処理」「セッション管理」の 5 つに整理できる。
+システムの接続は `wireGraph` で明示されており、構成上は「ブラウザ境界」「会話制御」「LLM / tool」「音声処理」の 4 つに整理できる。
 
 ```mermaid
 flowchart LR
