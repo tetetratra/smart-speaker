@@ -31,7 +31,7 @@
 
 ### シナリオ: ユーザーの発話から応答の再生まで
 
-1. **ユーザー発話受信**: `EventTextInput` を受信し、`humanTextSignal` に変換。
+1. **ユーザー発話受信**: `EventHumanUtterance` を受信し、`humanTextSignal` に変換。
 2. **割り込み処理**: 進行中の TTS 再生、待機タイマー、未完了のリクエストを中断・無効化。
 3. **履歴更新**: ユーザーの発話を会話履歴に追加し、最新の履歴から LLM 用のメッセージ群を構築。
 4. **コンテキスト付与**: `Context Provider` により日記とカレンダー情報をメッセージの先頭に注入。
@@ -46,7 +46,7 @@ sequenceDiagram
     participant R as Responses API
     participant T as TTS / Output
 
-    U->>C: EventTextInput ("こんにちは")
+    U->>C: EventHumanUtterance ("こんにちは")
     C->>C: 割り込み & 状態更新
     C->>R: EventResponsesRequest (履歴 + Context)
     
@@ -146,7 +146,7 @@ graph TD
 | signal | 概要（何を意味するか） | 対応する外部イベント |
 | --- | --- | --- |
 | `speechStartSignal` | **話し始めを検知した合図** | `EventSpeechStart` |
-| `humanTextSignal` | **ユーザーの発話内容が確定した合図** | `EventTextInput` |
+| `humanTextSignal` | **ユーザーの発話内容が確定した合図** | `EventHumanUtterance` |
 | `responsesSignal` | **AI からのまとまった回答が届いた合図** | `EventResponsesResponse` |
 | `responsesStreamChunkSignal` | **AI から回答の断片が届いた合図** | `EventResponsesStreamChunk` |
 | `toolResponseSignal` | **ツール実行の結果が届いた合図** | `EventToolResponse` |
