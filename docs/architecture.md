@@ -15,8 +15,8 @@ flowchart LR
   Browser <-->|WebRTC 音声| RTC["rtc"]
   WS <-->|JSON message / signaling| Browser
 
-  WS -->|EventTextInput / EventRTCSignal| Graph["event graph"]
-  RTC -->|EventTextInput / EventSpeechStart / EventSpeechEnd / EventRTCVADStatus / EventRTCSignal| Graph
+  WS -->|EventRTCSignal| Graph["event graph"]
+  RTC -->|EventHumanUtterance / EventSpeechStart / EventSpeechEnd / EventRTCVADStatus / EventRTCSignal| Graph
   Graph --> CONV["conversation"]
   Graph --> LIFE["sessionlifecycle"]
   Graph --> RESP["responsesapi"]
@@ -36,7 +36,7 @@ flowchart LR
 
 主要な役割分担は以下のとおりです。
 
-- `wschat`: ブラウザとの WebSocket 境界。テキスト入力、function call / result 表示、WebRTC signaling の中継を担当する。
+- `wschat`: ブラウザとの WebSocket 境界。function call / result 表示、WebRTC signaling の中継を担当する。
 - `rtc`: WebRTC 音声入出力の境界。ブラウザ音声の受信、VAD、サーバー側 STT、TTS 音声の返送を担当する。
 - `conversation`: 会話進行の中心。会話履歴を持ち、LLM へのリクエスト生成、応答ストリームの解釈、TTS 再生順序の制御を担当する。
 - `responsesapi`: OpenAI Responses API との通信境界。LLM 応答の streaming と tool call の橋渡しを担当する。
@@ -58,13 +58,12 @@ flowchart LR
   RTC["rtc"]
   LIFE["sessionlifecycle"]
 
-  WS -->|EventTextInput| CONV
   CONV -->|EventRealtimeOutput| WS
 
   WS -->|EventRTCSignal| RTC
   RTC -->|EventRTCSignal| WS
 
-  RTC -->|EventTextInput / EventSpeechStart / EventSpeechEnd| CONV
+  RTC -->|EventHumanUtterance / EventSpeechStart / EventSpeechEnd| CONV
   RTC -->|EventRTCSignal| RESP
 
   CONV -->|EventResponsesRequest| RESP
@@ -100,8 +99,8 @@ flowchart LR
 
 イベントの流れは概ね次の順序になる。
 
-1. ブラウザが `/ws/chat` へ接続し、テキスト入力または WebRTC signaling を送る。
-2. `rtc` はマイク音声から VAD と STT を行い、確定テキストを `EventTextInput` として graph に流す。
+1. ブラウザが `/ws/chat` へ接続し、WebRTC signaling を送る。
+2. `rtc` はマイク音声から VAD と STT を行い、確定テキストを `EventHumanUtterance` として graph に流す。
 3. `conversation` は会話履歴を更新し、必要な system context を付与して `EventResponsesRequest` を出す。
 4. `responsesapi` は OpenAI Responses API を呼び、streaming chunk を `EventResponsesStreamChunk` として返す。tool call があれば `EventToolRequest` も出す。
 5. `conversation` は応答契約を解釈し、assistant テキストを `EventRealtimeOutput` として UI と TTS に流す。
@@ -124,7 +123,7 @@ flowchart LR
 ### 音声入力から音声応答まで
 
 1. ブラウザが WebRTC でマイク音声を `rtc` に送る。
-2. `rtc` が VAD と STT を行い、確定テキストを `EventTextInput` として出す。
+2. `rtc` が VAD と STT を行い、確定テキストを `EventHumanUtterance` として出す。
 3. `conversation` が会話履歴を基に `EventResponsesRequest` を作る。
 4. `responsesapi` が OpenAI Responses API を呼び、応答ストリームを返す。
 5. `conversation` が assistant 発話へ変換し、`wschat` と `tts` に出す。

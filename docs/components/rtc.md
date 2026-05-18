@@ -2,7 +2,7 @@
 
 ## 1. 目的
 - ブラウザとの WebRTC 接続を終端し、音声入力と音声出力返送を担当する。
-- サーバー側で VAD と STT を実行し、音声入力を `EventTextInput` に変換して event graph へ流す。
+- サーバー側で VAD と STT を実行し、音声入力を `EventHumanUtterance` に変換して event graph へ流す。
 - assistant 音声を WebRTC 下り音声トラックとしてブラウザへ返す。
 
 ## 2. 担当範囲
@@ -18,7 +18,7 @@
 - `webrtc.offer` / `webrtc.answer` / `webrtc.ice` を処理し、peer ごとの `PeerConnection` を管理する。
 - ブラウザから届く Opus 音声を PCM に復号し、モノラル化して VAD と STT に渡す。
 - サーバー側 VAD により `EventSpeechStart` / `EventSpeechEnd` / `EventRTCVADStatus` を発行する。
-- Google Speech-to-Text v2 の final transcript を `EventTextInput` として発行する。
+- Google Speech-to-Text v2 の final transcript を `EventHumanUtterance` として発行する。
 - `EventRealtimeAudio` で受けた PCM 音声を 48kHz Opus に変換し、各 peer の下りトラックへ返す。
 - `EventTTSCancel` で再生バッファを破棄する。
 
@@ -43,7 +43,7 @@
   - PCM decode、48kHz 化、必要時の stereo 化、Opus encode、track 書き込みを行う。
 
 ## 5. データフロー
-### 5.1 ブラウザ音声がテキスト入力になるまで
+### 5.1 ブラウザ音声が確定発話になるまで
 1. ブラウザが `/ws/chat` 経由で `webrtc.offer` と `webrtc.ice` を送る。
 2. `rtc` が `PeerConnection` を作成し、下り音声用 track を追加して `webrtc.answer` を返す。
 3. ブラウザの音声トラックが server に届くと、`handleIncomingTrack` が RTP payload を Opus 復号する。
@@ -51,7 +51,7 @@
 5. 直近 1 分の energy 履歴からしきい値を更新し、発話開始・終了を判定する。
 6. 発話開始時に active speaker を確保し、直前 3 秒の prebuffer を付けて STT stream を開始する。
 7. 発話中の PCM を Google Speech-to-Text v2 に送る。
-8. final transcript が返ると、`Source=server-stt` の `EventTextInput` を発行する。
+8. final transcript が返ると、`Source=server-stt` の `EventHumanUtterance` を発行する。
 9. 発話終了時は `EventSpeechEnd` を発行し、STT stream の `CloseSend` を行う。
 
 ### 5.2 assistant 音声がブラウザへ返るまで

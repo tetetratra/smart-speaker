@@ -123,7 +123,7 @@ graph TD
 ### 入力 event
 | EventKind | payload | 用途 |
 | --- | --- | --- |
-| `EventTextInput` | `types.OutputLine` | 空白除去後の text を `humanTextSignal` に変換し、人の確定発話として扱う。 |
+| `EventHumanUtterance` | `types.OutputLine` | 空白除去後の text を `humanTextSignal` に変換し、人の確定発話として扱う。 |
 | `EventSpeechStart` | なし | 発話開始検知。現行実装ではこれだけでは割り込みしない。 |
 | `EventResponsesResponse` | `types.ResponsesResponse` | non-streaming 応答を解釈する。tool call を含む場合は会話本文としては処理しない。 |
 | `EventResponsesStreamChunk` | `types.ResponsesStreamChunk` | streaming 応答の 1 行、完了、エラーを解釈する。 |

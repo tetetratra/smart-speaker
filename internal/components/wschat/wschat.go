@@ -18,8 +18,8 @@ import (
 )
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
-// pushes text/tool events to the connected client, and also receives text
-// messages from the client to emit as EventTextInput.
+// pushes graph events to the connected client, and receives WebRTC signaling
+// messages from the client.
 func NewStage(mux *http.ServeMux) *graph.Stage {
 	holder := &connHolder{}
 	c := &chatWS{
@@ -147,7 +147,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		if line.Source != "" {
 			msg["source"] = line.Source
 		}
-	case types.EventTextInput:
+	case types.EventHumanUtterance:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
 			return
@@ -285,14 +285,9 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var msg struct {
-			Type       string                 `json:"type"`
-			Text       string                 `json:"text"`
-			Role       string                 `json:"role"`
-			Present    string                 `json:"present"`
-			CapturedAt string                 `json:"captured_at"`
-			Source     string                 `json:"source"`
-			SDP        string                 `json:"sdp"`
-			Candidate  *types.RTCIceCandidate `json:"candidate"`
+			Type      string                 `json:"type"`
+			SDP       string                 `json:"sdp"`
+			Candidate *types.RTCIceCandidate `json:"candidate"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("wschat client message parse error: %v", err)
@@ -313,24 +308,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 				return
 			}
 			continue
-		}
-		if msg.Type != "message" {
-			continue
-		}
-		text := strings.TrimSpace(msg.Text)
-		if text == "" {
-			continue
-		}
-		role := strings.TrimSpace(msg.Role)
-		if role == "" {
-			role = "user"
-		}
-		select {
-		case c.downstream <- types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{Role: role, Text: text}}:
-		case <-r.Context().Done():
-			return
-		case <-c.ctx.Done():
-			return
 		}
 	}
 }

@@ -263,7 +263,7 @@ func (s *stage) consumeSpeechResponses(stream speechpb.Speech_StreamingRecognize
 			if text == "" {
 				continue
 			}
-			s.emit(types.Event{Kind: types.EventTextInput, Payload: types.OutputLine{Role: "user", Text: text, Source: "server-stt"}})
+			s.emit(types.Event{Kind: types.EventHumanUtterance, Payload: types.OutputLine{Role: "user", Text: text, Source: "server-stt"}})
 		}
 	}
 }

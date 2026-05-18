@@ -17,7 +17,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		h.sendEvent(types.Event{
-			Kind: types.EventTextInput,
+			Kind: types.EventHumanUtterance,
 			Payload: types.OutputLine{
 				Role: "user",
 				Text: "こんにちは",
@@ -51,7 +51,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("人の発話開始だけでは再生中assistantをcancelしない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("こんにちは")
+		req := h.sendHumanUtterance("こんにちは")
 		h.sendResponse(req.RequestID, `{"type":"speech","text":"最初の返答です"}`)
 
 		first := h.expectRealtimeOutputText("最初の返答です")
@@ -61,7 +61,7 @@ func TestConversationIntegration(t *testing.T) {
 		h.expectNoEvent(150 * time.Millisecond)
 
 		h.sendEvent(types.Event{
-			Kind: types.EventTextInput,
+			Kind: types.EventHumanUtterance,
 			Payload: types.OutputLine{
 				Role: "user",
 				Text: "割り込む",
@@ -81,7 +81,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("人の確定発話でResponsesRequestが1回出る", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("音量を上げて")
+		req := h.sendHumanUtterance("音量を上げて")
 
 		if req.RequestID == "" {
 			t.Fatal("ResponsesRequest.RequestID is empty")
@@ -100,14 +100,14 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("TTS完了前の追い質問でも直前assistant発話を会話履歴に含める", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("明日の予定を教えて")
+		first := h.sendHumanUtterance("明日の予定を教えて")
 		h.sendResponse(first.RequestID, `{"type":"speech","text":"明日は10時から会議があります"}`)
 
 		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
 		h.expectFinalOutput(firstOutput.ResponseID)
 
 		h.sendEvent(types.Event{
-			Kind: types.EventTextInput,
+			Kind: types.EventHumanUtterance,
 			Payload: types.OutputLine{
 				Role: "user",
 				Text: "それについて調べて教えて",
@@ -143,7 +143,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("invalid responseでretryが1回だけ走る", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("テスト")
+		first := h.sendHumanUtterance("テスト")
 		h.sendResponse(first.RequestID, `{"timeline":[}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -169,7 +169,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("non streamingのNDJSON応答も解釈できる", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("こんにちは")
+		req := h.sendHumanUtterance("こんにちは")
 		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"やあ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
 
 		first := h.expectRealtimeOutputText("やあ")
@@ -189,7 +189,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("waitとspeechを含む応答でTTS完了後に次発話へ進む", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("次の発話を待って")
+		req := h.sendHumanUtterance("次の発話を待って")
 		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"ひとつめ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"ふたつめ\"}")
 
 		first := h.expectRealtimeOutputText("ひとつめ")
@@ -210,7 +210,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("レスポンスにwhiteboard chunkが含まれる場合はinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("明日の予定を教えて")
+		first := h.sendHumanUtterance("明日の予定を教えて")
 		h.sendResponse(first.RequestID, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -230,7 +230,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("レスポンスにwhiteboardがない場合は白板更新イベントが出ない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("こんにちは")
+		req := h.sendHumanUtterance("こんにちは")
 		h.sendResponse(req.RequestID, `{"type":"speech","text":"やあ"}`)
 
 		first := h.expectRealtimeOutputText("やあ")
@@ -241,7 +241,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming speech chunk到着時点で発話を開始する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("こんにちは")
+		req := h.sendHumanUtterance("こんにちは")
 		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
 
 		first := h.expectRealtimeOutputText("やあ")
@@ -251,7 +251,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming wait後のspeechはtimer経過まで発話しない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("少し待って")
+		req := h.sendHumanUtterance("少し待って")
 		h.sendStreamLine(req.RequestID, `{"type":"wait","sec":1}`)
 		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"待ったよ"}`)
 
@@ -263,7 +263,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming whiteboard chunkはinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("明日の予定")
+		req := h.sendHumanUtterance("明日の予定")
 		h.sendStreamLine(req.RequestID, `{"type":"whiteboard","content":"- 10:00 会議"}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -283,7 +283,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming中はTTS完了後もdoneまで後続chunkを待つ", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("続けて")
+		req := h.sendHumanUtterance("続けて")
 		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"ひとつめ"}`)
 		first := h.expectRealtimeOutputText("ひとつめ")
 		h.expectFinalOutput(first.ResponseID)
@@ -306,7 +306,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming invalid chunkが発話前なら再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("テスト")
+		first := h.sendHumanUtterance("テスト")
 		h.sendStreamLine(first.RequestID, `{"type":"speech","text":" "}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -326,7 +326,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming timeline objectはinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("テスト")
+		first := h.sendHumanUtterance("テスト")
 		h.sendStreamLine(first.RequestID, `{"timeline":[{"type":"speech","text":"ひとつめ"},{"type":"speech","text":"ふたつめ"}]}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -343,7 +343,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming plain textはinvalid responseとして再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("テスト")
+		first := h.sendHumanUtterance("テスト")
 		h.sendStreamLine(first.RequestID, `うん、わかった、だよ`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -363,7 +363,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming doneまでspeechがなければ再試行する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		first := h.sendTextInput("テスト")
+		first := h.sendHumanUtterance("テスト")
 		h.sendStreamDone(first.RequestID)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
@@ -380,7 +380,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming done後は会話スナップショットを更新する", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("こんにちは")
+		req := h.sendHumanUtterance("こんにちは")
 		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
 		first := h.expectRealtimeOutputText("やあ")
 		h.expectFinalOutput(first.ResponseID)
@@ -399,7 +399,7 @@ func TestConversationIntegration(t *testing.T) {
 	t.Run("streaming invalid chunkが発話後なら再試行しない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
-		req := h.sendTextInput("テスト")
+		req := h.sendHumanUtterance("テスト")
 		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"先に話す"}`)
 		first := h.expectRealtimeOutputText("先に話す")
 		h.expectFinalOutput(first.ResponseID)
@@ -435,11 +435,11 @@ func newConversationHarness(t *testing.T) *conversationHarness {
 	}
 }
 
-func (h *conversationHarness) sendTextInput(text string) types.ResponsesRequest {
+func (h *conversationHarness) sendHumanUtterance(text string) types.ResponsesRequest {
 	h.t.Helper()
 
 	h.sendEvent(types.Event{
-		Kind: types.EventTextInput,
+		Kind: types.EventHumanUtterance,
 		Payload: types.OutputLine{
 			Role: "user",
 			Text: text,

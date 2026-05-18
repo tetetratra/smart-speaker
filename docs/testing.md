@@ -116,17 +116,7 @@ docker compose -f docker-compose.yml up --build
 補足:
 - Google Speech 系の現行必須設定は参照資料だけでは確定できないため、音声入力が失敗した場合は認証設定差分の確認が必要です。
 
-### 手順4: テキスト入力の代替確認
-1. 音声入力が不安定な場合は、管理画面またはテキスト入力 UI を開く。
-2. 例として短い挨拶や予定確認を送信する。
-3. assistant 応答や、必要に応じた `function call` / `function result` を確認する。
-
-確認ポイント:
-- user メッセージが表示される。
-- assistant 応答テキストが表示される。
-- tool を使う入力の場合は `function call` / `function result` が表示される。
-
-### 手順5: Google Calendar OAuth の確認
+### 手順4: Google Calendar OAuth の確認
 1. Google Calendar を利用する場合は `http://localhost:8081/oauth/google/start` を開く、または画面上の Google 認証導線を使う。
 2. 認証完了画面が表示されることを確認する。
 3. `http://localhost:8081/oauth/google/status` を開き、認証状態を確認する。
@@ -144,7 +134,6 @@ docker compose -f docker-compose.yml up --build
 
 ### 入力
 - 音声入力が受け付けられる。
-- テキスト入力でも会話を継続できる。
 
 ### 応答
 - assistant 応答テキストが返る。

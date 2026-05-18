@@ -9,7 +9,7 @@ import (
 type EventKind int
 
 const (
-	EventTextInput EventKind = iota
+	EventHumanUtterance EventKind = iota
 	EventSpeechStart
 	EventSpeechEnd
 	EventRTCVADStatus
@@ -37,8 +37,8 @@ type Event struct {
 
 func (k EventKind) String() string {
 	switch k {
-	case EventTextInput:
-		return "EventTextInput"
+	case EventHumanUtterance:
+		return "EventHumanUtterance"
 	case EventSpeechStart:
 		return "EventSpeechStart"
 	case EventSpeechEnd:
