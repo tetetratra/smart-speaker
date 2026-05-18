@@ -23,7 +23,7 @@ flowchart LR
 	graph --> stage["graph.Stage\n実行単位"]
 	stage --> event["types.Event\n共通搬送体"]
 	event --> payload["Payload\n各種ドメイン型"]
-	payload --> components["conversation / responsesapi / rtc /\nwschat / toolcaller / sessionlifecycle / tts"]
+	payload --> components["conversation / responsesapi / rtc /\nwschat / toolcaller / tts"]
 ```
 
 現在の共通処理は、主に以下の 4 層で成立している。
@@ -66,7 +66,7 @@ flowchart LR
 ### 3-3. `types.Event` の責務
 - `Kind` でイベント種別を識別する。
 - `Payload` に具体データを積む。
-- payload の実体は `OutputLine`、`ToolRequest`、`ResponsesRequest`、`ConversationSnapshot` などのドメイン型で表現される。
+- payload の実体は `OutputLine`、`ToolRequest`、`ResponsesRequest` などのドメイン型で表現される。
 
 `Event` は統一搬送体だが、payload は `any` であるため、受信側で型アサーションが必要になる。
 
@@ -76,8 +76,8 @@ flowchart LR
 
 ### 3-4. component の責務
 - `main.go` の `wireGraph` 上、component 同士は多対多に接続されている。
-- たとえば `conversation` は `responsesapi`、`tts`、`wschat`、`rtc`、`sessionlifecycle` と双方向に接続される。
-- `toolcaller` は `responsesapi`、`conversation`、`wschat`、`sessionlifecycle` へ結果を渡す。
+- たとえば `conversation` は `responsesapi`、`tts`、`wschat`、`rtc` と双方向に接続される。
+- `toolcaller` は `responsesapi`、`conversation`、`wschat` へ結果を渡す。
 
 したがって現在の構造では、`graph` 自体は薄い一方、どの component がどのイベントを読むかという知識が `wireGraph` と各 component の両方に分散している。
 
@@ -99,7 +99,6 @@ flowchart LR
 
 ### 4-3. 現行で共通化されているデータ
 - 制御イベント
-  - `EventSessionClear`
   - `EventTTSCancel`
 - 会話入力イベント
   - `EventHumanUtterance`
@@ -118,8 +117,6 @@ flowchart LR
   - `EventRTCSignal`
   - `EventWhiteboardUpdate`
 - 監督用イベント
-  - `EventConversationSnapshotUpdated`
-  - `EventConversationActivity`
   - `EventRTCVADStatus`
 
 参照:

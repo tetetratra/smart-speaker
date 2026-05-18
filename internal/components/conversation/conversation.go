@@ -11,7 +11,6 @@ import (
 type Config struct {
 	LogPath        string
 	CalendarClient calendarEventLister
-	DiaryReader    DiaryReader
 }
 
 type Speaker string
@@ -60,7 +59,6 @@ type runner struct {
 const (
 	maxInvalidResponseRetries = 1
 	importantRetryPrefix      = "**[重要]** "
-	diaryPromptPrefix         = "以下は過去の会話をまとめた日記です。参考として扱ってください。\n"
 	calendarPromptPrefix      = "以下はGoogleカレンダー情報です。会話の参考にしてください。\n\n"
 	calendarPromptDays        = 3
 	calendarFetchMaxResults   = 30
@@ -71,7 +69,7 @@ func NewStage(cfg Config) *graph.Stage {
 	r := &runner{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		contexts:   newContextProvider(cfg.CalendarClient, cfg.DiaryReader),
+		contexts:   newContextProvider(cfg.CalendarClient),
 		logger:     newConversationLogger(cfg.LogPath),
 		core:       newConversationCore(),
 	}

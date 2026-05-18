@@ -24,10 +24,6 @@ func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 		},
 	})
 	messages := core.state.buildConversationMessages()
-	effects = append(effects,
-		emitConversationActivityEffect(time.Now(), "human_turn_committed"),
-		emitConversationSnapshotEffect(messages),
-	)
 	effects = append(effects, core.buildResponseRequestEffect(messages, nil)...)
 	return effects, true
 }

@@ -103,14 +103,6 @@ docker compose -f docker-compose.yml up --build
 ```
 `npm run build` で生成される `web/dist` はイメージ内に取り込まれ、Go サーバーが `/` で配信します。
 
-日記は `internal/diary/store.go` を通して `data/diary.md` に永続化されます。  
-本番でこのファイルをホスト側に残すため、デプロイ前に以下を実行してください。
-```sh
-sudo mkdir -p /var/lib/smart-speaker/data
-sudo chown root:root /var/lib/smart-speaker/data
-sudo chmod 755 /var/lib/smart-speaker/data
-```
-
 #### 本番デプロイ（SSH Docker Context）
 開発機から SSH 経由で本番サーバーの Docker を操作してデプロイします。
 ビルドと起動は本番サーバー側で行われます。
@@ -148,13 +140,11 @@ docker compose up web
 ```mermaid
 flowchart LR
   wschat["wschat (/ws/chat)"]
-  sessionlifecycle["sessionlifecycle"]
   conversation["conversation"]
   responses["responsesapi"]
   toolcaller["toolcaller"]
   tts["tts (ElevenLabs)"]
   rtc["rtc (WebRTC)"]
-  diarystore["diary store (data/diary.md)"]
 
   conversation -- "EventRealtimeOutput" --> wschat
 
@@ -164,13 +154,11 @@ flowchart LR
   responses -- "EventToolRequest" --> toolcaller
   responses -- "EventToolRequest (function_call表示)" --> wschat
   toolcaller -- "EventToolResponse" --> responses
-  toolcaller -- "EventToolResponse" --> sessionlifecycle
 
   toolcaller -- "EventToolResponse" --> conversation
   toolcaller -- "EventToolResponse (function_result表示)" --> wschat
 
   conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
-  conversation -- "EventConversationSnapshotUpdated / EventConversationActivity" --> sessionlifecycle
   tts -- "EventTTSEnd" --> conversation
   tts -- "EventRealtimeAudio" --> rtc
   conversation -- "EventTTSCancel" --> rtc
@@ -178,23 +166,11 @@ flowchart LR
   wschat -- "EventRTCSignal" --> rtc
   rtc -- "EventRTCSignal" --> wschat
   rtc -. "EventRTCSignal（現状 responsesapi では未処理）" .-> responses
-
-  sessionlifecycle -- "EventResponsesRequest" --> responses
-  sessionlifecycle -- "EventSessionClear" --> conversation
-
-  diarystore -. "Content()" .-> conversation
-  toolcaller -. "write_diary -> AppendEntry()" .-> diarystore
 ```
 
 - HTTP サーバー起動は `main` が直接担当し、`ServeMux` に `wschat` と Web UI をぶら下げる
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはサーバー側で実施
-- diary は generic な shared state ではなく、`internal/diary/store.go` が担当する
-
-## diary の永続化
-- `conversation` は system context 付与時に `diary store` から diary 本文を読む
-- `write_diary` ツールは `diary store` に追記する
-- `main` で `diary store` を 1 回生成し、`conversation` と `write_diary` の両方に注入する
 - 旧 `internal/state` パッケージは削除済み
 
 ### チャット用 WebSocket

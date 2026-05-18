@@ -93,10 +93,6 @@
   - `toolcaller` から emit された `EventWhiteboardUpdate` もここで `whiteboard_update` に変換されます。
 - `conversation`
   - `EventToolResponse` を会話履歴へ反映します。
-  - ただし `write_diary` の結果は通常会話履歴に追加しません。
-- `sessionlifecycle`
-  - `write_diary` を使う flow を起動する component です。
-  - `write_diary` の結果として返った `EventToolResponse` を監視し、日記完了後に `EventSessionClear` を発行します。
 
 ## 9. エラー処理と終了処理
 - `ToolRequest` payload の型が想定外なら log を出してその request を無視します。
@@ -124,7 +120,6 @@
 - `internal/tools/registry/registry_test.go`
 - `internal/components/responsesapi/runner.go`
 - `internal/components/wschat/wschat.go`
-- `internal/components/sessionlifecycle/sessionlifecycle.go`
 - `internal/components/conversation/rule_tool_response.go`
 - `internal/types/event.go`
 - `git show HEAD^:docs/6.ツール実行基盤.md`

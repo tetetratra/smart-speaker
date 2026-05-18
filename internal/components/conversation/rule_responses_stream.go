@@ -104,5 +104,5 @@ func (c *conversationCore) completeStream() []effect {
 		return nil
 	}
 	c.state.clearPendingTimeline()
-	return []effect{emitConversationSnapshotEffect(c.state.buildConversationMessages())}
+	return nil
 }

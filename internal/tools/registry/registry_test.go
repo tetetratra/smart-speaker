@@ -25,6 +25,12 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
 		t.Fatal("set_whiteboard handler should be registered")
 	}
+	if _, ok := reg.DefinitionByName("write_diary"); ok {
+		t.Fatal("write_diary should not be registered")
+	}
+	if _, ok := reg.Handlers()["write_diary"]; ok {
+		t.Fatal("write_diary handler should not be registered")
+	}
 	for _, name := range []string{"aircon_control", "light_control", "blind_control", "switchbot_control_device"} {
 		if _, ok := reg.DefinitionByName(name); ok {
 			t.Fatalf("%s should not be registered", name)

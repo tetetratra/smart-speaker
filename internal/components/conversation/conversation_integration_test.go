@@ -13,7 +13,7 @@ import (
 )
 
 func TestConversationIntegration(t *testing.T) {
-	t.Run("人の確定発話で活動イベントと会話スナップショットが出る", func(t *testing.T) {
+	t.Run("人の確定発話でResponsesRequestが出る", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		h.sendEvent(types.Event{
@@ -24,28 +24,17 @@ func TestConversationIntegration(t *testing.T) {
 			},
 		})
 
-		activityEvt := h.expectEvent(types.EventConversationActivity)
-		activity, ok := activityEvt.Payload.(types.ConversationActivity)
+		reqEvt := h.expectMainEvent(types.EventResponsesRequest)
+		req, ok := reqEvt.Payload.(types.ResponsesRequest)
 		if !ok {
-			t.Fatalf("ConversationActivity payload type = %T", activityEvt.Payload)
+			t.Fatalf("ResponsesRequest payload type = %T", reqEvt.Payload)
 		}
-		if activity.Source != "human_turn_committed" {
-			t.Fatalf("activity source = %q, want human_turn_committed", activity.Source)
+		if len(req.Messages) != 1 {
+			t.Fatalf("messages len = %d, want 1", len(req.Messages))
 		}
-
-		snapshotEvt := h.expectEvent(types.EventConversationSnapshotUpdated)
-		snapshot, ok := snapshotEvt.Payload.(types.ConversationSnapshot)
-		if !ok {
-			t.Fatalf("ConversationSnapshot payload type = %T", snapshotEvt.Payload)
+		if req.Messages[0].Role != "user" || req.Messages[0].Content != "こんにちは" {
+			t.Fatalf("message = %+v", req.Messages[0])
 		}
-		if len(snapshot.Messages) != 1 {
-			t.Fatalf("snapshot messages len = %d, want 1", len(snapshot.Messages))
-		}
-		if snapshot.Messages[0].Role != "user" || snapshot.Messages[0].Content != "こんにちは" {
-			t.Fatalf("snapshot message = %+v", snapshot.Messages[0])
-		}
-
-		h.expectMainEvent(types.EventResponsesRequest)
 	})
 
 	t.Run("人の発話開始だけでは再生中assistantをcancelしない", func(t *testing.T) {
@@ -377,7 +366,7 @@ func TestConversationIntegration(t *testing.T) {
 		assertRetryHintFirst(t, second.Messages, "(空)")
 	})
 
-	t.Run("streaming done後は会話スナップショットを更新する", func(t *testing.T) {
+	t.Run("streaming done後は追加イベントを出さない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendHumanUtterance("こんにちは")
@@ -393,7 +382,7 @@ func TestConversationIntegration(t *testing.T) {
 			},
 		})
 		h.sendStreamDone(req.RequestID)
-		h.expectEvent(types.EventConversationSnapshotUpdated)
+		h.expectNoEvent(150 * time.Millisecond)
 	})
 
 	t.Run("streaming invalid chunkが発話後なら再試行しない", func(t *testing.T) {
@@ -589,12 +578,7 @@ func (h *conversationHarness) expectMainEvent(kind types.EventKind) types.Event 
 		if evt.Kind == kind {
 			return evt
 		}
-		switch evt.Kind {
-		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
-			continue
-		default:
-			h.t.Fatalf("event kind = %s, want %s", evt.Kind, kind)
-		}
+		h.t.Fatalf("event kind = %s, want %s", evt.Kind, kind)
 	}
 }
 
@@ -603,12 +587,7 @@ func (h *conversationHarness) expectNoEvent(wait time.Duration) {
 
 	select {
 	case evt := <-h.stage.Downstream:
-		switch evt.Kind {
-		case types.EventConversationActivity, types.EventConversationSnapshotUpdated:
-			h.expectNoEvent(wait)
-		default:
-			h.t.Fatalf("unexpected event: %s %#v", evt.Kind, evt.Payload)
-		}
+		h.t.Fatalf("unexpected event: %s %#v", evt.Kind, evt.Payload)
 	case <-time.After(wait):
 	}
 }
