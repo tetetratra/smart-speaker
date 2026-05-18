@@ -18,11 +18,9 @@ import (
 	"smart-speaker/internal/components/conversation"
 	"smart-speaker/internal/components/responsesapi"
 	"smart-speaker/internal/components/rtc"
-	"smart-speaker/internal/components/sessionlifecycle"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
 	"smart-speaker/internal/components/wschat"
-	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
@@ -48,16 +46,16 @@ func main() {
 	}
 	defer closeHTTPServer(server)
 
-	responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage, err := buildStages(cfg, chatStage)
+	responsesStage, ttsStage, rtcStage, toolStage, convStage, err := buildStages(cfg, chatStage)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer closeStages(responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage)
+	defer closeStages(responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage)
 
 	g := graph.New()
 	defer g.Close()
 
-	wireGraph(g, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage)
+	wireGraph(g, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage)
 	runHTTPServer(server)
 
 	log.Printf("main ctx err: %v", ctx.Err())
@@ -97,7 +95,7 @@ func closeStages(stages ...*graph.Stage) {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage *graph.Stage, err error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsStage, rtcStage, toolStage, convStage *graph.Stage, err error) {
 	if chatStage != nil {
 		chatStage.Name = "wschat"
 	}
@@ -107,17 +105,15 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		Model:  cfg.ElevenLabs.Model,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init elevenlabs stage: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
 	if ttsStage != nil {
 		ttsStage.Name = "tts"
 	}
-	diaryStore := newDiaryStore()
 	calendarClient := newCalendarClient()
 	convStage = conversation.NewStage(conversation.Config{
 		LogPath:        "data/conversation.jsonl",
 		CalendarClient: calendarClient,
-		DiaryReader:    diaryStore,
 	})
 	if convStage != nil {
 		convStage.Name = "conversation"
@@ -138,30 +134,18 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		SwitchBotClient:    switchBotClient,
 		SwitchBotScenes:    switchBotScenes,
 		CalendarClient:     calendarClient,
-		DiaryStore:         diaryStore,
 	})
-	writeDiaryTools := []any{}
-	if def, ok := toolRegistry.DefinitionByName("write_diary"); ok {
-		writeDiaryTools = append(writeDiaryTools, def)
-	}
-	lifecycleStage = sessionlifecycle.NewStage(sessionlifecycle.Config{
-		WriteDiaryTools: writeDiaryTools,
-		IdleThreshold:   60 * time.Minute,
-	})
-	if lifecycleStage != nil {
-		lifecycleStage.Name = "sessionlifecycle"
-	}
 	responsesStage, err = responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
-		Tools:        toolRegistry.DefinitionsExcluding("write_diary"),
+		Tools:        toolRegistry.Definitions(),
 	})
 	if err != nil {
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init responses stage: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init responses stage: %w", err)
 	}
 	if responsesStage != nil {
 		responsesStage.Name = "responsesapi"
@@ -181,12 +165,12 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		if ttsStage != nil {
 			ttsStage.Close()
 		}
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("failed to init rtc stage: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init rtc stage: %w", err)
 	}
 	if rtcStage != nil {
 		rtcStage.Name = "rtc"
 	}
-	return responsesStage, ttsStage, rtcStage, toolStage, convStage, lifecycleStage, nil
+	return responsesStage, ttsStage, rtcStage, toolStage, convStage, nil
 }
 
 func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
@@ -216,11 +200,7 @@ func newCalendarClient() *calendarapi.Client {
 	return calendarapi.NewClient(calendarapi.Config{})
 }
 
-func newDiaryStore() *diarystore.Store {
-	return diarystore.NewStore(diarystore.Config{})
-}
-
-func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage, lifecycleStage *graph.Stage) {
+func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage *graph.Stage) {
 	add := func(stage *graph.Stage) *graph.Node {
 		if stage == nil {
 			return nil
@@ -230,20 +210,10 @@ func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, to
 
 	responsesNode := add(responsesStage)
 	convNode := add(convStage)
-	lifecycleNode := add(lifecycleStage)
 	ttsNode := add(ttsStage)
 	rtcNode := add(rtcStage)
 	chatNode := add(chatStage)
 
-	if lifecycleNode != nil {
-		if responsesNode != nil {
-			g.Connect(lifecycleNode, responsesNode)
-		}
-	}
-	if lifecycleNode != nil && convNode != nil {
-		g.Connect(lifecycleNode, convNode)
-		g.Connect(convNode, lifecycleNode)
-	}
 	if responsesNode != nil && chatNode != nil {
 		g.Connect(responsesNode, chatNode)
 	}
@@ -283,9 +253,6 @@ func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, to
 		if toolNode != nil {
 			g.Connect(toolNode, chatNode)
 		}
-	}
-	if toolNode != nil && lifecycleNode != nil {
-		g.Connect(toolNode, lifecycleNode)
 	}
 	if rtcNode != nil && responsesNode != nil {
 		g.Connect(rtcNode, responsesNode)

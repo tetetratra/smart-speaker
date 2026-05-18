@@ -18,7 +18,6 @@ flowchart LR
   WS -->|EventRTCSignal| Graph["event graph"]
   RTC -->|EventHumanUtterance / EventSpeechStart / EventSpeechEnd / EventRTCVADStatus / EventRTCSignal| Graph
   Graph --> CONV["conversation"]
-  Graph --> LIFE["sessionlifecycle"]
   Graph --> RESP["responsesapi"]
   Graph --> TOOL["toolcaller"]
   Graph --> TTS["tts"]
@@ -26,7 +25,7 @@ flowchart LR
   CONV -->|EventResponsesRequest| RESP
   RESP -->|OpenAI Responses API| OpenAI["OpenAI Responses API"]
   RESP -->|EventToolRequest| TOOL
-  TOOL -->|SwitchBot / Google Calendar / diary / whiteboard| Ext["外部 tool / 永続化"]
+  TOOL -->|SwitchBot / Google Calendar / whiteboard| Ext["外部 tool / 永続化"]
   TOOL -->|EventToolResponse| RESP
   CONV -->|EventRealtimeOutput| TTS
   TTS -->|ElevenLabs TTS| ElevenLabs["ElevenLabs"]
@@ -42,7 +41,6 @@ flowchart LR
 - `responsesapi`: OpenAI Responses API との通信境界。LLM 応答の streaming と tool call の橋渡しを担当する。
 - `toolcaller`: tool 実行ランタイム。関数名に対応する handler を起動し、結果をイベントとして返す。
 - `tts`: ElevenLabs を用いた音声合成境界。assistant のテキストを音声へ変換する。
-- `sessionlifecycle`: 無操作タイムアウトと日記化の監督役。一定時間後に `write_diary` を強制し、完了後に会話をクリアする。
 
 ## 主要 component の関係
 
@@ -56,7 +54,6 @@ flowchart LR
   TOOL["toolcaller"]
   TTS["tts"]
   RTC["rtc"]
-  LIFE["sessionlifecycle"]
 
   CONV -->|EventRealtimeOutput| WS
 
@@ -73,16 +70,12 @@ flowchart LR
   TOOL -->|EventToolResponse| RESP
   TOOL -->|EventToolResponse| CONV
   TOOL -->|EventToolResponse| WS
-  TOOL -->|EventToolResponse| LIFE
 
   CONV -->|EventRealtimeOutput / EventTTSCancel| TTS
   TTS -->|EventRealtimeAudio| RTC
   TTS -->|EventTTSEnd| CONV
   CONV -->|EventTTSCancel| RTC
 
-  CONV -->|EventConversationSnapshotUpdated / EventConversationActivity| LIFE
-  LIFE -->|EventResponsesRequest| RESP
-  LIFE -->|EventSessionClear| CONV
 ```
 
 補足:
@@ -90,7 +83,7 @@ flowchart LR
 - HTTP は `main` が直接持ち、同じ `ServeMux` に Web UI、Google OAuth、`/ws/chat` を登録する。
 - WebSocket は制御チャネルであり、音声本体は WebRTC を通る。
 - `responsesapi` と `toolcaller` は OpenAI の function calling を event 化して接続している。
-- `conversation` は diary と Google Calendar を system context として前置してから LLM を呼ぶ。
+- `conversation` は Google Calendar を system context として前置してから LLM を呼ぶ。
 - `rtc` から `responsesapi` への接続は graph 上には存在するが、現時点で `responsesapi` 側が処理しているイベントは `EventResponsesRequest` と `EventToolResponse` である。
 
 ## イベントグラフ
@@ -106,7 +99,6 @@ flowchart LR
 5. `conversation` は応答契約を解釈し、assistant テキストを `EventRealtimeOutput` として UI と TTS に流す。
 6. `tts` は音声を生成し、`rtc` が WebRTC 経由でブラウザへ返す。
 7. `toolcaller` は tool 実行結果を `EventToolResponse` として返し、`responsesapi` はその結果を使って OpenAI へ再投入する。
-8. `sessionlifecycle` は会話スナップショットと活動イベントを監視し、無操作時に日記化とセッションクリアを駆動する。
 
 ## プロトコル間のつながり
 
@@ -114,7 +106,7 @@ flowchart LR
 - WebSocket: ブラウザ UI とサーバー間の制御プレーン。会話表示用 message、function call / result、VAD 状態、WebRTC signaling を運ぶ。
 - WebRTC: ブラウザのマイク音声送信と assistant 音声再生のメディアプレーン。
 - LLM: `responsesapi` が OpenAI Responses API を streaming で呼び出し、tool call を event graph に変換する。
-- tool: `toolcaller` が SwitchBot、Google Calendar、whiteboard、`write_diary` などを実行する。tool 定義には `web_search` も含まれるが、ローカル handler を持つかどうかは tool ごとに異なる。
+- tool: `toolcaller` が SwitchBot、Google Calendar、whiteboard などを実行する。tool 定義には `web_search` も含まれるが、ローカル handler を持つかどうかは tool ごとに異なる。
 
 この分離により、UI 制御、音声 transport、会話制御、外部 API 呼び出しを個別の stage に閉じ込めつつ、全体は event graph で接続する形になっている。
 
@@ -135,13 +127,6 @@ flowchart LR
 2. `toolcaller` が該当 tool を実行し、`EventToolResponse` を返す。
 3. `responsesapi` がその結果を `previous_response_id` 付きで OpenAI に再投入する。
 4. `conversation` は必要に応じて tool 実行結果を会話文脈に取り込む。
-
-### 無操作後の日記化
-
-1. `conversation` が `EventConversationSnapshotUpdated` と `EventConversationActivity` を出す。
-2. `sessionlifecycle` が idle timer を管理する。
-3. 一定時間無操作になると、`sessionlifecycle` が `write_diary` 専用の `EventResponsesRequest` を出す。
-4. `toolcaller` が diary store へ追記し、完了後に `sessionlifecycle` が `EventSessionClear` を出す。
 
 ## 参照元
 
@@ -166,12 +151,9 @@ flowchart LR
 - `internal/components/conversation/rule_responses_stream.go`
 - `internal/components/conversation/rule_tool_response.go`
 - `internal/components/conversation/rule_tts_end.go`
-- `internal/components/conversation/rule_session_clear.go`
-- `internal/components/sessionlifecycle/sessionlifecycle.go`
 - `internal/components/responsesapi/client.go`
 - `internal/components/responsesapi/runner.go`
 - `internal/components/toolcaller/toolcaller.go`
 - `internal/components/tts/elevenlabs.go`
 - `internal/tools/registry/registry.go`
-- `internal/tools/functions/diary/tool.go`
 - 旧資料: `git show HEAD^:docs/1.全体アーキテクチャとイベントグラフ.md`

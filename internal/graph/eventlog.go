@@ -21,21 +21,19 @@ func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
-		types.EventHumanUtterance:              formatOutputLineDetail,
-		types.EventSpeechStart:                 formatSpeechEventDetail,
-		types.EventSpeechEnd:                   formatSpeechEventDetail,
-		types.EventConversationSnapshotUpdated: formatConversationSnapshotDetail,
-		types.EventConversationActivity:        formatConversationActivityDetail,
-		types.EventRealtimeOutput:              formatOutputLineDetail,
-		types.EventRealtimeAudio:               formatRealtimeAudioDetail,
-		types.EventToolRequest:                 formatToolRequestDetail,
-		types.EventToolResponse:                formatToolResponseDetail,
-		types.EventResponsesRequest:            formatResponsesRequestDetail,
-		types.EventResponsesResponse:           formatResponsesResponseDetail,
-		types.EventResponsesStreamChunk:        formatResponsesStreamChunkDetail,
-		types.EventWhiteboardUpdate:            formatWhiteboardUpdateDetail,
-		types.EventTTSCancel:                   formatTTSCancelDetail,
-		types.EventRTCSignal:                   formatRTCSignalDetail,
+		types.EventHumanUtterance:       formatOutputLineDetail,
+		types.EventSpeechStart:          formatSpeechEventDetail,
+		types.EventSpeechEnd:            formatSpeechEventDetail,
+		types.EventRealtimeOutput:       formatOutputLineDetail,
+		types.EventRealtimeAudio:        formatRealtimeAudioDetail,
+		types.EventToolRequest:          formatToolRequestDetail,
+		types.EventToolResponse:         formatToolResponseDetail,
+		types.EventResponsesRequest:     formatResponsesRequestDetail,
+		types.EventResponsesResponse:    formatResponsesResponseDetail,
+		types.EventResponsesStreamChunk: formatResponsesStreamChunkDetail,
+		types.EventWhiteboardUpdate:     formatWhiteboardUpdateDetail,
+		types.EventTTSCancel:            formatTTSCancelDetail,
+		types.EventRTCSignal:            formatRTCSignalDetail,
 	}
 }
 
@@ -241,28 +239,6 @@ func formatTTSCancelDetail(evt types.Event) string {
 		return ""
 	}
 	return fmt.Sprintf("response_id=%s", cancel.ResponseID)
-}
-
-func formatConversationSnapshotDetail(evt types.Event) string {
-	snapshot, ok := evt.Payload.(types.ConversationSnapshot)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("messages=%d", len(snapshot.Messages))
-}
-
-func formatConversationActivityDetail(evt types.Event) string {
-	activity, ok := evt.Payload.(types.ConversationActivity)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("at=%s", activity.At.Format(time.RFC3339Nano)),
-	}
-	if activity.Source != "" {
-		parts = append(parts, fmt.Sprintf("source=%s", activity.Source))
-	}
-	return strings.Join(parts, ", ")
 }
 
 func formatWhiteboardUpdateDetail(evt types.Event) string {

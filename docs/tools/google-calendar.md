@@ -162,8 +162,7 @@
 - ログ出力だけ行い、会話は継続する。
 
 ### 挿入順
-- `WithSystemContexts` は calendar 文脈を先に付与し、その後 diary 文脈を付与する。
-- そのため通常の先頭順は diary system message、calendar system message、元の会話メッセージになる。
+- `WithSystemContexts` は calendar 文脈を元の会話メッセージの前に付与する。
 - ただし先頭に `**[重要]** ` で始まる retry 用 system message がある場合は、それを最優先で保持する。
 
 ## 8. 主要データフロー

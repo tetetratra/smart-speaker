@@ -1,10 +1,8 @@
 package registry
 
 import (
-	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/tools"
-	diarytool "smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
 	"smart-speaker/internal/tools/functions/whiteboard"
@@ -28,7 +26,6 @@ type Config struct {
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client
-	DiaryStore         *diarystore.Store
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -41,7 +38,6 @@ func New(cfg Config) *Registry {
 	}
 	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
 	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
-	diaryTool := diarytool.New(cfg.DiaryStore)
 	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
 	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
@@ -49,7 +45,6 @@ func New(cfg Config) *Registry {
 	toolEntries := []entry{
 		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
-		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},

@@ -7,7 +7,6 @@ func defaultConversationRules() []Rule {
 		responsesRule{},
 		responsesStreamRule{},
 		toolResponseRule{},
-		sessionClearRule{},
 		ttsEndRule{},
 		timerElapsedRule{},
 	}

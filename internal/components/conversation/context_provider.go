@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	diarystore "smart-speaker/internal/diary"
 	calendarapi "smart-speaker/internal/googlecalendar"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	types "smart-speaker/internal/types"
@@ -14,34 +13,24 @@ import (
 
 type contextProvider struct {
 	calendarClient calendarEventLister
-	diaryReader    DiaryReader
 }
 
 type calendarEventLister interface {
 	ListEvents(ctx context.Context, req calendarapi.ListEventsRequest) ([]calendarapi.Event, error)
 }
 
-type DiaryReader interface {
-	Content() (string, error)
-}
-
-func newContextProvider(client calendarEventLister, reader DiaryReader) *contextProvider {
+func newContextProvider(client calendarEventLister) *contextProvider {
 	if client == nil {
 		client = calendarapi.NewClient(calendarapi.Config{})
 	}
-	if reader == nil {
-		reader = diarystore.NewStore(diarystore.Config{})
-	}
 	return &contextProvider{
 		calendarClient: client,
-		diaryReader:    reader,
 	}
 }
 
 func (p *contextProvider) WithSystemContexts(ctx context.Context, messages []types.ChatMessage) []types.ChatMessage {
 	leadingImportant, rest := splitLeadingImportantSystemMessages(messages)
 	out := p.withCalendarContext(ctx, rest)
-	out = p.withDiaryContext(out)
 	if len(leadingImportant) == 0 {
 		return out
 	}
@@ -100,28 +89,6 @@ func (p *contextProvider) buildCalendarContext(ctx context.Context) (string, err
 	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	dayN := day0.AddDate(0, 0, calendarPromptDays)
 	return buildCalendarContextWithClient(ctx, p.calendarClient, day0, dayN)
-}
-
-func (p *contextProvider) withDiaryContext(messages []types.ChatMessage) []types.ChatMessage {
-	if p == nil || p.diaryReader == nil {
-		return messages
-	}
-	diary, err := p.diaryReader.Content()
-	if err != nil {
-		log.Printf("conversation: failed to read diary context: %v", err)
-		return messages
-	}
-	diary = strings.TrimSpace(diary)
-	if diary == "" {
-		return messages
-	}
-	withDiary := make([]types.ChatMessage, 0, len(messages)+1)
-	withDiary = append(withDiary, types.ChatMessage{
-		Role:    "system",
-		Content: diaryPromptPrefix + diary,
-	})
-	withDiary = append(withDiary, messages...)
-	return withDiary
 }
 
 func buildCalendarContextWithClient(ctx context.Context, client calendarEventLister, day0 time.Time, dayN time.Time) (string, error) {

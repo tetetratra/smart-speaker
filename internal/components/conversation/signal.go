@@ -23,7 +23,6 @@ type responsesStreamChunkSignal struct {
 type toolResponseSignal struct {
 	response types.ToolResponse
 }
-type sessionClearSignal struct{}
 type ttsEndSignal struct {
 	event types.TTSEvent
 }
@@ -34,7 +33,6 @@ func (humanTextSignal) isSignal()            {}
 func (responsesSignal) isSignal()            {}
 func (responsesStreamChunkSignal) isSignal() {}
 func (toolResponseSignal) isSignal()         {}
-func (sessionClearSignal) isSignal()         {}
 func (ttsEndSignal) isSignal()               {}
 func (timerElapsedSignal) isSignal()         {}
 
@@ -70,8 +68,6 @@ func signalFromEvent(evt types.Event) (signal, bool) {
 			return nil, false
 		}
 		return toolResponseSignal{response: resp}, true
-	case types.EventSessionClear:
-		return sessionClearSignal{}, true
 	case types.EventTTSEnd:
 		tts, ok := evt.Payload.(types.TTSEvent)
 		if !ok {

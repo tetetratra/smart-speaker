@@ -18,9 +18,6 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 		name = "unknown_tool"
 	}
 	var effects []effect
-	if name == "write_diary" {
-		return effects, true
-	}
 	output := strings.TrimSpace(string(resp.Output))
 	if output == "" {
 		return effects, true
@@ -42,6 +39,5 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 			Source:     name,
 		},
 	})
-	effects = append(effects, emitConversationSnapshotEffect(core.state.buildConversationMessages()))
 	return effects, true
 }

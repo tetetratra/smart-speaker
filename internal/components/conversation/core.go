@@ -151,7 +151,6 @@ func (c *conversationCore) playUtteranceEffects(utt *Utterance) []effect {
 		utt.DurationSeconds = 0
 		effects := []effect{
 			logRecordEffect{record: buildAIUtteranceLogRecord(utt)},
-			emitConversationActivityEffect(now, "assistant_turn_started"),
 		}
 		return append(effects, c.advanceTimelineEffects()...)
 	}
@@ -162,7 +161,6 @@ func (c *conversationCore) playUtteranceEffects(utt *Utterance) []effect {
 
 	return []effect{
 		logRecordEffect{record: buildAIUtteranceLogRecord(utt)},
-		emitConversationActivityEffect(now, "assistant_turn_started"),
 		emitEventEffect{event: types.Event{
 			Kind: types.EventRealtimeOutput,
 			Payload: types.OutputLine{
