@@ -90,7 +90,35 @@ sequenceDiagram
    - 発話開始後の違反 chunk はリトライせず、そのストリームの残りの進行を破棄します。
    - ストリーム完了時に発話が一つも生成されなかった場合も、契約違反としてリトライします。
 
-## 5. 技術リファレンス（既存仕様）
+## 5. 技術リファレンス
+
+### 構造と関係図
+各概念は以下のような関係で連携し、会話のロジックを構成しています。
+
+```mermaid
+graph TD
+    subgraph "外部 (External)"
+        IE[入力 Event]
+        OE[出力 Event]
+    end
+
+    subgraph "conversation component (Runner)"
+        S[Signal]
+        E[Effect]
+        
+        subgraph "ロジック層 (Logic)"
+            Rule[Rule 群]
+            State[(内部 State)]
+        end
+    end
+
+    IE -->|変換| S
+    S -->|適用| Rule
+    Rule <-->|参照・更新| State
+    Rule -->|生成| E
+    E -->|実行| OE
+    E -->|実行| Others[タイマー操作 / ログ記録]
+```
 
 ### 入力 event
 | EventKind | payload | 用途 |
