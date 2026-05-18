@@ -156,7 +156,6 @@ flowchart LR
   rtc["rtc (WebRTC)"]
   diarystore["diary store (data/diary.md)"]
 
-  wschat -- "EventTextInput / EventSpeechStart / EventSpeechEnd" --> conversation
   conversation -- "EventRealtimeOutput" --> wschat
 
   conversation -- "EventResponsesRequest" --> responses

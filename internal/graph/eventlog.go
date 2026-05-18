@@ -21,7 +21,7 @@ func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
-		types.EventTextInput:                   formatOutputLineDetail,
+		types.EventHumanUtterance:              formatOutputLineDetail,
 		types.EventSpeechStart:                 formatSpeechEventDetail,
 		types.EventSpeechEnd:                   formatSpeechEventDetail,
 		types.EventConversationSnapshotUpdated: formatConversationSnapshotDetail,

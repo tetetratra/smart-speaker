@@ -1,12 +1,11 @@
 # wschat component
 
 ## 概要
-`wschat` component は、ブラウザとの JSON WebSocket 境界を担当する component です。`/ws/chat` を提供し、ブラウザから受けた text message と WebRTC signaling message を internal event に変換し、逆に internal event を UI 向け JSON message として配信します。
+`wschat` component は、ブラウザとの JSON WebSocket 境界を担当する component です。`/ws/chat` を提供し、ブラウザから受けた WebRTC signaling message を internal event に変換し、逆に internal event を UI 向け JSON message として配信します。
 
 ## 責務
 - `/ws/chat` endpoint を提供する。
 - WebSocket 接続ごとに `ClientID` を払い出して接続を管理する。
-- ブラウザからの `message` を `EventTextInput` に変換する。
 - ブラウザからの `webrtc.*` message を `EventRTCSignal` に変換する。
 - graph から受けた会話・tool・speech・VAD・whiteboard・WebRTC signaling event を UI 向け JSON として送信する。
 - signaling は対象 `ClientID` がある接続にだけ返し、それ以外の UI 向け event は全接続へ broadcast する。
@@ -30,7 +29,6 @@
 ### ブラウザから受ける WebSocket message
 | `type` | 主な項目 | 内部変換 |
 | --- | --- | --- |
-| `message` | `role`, `text` | `types.Event{Kind: EventTextInput, Payload: types.OutputLine{Role, Text}}` |
 | `webrtc.offer` | `sdp` | `types.Event{Kind: EventRTCSignal, Payload: types.RTCSignal{Type, SDP, ClientID}}` |
 | `webrtc.answer` | `sdp` | `types.Event{Kind: EventRTCSignal, Payload: types.RTCSignal{Type, SDP, ClientID}}` |
 | `webrtc.ice` | `candidate` | `types.Event{Kind: EventRTCSignal, Payload: types.RTCSignal{Type, Candidate, ClientID}}` |
@@ -39,7 +37,7 @@
 | EventKind | payload | UI 向け変換 |
 | --- | --- | --- |
 | `EventRealtimeOutput` | `types.OutputLine` | `type: "message"` |
-| `EventTextInput` | `types.OutputLine` | `type: "message"` |
+| `EventHumanUtterance` | `types.OutputLine` | `type: "message"` |
 | `EventToolRequest` | `types.ToolRequest` | `type: "function_call"` |
 | `EventToolResponse` | `types.ToolResponse` | `type: "function_result"` |
 | `EventRTCSignal` | `types.RTCSignal` | `type: sig.Type` |
@@ -53,7 +51,6 @@
 ### graph へ出す event
 | EventKind | payload | 出力条件 |
 | --- | --- | --- |
-| `EventTextInput` | `types.OutputLine` | 受信 message の `type == "message"` かつ `text` の trim 後が非空のとき。 |
 | `EventRTCSignal` | `types.RTCSignal` | 受信 message の `type` が `webrtc.` で始まるとき。 |
 
 ### ブラウザへ返す WebSocket message
@@ -77,13 +74,6 @@
 
 ## 主要フロー
 
-### シナリオ: ブラウザのテキスト入力が会話 event になるまで
-1. ブラウザが `/ws/chat` へ `type: "message"` を送る。
-2. `wschat` が JSON を decode する。
-3. `text` を trim し、空なら破棄する。
-4. `role` を trim し、空なら `"user"` を補う。
-5. `types.OutputLine{Role, Text}` を payload にした `EventTextInput` を downstream へ出す。
-
 ### シナリオ: ブラウザの signaling が rtc へ渡るまで
 1. ブラウザが `/ws/chat` へ `webrtc.offer` または `webrtc.ice` を送る。
 2. `wschat` が `type` の接頭辞 `webrtc.` を検出する。
@@ -99,7 +89,7 @@
 
 ## メッセージ変換ルール
 - `EventRealtimeOutput` は `message` に変換され、`response_id` と `final` を含む。
-- `EventTextInput` は `message` に変換されるが、`response_id` と `final` は含まない。
+- `EventHumanUtterance` は `message` に変換されるが、`response_id` と `final` は含まない。
 - `EventToolRequest.Arguments` は `json.RawMessage` のまま `function_call.arguments` に入る。
 - `EventToolResponse.Output` は `json.RawMessage` のまま `function_result.output` に入る。
 - `EventSpeechStart` と `EventSpeechEnd` の `captured_at` は `RFC3339Nano` 文字列に変換される。
@@ -107,7 +97,6 @@
 
 ## 実装上の注意
 - WebSocket accept では `websocket.AcceptOptions{InsecureSkipVerify: true}` を使っている。
-- 受信 JSON の `present`、`captured_at`、`source` は decode 対象にあるが、現行 `handleWS` では利用していない。
 - `handleEvent` は payload 型が期待と一致しない event を黙って破棄する。
 - `writeMessage` の `conn.Write` エラーは呼び出し側へ返さず無視する。
 - broadcast 時は `connHolder.snapshot()` で接続一覧をコピーしてから送る。
@@ -116,7 +105,6 @@
 ## 境界上の前提
 - ブラウザから送る signaling の payload 形式は `sdp` または `candidate` を含む JSON である。
 - `wschat` 自体は message schema のバージョニングや後方互換管理を持たない。
-- text message の認証・認可、接続ごとの権限制御は、この component では行っていない。
 
 ## 不明点
 - `webrtc.answer` をブラウザから server へ送る経路が現行通常フローで必要かどうかは、`wschat` 単体の実装と指定された旧 docs だけでは不明です。

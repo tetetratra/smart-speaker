@@ -47,7 +47,6 @@
   - user / assistant / system
   - function_call
   - function_result
-- テキスト入力で `message` を送信できる。
 
 ## 3. 接続開始と接続ライフサイクル
 

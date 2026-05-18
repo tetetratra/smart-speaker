@@ -42,7 +42,7 @@ func signalFromEvent(evt types.Event) (signal, bool) {
 	switch evt.Kind {
 	case types.EventSpeechStart:
 		return speechStartSignal{}, true
-	case types.EventTextInput:
+	case types.EventHumanUtterance:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
 			return nil, false

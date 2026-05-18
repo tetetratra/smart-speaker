@@ -102,7 +102,7 @@ flowchart LR
   - `EventSessionClear`
   - `EventTTSCancel`
 - 会話入力イベント
-  - `EventTextInput`
+  - `EventHumanUtterance`
   - `EventSpeechStart`
   - `EventSpeechEnd`
 - 応答処理イベント

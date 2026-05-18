@@ -419,7 +419,6 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [input, setInput] = useState('')
   const [rtcStatus, setRtcStatus] = useState('停止中')
   const [rtcError, setRtcError] = useState('')
   const [audioSendStatus, setAudioSendStatus] = useState('停止中')
@@ -859,19 +858,6 @@ function App() {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
-  const sendText = useCallback(() => {
-    const ws = wsChatRef.current
-    const text = input.trim()
-    if (!ws || !connected || !text) return
-    const msg = { type: 'message', role: 'user', text }
-    ws.send(msg)
-    setMessages((prev) => [
-      ...prev,
-      { id: Date.now(), type: 'user', text, responseId: undefined, final: true },
-    ])
-    setInput('')
-  }, [appendMessage, connected, input, nextMessageId])
-
   const startGoogleAuth = useCallback(() => {
     const url = `${serverHTTPBaseUrl}/oauth/google/start`
     const opened = window.open(url, '_blank')
@@ -1103,24 +1089,6 @@ function App() {
               </div>
             )
           })}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="テキストで話しかける"
-            style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ddd' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                sendText()
-              }
-            }}
-          />
-          <button onClick={sendText} disabled={!connected || !input.trim()}>
-            送信
-          </button>
         </div>
       </div>
     </>
