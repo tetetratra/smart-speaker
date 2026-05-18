@@ -126,6 +126,22 @@ sequenceDiagram
 | `ttsEndSignal` | **読み上げが完了した合図**<br>どのアシスタント発話が読み終わったのかを識別するための情報を保持します。 | `EventTTSEnd` |
 | `timerElapsedSignal` | **待機タイマーが満了した合図**<br>AI からの指示（wait）による一時停止を解除するための合図です。 | なし（内部生成） |
 
+### 副作用 (Effect)
+`conversation` コンポーネントは、外部へのアクションや時間のかかる処理を「副作用（Effect）」として抽象化しています。
+Rule は現在の状態と入力 Signal に基づいて「何をすべきか」という論理的な判断を下し、実際の実行（物理的な処理）は Runner が Effect を消費することで行われます。
+
+- **生成**: 各 Rule の `Apply` メソッド内で、次に実行すべきアクションとして `[]effect` が生成されます。
+- **消費**: `runner.go` のメインループ（Runner）が Effect を受け取り、`applyEffects` メソッドでタイマー操作やイベント発行などの実動作に変換します。
+
+| effect | 役割 | 物理的な動作 |
+| --- | --- | --- |
+| `emitEventEffect` | **外部へイベントを通知する** | `types.Event` を下流のチャネルへ送信します（TTS 開始、キャンセルなど）。 |
+| `startTimerEffect` | **タイマーを開始する** | 指定された時間（`wait` 指示など）の `time.Timer` を設定します。 |
+| `stopTimerEffect` | **実行中のタイマーを停止する** | ユーザーの割り込み時などに、現在動いているタイマーを無効化します。 |
+| `requestResponseEffect` | **AI への応答を要求する** | Responses API へのリクエストをトリガーします。 |
+| `logRecordEffect` | **会話ログを記録する** | 会話の履歴をデータベースやログファイルへ永続化します。 |
+| `runtimeLogEffect` | **実行時の状況を記録する** | 契約違反によるリトライなどの運用情報をログ出力します。 |
+
 ### 内部 state
 | 項目 | 内容 |
 | --- | --- |
@@ -154,8 +170,8 @@ sequenceDiagram
 | `responsesStreamRule` | **AI からの逐次的な応答（ストリーミング）をリアルタイムに処理します。**<br>AI が回答を生成している最中、届いた断片を順次解析します。発話文が見つかれば即座にタイムラインに追加し、ユーザーへの読み上げを可能な限り早く開始できるよう制御します。 | **In**: `responsesStreamChunkSignal`<br>**Out**: `emitConversationSnapshotEffect`, `requestResponseEffect` (retry時)<br>**Call**: `advanceTimelineEffects`, `retryInvalidResponseEffects` |
 | `toolResponseRule` | **ツール（日記以外）の実行結果を会話に反映します。**<br>カレンダー操作などのツールが実行された結果を受け取り、「システムからの情報」として会話履歴に加えます。これにより、AI は次のターンでその実行結果を踏まえた回答ができるようになります。 | **In**: `toolResponseSignal`<br>**Out**: `logRecordEffect`, `emitConversationSnapshotEffect` |
 | `sessionClearRule` | **会話の状態を完全にリセットします。**<br>セッションクリアの指示を受けると、進行中のあらゆる処理（再生、通信、タイマー）を即座に中断し、会話履歴も消去して初期状態に戻します。 | **In**: `sessionClearSignal`<br>**Out**: `stopTimerEffect`, `emitEventEffect` (TTSCancel), `emitConversationSnapshotEffect`<br>**Call**: `interruptCurrentConversationEffects` |
-| `ttsEndRule` | **アシスタントの読み上げ完了を受けて、次のアクションへ進みます。**<br>一つの発話の読み上げが終わった際に、そのステータスを「再生済み」にします。その後、タイムラインに「次に話すべきこと」や「待機指示」があれば、それらを開始させます。 | **In**: `ttsEndSignal`<br>**Out**: `emitConversationSnapshotEffect`, `startTimerEffect`, `emitEventEffect` (RealtimeOutput)<br>**Call**: `advanceTimelineEffects` |
-| `timerElapsedRule` | **指定された「待機時間」が終わったことを検知して会話を再開します。**<br>AI から「3秒待ってから次を話して」といった指示（wait）があった場合に、そのタイマーが満了したことを受けて、一時停止していたタイムラインの進行を再開させます。 | **In**: `timerElapsedSignal`<br>**Out**: `startTimerEffect`, `emitEventEffect` (RealtimeOutput)<br>**Call**: `advanceTimelineEffects` |
+| `ttsEndRule` | **アシスタントの読み上げ完了を受けて、次のアクションへ進みます。**<br>一つの発話の読み上げが終わった際に、そのステータスを「再生済み」にします。その後、タイムラインに「次に話すべきこと」や「待機指示」があれば、適切な待ち時間を計算してタイマーを開始します。 | **In**: `ttsEndSignal`<br>**Out**: `startTimerEffect`, `emitConversationSnapshotEffect` |
+| `timerElapsedRule` | **指定された「待機時間」が終わったことを検知して会話を再開します。**<br>AI からの待機指示（wait）の満了、または発話間の自然な繋ぎのための待機が終わった際に、一時停止していたタイムラインの進行を再開させます。 | **In**: `timerElapsedSignal`<br>**Out**: `startTimerEffect`, `emitEventEffect` (RealtimeOutput), `logRecordEffect`, `emitConversationSnapshotEffect`<br>**Call**: `advanceTimelineEffects` |
 
 rule の適用順（優先順位）は以下の通りです：
 `speechStartRule` → `humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `sessionClearRule` → `ttsEndRule` → `timerElapsedRule`
