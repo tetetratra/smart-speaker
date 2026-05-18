@@ -64,8 +64,7 @@ GitHub Actions で `AI主導開発` ラベル付き issue の起票時、また�
 CI では `CODEX_AUTH_JSON_B64` を GitHub Secret として使います。認証が切れたら、trusted machine で `codex login` をやり直してから Secret を更新してください。
 
 ```sh
-AUTH_FILE="${CODEX_HOME:-$HOME/.codex}/auth.json"
-base64 < "$AUTH_FILE" | tr -d '\n' | gh secret set CODEX_AUTH_JSON_B64
+base64 < "${CODEX_HOME:-$HOME/.codex}/auth.json" | tr -d '\n' | gh secret set CODEX_AUTH_JSON_B64
 ```
 
 `CODEX_AUTH_JSON_B64` が未設定の場合、AI 実行時に認証未設定のコメントが返ります。
