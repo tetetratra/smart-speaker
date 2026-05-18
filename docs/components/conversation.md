@@ -17,7 +17,6 @@
 | --- | --- | --- |
 | `EventTextInput` | `types.OutputLine` | 空白除去後の text を `humanTextSignal` に変換し、人の確定発話として扱う。 |
 | `EventSpeechStart` | なし | 発話開始検知。現行実装ではこれだけでは割り込みしない。 |
-| `EventTimerFired` | `types.TimerFiredEvent` | reminder text を assistant 出力として流す。 |
 | `EventResponsesResponse` | `types.ResponsesResponse` | non-streaming 応答を解釈する。tool call を含む場合は会話本文としては処理しない。 |
 | `EventResponsesStreamChunk` | `types.ResponsesStreamChunk` | streaming 応答の 1 行、完了、エラーを解釈する。 |
 | `EventToolResponse` | `types.ToolResponse` | `write_diary` 以外の tool 実行結果を会話履歴へ反映する。 |
@@ -28,7 +27,7 @@
 | EventKind | payload | 出力条件 |
 | --- | --- | --- |
 | `EventResponsesRequest` | `types.ResponsesRequest` | 人の確定発話時、または invalid response retry 時。 |
-| `EventRealtimeOutput` | `types.OutputLine` | assistant 発話開始時。text 行と `Final=true` 行を連続で出す。`EventTimerFired` 由来の reminder でも使う。 |
+| `EventRealtimeOutput` | `types.OutputLine` | assistant 発話開始時。text 行と `Final=true` 行を連続で出す。 |
 | `EventTTSCancel` | `types.TTSCancel` | 再生中 assistant 発話を人の確定発話や session clear で中断するとき。 |
 | `EventConversationSnapshotUpdated` | `types.ConversationSnapshot` | 人の確定発話時、tool 結果反映時、TTS 完了時、stream 完了時、session clear 時。 |
 | `EventConversationActivity` | `types.ConversationActivity` | 人の確定発話時と assistant 発話開始時。 |
@@ -56,7 +55,6 @@
 | --- | --- |
 | `speechStartRule` | `EventSpeechStart` を処理済みにするが、中断はしない。 |
 | `humanTextRule` | 会話中断、user utterance 追加、snapshot/activity emit、Responses request 生成。 |
-| `timerFiredRule` | timer reminder text を assistant 出力に変換。 |
 | `responsesRule` | non-streaming 応答の NDJSON 契約検証、timeline 反映、retry 判定。 |
 | `responsesStreamRule` | streaming chunk の逐次検証、timeline 追加、即時進行、stream 完了処理。 |
 | `toolResponseRule` | `write_diary` を除く tool 結果を `SpeakerTool` として履歴へ追加。 |
@@ -64,7 +62,7 @@
 | `ttsEndRule` | 再生完了を反映し、wait 消費と次発話への進行を決める。 |
 | `timerElapsedRule` | wait timer 満了後に timeline を再開する。 |
 
-rule の適用順は `speechStartRule` → `humanTextRule` → `timerFiredRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `sessionClearRule` → `ttsEndRule` → `timerElapsedRule` です。
+rule の適用順は `speechStartRule` → `humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `sessionClearRule` → `ttsEndRule` → `timerElapsedRule` です。
 
 ## timeline 進行
 1. 人の確定発話を受けると、現在の再生・wait timer・pending request・未再生 utterance を中断し、user message を履歴へ追加する。

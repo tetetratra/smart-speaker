@@ -13,7 +13,6 @@ const (
 	EventSpeechStart
 	EventSpeechEnd
 	EventRTCVADStatus
-	EventTimerFired
 	EventConversationSnapshotUpdated
 	EventConversationActivity
 	EventRealtimeOutput
@@ -46,8 +45,6 @@ func (k EventKind) String() string {
 		return "EventSpeechEnd"
 	case EventRTCVADStatus:
 		return "EventRTCVADStatus"
-	case EventTimerFired:
-		return "EventTimerFired"
 	case EventConversationSnapshotUpdated:
 		return "EventConversationSnapshotUpdated"
 	case EventConversationActivity:
@@ -95,9 +92,4 @@ type ToolResponse struct {
 	Name       string
 	ResponseID string
 	Output     json.RawMessage
-}
-
-// TimerFiredEvent はタイマー発火時の通知イベントです。
-type TimerFiredEvent struct {
-	ReminderText string
 }

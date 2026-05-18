@@ -4,7 +4,6 @@ func defaultConversationRules() []Rule {
 	return []Rule{
 		speechStartRule{},
 		humanTextRule{},
-		timerFiredRule{},
 		responsesRule{},
 		responsesStreamRule{},
 		toolResponseRule{},

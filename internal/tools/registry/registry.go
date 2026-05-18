@@ -7,7 +7,6 @@ import (
 	diarytool "smart-speaker/internal/tools/functions/diary"
 	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
-	"smart-speaker/internal/tools/functions/timer"
 	"smart-speaker/internal/tools/functions/whiteboard"
 )
 
@@ -46,11 +45,9 @@ func New(cfg Config) *Registry {
 	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
 	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
-	timerTool := timer.New()
 	whiteboardTool := whiteboard.New()
 	toolEntries := []entry{
 		{def: hub2Tool.Definition(), handler: hub2Tool},
-		{def: timerTool.Definition(), handler: timerTool},
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
 		{def: diaryTool.Definition(), handler: diaryTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},

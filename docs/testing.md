@@ -118,14 +118,13 @@ docker compose -f docker-compose.yml up --build
 
 ### 手順4: テキスト入力の代替確認
 1. 音声入力が不安定な場合は、管理画面またはテキスト入力 UI を開く。
-2. 例として `10秒後にタイマーをセットして` を送信する。
-3. assistant 応答、`function call`、`function result`、後続通知を確認する。
+2. 例として短い挨拶や予定確認を送信する。
+3. assistant 応答や、必要に応じた `function call` / `function result` を確認する。
 
 確認ポイント:
 - user メッセージが表示される。
 - assistant 応答テキストが表示される。
-- タイマー系ツール呼び出しが表示される。
-- 指定秒数後に timer 通知が表示される。
+- tool を使う入力の場合は `function call` / `function result` が表示される。
 
 ### 手順5: Google Calendar OAuth の確認
 1. Google Calendar を利用する場合は `http://localhost:8081/oauth/google/start` を開く、または画面上の Google 認証導線を使う。
@@ -153,7 +152,7 @@ docker compose -f docker-compose.yml up --build
 
 ### ツール実行
 - `function call` と `function result` が UI またはログで追える。
-- タイマーのような遅延実行結果が後続メッセージとして返る。
+- tool 実行結果が後続メッセージとして返る。
 
 ### OAuth
 - Google Calendar OAuth を開始できる。

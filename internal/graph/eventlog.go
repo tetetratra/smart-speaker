@@ -24,7 +24,6 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventTextInput:                   formatOutputLineDetail,
 		types.EventSpeechStart:                 formatSpeechEventDetail,
 		types.EventSpeechEnd:                   formatSpeechEventDetail,
-		types.EventTimerFired:                  formatTimerFiredDetail,
 		types.EventConversationSnapshotUpdated: formatConversationSnapshotDetail,
 		types.EventConversationActivity:        formatConversationActivityDetail,
 		types.EventRealtimeOutput:              formatOutputLineDetail,
@@ -231,15 +230,6 @@ func formatSpeechEventDetail(evt types.Event) string {
 		parts = append(parts, fmt.Sprintf("source=%s", speech.Source))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func formatTimerFiredDetail(evt types.Event) string {
-	timerEvt, ok := evt.Payload.(types.TimerFiredEvent)
-	if !ok {
-		return ""
-	}
-	text := strings.TrimSpace(timerEvt.ReminderText)
-	return fmt.Sprintf("text=%s, chars=%d", quoteText(text), utf8.RuneCountInString(text))
 }
 
 func formatTTSCancelDetail(evt types.Event) string {

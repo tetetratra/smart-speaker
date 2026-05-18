@@ -26,7 +26,7 @@ flowchart LR
   CONV -->|EventResponsesRequest| RESP
   RESP -->|OpenAI Responses API| OpenAI["OpenAI Responses API"]
   RESP -->|EventToolRequest| TOOL
-  TOOL -->|SwitchBot / Google Calendar / diary / timer / whiteboard| Ext["外部 tool / 永続化"]
+  TOOL -->|SwitchBot / Google Calendar / diary / whiteboard| Ext["外部 tool / 永続化"]
   TOOL -->|EventToolResponse| RESP
   CONV -->|EventRealtimeOutput| TTS
   TTS -->|ElevenLabs TTS| ElevenLabs["ElevenLabs"]
@@ -115,7 +115,7 @@ flowchart LR
 - WebSocket: ブラウザ UI とサーバー間の制御プレーン。テキストメッセージ、function call / result、VAD 状態、WebRTC signaling を運ぶ。
 - WebRTC: ブラウザのマイク音声送信と assistant 音声再生のメディアプレーン。
 - LLM: `responsesapi` が OpenAI Responses API を streaming で呼び出し、tool call を event graph に変換する。
-- tool: `toolcaller` が SwitchBot、Google Calendar、timer、whiteboard、`write_diary` などを実行する。tool 定義には `web_search` も含まれるが、ローカル handler を持つかどうかは tool ごとに異なる。
+- tool: `toolcaller` が SwitchBot、Google Calendar、whiteboard、`write_diary` などを実行する。tool 定義には `web_search` も含まれるが、ローカル handler を持つかどうかは tool ごとに異なる。
 
 この分離により、UI 制御、音声 transport、会話制御、外部 API 呼び出しを個別の stage に閉じ込めつつ、全体は event graph で接続する形になっている。
 
@@ -168,7 +168,6 @@ flowchart LR
 - `internal/components/conversation/rule_tool_response.go`
 - `internal/components/conversation/rule_tts_end.go`
 - `internal/components/conversation/rule_session_clear.go`
-- `internal/components/conversation/rule_timer_fired.go`
 - `internal/components/sessionlifecycle/sessionlifecycle.go`
 - `internal/components/responsesapi/client.go`
 - `internal/components/responsesapi/runner.go`

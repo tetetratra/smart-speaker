@@ -120,7 +120,6 @@ flowchart LR
 - 監督用イベント
   - `EventConversationSnapshotUpdated`
   - `EventConversationActivity`
-  - `EventTimerFired`
   - `EventRTCVADStatus`
 
 参照:
