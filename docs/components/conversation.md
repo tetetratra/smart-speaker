@@ -112,6 +112,20 @@ sequenceDiagram
 | `EventConversationSnapshotUpdated` | `types.ConversationSnapshot` | 人の確定発話時、tool 結果反映時、TTS 完了時、stream 完了時、session clear 時。 |
 | `EventConversationActivity` | `types.ConversationActivity` | 人の確定発話時と assistant 発話開始時。 |
 
+### 内部 signal
+`conversation` コンポーネント内では、外部からの様々なイベントを扱いやすい共通形式（Signal）に変換して処理しています。これにより、外部イベントの細かな違いを吸収し、ルールの判定ロジックをシンプルに保っています。
+
+| signal | 概要（何を意味するか） | 対応する外部イベント |
+| --- | --- | --- |
+| `speechStartSignal` | **話し始めを検知した合図** | `EventSpeechStart` |
+| `humanTextSignal` | **ユーザーの発話内容が確定した合図**<br>テキストから余計な空白を除去し、意味のある内容が含まれている場合のみ生成されます。 | `EventTextInput` |
+| `responsesSignal` | **AI からのまとまった回答が届いた合図**<br>ストリーミングではない一括の応答内容を保持します。 | `EventResponsesResponse` |
+| `responsesStreamChunkSignal` | **AI から回答の断片が届いた合図**<br>ストリーミング応答の各行（1 JSON オブジェクト）やエラー、完了状態を保持します。 | `EventResponsesStreamChunk` |
+| `toolResponseSignal` | **ツール実行の結果が届いた合図** | `EventToolResponse` |
+| `sessionClearSignal` | **会話リセットの合図** | `EventSessionClear` |
+| `ttsEndSignal` | **読み上げが完了した合図**<br>どのアシスタント発話が読み終わったのかを識別するための情報を保持します。 | `EventTTSEnd` |
+| `timerElapsedSignal` | **待機タイマーが満了した合図**<br>AI からの指示（wait）による一時停止を解除するための合図です。 | なし（内部生成） |
+
 ### 内部 state
 | 項目 | 内容 |
 | --- | --- |
@@ -129,23 +143,26 @@ sequenceDiagram
 | `pendingTimelineTimerWaiting` | wait 区間の timer 待ち中かどうか。 |
 | `pendingStreamLines []string` | retry 用に保持する streaming 生行。 |
 | `seq` | `human_*` / `ai_*` / `resp_*` / `req_*` などの採番に使う連番。 |
-
 ### rule 群
-| rule | 責務 |
-| --- | --- |
-| `speechStartRule` | `EventSpeechStart` を処理済みにするが、中断はしない。 |
-| `humanTextRule` | 会話中断、user utterance 追加、snapshot/activity emit、Responses request 生成。 |
-| `responsesRule` | non-streaming 応答の NDJSON 契約検証、timeline 反映、retry 判定。 |
-| `responsesStreamRule` | streaming chunk の逐次検証、timeline 追加、即時進行、stream 完了処理。 |
-| `toolResponseRule` | `write_diary` を除く tool 結果を `SpeakerTool` として履歴へ追加。 |
-| `sessionClearRule` | 進行中会話を止めて state を初期化し、空 snapshot を出す。 |
-| `ttsEndRule` | 再生完了を反映し、wait 消費と次発話への進行を決める。 |
-| `timerElapsedRule` | wait timer 満了後に timeline を再開する。 |
+`conversation` コンポーネントの挙動は、以下の「ルール」の集合によって定義されています。各ルールは特定のイベント（入力）に対して、「状態をどう変えるか」「次にどんなアクション（副作用）を起こすか」を判断します。
 
-rule の適用順は `speechStartRule` → `humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `sessionClearRule` → `ttsEndRule` → `timerElapsedRule` です。
+| rule | 責務（なにをしているか） | 入力 (signal) / 副作用 (effect) / 主な処理 |
+| --- | --- | --- |
+| `speechStartRule` | **ユーザーが話し始めたことを検知します。**<br>ユーザーが話し始めたという事実をシステムが認識した状態にしますが、現時点では再生中のアシスタントの声を止めるなどの強制的な割り込みは行いません。 | **In**: `speechStartSignal`<br>**Out**: なし |
+| `humanTextRule` | **ユーザーの確定した発話を処理し、応答の準備を始めます。**<br>ユーザーの発話内容が確定すると、現在再生中の音声や待機中のタイマーをすべて停止（割り込み）します。その後、発話を会話履歴に追加し、最新の履歴やカレンダー情報を含めて LLM（AI）へ応答をリクエストします。 | **In**: `humanTextSignal`<br>**Out**: `stopTimerEffect`, `emitEventEffect` (TTSCancel), `requestResponseEffect`<br>**Call**: `interruptCurrentConversationEffects`, `buildResponseRequestEffect` |
+| `responsesRule` | **AI からのまとまった応答（非ストリーミング）を解釈します。**<br>AI から返ってきたメッセージが正しい形式（NDJSON）であるかを検証します。問題なければ、その内容（発話や待機）を再生スケジュール（タイムライン）に登録します。形式が不正な場合はリトライを検討します。 | **In**: `responsesSignal`<br>**Out**: `requestResponseEffect` (retry時), `logRecordEffect`, `emitEventEffect` (RealtimeOutput)<br>**Call**: `retryInvalidResponseEffects`, `advanceTimelineEffects` |
+| `responsesStreamRule` | **AI からの逐次的な応答（ストリーミング）をリアルタイムに処理します。**<br>AI が回答を生成している最中、届いた断片を順次解析します。発話文が見つかれば即座にタイムラインに追加し、ユーザーへの読み上げを可能な限り早く開始できるよう制御します。 | **In**: `responsesStreamChunkSignal`<br>**Out**: `emitConversationSnapshotEffect`, `requestResponseEffect` (retry時)<br>**Call**: `advanceTimelineEffects`, `retryInvalidResponseEffects` |
+| `toolResponseRule` | **ツール（日記以外）の実行結果を会話に反映します。**<br>カレンダー操作などのツールが実行された結果を受け取り、「システムからの情報」として会話履歴に加えます。これにより、AI は次のターンでその実行結果を踏まえた回答ができるようになります。 | **In**: `toolResponseSignal`<br>**Out**: `logRecordEffect`, `emitConversationSnapshotEffect` |
+| `sessionClearRule` | **会話の状態を完全にリセットします。**<br>セッションクリアの指示を受けると、進行中のあらゆる処理（再生、通信、タイマー）を即座に中断し、会話履歴も消去して初期状態に戻します。 | **In**: `sessionClearSignal`<br>**Out**: `stopTimerEffect`, `emitEventEffect` (TTSCancel), `emitConversationSnapshotEffect`<br>**Call**: `interruptCurrentConversationEffects` |
+| `ttsEndRule` | **アシスタントの読み上げ完了を受けて、次のアクションへ進みます。**<br>一つの発話の読み上げが終わった際に、そのステータスを「再生済み」にします。その後、タイムラインに「次に話すべきこと」や「待機指示」があれば、それらを開始させます。 | **In**: `ttsEndSignal`<br>**Out**: `emitConversationSnapshotEffect`, `startTimerEffect`, `emitEventEffect` (RealtimeOutput)<br>**Call**: `advanceTimelineEffects` |
+| `timerElapsedRule` | **指定された「待機時間」が終わったことを検知して会話を再開します。**<br>AI から「3秒待ってから次を話して」といった指示（wait）があった場合に、そのタイマーが満了したことを受けて、一時停止していたタイムラインの進行を再開させます。 | **In**: `timerElapsedSignal`<br>**Out**: `startTimerEffect`, `emitEventEffect` (RealtimeOutput)<br>**Call**: `advanceTimelineEffects` |
 
-## 6. 補足・不明点
+rule の適用順（優先順位）は以下の通りです：
+`speechStartRule` → `humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `sessionClearRule` → `ttsEndRule` → `timerElapsedRule`
 
+---
+
+### タイムライン進行と詳細ロジック
 ### ルール上の補足
 - assistant 発話は `EventRealtimeOutput` を出した時点で利用者へ提示済みとみなし、`EventTTSEnd` 前でも次 request の会話履歴に含める。
 - `toolResponseRule` は tool 出力を `system` role の履歴として保存する。
