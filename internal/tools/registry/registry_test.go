@@ -55,3 +55,15 @@ func TestRegistryOmitsSetVolumeTool(t *testing.T) {
 		t.Fatal("set_volume handler should not be registered")
 	}
 }
+
+func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
+	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	reg := New(Config{SwitchBotClient: client})
+
+	if _, ok := reg.DefinitionByName("schedule_timer"); ok {
+		t.Fatal("schedule_timer should not be registered")
+	}
+	if _, ok := reg.Handlers()["schedule_timer"]; ok {
+		t.Fatal("schedule_timer handler should not be registered")
+	}
+}

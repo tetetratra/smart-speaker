@@ -167,7 +167,7 @@ flowchart LR
   toolcaller -- "EventToolResponse" --> responses
   toolcaller -- "EventToolResponse" --> sessionlifecycle
 
-  toolcaller -- "EventToolResponse / EventTimerFired" --> conversation
+  toolcaller -- "EventToolResponse" --> conversation
   toolcaller -- "EventToolResponse (function_result表示)" --> wschat
 
   conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts

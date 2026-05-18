@@ -58,7 +58,7 @@
 1. `EventEmitterAware` な tool は起動時に `emit` 関数を受け取ります。
 2. tool 実行中にその関数を呼ぶと、`toolcaller` は `ctx.Done()` を尊重しつつ event を downstream に流します。
 3. この event は `ToolResponse` とは別経路です。
-4. たとえば `set_whiteboard` は `EventWhiteboardUpdate`、timer 系 tool は `EventTimerFired` を発火できます。
+4. たとえば `set_whiteboard` は `EventWhiteboardUpdate` を発火できます。
 
 ## 6. 入出力
 ### 6.1 入力
