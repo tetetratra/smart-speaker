@@ -109,7 +109,6 @@
 ## 不明点
 - `webrtc.answer` をブラウザから server へ送る経路が現行通常フローで必要かどうかは、`wschat` 単体の実装と指定された旧 docs だけでは不明です。
 - 複数ブラウザ接続が同時に存在するとき、通常 message を全接続 broadcast することが最終仕様として意図されたものかどうかは不明です。
-- `present`、`captured_at`、`source` を client message に含めている理由は、現行 `wschat` 実装だけでは不明です。
 
 ## 参照元
 - `internal/components/wschat/wschat.go`

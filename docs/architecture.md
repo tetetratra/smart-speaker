@@ -111,7 +111,7 @@ flowchart LR
 ## プロトコル間のつながり
 
 - HTTP: Web UI 配信、Google OAuth 開始/コールバック、`/ws/chat` の公開を担当する。
-- WebSocket: ブラウザ UI とサーバー間の制御プレーン。テキストメッセージ、function call / result、VAD 状態、WebRTC signaling を運ぶ。
+- WebSocket: ブラウザ UI とサーバー間の制御プレーン。会話表示用 message、function call / result、VAD 状態、WebRTC signaling を運ぶ。
 - WebRTC: ブラウザのマイク音声送信と assistant 音声再生のメディアプレーン。
 - LLM: `responsesapi` が OpenAI Responses API を streaming で呼び出し、tool call を event graph に変換する。
 - tool: `toolcaller` が SwitchBot、Google Calendar、whiteboard、`write_diary` などを実行する。tool 定義には `web_search` も含まれるが、ローカル handler を持つかどうかは tool ごとに異なる。
