@@ -41,7 +41,6 @@
 | `EventToolRequest` | `types.ToolRequest` | `type: "function_call"` |
 | `EventToolResponse` | `types.ToolResponse` | `type: "function_result"` |
 | `EventRTCSignal` | `types.RTCSignal` | `type: sig.Type` |
-| `EventSpeechStart` | `types.SpeechEvent` | `type: "speech_start"` |
 | `EventSpeechEnd` | `types.SpeechEvent` | `type: "speech_end"` |
 | `EventRTCVADStatus` | `types.RTCVADStatus` | `type: "rtc_vad_status"` |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `type: "whiteboard_update"` |
@@ -59,7 +58,6 @@
 | `message` | `role`, `text`, `response_id`, `final`, `source` | 全接続 broadcast |
 | `function_call` | `tool_call_id`, `name`, `arguments`, `response_id` | 全接続 broadcast |
 | `function_result` | `tool_call_id`, `name`, `output` | 全接続 broadcast |
-| `speech_start` | `source`, `captured_at` | 全接続 broadcast |
 | `speech_end` | `source`, `captured_at` | 全接続 broadcast |
 | `rtc_vad_status` | `input_level`, `threshold`, `captured_at` | 全接続 broadcast |
 | `whiteboard_update` | `content` | 全接続 broadcast |
@@ -92,7 +90,7 @@
 - `EventHumanUtterance` は `message` に変換されるが、`response_id` と `final` は含まない。
 - `EventToolRequest.Arguments` は `json.RawMessage` のまま `function_call.arguments` に入る。
 - `EventToolResponse.Output` は `json.RawMessage` のまま `function_result.output` に入る。
-- `EventSpeechStart` と `EventSpeechEnd` の `captured_at` は `RFC3339Nano` 文字列に変換される。
+- `EventSpeechEnd` の `captured_at` は `RFC3339Nano` 文字列に変換される。
 - `EventRTCSignal` は `sig.Type` をそのまま UI message の `type` に使う。
 
 ## 実装上の注意

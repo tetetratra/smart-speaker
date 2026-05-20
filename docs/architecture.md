@@ -16,7 +16,7 @@ flowchart LR
   WS <-->|JSON message / signaling| Browser
 
   WS -->|EventRTCSignal| Graph["event graph"]
-  RTC -->|EventHumanUtterance / EventSpeechStart / EventSpeechEnd / EventRTCVADStatus / EventRTCSignal| Graph
+  RTC -->|EventHumanUtterance / EventSpeechEnd / EventRTCVADStatus / EventRTCSignal| Graph
   Graph --> CONV["conversation"]
   Graph --> RESP["responsesapi"]
   Graph --> TOOL["toolcaller"]
@@ -60,7 +60,7 @@ flowchart LR
   WS -->|EventRTCSignal| RTC
   RTC -->|EventRTCSignal| WS
 
-  RTC -->|EventHumanUtterance / EventSpeechStart / EventSpeechEnd| CONV
+  RTC -->|EventHumanUtterance / EventSpeechEnd| CONV
   RTC -->|EventRTCSignal| RESP
 
   CONV -->|EventResponsesRequest| RESP

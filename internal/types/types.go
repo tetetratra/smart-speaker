@@ -17,7 +17,7 @@ type OutputAudio struct {
 	Audio string
 }
 
-// SpeechEvent は文字起こしの開始/終了イベントを表します。
+// SpeechEvent は文字起こしの終了イベントを表します。
 type SpeechEvent struct {
 	Source     string
 	CapturedAt time.Time

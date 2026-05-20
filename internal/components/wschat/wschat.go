@@ -194,16 +194,6 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"sdp":       sig.SDP,
 			"candidate": sig.Candidate,
 		}
-	case types.EventSpeechStart:
-		speech, ok := evt.Payload.(types.SpeechEvent)
-		if !ok {
-			return
-		}
-		msg = map[string]any{
-			"type":        "speech_start",
-			"source":      speech.Source,
-			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
-		}
 	case types.EventSpeechEnd:
 		speech, ok := evt.Payload.(types.SpeechEvent)
 		if !ok {

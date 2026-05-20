@@ -17,7 +17,7 @@
 ### rtc が担当すること
 - `webrtc.offer` / `webrtc.answer` / `webrtc.ice` を処理し、peer ごとの `PeerConnection` を管理する。
 - ブラウザから届く Opus 音声を PCM に復号し、モノラル化して VAD と STT に渡す。
-- サーバー側 VAD により `EventSpeechStart` / `EventSpeechEnd` / `EventRTCVADStatus` を発行する。
+- サーバー側 VAD により `EventSpeechEnd` / `EventRTCVADStatus` を発行する。
 - Google Speech-to-Text v2 の final transcript を `EventHumanUtterance` として発行する。
 - `EventRealtimeAudio` で受けた PCM 音声を 48kHz Opus に変換し、各 peer の下りトラックへ返す。
 - `EventTTSCancel` で再生バッファを破棄する。
@@ -74,7 +74,6 @@
 - `EventRTCSignal`
   - `webrtc.answer`
   - `webrtc.ice`
-- `EventSpeechStart`
 - `EventSpeechEnd`
 - `EventRTCVADStatus`
 - WebRTC 下り音声トラック

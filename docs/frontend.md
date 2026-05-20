@@ -85,8 +85,6 @@ sequenceDiagram
 - `message`
   - `user` / `assistant` / `system` をメッセージ一覧へ追加する。
   - `source: "server-stt"` かつ `role: "user"` の場合は、STT 状態を `完了` に戻す。
-- `speech_start`
-  - 発話検知を `検知中`、STT を `認識中` にする。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
 - `rtc_vad_status`

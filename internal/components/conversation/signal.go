@@ -10,7 +10,6 @@ type signal interface {
 	isSignal()
 }
 
-type speechStartSignal struct{}
 type humanTextSignal struct {
 	text string
 }
@@ -28,7 +27,6 @@ type ttsEndSignal struct {
 }
 type timerElapsedSignal struct{}
 
-func (speechStartSignal) isSignal()          {}
 func (humanTextSignal) isSignal()            {}
 func (responsesSignal) isSignal()            {}
 func (responsesStreamChunkSignal) isSignal() {}
@@ -38,8 +36,6 @@ func (timerElapsedSignal) isSignal()         {}
 
 func signalFromEvent(evt types.Event) (signal, bool) {
 	switch evt.Kind {
-	case types.EventSpeechStart:
-		return speechStartSignal{}, true
 	case types.EventHumanUtterance:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
