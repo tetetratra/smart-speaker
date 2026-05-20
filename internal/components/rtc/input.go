@@ -155,7 +155,6 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 				s.mu.Lock()
 				s.cancelSpeechStopLocked()
 				s.mu.Unlock()
-				s.emit(types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: time.Now()}})
 				s.startSpeechStream(int32(sampleRate), 1, prebuffer)
 			} else {
 				peerState.mu.Lock()

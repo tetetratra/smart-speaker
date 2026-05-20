@@ -124,7 +124,6 @@ graph TD
 | EventKind | payload | 用途 |
 | --- | --- | --- |
 | `EventHumanUtterance` | `types.OutputLine` | 空白除去後の text を `humanTextSignal` に変換し、人の確定発話として扱う。 |
-| `EventSpeechStart` | なし | 発話開始検知。現行実装ではこれだけでは割り込みしない。 |
 | `EventResponsesResponse` | `types.ResponsesResponse` | non-streaming 応答を解釈する。tool call を含む場合は会話本文としては処理しない。 |
 | `EventResponsesStreamChunk` | `types.ResponsesStreamChunk` | streaming 応答の 1 行、完了、エラーを解釈する。 |
 | `EventToolResponse` | `types.ToolResponse` | tool 実行結果を会話履歴へ反映する。 |
@@ -142,7 +141,6 @@ graph TD
 
 | signal | 概要（何を意味するか） | 対応する外部イベント |
 | --- | --- | --- |
-| `speechStartSignal` | **話し始めを検知した合図** | `EventSpeechStart` |
 | `humanTextSignal` | **ユーザーの発話内容が確定した合図** | `EventHumanUtterance` |
 | `responsesSignal` | **AI からのまとまった回答が届いた合図** | `EventResponsesResponse` |
 | `responsesStreamChunkSignal` | **AI から回答の断片が届いた合図** | `EventResponsesStreamChunk` |
@@ -205,7 +203,6 @@ Effect を具現化するための物理操作は、役割ごとに `runtime_*.g
 
 | Rule | 起動トリガー (Signal) | 責務と主な処理 | 主な副作用 (Effect) / 状態更新 |
 | :--- | :--- | :--- | :--- |
-| `speechStartRule` | `speechStartSignal` | **ユーザーの話し始めを検知**<br>話し始めた事実を認識しますが、現時点では割り込みは行いません。 | (なし) |
 | `humanTextRule` | `humanTextSignal` | **ユーザーの確定発話を処理**<br>進行中の再生やタイマーを中断し、発話を履歴に追加。最新のコンテキストを含めて AI へ応答をリクエスト。 | `stopTimerEffect`, `emitEventEffect` (TTSCancel), `requestResponseEffect` |
 | `responsesRule` | `responsesSignal` | **一括応答（非ストリーミング）の解釈**<br>応答形式を検証し、再生タイムラインを構築。形式不正時はリトライを検討。 | `requestResponseEffect` (リトライ時), `logRecordEffect`, `advanceTimelineEffects` 実行 |
 | `responsesStreamRule` | `responsesStreamChunkSignal` | **逐次応答（ストリーミング）のリアルタイム処理**<br>届いた断片を即座に解析しタイムラインに追加。可能な限り早く再生を開始。 | `requestResponseEffect` (リトライ時) |
@@ -214,7 +211,7 @@ Effect を具現化するための物理操作は、役割ごとに `runtime_*.g
 | `timerElapsedRule` | `timerElapsedSignal` | **待機完了によるタイムライン進行**<br>タイマー満了を受けて次の発話を開始、または後続の待機タイマーを再設定。 | `emitEventEffect` (RealtimeOutput), `startTimerEffect`, `logRecordEffect` |
 
 rule の適用順（優先順位）は以下の通りです：
-`speechStartRule` → `humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `ttsEndRule` → `timerElapsedRule`
+`humanTextRule` → `responsesRule` → `responsesStreamRule` → `toolResponseRule` → `ttsEndRule` → `timerElapsedRule`
 
 ---
 

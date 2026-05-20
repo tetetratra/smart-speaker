@@ -102,7 +102,6 @@ flowchart LR
   - `EventTTSCancel`
 - 会話入力イベント
   - `EventHumanUtterance`
-  - `EventSpeechStart`
   - `EventSpeechEnd`
 - 応答処理イベント
   - `EventResponsesRequest`

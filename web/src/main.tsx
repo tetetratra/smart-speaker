@@ -563,12 +563,6 @@ function App() {
           })
           break
         }
-        case 'speech_start': {
-          setSpeechDetectStatus('検知中')
-          setSttStatus('認識中')
-          setSttError('')
-          break
-        }
         case 'speech_end': {
           setSpeechDetectStatus('待機中')
           setSttStatus('最終結果待ち')
