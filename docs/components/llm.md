@@ -19,3 +19,4 @@
 - `{"type":"tool","name":"...","args":{...}}` は local tool 呼び出しを表す。
 - `tool` は1回の LLM 応答の末尾に最大1件だけ許可する。
 - OpenAI function calling の `tools`、`tool_choice`、`function_call_output` は使わない。
+
