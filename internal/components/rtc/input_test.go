@@ -1,8 +1,13 @@
 package rtc
 
 import (
+	"context"
+	"io"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestMeasureFrameEnergy(t *testing.T) {
@@ -78,6 +83,34 @@ func TestIsSpeechFrame(t *testing.T) {
 	t.Run("現在のしきい値未満のノイズの場合", func(t *testing.T) {
 		if isSpeechFrame(40, 60) {
 			t.Fatal("expected noise below threshold to be treated as non-speech")
+		}
+	})
+}
+
+func TestIsExpectedSpeechStreamClose(t *testing.T) {
+	t.Run("context canceled", func(t *testing.T) {
+		if !isExpectedSpeechStreamClose(context.Canceled) {
+			t.Fatal("context.Canceled should be expected")
+		}
+	})
+
+	t.Run("io EOF", func(t *testing.T) {
+		if !isExpectedSpeechStreamClose(io.EOF) {
+			t.Fatal("io.EOF should be expected")
+		}
+	})
+
+	t.Run("grpc canceled", func(t *testing.T) {
+		err := status.Error(codes.Canceled, "context canceled")
+		if !isExpectedSpeechStreamClose(err) {
+			t.Fatal("grpc codes.Canceled should be expected")
+		}
+	})
+
+	t.Run("other grpc error", func(t *testing.T) {
+		err := status.Error(codes.Unavailable, "temporary unavailable")
+		if isExpectedSpeechStreamClose(err) {
+			t.Fatal("codes.Unavailable should not be expected")
 		}
 	})
 }
