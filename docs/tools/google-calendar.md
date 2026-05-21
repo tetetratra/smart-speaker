@@ -11,7 +11,7 @@
 - `google_calendar_update`
   - `action=update`
   - `action=delete`
-- `internal/components/conversation/context_provider.go` による会話文脈注入
+- 会話文脈注入は旧 `conversation` component 削除により現在未接続
 - `internal/googlecalendar/*` の共通 client
 - `internal/oauth/googlecalendar/*` の認証前提
 
@@ -28,8 +28,7 @@
 | `internal/oauth/googlecalendar` | OAuth 設定読み込み、認可 URL 生成、callback 処理、token 保存、access token 更新を担う。 |
 | `internal/googlecalendar.Client` | Google Calendar REST API の共通 client。一覧取得、作成、更新、削除と一覧 cache を持つ。 |
 | `internal/tools/functions/googlecalendar` | tool 引数を解釈し、共通 client を呼ぶ薄い adapter。 |
-| `internal/components/conversation/context_provider.go` | 会話開始時に Google Calendar の予定を system message として注入する。 |
-| `cmd/smart-speaker/main.go` | 共通 client を 1 回生成し、conversation と tool registry の両方へ注入する。 |
+| `cmd/smart-speaker/main.go` | Google OAuth handler を登録する。現時点では calendar tool registry は未接続。 |
 
 ## 5. tool 一覧
 ### `google_calendar_list`
@@ -187,17 +186,14 @@
 4. 更新または削除の結果を tool 出力として返す。
 
 ### シナリオ: 会話時に予定を文脈へ注入する
-1. conversation が system context 構築を開始する。
-2. token が無ければ calendar 文脈の付与を省略する。
-3. token があれば共通 client の `ListEvents` を呼ぶ。
-4. 取得結果を 3 日分の prompt に整形する。
-5. system message として会話メッセージ列へ挿入する。
+旧 `conversation` component の削除により、この経路は現在未接続です。
+再導入する場合は、`llm` component の prompt 構築または会話履歴Storeへの system record 追加として設計します。
 
 ## 9. 再設計で維持したい性質
-- conversation と tool が同じ共通 client を共有すること。
+- calendar 文脈注入を再導入する場合は、LLM prompt 構築と tool が同じ共通 client を共有すること。
 - 一覧取得 cache の無効化責務を client 側に寄せること。
 - OAuth token 更新時に refresh token を失わないこと。
-- 認証されていない場合、会話文脈注入を静かにスキップできること。
+- 認証されていない場合、calendar 文脈注入を静かにスキップできること。
 - 削除を含む更新系操作の入口を、少なくとも現状互換では `google_calendar_update` にまとめられること。
 
 ## 10. 不明点
@@ -215,7 +211,5 @@
 - [internal/oauth/googlecalendar/auth_flow.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/auth_flow.go)
 - [internal/oauth/googlecalendar/http_handlers.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/http_handlers.go)
 - [internal/oauth/googlecalendar/token_store.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/token_store.go)
-- [internal/components/conversation/context_provider.go](/Users/kondo.daichi/p/smart-speaker/internal/components/conversation/context_provider.go)
-- [internal/components/conversation/context_calendar_format.go](/Users/kondo.daichi/p/smart-speaker/internal/components/conversation/context_calendar_format.go)
 - [cmd/smart-speaker/main.go](/Users/kondo.daichi/p/smart-speaker/cmd/smart-speaker/main.go)
 - 旧資料: `git show HEAD^:docs/7.Googleカレンダー連携.md`

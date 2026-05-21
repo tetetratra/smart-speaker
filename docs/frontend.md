@@ -45,8 +45,7 @@
 - 音声エラーと文字起こしエラーを表示する。
 - メッセージログを表示する。
   - user / assistant / system
-  - function_call
-  - function_result
+  - tool call / tool result は通常の会話UIには表示しない。
 
 ## 3. 接続開始と接続ライフサイクル
 
@@ -91,8 +90,8 @@ sequenceDiagram
   - 入力音量としきい値を更新する。
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard に反映する。
-- `function_call` / `function_result`
-  - 管理画面のログ表示に使う。
+- tool call / tool result
+  - 通常の会話UIには表示しない。
 - `webrtc.answer` / `webrtc.ice`
   - メッセージログには積まず、PeerConnection に反映する。
   - remote description 設定前の ICE は一時キューに保持する。
