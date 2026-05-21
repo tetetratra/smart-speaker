@@ -20,10 +20,15 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools map[string]tools.Handler
+	tools     map[string]tools.Handler
+	committer ToolResultCommitter
 }
 
-func NewStage(handlers map[string]tools.Handler) *graph.Stage {
+type ToolResultCommitter interface {
+	CommitToolResult(context.Context, types.ToolResultRecord) error
+}
+
+func NewStage(handlers map[string]tools.Handler, committer ToolResultCommitter) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
@@ -31,6 +36,7 @@ func NewStage(handlers map[string]tools.Handler) *graph.Stage {
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
+		committer:  committer,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -87,16 +93,18 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	s.taskGroup.Add(1)
 	go func() {
 		defer s.taskGroup.Done()
-		resp := s.executeTool(req)
-		select {
-		case <-s.ctx.Done():
+		result := s.executeTool(req)
+		if s.committer == nil {
+			log.Printf("toolcaller: result committer is nil")
 			return
-		case s.downstream <- types.Event{Kind: types.EventToolResponse, Payload: resp}:
+		}
+		if err := s.committer.CommitToolResult(s.ctx, result); err != nil && s.ctx.Err() == nil {
+			log.Printf("toolcaller: commit result error: %v", err)
 		}
 	}()
 }
 
-func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
+func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResultRecord {
 	args := map[string]any{}
 	if len(req.Arguments) > 0 {
 		if err := json.Unmarshal(req.Arguments, &args); err != nil {
@@ -123,11 +131,11 @@ func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 		log.Printf("toolcaller: result marshal error: %v", err)
 		output = []byte(`{"error":"result encoding failed"}`)
 	}
-	return types.ToolResponse{
-		ToolCallID: req.ToolCallID,
-		Name:       req.Name,
-		ResponseID: req.ResponseID,
-		Output:     output,
+	return types.ToolResultRecord{
+		ToolCallID:   req.ToolCallID,
+		Name:         req.Name,
+		Output:       output,
+		GenerationID: req.GenerationID,
 	}
 }
 
