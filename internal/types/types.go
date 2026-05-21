@@ -4,17 +4,20 @@ import "time"
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
-	Role       string
-	Text       string
-	ResponseID string
-	Final      bool
-	Source     string
+	Role         string
+	Text         string
+	ResponseID   string
+	Final        bool
+	Source       string
+	GenerationID GenerationID
 }
 
 // OutputAudio represents an assistant audio response chunk.
 type OutputAudio struct {
-	Role  string
-	Audio string
+	Role         string
+	Audio        string
+	Text         string
+	GenerationID GenerationID
 }
 
 // SpeechEvent は文字起こしの終了イベントを表します。
