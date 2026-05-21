@@ -89,6 +89,7 @@ docker compose build
 ```
 起動（通常はビルド不要）:
 ```sh
+docker context use desktop-linux
 docker compose up
 ```
 依存更新や Dockerfile 更新時だけ `docker compose build` してください。
