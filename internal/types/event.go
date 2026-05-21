@@ -23,6 +23,11 @@ const (
 	EventTTSEnd
 	EventTTSCancel
 	EventRTCSignal
+	EventConversationCommitRequest
+	EventLLMRequest
+	EventTimelineItem
+	EventPlayableSpeech
+	EventScheduledItem
 )
 
 // Event is the common data structure passed between stages.
@@ -61,6 +66,16 @@ func (k EventKind) String() string {
 		return "EventTTSCancel"
 	case EventRTCSignal:
 		return "EventRTCSignal"
+	case EventConversationCommitRequest:
+		return "EventConversationCommitRequest"
+	case EventLLMRequest:
+		return "EventLLMRequest"
+	case EventTimelineItem:
+		return "EventTimelineItem"
+	case EventPlayableSpeech:
+		return "EventPlayableSpeech"
+	case EventScheduledItem:
+		return "EventScheduledItem"
 	default:
 		return fmt.Sprintf("EventKind(%d)", int(k))
 	}
@@ -68,10 +83,12 @@ func (k EventKind) String() string {
 
 // ToolRequest は関数呼び出しが必要なときに発行されます。
 type ToolRequest struct {
-	ResponseID string
-	ToolCallID string
-	Name       string
-	Arguments  json.RawMessage
+	ResponseID   string
+	ToolCallID   string
+	Name         string
+	Arguments    json.RawMessage
+	GenerationID GenerationID
+	SequenceID   string
 }
 
 // ToolResponse は実行結果を responses ステージに返します。
