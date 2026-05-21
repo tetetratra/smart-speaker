@@ -48,7 +48,6 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
-		{def: map[string]any{"type": "web_search"}},
 	}
 	if sceneTool != nil {
 		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
@@ -60,7 +59,7 @@ func New(cfg Config) *Registry {
 	return &Registry{entries: entries}
 }
 
-// Definitions はResponses API向けのtools定義を返します。
+// Definitions はLLMへ提示するツール定義を返します。
 func (r *Registry) Definitions() []any {
 	if r == nil {
 		return nil

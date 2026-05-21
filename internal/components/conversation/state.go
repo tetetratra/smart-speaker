@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"encoding/json"
 	"strconv"
 
 	types "smart-speaker/internal/types"
@@ -14,34 +15,52 @@ type sessionState struct {
 	pendingTimeline    []timelineSegment
 	pendingTimelineIdx int
 
-	pendingRequestID        string
-	pendingRequestCancelled bool
-	invalidResponseRetries  int
+	pendingRequestID       string
+	invalidResponseRetries int
+	requestGeneration      map[string]uint64
 
 	pendingRequestStreaming     bool
 	pendingStreamSpeechStarted  bool
 	pendingStreamFailed         bool
+	pendingStreamToolSeen       bool
 	pendingTimelineTimerWaiting bool
 	pendingStreamLines          []string
 
-	seq int
+	seq        int
+	generation uint64
 }
 
 type timelineSegment struct {
 	Type    string
 	WaitSec int
 	Text    string
+	Tool    *toolCallSegment
+}
+
+type toolCallSegment struct {
+	Name string
+	Args json.RawMessage
 }
 
 func newSessionState() *sessionState {
 	return &sessionState{
 		utteranceByResponseID: make(map[string]*Utterance),
+		requestGeneration:     make(map[string]uint64),
 	}
 }
 
 func (s *sessionState) nextID(prefix string) string {
 	s.seq++
 	return prefix + "_" + strconv.Itoa(s.seq)
+}
+
+func (s *sessionState) nextGeneration() uint64 {
+	s.generation++
+	return s.generation
+}
+
+func (s *sessionState) currentGeneration() uint64 {
+	return s.generation
 }
 
 func (s *sessionState) buildConversationMessages() []types.ChatMessage {
@@ -78,19 +97,13 @@ func (s *sessionState) cancelPendingRequest() {
 	if s.pendingRequestID == "" {
 		return
 	}
-	s.pendingRequestCancelled = true
-}
-
-func (s *sessionState) cancelUnplayedUtterances() {
-	for _, utt := range s.conversation {
-		if utt == nil || utt.Speaker != SpeakerAI {
-			continue
-		}
-		if utt.Status == UtterancePlayed {
-			continue
-		}
-		utt.Status = UtteranceCanceled
-	}
+	delete(s.requestGeneration, s.pendingRequestID)
+	s.pendingRequestID = ""
+	s.pendingRequestStreaming = false
+	s.pendingStreamSpeechStarted = false
+	s.pendingStreamFailed = false
+	s.pendingStreamToolSeen = false
+	s.clearPendingStreamLines()
 }
 
 func (s *sessionState) clearPendingTimeline() {
@@ -106,6 +119,16 @@ func (s *sessionState) clearPendingStreamLines() {
 func (s *sessionState) hasPendingSpeech() bool {
 	for i := s.pendingTimelineIdx; i < len(s.pendingTimeline); i++ {
 		if s.pendingTimeline[i].Type == "speech" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *sessionState) hasPendingTimelineWork() bool {
+	for i := s.pendingTimelineIdx; i < len(s.pendingTimeline); i++ {
+		switch s.pendingTimeline[i].Type {
+		case "speech", "tool":
 			return true
 		}
 	}
@@ -131,10 +154,11 @@ func (s *sessionState) resetConversation() {
 	s.conversation = nil
 	s.clearPendingTimeline()
 	s.pendingRequestID = ""
-	s.pendingRequestCancelled = false
 	s.invalidResponseRetries = 0
+	s.requestGeneration = make(map[string]uint64)
 	s.pendingRequestStreaming = false
 	s.pendingStreamSpeechStarted = false
 	s.pendingStreamFailed = false
+	s.pendingStreamToolSeen = false
 	s.clearPendingStreamLines()
 }

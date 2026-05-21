@@ -31,7 +31,7 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 		core.state.current = nil
 	}
 	effects := []effect{}
-	if !core.state.hasPendingSpeech() {
+	if !core.state.hasPendingTimelineWork() {
 		if core.state.pendingRequestStreaming {
 			return effects, true
 		}
@@ -39,9 +39,12 @@ func (ttsEndRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
 		return effects, true
 	}
 	waitSec := core.state.consumeLeadingWaitSeconds()
-	if !core.state.hasPendingSpeech() {
+	if !core.state.hasPendingTimelineWork() {
 		core.state.clearPendingTimeline()
 		return effects, true
+	}
+	if waitSec <= 0 {
+		return core.advanceTimelineEffects(), true
 	}
 	effects = append(effects,
 		startTimerEffect{duration: estimateWaitDuration(s.event, waitSec)},

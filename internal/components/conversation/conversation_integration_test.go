@@ -60,7 +60,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendHumanUtterance("明日の予定を教えて")
-		h.sendResponse(first.RequestID, `{"type":"speech","text":"明日は10時から会議があります"}`)
+		h.sendStreamLine(first.RequestID, `{"type":"speech","text":"明日は10時から会議があります"}`)
 
 		firstOutput := h.expectRealtimeOutputText("明日は10時から会議があります")
 		h.expectFinalOutput(firstOutput.ResponseID)
@@ -72,14 +72,6 @@ func TestConversationIntegration(t *testing.T) {
 				Text: "それについて調べて教えて",
 			},
 		})
-		cancelEvt := h.expectMainEvent(types.EventTTSCancel)
-		cancel, ok := cancelEvt.Payload.(types.TTSCancel)
-		if !ok {
-			t.Fatalf("TTSCancel payload type = %T", cancelEvt.Payload)
-		}
-		if cancel.ResponseID != firstOutput.ResponseID {
-			t.Fatalf("cancel response_id = %q, want %q", cancel.ResponseID, firstOutput.ResponseID)
-		}
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
 		if !ok {
@@ -103,7 +95,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendHumanUtterance("テスト")
-		h.sendResponse(first.RequestID, `{"timeline":[}`)
+		h.sendStreamLine(first.RequestID, `{"timeline":[}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
@@ -116,20 +108,19 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
-		if second.Tools != nil {
-			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
-		}
 		assertRetryHintFirst(t, second.Messages, `{"timeline":[}`)
 
-		h.sendResponse(second.RequestID, `{"timeline":[}`)
+		h.sendStreamLine(second.RequestID, `{"timeline":[}`)
 		h.expectNoEvent(150 * time.Millisecond)
 	})
 
-	t.Run("non streamingのNDJSON応答も解釈できる", func(t *testing.T) {
+	t.Run("NDJSON応答を順番に解釈できる", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendHumanUtterance("こんにちは")
-		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"やあ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"元気？\"}")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
+		h.sendStreamLine(req.RequestID, `{"type":"wait","sec":1}`)
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"元気？"}`)
 
 		first := h.expectRealtimeOutputText("やあ")
 		h.expectFinalOutput(first.ResponseID)
@@ -149,7 +140,9 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendHumanUtterance("次の発話を待って")
-		h.sendResponse(req.RequestID, "{\"type\":\"speech\",\"text\":\"ひとつめ\"}\n{\"type\":\"wait\",\"sec\":1}\n{\"type\":\"speech\",\"text\":\"ふたつめ\"}")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"ひとつめ"}`)
+		h.sendStreamLine(req.RequestID, `{"type":"wait","sec":1}`)
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"ふたつめ"}`)
 
 		first := h.expectRealtimeOutputText("ひとつめ")
 		h.expectFinalOutput(first.ResponseID)
@@ -170,7 +163,7 @@ func TestConversationIntegration(t *testing.T) {
 		h := newConversationHarness(t)
 
 		first := h.sendHumanUtterance("明日の予定を教えて")
-		h.sendResponse(first.RequestID, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
+		h.sendStreamLine(first.RequestID, `{"type":"whiteboard","content":"- 10:00 定例会議"}`)
 
 		secondEvt := h.expectMainEvent(types.EventResponsesRequest)
 		second, ok := secondEvt.Payload.(types.ResponsesRequest)
@@ -183,14 +176,14 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, want new request id", second.RequestID)
 		}
-		assertRetryHintFirst(t, second.Messages, "{\"type\":\"speech\",\"text\":\"明日の予定を確認したよ\"}\n{\"type\":\"whiteboard\",\"content\":\"- 10:00 定例会議\"}")
+		assertRetryHintFirst(t, second.Messages, `{"type":"whiteboard","content":"- 10:00 定例会議"}`)
 	})
 
 	t.Run("レスポンスにwhiteboardがない場合は白板更新イベントが出ない", func(t *testing.T) {
 		h := newConversationHarness(t)
 
 		req := h.sendHumanUtterance("こんにちは")
-		h.sendResponse(req.RequestID, `{"type":"speech","text":"やあ"}`)
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"やあ"}`)
 
 		first := h.expectRealtimeOutputText("やあ")
 		h.expectFinalOutput(first.ResponseID)
@@ -313,9 +306,6 @@ func TestConversationIntegration(t *testing.T) {
 		if second.RequestID == "" || second.RequestID == first.RequestID {
 			t.Fatalf("retry RequestID = %q, first = %q", second.RequestID, first.RequestID)
 		}
-		if second.Tools != nil {
-			t.Fatalf("retry Tools = %#v, want nil to use default tools", second.Tools)
-		}
 		assertRetryHintFirst(t, second.Messages, `うん、わかった、だよ`)
 	})
 
@@ -366,11 +356,107 @@ func TestConversationIntegration(t *testing.T) {
 		h.sendStreamLine(req.RequestID, `{"type":"unknown"}`)
 		h.expectNoEvent(150 * time.Millisecond)
 	})
+
+	t.Run("toolは先行speechの再生開始後かつTTS完了後に実行する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendHumanUtterance("温度を確認して")
+		h.sendStreamLine(req.RequestID, `{"type":"speech","text":"確認するね"}`)
+		first := h.expectRealtimeOutputText("確認するね")
+		h.expectFinalOutput(first.ResponseID)
+
+		h.sendStreamLine(req.RequestID, `{"type":"tool","name":"get_temp","args":{"room":"living"}}`)
+		h.expectNoEvent(150 * time.Millisecond)
+
+		h.sendEvent(types.Event{
+			Kind: types.EventTTSEnd,
+			Payload: types.TTSEvent{
+				ResponseID:      first.ResponseID,
+				AudioStartAt:    time.Now().Add(-2 * time.Second),
+				DurationSeconds: 1,
+			},
+		})
+		toolEvt := h.expectMainEvent(types.EventToolRequest)
+		toolReq, ok := toolEvt.Payload.(types.ToolRequest)
+		if !ok {
+			t.Fatalf("ToolRequest payload type = %T", toolEvt.Payload)
+		}
+		if toolReq.Name != "get_temp" {
+			t.Fatalf("tool name = %q, want get_temp", toolReq.Name)
+		}
+		if toolReq.GenerationID == 0 {
+			t.Fatal("tool generation_id is empty")
+		}
+		if string(toolReq.Arguments) != `{"room":"living"}` {
+			t.Fatalf("tool args = %s", toolReq.Arguments)
+		}
+	})
+
+	t.Run("tool結果は履歴に保存されてLLM再実行を起動する", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		req := h.sendHumanUtterance("温度を確認して")
+		h.sendStreamLine(req.RequestID, `{"type":"tool","name":"get_temp","args":{"room":"living"}}`)
+		toolEvt := h.expectMainEvent(types.EventToolRequest)
+		toolReq := toolEvt.Payload.(types.ToolRequest)
+
+		h.commitToolResult(types.ToolResponse{
+			ToolCallID:   toolReq.ToolCallID,
+			Name:         toolReq.Name,
+			Output:       json.RawMessage(`{"temperature":28}`),
+			GenerationID: toolReq.GenerationID,
+		})
+
+		nextEvt := h.expectMainEvent(types.EventResponsesRequest)
+		nextReq, ok := nextEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("ResponsesRequest payload type = %T", nextEvt.Payload)
+		}
+		last := nextReq.Messages[len(nextReq.Messages)-1]
+		if last.Role != "system" {
+			t.Fatalf("last role = %q, want system", last.Role)
+		}
+		for _, want := range []string{"ツール実行結果", "name=get_temp", "stale=false", `"temperature":28`} {
+			if !strings.Contains(last.Content, want) {
+				t.Fatalf("tool result message = %q, want contains %q", last.Content, want)
+			}
+		}
+	})
+
+	t.Run("古い世代のtool結果もstale情報付きでLLMへ渡す", func(t *testing.T) {
+		h := newConversationHarness(t)
+
+		h.sendHumanUtterance("温度を確認して")
+		second := h.sendHumanUtterance("別の話をしよう")
+
+		h.commitToolResult(types.ToolResponse{
+			ToolCallID:   "tool_call_old",
+			Name:         "get_temp",
+			Output:       json.RawMessage(`{"temperature":27}`),
+			GenerationID: 1,
+		})
+
+		nextEvt := h.expectMainEvent(types.EventResponsesRequest)
+		nextReq, ok := nextEvt.Payload.(types.ResponsesRequest)
+		if !ok {
+			t.Fatalf("ResponsesRequest payload type = %T", nextEvt.Payload)
+		}
+		if nextReq.RequestID == second.RequestID {
+			t.Fatalf("tool result request reused second request_id = %q", nextReq.RequestID)
+		}
+		last := nextReq.Messages[len(nextReq.Messages)-1]
+		for _, want := range []string{"stale=true", "generation_id=1", "current_generation_id=2"} {
+			if !strings.Contains(last.Content, want) {
+				t.Fatalf("tool result message = %q, want contains %q", last.Content, want)
+			}
+		}
+	})
 }
 
 type conversationHarness struct {
 	t     *testing.T
 	stage *graph.Stage
+	sink  *ToolResultSink
 }
 
 func newConversationHarness(t *testing.T) *conversationHarness {
@@ -380,7 +466,8 @@ func newConversationHarness(t *testing.T) *conversationHarness {
 	t.Chdir(tmpDir)
 	t.Setenv("GOOGLE_OAUTH_TOKEN_PATH", filepath.Join(tmpDir, "missing-google-token.json"))
 
-	stage := NewStage(Config{})
+	sink := NewToolResultSink()
+	stage := NewStage(Config{ToolResults: sink})
 	ctx, cancel := context.WithCancel(context.Background())
 	stage.Run(ctx)
 	t.Cleanup(func() {
@@ -391,6 +478,7 @@ func newConversationHarness(t *testing.T) *conversationHarness {
 	return &conversationHarness{
 		t:     t,
 		stage: stage,
+		sink:  sink,
 	}
 }
 
@@ -413,18 +501,6 @@ func (h *conversationHarness) sendHumanUtterance(text string) types.ResponsesReq
 	return req
 }
 
-func (h *conversationHarness) sendResponse(requestID string, raw string) {
-	h.t.Helper()
-	h.sendEvent(types.Event{
-		Kind: types.EventResponsesResponse,
-		Payload: types.ResponsesResponse{
-			RequestID:   requestID,
-			Text:        raw,
-			HasResponse: true,
-		},
-	})
-}
-
 func (h *conversationHarness) sendStreamLine(requestID string, line string) {
 	h.t.Helper()
 	h.sendEvent(types.Event{
@@ -445,6 +521,11 @@ func (h *conversationHarness) sendStreamDone(requestID string) {
 			Done:      true,
 		},
 	})
+}
+
+func (h *conversationHarness) commitToolResult(resp types.ToolResponse) {
+	h.t.Helper()
+	h.sink.Commit(context.Background(), resp)
 }
 
 func (h *conversationHarness) sendEvent(evt types.Event) {

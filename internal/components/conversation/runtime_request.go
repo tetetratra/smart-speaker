@@ -12,7 +12,6 @@ func (r *runner) applyRequestResponseEffect(e requestResponseEffect) {
 		Payload: types.ResponsesRequest{
 			RequestID: e.requestID,
 			Messages:  messages,
-			Tools:     e.tools,
 		},
 	})
 }

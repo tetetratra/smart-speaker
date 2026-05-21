@@ -36,8 +36,6 @@ func TestCreateResponseStream(t *testing.T) {
 			context.Background(),
 			[]types.ChatMessage{{Role: "user", Content: "こんにちは"}},
 			"system",
-			nil,
-			nil,
 			func(line string) error {
 				lines = append(lines, line)
 				return nil
@@ -85,8 +83,6 @@ func TestCreateResponseStream(t *testing.T) {
 			context.Background(),
 			[]types.ChatMessage{{Role: "user", Content: "こんにちは"}},
 			"",
-			nil,
-			nil,
 			func(line string) error {
 				lines = append(lines, line)
 				return nil
@@ -100,36 +96,4 @@ func TestCreateResponseStream(t *testing.T) {
 		}
 	})
 
-	t.Run("completed responseからtool callを抽出する", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_tool\",\"output\":[{\"type\":\"function_call\",\"name\":\"timer_start\",\"call_id\":\"call_1\",\"arguments\":\"{\\\"seconds\\\":300}\"}]}}\n\n"))
-		}))
-		defer server.Close()
-
-		client, err := NewClient(Config{APIKey: "test-key", Model: "test-model"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		client.endpoint = server.URL
-
-		resp, err := client.CreateResponseStream(
-			context.Background(),
-			[]types.ChatMessage{{Role: "user", Content: "5分タイマーをかけて"}},
-			"",
-			nil,
-			nil,
-			nil,
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(resp.ToolCalls) != 1 {
-			t.Fatalf("tool calls len = %d, want 1", len(resp.ToolCalls))
-		}
-		call := resp.ToolCalls[0]
-		if call.ResponseID != "resp_tool" || call.ToolCallID != "call_1" || call.Name != "timer_start" {
-			t.Fatalf("tool call = %+v", call)
-		}
-	})
 }

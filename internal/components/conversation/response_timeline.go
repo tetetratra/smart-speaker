@@ -11,48 +11,6 @@ var (
 	citationPattern     = regexp.MustCompile("cite[^]+")
 )
 
-type responsesRule struct{}
-
-func (responsesRule) Apply(core *conversationCore, sig signal) ([]effect, bool) {
-	s, ok := sig.(responsesSignal)
-	if !ok {
-		return nil, false
-	}
-	resp := s.response
-	if resp.RequestID == "" || resp.RequestID != core.state.pendingRequestID {
-		return nil, true
-	}
-	if core.state.pendingRequestCancelled {
-		core.state.pendingRequestCancelled = false
-		core.state.pendingRequestID = ""
-		return nil, true
-	}
-	if len(resp.ToolCalls) > 0 || !resp.HasResponse {
-		return nil, true
-	}
-
-	core.state.pendingRequestID = ""
-	out, parsed := parseAIOutput(resp.Text)
-	if !parsed {
-		effects := []effect{runtimeLogEffect{
-			message: "conversation: invalid response: " + strings.TrimSpace(resp.Text),
-		}}
-		effects = append(effects, core.retryInvalidResponseEffects(resp.Text)...)
-		return effects, true
-	}
-
-	core.state.invalidResponseRetries = 0
-	var effects []effect
-	root := buildTimelineSegments(out)
-	if len(root) == 0 {
-		return effects, true
-	}
-	core.state.pendingTimeline = root
-	core.state.pendingTimelineIdx = 0
-	effects = append(effects, core.advanceTimelineEffects()...)
-	return effects, true
-}
-
 func buildTimelineSegments(out aiOutput) []timelineSegment {
 	if len(out.Timeline) == 0 {
 		return nil
@@ -73,9 +31,17 @@ func buildTimelineSegments(out aiOutput) []timelineSegment {
 			}
 			timeline = append(timeline, timelineSegment{Type: "speech", Text: text})
 			speechCount++
+		case "tool":
+			timeline = append(timeline, timelineSegment{
+				Type: "tool",
+				Tool: &toolCallSegment{
+					Name: strings.TrimSpace(seg.Name),
+					Args: seg.Args,
+				},
+			})
 		}
 	}
-	if speechCount == 0 {
+	if speechCount == 0 && (len(timeline) == 0 || timeline[len(timeline)-1].Type != "tool") {
 		return nil
 	}
 	return timeline

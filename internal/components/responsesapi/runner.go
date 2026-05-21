@@ -20,10 +20,8 @@ type runner struct {
 	cancel context.CancelFunc
 	once   sync.Once
 
-	mu             sync.Mutex
-	toolResponseID map[string]string
-	toolRequestID  map[string]string
-	systemPrompt   string
+	taskGroup    sync.WaitGroup
+	systemPrompt string
 }
 
 // NewStage はResponses API呼び出しのステージを構築します。
@@ -33,12 +31,10 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, err
 	}
 	r := &runner{
-		upstream:       make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream:     make(chan types.Event, graph.DefaultChannelBufferSize),
-		client:         client,
-		toolResponseID: map[string]string{},
-		toolRequestID:  map[string]string{},
-		systemPrompt:   strings.TrimSpace(cfg.Instructions),
+		upstream:     make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		client:       client,
+		systemPrompt: strings.TrimSpace(cfg.Instructions),
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,
@@ -54,7 +50,10 @@ func (r *runner) run(parent context.Context) {
 }
 
 func (r *runner) consume() {
-	defer close(r.downstream)
+	defer func() {
+		r.taskGroup.Wait()
+		close(r.downstream)
+	}()
 	for {
 		select {
 		case <-r.ctx.Done():
@@ -69,16 +68,18 @@ func (r *runner) consume() {
 				if !ok {
 					continue
 				}
-				r.handleRequest(req)
-			case types.EventToolResponse:
-				resp, ok := evt.Payload.(types.ToolResponse)
-				if !ok {
-					continue
-				}
-				r.handleToolResponse(resp)
+				r.dispatchRequest(req)
 			}
 		}
 	}
+}
+
+func (r *runner) dispatchRequest(req types.ResponsesRequest) {
+	r.taskGroup.Add(1)
+	go func() {
+		defer r.taskGroup.Done()
+		r.handleRequest(req)
+	}()
 }
 
 func (r *runner) handleRequest(req types.ResponsesRequest) {
@@ -99,7 +100,7 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 		systemPrompt = strings.TrimSpace(*req.SystemPrompt)
 	}
 	systemPrompt = appendCurrentTimestamp(systemPrompt)
-	resp, err := r.client.CreateResponseStream(r.ctx, messages, systemPrompt, req.ToolChoice, req.Tools, func(line string) error {
+	resp, err := r.client.CreateResponseStream(r.ctx, messages, systemPrompt, func(line string) error {
 		r.emit(types.Event{
 			Kind: types.EventResponsesStreamChunk,
 			Payload: types.ResponsesStreamChunk{
@@ -118,11 +119,6 @@ func (r *runner) handleRequest(req types.ResponsesRequest) {
 				Err:       err.Error(),
 			},
 		})
-		return
-	}
-	resp.RequestID = req.RequestID
-	if len(resp.ToolCalls) > 0 {
-		r.handleResponsesResponse(resp)
 		return
 	}
 	r.emit(types.Event{
@@ -163,46 +159,6 @@ func formatJapaneseWeekday(w time.Weekday) string {
 		return "日"
 	default:
 		return ""
-	}
-}
-
-func (r *runner) handleToolResponse(resp types.ToolResponse) {
-	r.mu.Lock()
-	responseID := r.toolResponseID[resp.ToolCallID]
-	requestID := r.toolRequestID[resp.ToolCallID]
-	delete(r.toolResponseID, resp.ToolCallID)
-	delete(r.toolRequestID, resp.ToolCallID)
-	r.mu.Unlock()
-	if responseID == "" {
-		log.Printf("responsesapi: missing response id for tool call %s", resp.ToolCallID)
-		return
-	}
-	out := strings.TrimSpace(string(resp.Output))
-	next, err := r.client.SubmitToolOutput(r.ctx, responseID, resp.ToolCallID, appendOutputConstraint("assistant", out), nil)
-	if err != nil {
-		log.Printf("responsesapi: tool output error: %v", err)
-		return
-	}
-	next.RequestID = requestID
-	r.handleResponsesResponse(next)
-}
-
-func appendOutputConstraint(role, text string) string {
-	trimmed := strings.TrimSpace(text)
-	return trimmed
-}
-
-func (r *runner) handleResponsesResponse(resp types.ResponsesResponse) {
-	resp.HasResponse = strings.TrimSpace(resp.Text) != ""
-	r.emit(types.Event{Kind: types.EventResponsesResponse, Payload: resp})
-	if len(resp.ToolCalls) > 0 {
-		for _, call := range resp.ToolCalls {
-			r.mu.Lock()
-			r.toolResponseID[call.ToolCallID] = resp.ResponseID
-			r.toolRequestID[call.ToolCallID] = resp.RequestID
-			r.mu.Unlock()
-			r.emit(types.Event{Kind: types.EventToolRequest, Payload: call})
-		}
 	}
 }
 

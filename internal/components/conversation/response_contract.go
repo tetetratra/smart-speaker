@@ -10,15 +10,19 @@ type aiOutput struct {
 }
 
 type aiSegment struct {
-	Type string `json:"type"`
-	Sec  *int   `json:"sec,omitempty"`
-	Text string `json:"text,omitempty"`
+	Type string          `json:"type"`
+	Sec  *int            `json:"sec,omitempty"`
+	Text string          `json:"text,omitempty"`
+	Name string          `json:"name,omitempty"`
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 type aiChunk struct {
-	Type string `json:"type"`
-	Sec  *int   `json:"sec,omitempty"`
-	Text string `json:"text,omitempty"`
+	Type string          `json:"type"`
+	Sec  *int            `json:"sec,omitempty"`
+	Text string          `json:"text,omitempty"`
+	Name string          `json:"name,omitempty"`
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 func parseAIOutput(raw string) (aiOutput, bool) {
@@ -38,7 +42,11 @@ func validateAIOutput(out aiOutput) (aiOutput, bool) {
 		return aiOutput{}, false
 	}
 	speechCount := 0
+	toolSeen := false
 	for _, seg := range out.Timeline {
+		if toolSeen {
+			return aiOutput{}, false
+		}
 		switch seg.Type {
 		case "wait":
 			if seg.Sec == nil {
@@ -49,11 +57,16 @@ func validateAIOutput(out aiOutput) (aiOutput, bool) {
 				return aiOutput{}, false
 			}
 			speechCount++
+		case "tool":
+			if strings.TrimSpace(seg.Name) == "" {
+				return aiOutput{}, false
+			}
+			toolSeen = true
 		default:
 			return aiOutput{}, false
 		}
 	}
-	if speechCount == 0 {
+	if speechCount == 0 && !toolSeen {
 		return aiOutput{}, false
 	}
 	return out, true
@@ -90,6 +103,14 @@ func validateAIChunk(chunk aiChunk) (aiChunk, bool) {
 	case "wait":
 		if chunk.Sec == nil {
 			return aiChunk{}, false
+		}
+	case "tool":
+		chunk.Name = strings.TrimSpace(chunk.Name)
+		if chunk.Name == "" {
+			return aiChunk{}, false
+		}
+		if len(chunk.Args) == 0 {
+			chunk.Args = json.RawMessage(`{}`)
 		}
 	default:
 		return aiChunk{}, false
@@ -142,6 +163,8 @@ func buildAIOutputFromChunks(chunks []aiChunk) (aiOutput, bool) {
 			out.Timeline = append(out.Timeline, aiSegment{Type: "speech", Text: chunk.Text})
 		case "wait":
 			out.Timeline = append(out.Timeline, aiSegment{Type: "wait", Sec: chunk.Sec})
+		case "tool":
+			out.Timeline = append(out.Timeline, aiSegment{Type: "tool", Name: chunk.Name, Args: chunk.Args})
 		default:
 			return aiOutput{}, false
 		}

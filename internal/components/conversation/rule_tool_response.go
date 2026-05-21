@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -22,14 +23,28 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 	if output == "" {
 		return effects, true
 	}
-	content := "ツール実行結果(" + name + "): " + output
+	core.state.clearPendingTimeline()
+	core.state.cancelPendingRequest()
+	core.state.invalidResponseRetries = 0
+	effects = append(effects, stopTimerEffect{})
+
+	stale := resp.GenerationID != 0 && resp.GenerationID != core.state.currentGeneration()
+	content := fmt.Sprintf(
+		"ツール実行結果(name=%s, generation_id=%d, current_generation_id=%d, stale=%t): %s",
+		name,
+		resp.GenerationID,
+		core.state.currentGeneration(),
+		stale,
+		output,
+	)
 	core.state.appendUtterance(&Utterance{
-		ID:         core.state.nextID("tool"),
-		Speaker:    SpeakerTool,
-		StartAt:    time.Now(),
-		Content:    content,
-		Status:     UtterancePlayed,
-		ResponseID: strings.TrimSpace(resp.ResponseID),
+		ID:           core.state.nextID("tool"),
+		Speaker:      SpeakerTool,
+		StartAt:      time.Now(),
+		Content:      content,
+		Status:       UtterancePlayed,
+		ResponseID:   strings.TrimSpace(resp.ResponseID),
+		GenerationID: resp.GenerationID,
 	})
 	effects = append(effects, logRecordEffect{
 		record: logRecord{
@@ -39,5 +54,7 @@ func (toolResponseRule) Apply(core *conversationCore, sig signal) ([]effect, boo
 			Source:     name,
 		},
 	})
+	messages := core.state.buildConversationMessages()
+	effects = append(effects, core.buildResponseRequestEffect(messages)...)
 	return effects, true
 }

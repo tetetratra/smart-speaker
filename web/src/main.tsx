@@ -2,10 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 
-type ChatMessage =
-  | { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
-  | { id: number; type: 'function_call'; toolCallId: string; name: string; args?: string }
-  | { id: number; type: 'function_result'; toolCallId: string; name?: string; output?: string }
+type ChatMessage = { id: number; type: 'user' | 'assistant' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
 
 type StatusTone = 'idle' | 'active' | 'done' | 'error'
 type ButtonTone = 'primary' | 'secondary'
@@ -581,26 +578,6 @@ function App() {
           setBoardText(content)
           break
         }
-        case 'function_call': {
-          appendMessage({
-            id: nextMessageId(),
-            type: 'function_call',
-            toolCallId: String(raw.tool_call_id || ''),
-            name: String(raw.name || ''),
-            args: raw.arguments ? JSON.stringify(raw.arguments) : undefined,
-          })
-          break
-        }
-        case 'function_result': {
-          appendMessage({
-            id: nextMessageId(),
-            type: 'function_result',
-            toolCallId: String(raw.tool_call_id || ''),
-            name: typeof raw.name === 'string' ? raw.name : undefined,
-            output: raw.output ? JSON.stringify(raw.output) : undefined,
-          })
-          break
-        }
         default:
           break
       }
@@ -1046,26 +1023,6 @@ function App() {
           ref={chatRef}
         >
           {messages.map((m) => {
-            if (m.type === 'function_call') {
-              return (
-                <div key={m.id} style={{ marginBottom: 8 }}>
-                  <strong style={{ color: '#8b5cf6' }}>function call</strong>
-                  <div>name: {m.name}</div>
-                  <div>callId: {m.toolCallId}</div>
-                  {m.args && <div>args: {m.args}</div>}
-                </div>
-              )
-            }
-            if (m.type === 'function_result') {
-              return (
-                <div key={m.id} style={{ marginBottom: 8 }}>
-                  <strong style={{ color: '#ec4899' }}>function result</strong>
-                  <div>callId: {m.toolCallId}</div>
-                  {m.name && <div>name: {m.name}</div>}
-                  {m.output && <div>output: {m.output}</div>}
-                </div>
-              )
-            }
             let color = '#16a34a'
             let label = 'Assistant'
             if (m.type === 'user') {

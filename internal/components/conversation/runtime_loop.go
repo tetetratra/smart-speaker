@@ -25,6 +25,8 @@ func (r *runner) consume() {
 				return
 			}
 			r.handleEvent(evt)
+		case resp := <-r.toolResults.C():
+			r.handleToolResult(resp)
 		case <-r.timerC:
 			r.timerC = nil
 			r.timer = nil
@@ -39,6 +41,10 @@ func (r *runner) handleEvent(evt types.Event) {
 		return
 	}
 	r.applyEffects(r.core.Handle(sig))
+}
+
+func (r *runner) handleToolResult(resp types.ToolResponse) {
+	r.applyEffects(r.core.Handle(toolResponseSignal{response: resp}))
 }
 
 func (r *runner) close() error {

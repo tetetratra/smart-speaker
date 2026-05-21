@@ -21,9 +21,9 @@ type startTimerEffect struct {
 type stopTimerEffect struct{}
 
 type requestResponseEffect struct {
-	requestID string
-	messages  []types.ChatMessage
-	tools     []any
+	requestID    string
+	generationID uint64
+	messages     []types.ChatMessage
 }
 
 type logRecordEffect struct {

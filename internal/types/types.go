@@ -37,11 +37,6 @@ type TTSEvent struct {
 	DurationSeconds float64
 }
 
-// TTSCancel はTTSの中断を表します。
-type TTSCancel struct {
-	ResponseID string
-}
-
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
 type WhiteboardUpdate struct {
 	Content string
@@ -73,17 +68,6 @@ type ResponsesRequest struct {
 	Messages     []ChatMessage
 	RequestID    string
 	SystemPrompt *string
-	ToolChoice   any
-	Tools        []any
-}
-
-// ResponsesResponse はResponses APIの応答を表します。
-type ResponsesResponse struct {
-	Text        string
-	ResponseID  string
-	RequestID   string
-	HasResponse bool
-	ToolCalls   []ToolRequest
 }
 
 // ResponsesStreamChunk はResponses API streamingから復元済みの1行、完了、エラーを表します。

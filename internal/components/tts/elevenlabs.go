@@ -93,13 +93,6 @@ func (t *streamTTS) run(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if evt.Kind == types.EventTTSCancel {
-				cancel, ok := evt.Payload.(types.TTSCancel)
-				if ok {
-					t.handleCancel(cancel)
-				}
-				continue
-			}
 			if evt.Kind != types.EventRealtimeOutput {
 				continue
 			}
@@ -119,16 +112,6 @@ func (t *streamTTS) run(ctx context.Context) {
 			t.startStream(ctx, line.ResponseID, line.Text)
 		}
 	}
-}
-
-func (t *streamTTS) handleCancel(cancel types.TTSCancel) {
-	t.mu.Lock()
-	current := t.streamResponse
-	t.mu.Unlock()
-	if cancel.ResponseID != "" && current != "" && cancel.ResponseID != current {
-		return
-	}
-	t.cancelActiveStream()
 }
 
 func (t *streamTTS) startStream(parent context.Context, respID string, text string) {

@@ -9,13 +9,18 @@ func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 	if !ok {
 		return nil, false
 	}
-	effects := core.interruptCurrentConversationEffects()
+	core.state.nextGeneration()
+	core.state.clearPendingTimeline()
+	core.state.cancelPendingRequest()
+	core.state.invalidResponseRetries = 0
+	effects := []effect{stopTimerEffect{}}
 	core.state.appendUtterance(&Utterance{
-		ID:      core.state.nextID("human"),
-		Speaker: SpeakerHuman,
-		StartAt: time.Now(),
-		Content: s.text,
-		Status:  UtterancePlayed,
+		ID:           core.state.nextID("human"),
+		Speaker:      SpeakerHuman,
+		StartAt:      time.Now(),
+		Content:      s.text,
+		Status:       UtterancePlayed,
+		GenerationID: core.state.currentGeneration(),
 	})
 	effects = append(effects, logRecordEffect{
 		record: logRecord{
@@ -24,6 +29,6 @@ func (humanTextRule) Apply(core *conversationCore, sig signal) ([]effect, bool) 
 		},
 	})
 	messages := core.state.buildConversationMessages()
-	effects = append(effects, core.buildResponseRequestEffect(messages, nil)...)
+	effects = append(effects, core.buildResponseRequestEffect(messages)...)
 	return effects, true
 }

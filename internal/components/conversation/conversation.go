@@ -11,6 +11,7 @@ import (
 type Config struct {
 	LogPath        string
 	CalendarClient calendarEventLister
+	ToolResults    *ToolResultSink
 }
 
 type Speaker string
@@ -38,6 +39,7 @@ type Utterance struct {
 	Content         string
 	Status          UtteranceStatus
 	ResponseID      string
+	GenerationID    uint64
 }
 
 type runner struct {
@@ -54,6 +56,8 @@ type runner struct {
 
 	contexts *contextProvider
 	logger   *conversationLogger
+
+	toolResults *ToolResultSink
 }
 
 const (
@@ -66,12 +70,17 @@ const (
 
 // NewStage は会話タイミング管理のステージを作成します。
 func NewStage(cfg Config) *graph.Stage {
+	toolResults := cfg.ToolResults
+	if toolResults == nil {
+		toolResults = NewToolResultSink()
+	}
 	r := &runner{
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		contexts:   newContextProvider(cfg.CalendarClient),
-		logger:     newConversationLogger(cfg.LogPath),
-		core:       newConversationCore(),
+		upstream:    make(chan types.Event, graph.DefaultChannelBufferSize),
+		downstream:  make(chan types.Event, graph.DefaultChannelBufferSize),
+		contexts:    newContextProvider(cfg.CalendarClient),
+		logger:      newConversationLogger(cfg.LogPath),
+		core:        newConversationCore(),
+		toolResults: toolResults,
 	}
 	return &graph.Stage{
 		Upstream:   r.upstream,

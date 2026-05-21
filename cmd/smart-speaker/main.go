@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -111,9 +112,11 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		ttsStage.Name = "tts"
 	}
 	calendarClient := newCalendarClient()
+	toolResultSink := conversation.NewToolResultSink()
 	convStage = conversation.NewStage(conversation.Config{
 		LogPath:        "data/conversation.jsonl",
 		CalendarClient: calendarClient,
+		ToolResults:    toolResultSink,
 	})
 	if convStage != nil {
 		convStage.Name = "conversation"
@@ -138,8 +141,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 	responsesStage, err = responsesapi.NewStage(responsesapi.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
-		Instructions: cfg.SystemPrompt,
-		Tools:        toolRegistry.Definitions(),
+		Instructions: appendToolDefinitionsToPrompt(cfg.SystemPrompt, toolRegistry.Definitions()),
 	})
 	if err != nil {
 		if ttsStage != nil {
@@ -150,7 +152,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 	if responsesStage != nil {
 		responsesStage.Name = "responsesapi"
 	}
-	toolStage = toolcaller.NewStage(toolRegistry.Handlers())
+	toolStage = toolcaller.NewStageWithConfig(toolcaller.Config{
+		Handlers:   toolRegistry.Handlers(),
+		ResultSink: toolResultSink,
+	})
 	if toolStage != nil {
 		toolStage.Name = "toolcaller"
 	}
@@ -171,6 +176,22 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		rtcStage.Name = "rtc"
 	}
 	return responsesStage, ttsStage, rtcStage, toolStage, convStage, nil
+}
+
+func appendToolDefinitionsToPrompt(prompt string, defs []any) string {
+	if len(defs) == 0 {
+		return prompt
+	}
+	body, err := json.MarshalIndent(defs, "", "  ")
+	if err != nil {
+		log.Printf("failed to marshal tool definitions: %v", err)
+		return prompt
+	}
+	section := "\n\n## 利用可能なツール\n" +
+		"必要な場合は、以下のツール名とparameters schemaに従ってNDJSONのtool chunkを出力してください。\n" +
+		"tool chunkは1回の応答の末尾に最大1件だけ置けます。\n\n" +
+		string(body)
+	return strings.TrimRight(prompt, "\n") + section
 }
 
 func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
@@ -233,13 +254,9 @@ func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, to
 	var toolNode *graph.Node
 	if node := add(toolStage); node != nil {
 		toolNode = node
-		if responsesNode != nil {
-			g.Connect(responsesNode, toolNode)
-			g.Connect(toolNode, responsesNode)
-		}
 	}
 	if toolNode != nil && convNode != nil {
-		g.Connect(toolNode, convNode)
+		g.Connect(convNode, toolNode)
 	}
 	if chatNode != nil {
 		if convNode != nil {

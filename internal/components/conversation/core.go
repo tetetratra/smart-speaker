@@ -38,41 +38,23 @@ func (c *conversationCore) Handle(sig signal) []effect {
 	return nil
 }
 
-func (c *conversationCore) interruptCurrentConversationEffects() []effect {
-	effects := []effect{stopTimerEffect{}}
-	c.state.clearPendingTimeline()
-	c.state.cancelPendingRequest()
-	c.state.invalidResponseRetries = 0
-	if c.state.current != nil && c.state.current.Status == UtterancePlaying {
-		c.state.current.Status = UtteranceCanceled
-		effects = append(effects, emitEventEffect{
-			event: types.Event{
-				Kind:    types.EventTTSCancel,
-				Payload: types.TTSCancel{ResponseID: c.state.current.ResponseID},
-			},
-		})
-		delete(c.state.utteranceByResponseID, c.state.current.ResponseID)
-		c.state.current = nil
-	}
-	c.state.cancelUnplayedUtterances()
-	return effects
-}
-
-func (c *conversationCore) buildResponseRequestEffect(messages []types.ChatMessage, tools []any) []effect {
+func (c *conversationCore) buildResponseRequestEffect(messages []types.ChatMessage) []effect {
 	if len(messages) == 0 {
 		return nil
 	}
 	reqID := c.state.nextID("req")
+	generationID := c.state.currentGeneration()
 	c.state.pendingRequestID = reqID
-	c.state.pendingRequestCancelled = false
 	c.state.pendingRequestStreaming = false
 	c.state.pendingStreamSpeechStarted = false
 	c.state.pendingStreamFailed = false
+	c.state.pendingStreamToolSeen = false
+	c.state.requestGeneration[reqID] = generationID
 	c.state.clearPendingStreamLines()
 	return []effect{requestResponseEffect{
-		requestID: reqID,
-		messages:  messages,
-		tools:     tools,
+		requestID:    reqID,
+		generationID: generationID,
+		messages:     messages,
 	}}
 }
 
@@ -91,7 +73,7 @@ func (c *conversationCore) retryInvalidResponseEffects(invalidRaw string) []effe
 		Content: buildInvalidResponseRetryHint(invalidRaw),
 	}}, messages...)
 	c.state.invalidResponseRetries++
-	effects := c.buildResponseRequestEffect(messages, nil)
+	effects := c.buildResponseRequestEffect(messages)
 	effects = append(effects, runtimeLogEffect{
 		message: "conversation: retrying due to invalid response (1/1)",
 	})
@@ -110,10 +92,14 @@ func buildInvalidResponseRetryHint(invalidRaw string) string {
 	return importantRetryPrefix +
 		"直近のレスポンスは契約違反でした。必ず 1 行 1 JSON object の NDJSON だけを返してください。各行は " +
 		"{\"type\":\"speech\",\"text\":\"文字列\"} / {\"type\":\"wait\",\"sec\":整数} " +
-		"のいずれかにしてください。直近の違反レスポンス文字列は " + string(quoted) + " です。"
+		"/ {\"type\":\"tool\",\"name\":\"ツール名\",\"args\":{...}} のいずれかにしてください。" +
+		"tool は末尾に最大1件だけ置けます。直近の違反レスポンス文字列は " + string(quoted) + " です。"
 }
 
 func (c *conversationCore) advanceTimelineEffects() []effect {
+	if c.state.current != nil {
+		return nil
+	}
 	for c.state.pendingTimelineIdx < len(c.state.pendingTimeline) {
 		seg := c.state.pendingTimeline[c.state.pendingTimelineIdx]
 		c.state.pendingTimelineIdx++
@@ -126,13 +112,27 @@ func (c *conversationCore) advanceTimelineEffects() []effect {
 			}
 		case "speech":
 			utt := &Utterance{
-				ID:      c.state.nextID("ai"),
-				Speaker: SpeakerAI,
-				Content: seg.Text,
-				Status:  UtteranceUnplayed,
+				ID:           c.state.nextID("ai"),
+				Speaker:      SpeakerAI,
+				Content:      seg.Text,
+				Status:       UtteranceUnplayed,
+				GenerationID: c.state.currentGeneration(),
 			}
 			c.state.appendUtterance(utt)
 			return c.playUtteranceEffects(utt)
+		case "tool":
+			if seg.Tool == nil {
+				continue
+			}
+			return []effect{emitEventEffect{event: types.Event{
+				Kind: types.EventToolRequest,
+				Payload: types.ToolRequest{
+					ToolCallID:   c.state.nextID("tool_call"),
+					Name:         seg.Tool.Name,
+					Arguments:    seg.Tool.Args,
+					GenerationID: c.state.currentGeneration(),
+				},
+			}}}
 		}
 	}
 	c.state.clearPendingTimeline()

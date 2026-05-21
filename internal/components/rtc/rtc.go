@@ -113,8 +113,6 @@ func (s *stage) consume() {
 					continue
 				}
 				s.handleTTSAudio(audio)
-			case types.EventTTSCancel:
-				s.handleTTSCancel()
 			}
 		}
 	}

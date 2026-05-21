@@ -40,6 +40,22 @@ func TestParseAIOutput(t *testing.T) {
 			t.Fatal("parseAIOutput returned true, want false")
 		}
 	})
+
+	t.Run("toolは末尾なら正常に解釈できる", func(t *testing.T) {
+		out, ok := parseAIOutput("{\"type\":\"speech\",\"text\":\"確認するね\"}\n{\"type\":\"tool\",\"name\":\"get_temp\",\"args\":{}}")
+		if !ok {
+			t.Fatal("parseAIOutput returned false")
+		}
+		if len(out.Timeline) != 2 || out.Timeline[1].Type != "tool" {
+			t.Fatalf("timeline = %+v", out.Timeline)
+		}
+	})
+
+	t.Run("tool後のspeechは無効", func(t *testing.T) {
+		if _, ok := parseAIOutput("{\"type\":\"tool\",\"name\":\"get_temp\",\"args\":{}}\n{\"type\":\"speech\",\"text\":\"28度だったよ\"}"); ok {
+			t.Fatal("parseAIOutput returned true, want false")
+		}
+	})
 }
 
 func TestBuildTimelineSegments(t *testing.T) {
@@ -84,6 +100,23 @@ func TestBuildTimelineSegments(t *testing.T) {
 			t.Fatalf("second wait = %d, want 5", got[1].WaitSec)
 		}
 	})
+
+	t.Run("tool segmentを構築する", func(t *testing.T) {
+		out := aiOutput{
+			Timeline: []aiSegment{
+				{Type: "speech", Text: "確認するね"},
+				{Type: "tool", Name: "get_temp", Args: []byte(`{"room":"living"}`)},
+			},
+		}
+
+		got := buildTimelineSegments(out)
+		if len(got) != 2 {
+			t.Fatalf("timeline len = %d, want 2", len(got))
+		}
+		if got[1].Type != "tool" || got[1].Tool == nil || got[1].Tool.Name != "get_temp" {
+			t.Fatalf("tool segment = %+v", got[1])
+		}
+	})
 }
 
 func TestParseAIChunk(t *testing.T) {
@@ -117,6 +150,7 @@ func TestParseAIChunk(t *testing.T) {
 		cases := []string{
 			`{"type":"speech","text":" "}`,
 			`{"type":"wait"}`,
+			`{"type":"tool"}`,
 		}
 		for _, tc := range cases {
 			if _, ok := parseAIChunk(tc); ok {

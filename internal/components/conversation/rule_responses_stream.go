@@ -10,13 +10,11 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 		return nil, false
 	}
 	chunk := s.chunk
-	if chunk.RequestID == "" || chunk.RequestID != core.state.pendingRequestID {
+	generationID, ok := core.state.requestGeneration[chunk.RequestID]
+	if chunk.RequestID == "" || !ok {
 		return nil, true
 	}
-	if core.state.pendingRequestCancelled {
-		core.state.pendingRequestCancelled = false
-		core.state.pendingRequestID = ""
-		core.state.pendingRequestStreaming = false
+	if generationID != core.state.currentGeneration() {
 		return nil, true
 	}
 	core.state.pendingRequestStreaming = true
@@ -41,6 +39,9 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 	var effects []effect
 	shouldAdvance := false
 	for _, parsed := range parsedChunks {
+		if core.state.pendingStreamToolSeen {
+			return core.failStream("conversation: stream chunk after tool is not allowed: "+line, true, line), true
+		}
 		switch parsed.Type {
 		case "speech":
 			text := sanitizeSpeech(parsed.Text)
@@ -54,6 +55,16 @@ func (responsesStreamRule) Apply(core *conversationCore, sig signal) ([]effect, 
 			core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{
 				Type:    "wait",
 				WaitSec: sanitizeWait(parsed.Sec),
+			})
+			shouldAdvance = true
+		case "tool":
+			core.state.pendingStreamToolSeen = true
+			core.state.pendingTimeline = append(core.state.pendingTimeline, timelineSegment{
+				Type: "tool",
+				Tool: &toolCallSegment{
+					Name: parsed.Name,
+					Args: parsed.Args,
+				},
 			})
 			shouldAdvance = true
 		default:
@@ -70,6 +81,7 @@ func (c *conversationCore) failStream(message string, retryInvalid bool, invalid
 	effects := []effect{runtimeLogEffect{message: message}}
 	c.state.pendingStreamFailed = true
 	c.state.pendingRequestStreaming = false
+	delete(c.state.requestGeneration, c.state.pendingRequestID)
 	if c.state.pendingStreamSpeechStarted {
 		c.state.pendingRequestID = ""
 		c.state.clearPendingTimeline()
@@ -87,8 +99,9 @@ func (c *conversationCore) failStream(message string, retryInvalid bool, invalid
 
 func (c *conversationCore) completeStream() []effect {
 	c.state.pendingRequestStreaming = false
+	delete(c.state.requestGeneration, c.state.pendingRequestID)
 	c.state.pendingRequestID = ""
-	if !c.state.pendingStreamSpeechStarted {
+	if !c.state.pendingStreamSpeechStarted && !c.state.pendingStreamToolSeen {
 		invalidRaw := strings.Join(c.state.pendingStreamLines, "\n")
 		c.state.clearPendingTimeline()
 		effects := []effect{runtimeLogEffect{

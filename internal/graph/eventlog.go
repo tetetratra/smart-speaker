@@ -26,12 +26,9 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventRealtimeOutput:       formatOutputLineDetail,
 		types.EventRealtimeAudio:        formatRealtimeAudioDetail,
 		types.EventToolRequest:          formatToolRequestDetail,
-		types.EventToolResponse:         formatToolResponseDetail,
 		types.EventResponsesRequest:     formatResponsesRequestDetail,
-		types.EventResponsesResponse:    formatResponsesResponseDetail,
 		types.EventResponsesStreamChunk: formatResponsesStreamChunkDetail,
 		types.EventWhiteboardUpdate:     formatWhiteboardUpdateDetail,
-		types.EventTTSCancel:            formatTTSCancelDetail,
 		types.EventRTCSignal:            formatRTCSignalDetail,
 	}
 }
@@ -126,28 +123,8 @@ func formatResponsesRequestDetail(evt types.Event) string {
 	if req.Role != "" {
 		parts = append(parts, fmt.Sprintf("role=%s", req.Role))
 	}
-	if len(req.Tools) > 0 {
-		parts = append(parts, fmt.Sprintf("tools=%d", len(req.Tools)))
-	}
 	if req.RequestID != "" {
 		parts = append(parts, fmt.Sprintf("request_id=%s", req.RequestID))
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatResponsesResponseDetail(evt types.Event) string {
-	resp, ok := evt.Payload.(types.ResponsesResponse)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("text=%s", quoteText(resp.Text)),
-		fmt.Sprintf("chars=%d", utf8.RuneCountInString(resp.Text)),
-		fmt.Sprintf("tool_calls=%d", len(resp.ToolCalls)),
-		fmt.Sprintf("has_response=%t", resp.HasResponse),
-	}
-	if resp.RequestID != "" {
-		parts = append(parts, fmt.Sprintf("request_id=%s", resp.RequestID))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -188,19 +165,6 @@ func formatToolRequestDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatToolResponseDetail(evt types.Event) string {
-	resp, ok := evt.Payload.(types.ToolResponse)
-	if !ok {
-		return ""
-	}
-	output := string(resp.Output)
-	parts := []string{
-		fmt.Sprintf("output=%s", quoteText(output)),
-		fmt.Sprintf("output_bytes=%d", len(resp.Output)),
-	}
-	return strings.Join(parts, ", ")
-}
-
 func formatRealtimeAudioDetail(evt types.Event) string {
 	audio, ok := evt.Payload.(types.OutputAudio)
 	if !ok {
@@ -227,17 +191,6 @@ func formatSpeechEventDetail(evt types.Event) string {
 		parts = append(parts, fmt.Sprintf("source=%s", speech.Source))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func formatTTSCancelDetail(evt types.Event) string {
-	cancel, ok := evt.Payload.(types.TTSCancel)
-	if !ok {
-		return ""
-	}
-	if cancel.ResponseID == "" {
-		return ""
-	}
-	return fmt.Sprintf("response_id=%s", cancel.ResponseID)
 }
 
 func formatWhiteboardUpdateDetail(evt types.Event) string {

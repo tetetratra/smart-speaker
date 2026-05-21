@@ -20,10 +20,25 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools map[string]tools.Handler
+	tools      map[string]tools.Handler
+	resultSink ResultSink
+}
+
+type ResultSink interface {
+	Commit(context.Context, types.ToolResponse)
+}
+
+type Config struct {
+	Handlers   map[string]tools.Handler
+	ResultSink ResultSink
 }
 
 func NewStage(handlers map[string]tools.Handler) *graph.Stage {
+	return NewStageWithConfig(Config{Handlers: handlers})
+}
+
+func NewStageWithConfig(cfg Config) *graph.Stage {
+	handlers := cfg.Handlers
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
@@ -31,6 +46,7 @@ func NewStage(handlers map[string]tools.Handler) *graph.Stage {
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
+		resultSink: cfg.ResultSink,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -88,11 +104,11 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	go func() {
 		defer s.taskGroup.Done()
 		resp := s.executeTool(req)
-		select {
-		case <-s.ctx.Done():
+		if s.resultSink != nil {
+			s.resultSink.Commit(s.ctx, resp)
 			return
-		case s.downstream <- types.Event{Kind: types.EventToolResponse, Payload: resp}:
 		}
+		log.Printf("toolcaller: result sink is not configured; dropped result for %s", req.Name)
 	}()
 }
 
@@ -124,10 +140,11 @@ func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResponse {
 		output = []byte(`{"error":"result encoding failed"}`)
 	}
 	return types.ToolResponse{
-		ToolCallID: req.ToolCallID,
-		Name:       req.Name,
-		ResponseID: req.ResponseID,
-		Output:     output,
+		ToolCallID:   req.ToolCallID,
+		Name:         req.Name,
+		ResponseID:   req.ResponseID,
+		Output:       output,
+		GenerationID: req.GenerationID,
 	}
 }
 
