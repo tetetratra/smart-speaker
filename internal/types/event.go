@@ -15,13 +15,8 @@ const (
 	EventRealtimeOutput
 	EventRealtimeAudio
 	EventToolRequest
-	EventToolResponse
-	EventResponsesRequest
-	EventResponsesResponse
-	EventResponsesStreamChunk
 	EventWhiteboardUpdate
 	EventTTSEnd
-	EventTTSCancel
 	EventRTCSignal
 	EventConversationCommitRequest
 	EventLLMRequest
@@ -50,20 +45,10 @@ func (k EventKind) String() string {
 		return "EventRealtimeAudio"
 	case EventToolRequest:
 		return "EventToolRequest"
-	case EventToolResponse:
-		return "EventToolResponse"
-	case EventResponsesRequest:
-		return "EventResponsesRequest"
-	case EventResponsesResponse:
-		return "EventResponsesResponse"
-	case EventResponsesStreamChunk:
-		return "EventResponsesStreamChunk"
 	case EventWhiteboardUpdate:
 		return "EventWhiteboardUpdate"
 	case EventTTSEnd:
 		return "EventTTSEnd"
-	case EventTTSCancel:
-		return "EventTTSCancel"
 	case EventRTCSignal:
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:
@@ -89,12 +74,4 @@ type ToolRequest struct {
 	Arguments    json.RawMessage
 	GenerationID GenerationID
 	SequenceID   string
-}
-
-// ToolResponse は実行結果を responses ステージに返します。
-type ToolResponse struct {
-	ToolCallID string
-	Name       string
-	ResponseID string
-	Output     json.RawMessage
 }

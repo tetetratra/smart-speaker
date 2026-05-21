@@ -53,9 +53,7 @@ func TestStageCommitsUnknownToolResult(t *testing.T) {
 	}
 	select {
 	case evt := <-st.Downstream:
-		if evt.Kind == types.EventToolResponse {
-			t.Fatal("EventToolResponse must not be emitted")
-		}
+		t.Fatalf("unexpected downstream event: %s", evt.Kind)
 	default:
 	}
 }

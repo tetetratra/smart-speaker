@@ -21,18 +21,18 @@ func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
-		types.EventHumanUtterance:       formatOutputLineDetail,
-		types.EventSpeechEnd:            formatSpeechEventDetail,
-		types.EventRealtimeOutput:       formatOutputLineDetail,
-		types.EventRealtimeAudio:        formatRealtimeAudioDetail,
-		types.EventToolRequest:          formatToolRequestDetail,
-		types.EventToolResponse:         formatToolResponseDetail,
-		types.EventResponsesRequest:     formatResponsesRequestDetail,
-		types.EventResponsesResponse:    formatResponsesResponseDetail,
-		types.EventResponsesStreamChunk: formatResponsesStreamChunkDetail,
-		types.EventWhiteboardUpdate:     formatWhiteboardUpdateDetail,
-		types.EventTTSCancel:            formatTTSCancelDetail,
-		types.EventRTCSignal:            formatRTCSignalDetail,
+		types.EventHumanUtterance:            formatOutputLineDetail,
+		types.EventSpeechEnd:                 formatSpeechEventDetail,
+		types.EventRealtimeOutput:            formatOutputLineDetail,
+		types.EventRealtimeAudio:             formatRealtimeAudioDetail,
+		types.EventToolRequest:               formatToolRequestDetail,
+		types.EventWhiteboardUpdate:          formatWhiteboardUpdateDetail,
+		types.EventRTCSignal:                 formatRTCSignalDetail,
+		types.EventConversationCommitRequest: formatCommitRequestDetail,
+		types.EventLLMRequest:                formatLLMRequestDetail,
+		types.EventTimelineItem:              formatTimelineItemDetail,
+		types.EventPlayableSpeech:            formatPlayableSpeechDetail,
+		types.EventScheduledItem:             formatScheduledItemDetail,
 	}
 }
 
@@ -111,69 +111,6 @@ func formatOutputLineDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatResponsesRequestDetail(evt types.Event) string {
-	req, ok := evt.Payload.(types.ResponsesRequest)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("text=%s", quoteText(req.Text)),
-		fmt.Sprintf("chars=%d", utf8.RuneCountInString(req.Text)),
-	}
-	if len(req.Messages) > 0 {
-		parts = append(parts, fmt.Sprintf("messages=%d", len(req.Messages)))
-	}
-	if req.Role != "" {
-		parts = append(parts, fmt.Sprintf("role=%s", req.Role))
-	}
-	if len(req.Tools) > 0 {
-		parts = append(parts, fmt.Sprintf("tools=%d", len(req.Tools)))
-	}
-	if req.RequestID != "" {
-		parts = append(parts, fmt.Sprintf("request_id=%s", req.RequestID))
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatResponsesResponseDetail(evt types.Event) string {
-	resp, ok := evt.Payload.(types.ResponsesResponse)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("text=%s", quoteText(resp.Text)),
-		fmt.Sprintf("chars=%d", utf8.RuneCountInString(resp.Text)),
-		fmt.Sprintf("tool_calls=%d", len(resp.ToolCalls)),
-		fmt.Sprintf("has_response=%t", resp.HasResponse),
-	}
-	if resp.RequestID != "" {
-		parts = append(parts, fmt.Sprintf("request_id=%s", resp.RequestID))
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatResponsesStreamChunkDetail(evt types.Event) string {
-	chunk, ok := evt.Payload.(types.ResponsesStreamChunk)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("line=%s", quoteText(chunk.Line)),
-		fmt.Sprintf("chars=%d", utf8.RuneCountInString(chunk.Line)),
-		fmt.Sprintf("done=%t", chunk.Done),
-	}
-	if chunk.RequestID != "" {
-		parts = append(parts, fmt.Sprintf("request_id=%s", chunk.RequestID))
-	}
-	if chunk.ResponseID != "" {
-		parts = append(parts, fmt.Sprintf("response_id=%s", chunk.ResponseID))
-	}
-	if chunk.Err != "" {
-		parts = append(parts, fmt.Sprintf("err=%s", quoteText(chunk.Err)))
-	}
-	return strings.Join(parts, ", ")
-}
-
 func formatToolRequestDetail(evt types.Event) string {
 	req, ok := evt.Payload.(types.ToolRequest)
 	if !ok {
@@ -184,19 +121,7 @@ func formatToolRequestDetail(evt types.Event) string {
 		fmt.Sprintf("name=%s", req.Name),
 		fmt.Sprintf("arguments=%s", quoteText(args)),
 		fmt.Sprintf("args_bytes=%d", len(req.Arguments)),
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatToolResponseDetail(evt types.Event) string {
-	resp, ok := evt.Payload.(types.ToolResponse)
-	if !ok {
-		return ""
-	}
-	output := string(resp.Output)
-	parts := []string{
-		fmt.Sprintf("output=%s", quoteText(output)),
-		fmt.Sprintf("output_bytes=%d", len(resp.Output)),
+		fmt.Sprintf("generation=%d", req.GenerationID),
 	}
 	return strings.Join(parts, ", ")
 }
@@ -229,17 +154,6 @@ func formatSpeechEventDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatTTSCancelDetail(evt types.Event) string {
-	cancel, ok := evt.Payload.(types.TTSCancel)
-	if !ok {
-		return ""
-	}
-	if cancel.ResponseID == "" {
-		return ""
-	}
-	return fmt.Sprintf("response_id=%s", cancel.ResponseID)
-}
-
 func formatWhiteboardUpdateDetail(evt types.Event) string {
 	update, ok := evt.Payload.(types.WhiteboardUpdate)
 	if !ok {
@@ -247,6 +161,67 @@ func formatWhiteboardUpdateDetail(evt types.Event) string {
 	}
 	text := strings.TrimSpace(update.Content)
 	return fmt.Sprintf("content=%s, chars=%d", quoteText(text), utf8.RuneCountInString(text))
+}
+
+func formatCommitRequestDetail(evt types.Event) string {
+	req, ok := evt.Payload.(types.ConversationCommitRequest)
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("role=%s", req.Role),
+		fmt.Sprintf("text=%s", quoteText(req.Text)),
+		fmt.Sprintf("generation=%d", req.GenerationID),
+	}
+	if req.ToolResult != nil {
+		parts = append(parts, fmt.Sprintf("tool=%s", req.ToolResult.Name))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatLLMRequestDetail(evt types.Event) string {
+	req, ok := evt.Payload.(types.LLMRequest)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("role=%s, text=%s, generation=%d, request_id=%s", req.Role, quoteText(req.Text), req.GenerationID, req.RequestID)
+}
+
+func formatTimelineItemDetail(evt types.Event) string {
+	item, ok := evt.Payload.(types.TimelineItem)
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		fmt.Sprintf("kind=%s", item.Kind),
+		fmt.Sprintf("generation=%d", item.GenerationID),
+	}
+	if item.Text != "" {
+		parts = append(parts, fmt.Sprintf("text=%s", quoteText(item.Text)))
+	}
+	if item.ToolName != "" {
+		parts = append(parts, fmt.Sprintf("tool=%s", item.ToolName))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatPlayableSpeechDetail(evt types.Event) string {
+	speech, ok := evt.Payload.(types.PlayableSpeech)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("text=%s, generation=%d, duration=%.3f", quoteText(speech.Text), speech.GenerationID, speech.DurationSeconds)
+}
+
+func formatScheduledItemDetail(evt types.Event) string {
+	switch payload := evt.Payload.(type) {
+	case types.PlayableSpeech:
+		return fmt.Sprintf("speech=%s, generation=%d", quoteText(payload.Text), payload.GenerationID)
+	case types.ToolRequest:
+		return fmt.Sprintf("tool=%s, generation=%d", payload.Name, payload.GenerationID)
+	default:
+		return ""
+	}
 }
 
 func formatRTCSignalDetail(evt types.Event) string {
