@@ -149,19 +149,15 @@ flowchart LR
   conversation -- "EventRealtimeOutput" --> wschat
 
   conversation -- "EventResponsesRequest" --> responses
-  responses -- "EventResponsesResponse" --> conversation
+  responses -- "EventResponsesStreamChunk" --> conversation
 
-  responses -- "EventToolRequest" --> toolcaller
-  responses -- "EventToolRequest (function_call表示)" --> wschat
-  toolcaller -- "EventToolResponse" --> responses
+  conversation -- "EventToolRequest" --> toolcaller
+  toolcaller -. "ToolResultSink.Commit" .-> conversation
+  toolcaller -- "EventWhiteboardUpdate など" --> wschat
 
-  toolcaller -- "EventToolResponse" --> conversation
-  toolcaller -- "EventToolResponse (function_result表示)" --> wschat
-
-  conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
+  conversation -- "EventRealtimeOutput" --> tts
   tts -- "EventTTSEnd" --> conversation
   tts -- "EventRealtimeAudio" --> rtc
-  conversation -- "EventTTSCancel" --> rtc
 
   wschat -- "EventRTCSignal" --> rtc
   rtc -- "EventRTCSignal" --> wschat
@@ -177,8 +173,7 @@ flowchart LR
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`
 - 配信内容（例）:
   - 人間/AI: `{"type":"message","role":"user|assistant|system","text":"...","response_id":"...","final":false}`
-  - Function Call: `{"type":"function_call","tool_call_id":"...","name":"...","arguments":{...}}`
-  - Function Result: `{"type":"function_result","tool_call_id":"...","output":{...}}`
+  - ホワイトボード: `{"type":"whiteboard_update","content":"..."}`
   - WebRTC offer/answer/ice: `{"type":"webrtc.offer|webrtc.answer|webrtc.ice","sdp":"...","candidate":{...}}`
 
 ## 備考

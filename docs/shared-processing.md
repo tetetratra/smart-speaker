@@ -98,18 +98,14 @@ flowchart LR
 - event forwarding は全接続に対して等しく行われ、購読条件や優先度の概念はない。
 
 ### 4-3. 現行で共通化されているデータ
-- 制御イベント
-  - `EventTTSCancel`
 - 会話入力イベント
   - `EventHumanUtterance`
   - `EventSpeechEnd`
 - 応答処理イベント
   - `EventResponsesRequest`
-  - `EventResponsesResponse`
   - `EventResponsesStreamChunk`
 - ツール連携イベント
   - `EventToolRequest`
-  - `EventToolResponse`
 - UI/音声向けイベント
   - `EventRealtimeOutput`
   - `EventRealtimeAudio`

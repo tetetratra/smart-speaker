@@ -20,7 +20,6 @@
 - サーバー側 VAD により `EventSpeechEnd` / `EventRTCVADStatus` を発行する。
 - Google Speech-to-Text v2 の final transcript を `EventHumanUtterance` として発行する。
 - `EventRealtimeAudio` で受けた PCM 音声を 48kHz Opus に変換し、各 peer の下りトラックへ返す。
-- `EventTTSCancel` で再生バッファを破棄する。
 
 ### rtc が担当しないこと
 - assistant 応答テキストの生成

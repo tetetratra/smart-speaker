@@ -1,17 +1,16 @@
 # tts component
 
 ## 概要
-`tts` component は、assistant のテキスト出力を ElevenLabs の streaming TTS へ渡し、返ってきた PCM 音声を event graph に流す component です。現行実装は `response_id` ごとに 1 本のアクティブストリームだけを扱い、再生中断と完了通知も同じ `response_id` を軸に制御します。
+`tts` component は、assistant のテキスト出力を ElevenLabs の streaming TTS へ渡し、返ってきた PCM 音声を event graph に流す component です。現行実装は `response_id` ごとに 1 本のアクティブストリームだけを扱い、完了通知も同じ `response_id` を軸に制御します。
 
 ## 目的
 - assistant の逐次テキストを低遅延で音声化する。
 - 音声 chunk を `rtc` component が扱える形で graph に流す。
-- 発話切り替え時に、古い TTS stream を中断できるようにする。
 - `conversation` component が再生完了を追跡できるようにする。
 
 ## 担当範囲
 - ElevenLabs への HTTP streaming TTS リクエスト
-- 進行中 TTS stream の cancel
+- 新しい発話開始時の既存 TTS stream cancel
 - `response_id` ごとの単一アクティブストリーム制御
 - PCM chunk の `EventRealtimeAudio` 化
 - stream 完了時の `EventTTSEnd` 発行
@@ -26,7 +25,6 @@
 | EventKind | payload | 用途 |
 | --- | --- | --- |
 | `EventRealtimeOutput` | `types.OutputLine` | assistant の逐次テキストを受ける。`Role` が空または `assistant`、`Final == false`、`Text != ""` のものだけを音声化する。 |
-| `EventTTSCancel` | `types.TTSCancel` | 進行中 stream を中断する。`ResponseID` が空なら現在の stream 全体、指定ありなら一致時だけ中断する。 |
 
 ## 出力 event
 | EventKind | payload | 出力条件 |
@@ -39,9 +37,9 @@
   - stage の入口とライフサイクルを持つ。
   - `streamTTS` が upstream / downstream channel、HTTP client、進行中 cancel 関数、現在の `response_id` を管理する。
 - `internal/types/types.go`
-  - `OutputLine`、`OutputAudio`、`TTSEvent`、`TTSCancel` の型を定義する。
+  - `OutputLine`、`OutputAudio`、`TTSEvent` の型を定義する。
 - `internal/types/event.go`
-  - `EventRealtimeOutput`、`EventRealtimeAudio`、`EventTTSEnd`、`EventTTSCancel` を定義する。
+  - `EventRealtimeOutput`、`EventRealtimeAudio`、`EventTTSEnd` を定義する。
 
 ## データフロー
 ### assistant text が音声 chunk になるまで
@@ -52,13 +50,6 @@
 5. ElevenLabs から返る PCM 24000Hz mono 16-bit little-endian 相当の byte stream を順次読む。
 6. `readStream` が受信 chunk を base64 化し、`EventRealtimeAudio` として downstream に流す。
 7. EOF まで読めたら、総 byte 数から秒数を計算し、`EventTTSEnd` を downstream に流す。
-
-### cancel されるまで
-1. `EventTTSCancel` を受ける。
-2. cancel payload の `ResponseID` が空なら、現在の stream を無条件で止める。
-3. `ResponseID` が指定されている場合は、現在の `streamResponse` と一致するときだけ止める。
-4. `cancelActiveStream` が context cancel を呼び、現在の `cancelStream` と `streamResponse` をクリアする。
-5. 中断時は `readStream` / `streamRequest` 側が `ctx.Done()` を検知して終了する。
 
 ## `response_id` ごとの制御
 - 同時に保持できるアクティブ stream は 1 本だけです。
@@ -72,7 +63,6 @@
 - payload は `types.OutputAudio{Role: "assistant", Audio: <base64 PCM>}` です。
 - `tts` 自体は PCM の再サンプルや Opus 変換をしません。
 - `rtc` 側で base64 PCM を int16 に戻し、24000Hz から 48000Hz へアップサンプリングして WebRTC 下りトラックへ流します。
-- `EventTTSCancel` は `tts` の stream 中断と、`rtc` の再生バッファ破棄の両方に使われます。
 
 ## 外部依存
 - ElevenLabs Text-to-Speech API
