@@ -14,8 +14,9 @@ type Node struct {
 }
 
 type Edge struct {
-	From *Node
-	To   *Node
+	From  *Node
+	To    *Node
+	Kinds map[types.EventKind]struct{}
 }
 
 type Graph struct {
@@ -40,21 +41,33 @@ func (g *Graph) AddNode(stage *Stage) *Node {
 }
 
 func (g *Graph) Connect(from, to *Node) {
+	g.connect(from, to, nil)
+}
+
+func (g *Graph) ConnectKinds(from, to *Node, kinds ...types.EventKind) {
+	allowed := make(map[types.EventKind]struct{}, len(kinds))
+	for _, kind := range kinds {
+		allowed[kind] = struct{}{}
+	}
+	g.connect(from, to, allowed)
+}
+
+func (g *Graph) connect(from, to *Node, kinds map[types.EventKind]struct{}) {
 	if from.Stage.Downstream == nil {
 		panic("graph: from stage must have downstream")
 	}
 	if to.Stage.Upstream == nil {
 		panic("graph: to stage must have upstream")
 	}
-	g.edges = append(g.edges, &Edge{From: from, To: to})
+	g.edges = append(g.edges, &Edge{From: from, To: to, Kinds: kinds})
 }
 
 // Run は各エッジごとに goroutine を起動し、Stage 間のチャネル転送を行う。
 func (g *Graph) Run(ctx context.Context) error {
 	log.Printf("graph nodes=%d edges=%d", len(g.nodes), len(g.edges))
-	adj := make(map[*Node][]*Stage, len(g.nodes))
+	adj := make(map[*Node][]edgeTarget, len(g.nodes))
 	for _, edge := range g.edges {
-		adj[edge.From] = append(adj[edge.From], edge.To.Stage)
+		adj[edge.From] = append(adj[edge.From], edgeTarget{stage: edge.To.Stage, kinds: edge.Kinds})
 	}
 
 	for _, node := range g.nodes {
@@ -63,11 +76,11 @@ func (g *Graph) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	for _, node := range g.nodes {
-		downstreams := adj[node]
+		targets := adj[node]
 		out := (<-chan types.Event)(node.Stage.Downstream)
 		wg.Add(1)
-		go func(out <-chan types.Event, downstreams []*Stage) {
-			log.Printf("graph pump start from %p to %d downstreams", out, len(downstreams))
+		go func(out <-chan types.Event, targets []edgeTarget) {
+			log.Printf("graph pump start from %p to %d downstreams", out, len(targets))
 			defer wg.Done()
 			for {
 				select {
@@ -77,7 +90,11 @@ func (g *Graph) Run(ctx context.Context) error {
 					if !ok {
 						return
 					}
-					if len(downstreams) > 0 && g.shouldLogForwardEvent(val.Kind) {
+					downstreams := matchingStages(targets, val.Kind)
+					if len(downstreams) == 0 {
+						continue
+					}
+					if g.shouldLogForwardEvent(val.Kind) {
 						log.Printf("%s", g.formatForwardLog(node.Stage, downstreams, val))
 					}
 					for _, dst := range downstreams {
@@ -86,7 +103,7 @@ func (g *Graph) Run(ctx context.Context) error {
 					}
 				}
 			}
-		}(out, downstreams)
+		}(out, targets)
 	}
 
 	wg.Wait()
@@ -94,6 +111,24 @@ func (g *Graph) Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+type edgeTarget struct {
+	stage *Stage
+	kinds map[types.EventKind]struct{}
+}
+
+func matchingStages(targets []edgeTarget, kind types.EventKind) []*Stage {
+	stages := make([]*Stage, 0, len(targets))
+	for _, target := range targets {
+		if len(target.kinds) > 0 {
+			if _, ok := target.kinds[kind]; !ok {
+				continue
+			}
+		}
+		stages = append(stages, target.stage)
+	}
+	return stages
 }
 
 func (g *Graph) Close() error {

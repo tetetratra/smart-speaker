@@ -29,6 +29,7 @@ import (
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/states/conversationhistory"
 	"smart-speaker/internal/states/generation"
+	types "smart-speaker/internal/types"
 )
 
 func main() {
@@ -258,29 +259,29 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	routerNode := add(stages.router)
 	toolNode := add(stages.tool)
 
-	connect(g, chatNode, rtcNode)
-	connect(g, rtcNode, chatNode)
-	connect(g, rtcNode, utteranceNode)
-	connect(g, utteranceNode, committerNode)
-	connect(g, committerNode, llmNode)
-	connect(g, committerNode, chatNode)
-	connect(g, llmNode, filterLLMNode)
-	connect(g, filterLLMNode, ttsNode)
-	connect(g, ttsNode, filterTTSNode)
-	connect(g, filterTTSNode, schedulerNode)
-	connect(g, schedulerNode, filterSchedNode)
-	connect(g, filterSchedNode, routerNode)
-	connect(g, routerNode, rtcNode)
-	connect(g, routerNode, committerNode)
-	connect(g, routerNode, toolNode)
-	connect(g, toolNode, chatNode)
+	connectKinds(g, chatNode, rtcNode, types.EventRTCSignal)
+	connectKinds(g, rtcNode, chatNode, types.EventRTCSignal, types.EventSpeechEnd, types.EventRTCVADStatus)
+	connectKinds(g, rtcNode, utteranceNode, types.EventHumanUtterance)
+	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
+	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
+	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
+	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
+	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem)
+	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech)
+	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech)
+	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem)
+	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
+	connectKinds(g, routerNode, rtcNode, types.EventRealtimeAudio)
+	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
+	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
+	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
 }
 
-func connect(g *graph.Graph, from, to *graph.Node) {
+func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {
 	if from == nil || to == nil {
 		return
 	}
-	g.Connect(from, to)
+	g.ConnectKinds(from, to, kinds...)
 }
 
 func registerWebUI(mux *http.ServeMux, distDir string) {
