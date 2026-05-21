@@ -92,20 +92,6 @@ func (s *stage) handleTTSAudio(audio types.OutputAudio) {
 	}
 }
 
-func (s *stage) handleTTSCancel() {
-	s.mu.Lock()
-	peers := make([]*peerState, 0, len(s.peers))
-	for _, peer := range s.peers {
-		peers = append(peers, peer)
-	}
-	s.mu.Unlock()
-	for _, peer := range peers {
-		peer.mu.Lock()
-		peer.audioBuf = nil
-		peer.mu.Unlock()
-	}
-}
-
 func bytesToInt16(b []byte) []int16 {
 	if len(b)%2 != 0 {
 		return nil
