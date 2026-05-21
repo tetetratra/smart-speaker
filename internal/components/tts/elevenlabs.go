@@ -83,11 +83,25 @@ func (t *streamTTS) run(ctx context.Context) {
 				continue
 			}
 			item, ok := evt.Payload.(types.TimelineItem)
-			if !ok || item.Kind != types.TimelineKindSpeech || strings.TrimSpace(item.Text) == "" {
+			if !ok {
+				continue
+			}
+			if item.Kind != types.TimelineKindSpeech {
+				t.emit(ctx, evt)
+				continue
+			}
+			if strings.TrimSpace(item.Text) == "" {
 				continue
 			}
 			t.handleSpeech(ctx, item)
 		}
+	}
+}
+
+func (t *streamTTS) emit(ctx context.Context, evt types.Event) {
+	select {
+	case <-ctx.Done():
+	case t.downstream <- evt:
 	}
 }
 
