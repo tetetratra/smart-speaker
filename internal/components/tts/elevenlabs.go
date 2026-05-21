@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"smart-speaker/internal/graph"
 	types "smart-speaker/internal/types"
@@ -23,17 +22,13 @@ const (
 	elevenlabsChannels       = 1
 )
 
-// Config defines settings for ElevenLabs stream-input TTS.
 type Config struct {
 	APIKey        string
 	Voice         string
 	Model         string
 	VoiceSettings *VoiceSettings
-	// HTTP headers: xi-api-key is required
 }
 
-// VoiceSettings represents ElevenLabs voice_settings payload.
-// ゼロ値の場合はデフォルト値を適用する。
 type VoiceSettings struct {
 	Stability       float64
 	SimilarityBoost float64
@@ -42,8 +37,6 @@ type VoiceSettings struct {
 	UseSpeakerBoost *bool
 }
 
-// NewStage converts EventRealtimeOutput (assistant text) stream into EventRealtimeAudio
-// by using ElevenLabs stream-input WebSocket API.
 func NewStage(cfg Config) (*graph.Stage, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("elevenlabs: API key is required")
@@ -52,14 +45,13 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, fmt.Errorf("elevenlabs: voice id is required")
 	}
 	if cfg.Model == "" {
-		// cfg.Model = "eleven_multilingual_v2"
-		// cfg.Model = "eleven_ttv_v3"
 		cfg.Model = "eleven_v3"
 	}
 	t := &streamTTS{
 		cfg:        cfg,
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		client:     &http.Client{},
 	}
 	return &graph.Stage{
 		Upstream:   t.upstream,
@@ -73,83 +65,55 @@ type streamTTS struct {
 	cfg        Config
 	upstream   chan types.Event
 	downstream chan types.Event
-
-	mu             sync.Mutex
-	client         *http.Client
-	cancelStream   context.CancelFunc
-	streamResponse string
+	client     *http.Client
+	once       sync.Once
 }
 
 func (t *streamTTS) run(ctx context.Context) {
-	if t.client == nil {
-		t.client = &http.Client{}
-	}
+	defer close(t.downstream)
 	for {
 		select {
 		case <-ctx.Done():
-			t.cancelActiveStream()
 			return
 		case evt, ok := <-t.upstream:
 			if !ok {
 				return
 			}
-			if evt.Kind == types.EventTTSCancel {
-				cancel, ok := evt.Payload.(types.TTSCancel)
-				if ok {
-					t.handleCancel(cancel)
-				}
+			if evt.Kind != types.EventTimelineItem {
 				continue
 			}
-			if evt.Kind != types.EventRealtimeOutput {
+			item, ok := evt.Payload.(types.TimelineItem)
+			if !ok || item.Kind != types.TimelineKindSpeech || strings.TrimSpace(item.Text) == "" {
 				continue
 			}
-			line, ok := evt.Payload.(types.OutputLine)
-			if !ok {
-				continue
-			}
-			if line.Role != "" && line.Role != "assistant" {
-				continue
-			}
-			if line.Final {
-				continue
-			}
-			if line.Text == "" {
-				continue
-			}
-			t.startStream(ctx, line.ResponseID, line.Text)
+			t.handleSpeech(ctx, item)
 		}
 	}
 }
 
-func (t *streamTTS) handleCancel(cancel types.TTSCancel) {
-	t.mu.Lock()
-	current := t.streamResponse
-	t.mu.Unlock()
-	if cancel.ResponseID != "" && current != "" && cancel.ResponseID != current {
+func (t *streamTTS) handleSpeech(ctx context.Context, item types.TimelineItem) {
+	audio, duration, err := t.synthesize(ctx, item.Text)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("elevenlabs: synthesize error: %v", err)
+		}
 		return
 	}
-	t.cancelActiveStream()
-}
-
-func (t *streamTTS) startStream(parent context.Context, respID string, text string) {
-	t.mu.Lock()
-	if t.streamResponse == respID {
-		t.mu.Unlock()
-		return
+	playable := types.PlayableSpeech{
+		GenerationID:     item.GenerationID,
+		SequenceID:       item.SequenceID,
+		Text:             item.Text,
+		Audio:            audio,
+		DurationSeconds:  duration,
+		OriginalTimeline: item,
 	}
-	t.mu.Unlock()
-	t.cancelActiveStream()
-
-	ctx, cancel := context.WithCancel(parent)
-	t.mu.Lock()
-	t.cancelStream = cancel
-	t.streamResponse = respID
-	t.mu.Unlock()
-
-	go t.streamRequest(ctx, respID, text)
+	select {
+	case <-ctx.Done():
+	case t.downstream <- types.Event{Kind: types.EventPlayableSpeech, Payload: playable}:
+	}
 }
 
-func (t *streamTTS) streamRequest(ctx context.Context, respID string, text string) {
+func (t *streamTTS) synthesize(ctx context.Context, text string) (string, float64, error) {
 	url := fmt.Sprintf(
 		"https://api.elevenlabs.io/v1/text-to-speech/%s/stream?output_format=pcm_24000",
 		t.cfg.Voice,
@@ -164,121 +128,45 @@ func (t *streamTTS) streamRequest(ctx context.Context, respID string, text strin
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("elevenlabs: json marshal error: %v", err)
-		t.finishStream(respID)
-		return
+		return "", 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("elevenlabs: request error: %v", err)
-		t.finishStream(respID)
-		return
+		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("xi-api-key", t.cfg.APIKey)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		if ctx.Err() == nil {
-			log.Printf("elevenlabs: request error: %v", err)
-		}
-		t.finishStream(respID)
-		return
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(resp.Body)
-		log.Printf("elevenlabs: http error: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-		t.finishStream(respID)
-		return
+		return "", 0, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
-
-	t.readStream(ctx, resp.Body, respID)
-	t.finishStream(respID)
-}
-
-func (t *streamTTS) readStream(ctx context.Context, body io.Reader, respID string) {
-	var totalBytes int64
-	var audioStartAt time.Time
-	buf := make([]byte, 4096)
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		n, err := body.Read(buf)
-		if n > 0 {
-			if audioStartAt.IsZero() {
-				audioStartAt = time.Now()
-			}
-			totalBytes += int64(n)
-			audioB64 := base64.StdEncoding.EncodeToString(buf[:n])
-			select {
-			case t.downstream <- types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{Role: "assistant", Audio: audioB64}}:
-			case <-ctx.Done():
-				return
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			if ctx.Err() == nil {
-				log.Printf("elevenlabs: read error: %v", err)
-			}
-			return
-		}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", 0, err
 	}
-	if strings.TrimSpace(respID) == "" {
-		return
-	}
-	seconds := ttsDurationSeconds(totalBytes)
-	log.Printf("elevenlabs: tts duration=%.3fs bytes=%d response_id=%s", seconds, totalBytes, respID)
-	if audioStartAt.IsZero() {
-		audioStartAt = time.Now()
-	}
-	select {
-	case t.downstream <- types.Event{Kind: types.EventTTSEnd, Payload: types.TTSEvent{
-		ResponseID:      respID,
-		AudioStartAt:    audioStartAt,
-		DurationSeconds: seconds,
-	}}:
-	case <-ctx.Done():
-	}
-}
-
-func (t *streamTTS) cancelActiveStream() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.cancelStream != nil {
-		t.cancelStream()
-		t.cancelStream = nil
-	}
-	t.streamResponse = ""
-}
-
-func (t *streamTTS) finishStream(respID string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.streamResponse != respID {
-		return
-	}
-	t.streamResponse = ""
-	t.cancelStream = nil
+	duration := ttsDurationSeconds(int64(len(raw)))
+	log.Printf("elevenlabs: tts duration=%.3fs bytes=%d", duration, len(raw))
+	return base64.StdEncoding.EncodeToString(raw), duration, nil
 }
 
 func (t *streamTTS) close() error {
-	t.cancelActiveStream()
-	close(t.upstream)
-	close(t.downstream)
+	t.once.Do(func() {
+		close(t.upstream)
+	})
 	return nil
 }
 
 func (t *streamTTS) buildVoiceSettings() map[string]any {
-	// デフォルト値（ハードコード）
 	defaultVS := VoiceSettings{
-		Stability:       1.0, // v3 は 0.5 or 1.0 のみ有効
+		Stability:       1.0,
 		SimilarityBoost: 0.8,
-		Speed:           1.2, // 0.7–1.2 の範囲で、1.0がデフォルト
+		Speed:           1.2,
 		UseSpeakerBoost: ptrBool(true),
 	}
 
@@ -314,7 +202,6 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	if vs.UseSpeakerBoost != nil {
 		settings["use_speaker_boost"] = *vs.UseSpeakerBoost
 	}
-
 	return settings
 }
 
