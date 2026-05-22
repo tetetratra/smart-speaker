@@ -20,7 +20,7 @@ const (
 	elevenlabsSampleRate     = 24000
 	elevenlabsBytesPerSample = 2
 	elevenlabsChannels       = 1
-	ttsPlaybackPaddingSec    = 0.2
+	ttsPlaybackPaddingSec    = 0.5
 )
 
 type Config struct {

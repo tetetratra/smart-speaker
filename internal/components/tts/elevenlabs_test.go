@@ -4,8 +4,8 @@ import "testing"
 
 func TestTTSDurationSeconds(t *testing.T) {
 	bytes := int64(elevenlabsSampleRate * elevenlabsBytesPerSample * elevenlabsChannels)
-	if got := ttsDurationSeconds(bytes); got != 1.2 {
-		t.Fatalf("ttsDurationSeconds() = %v, want 1.2", got)
+	if got := ttsDurationSeconds(bytes); got != 1.5 {
+		t.Fatalf("ttsDurationSeconds() = %v, want 1.5", got)
 	}
 }
 
