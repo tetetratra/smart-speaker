@@ -116,6 +116,28 @@ docker compose -f docker-compose.yml up --build
 補足:
 - Google Speech 系の現行必須設定は参照資料だけでは確定できないため、音声入力が失敗した場合は認証設定差分の確認が必要です。
 
+### 手順3.5: 応答 pipeline の簡易確認
+実マイクや Google Speech-to-Text を使わず、テスト用の user 発話を pipeline に直接投入して、LLM 応答と TTS 音声生成まで確認できます。
+
+```sh
+go run ./cmd/local-verify-response
+```
+
+確認ポイント:
+- `USER_TEXT=...` が出る。
+- `ASSISTANT_TEXT=...` が出る。
+- `AUDIO_BYTES_BASE64=...` が出る。
+- graph log で `llm -> generationfilter -> tts -> scheduler -> router -> conversationcommitter` の流れが確認できる。
+
+任意の入力文で確認したい場合は `LOCAL_VERIFY_TEXT` を指定します。
+
+```sh
+LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go run ./cmd/local-verify-response
+```
+
+この確認は OpenAI API と ElevenLabs API を実際に呼びます。
+そのため、`OPENAI_API_KEY`、`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID` が必要です。
+
 ### 手順4: Google Calendar OAuth の確認
 1. Google Calendar を利用する場合は `http://localhost:8081/oauth/google/start` を開く、または画面上の Google 認証導線を使う。
 2. 認証完了画面が表示されることを確認する。

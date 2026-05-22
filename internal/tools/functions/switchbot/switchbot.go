@@ -43,7 +43,7 @@ type apiResponse[T any] struct {
 	Body       T      `json:"body"`
 }
 
-// function calling から受け取るパラメータの構造
+// NDJSON tool item から受け取るパラメータの構造
 type Command struct {
 	DeviceAlias string
 	DeviceID    string

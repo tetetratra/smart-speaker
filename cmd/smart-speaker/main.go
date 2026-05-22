@@ -15,17 +15,21 @@ import (
 	"time"
 
 	"smart-speaker/internal/app"
-	"smart-speaker/internal/components/conversation"
-	"smart-speaker/internal/components/responsesapi"
+	"smart-speaker/internal/components/conversationcommitter"
+	"smart-speaker/internal/components/generationfilter"
+	"smart-speaker/internal/components/llm"
+	"smart-speaker/internal/components/router"
 	"smart-speaker/internal/components/rtc"
+	"smart-speaker/internal/components/scheduler"
 	"smart-speaker/internal/components/toolcaller"
 	"smart-speaker/internal/components/tts"
+	"smart-speaker/internal/components/utterancebuffer"
 	"smart-speaker/internal/components/wschat"
-	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/graph"
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
-	"smart-speaker/internal/tools/functions/switchbot"
-	"smart-speaker/internal/tools/registry"
+	"smart-speaker/internal/states/conversationhistory"
+	"smart-speaker/internal/states/generation"
+	types "smart-speaker/internal/types"
 )
 
 func main() {
@@ -46,16 +50,16 @@ func main() {
 	}
 	defer closeHTTPServer(server)
 
-	responsesStage, ttsStage, rtcStage, toolStage, convStage, err := buildStages(cfg, chatStage)
+	stages, err := buildStages(cfg, chatStage)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer closeStages(responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage)
+	defer closeStages(stages.all()...)
 
 	g := graph.New()
 	defer g.Close()
 
-	wireGraph(g, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage)
+	wireGraph(g, stages)
 	runHTTPServer(server)
 
 	log.Printf("main ctx err: %v", ctx.Err())
@@ -95,66 +99,104 @@ func closeStages(stages ...*graph.Stage) {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsStage, rtcStage, toolStage, convStage *graph.Stage, err error) {
+type appStages struct {
+	chat        *graph.Stage
+	rtc         *graph.Stage
+	utterance   *graph.Stage
+	committer   *graph.Stage
+	llm         *graph.Stage
+	filterLLM   *graph.Stage
+	tts         *graph.Stage
+	filterTTS   *graph.Stage
+	scheduler   *graph.Stage
+	filterSched *graph.Stage
+	router      *graph.Stage
+	tool        *graph.Stage
+}
+
+func (s appStages) all() []*graph.Stage {
+	return []*graph.Stage{
+		s.chat,
+		s.rtc,
+		s.utterance,
+		s.committer,
+		s.llm,
+		s.filterLLM,
+		s.tts,
+		s.filterTTS,
+		s.scheduler,
+		s.filterSched,
+		s.router,
+		s.tool,
+	}
+}
+
+func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
+	var stages appStages
 	if chatStage != nil {
 		chatStage.Name = "wschat"
 	}
-	ttsStage, err = tts.NewStage(tts.Config{
+	stages.chat = chatStage
+
+	generationStore := generation.NewStore()
+	historyStore := conversationhistory.NewStore()
+
+	var err error
+	stages.tts, err = tts.NewStage(tts.Config{
 		APIKey: cfg.ElevenLabs.APIKey,
 		Voice:  cfg.ElevenLabs.VoiceID,
 		Model:  cfg.ElevenLabs.Model,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init elevenlabs stage: %w", err)
+		return appStages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
 	}
-	if ttsStage != nil {
-		ttsStage.Name = "tts"
+	if stages.tts != nil {
+		stages.tts.Name = "tts"
 	}
-	calendarClient := newCalendarClient()
-	convStage = conversation.NewStage(conversation.Config{
-		LogPath:        "data/conversation.jsonl",
-		CalendarClient: calendarClient,
+	stages.utterance = utterancebuffer.NewStage(utterancebuffer.Config{
+		Generation: generationStore,
 	})
-	if convStage != nil {
-		convStage.Name = "conversation"
+	if stages.utterance != nil {
+		stages.utterance.Name = "utterancebuffer"
 	}
-
-	switchBotClient := switchbot.NewSwitchbotClient(cfg.SwitchBot.Token, cfg.SwitchBot.Secret, cfg.SwitchBot.DeviceMap)
-	switchBotScenes, err := switchBotClient.ListScenes(context.Background())
-	if err != nil {
-		log.Printf("failed to list SwitchBot scenes: %v", err)
-		switchBotScenes = nil
-	} else {
-		log.Printf("loaded %d SwitchBot scenes", len(switchBotScenes))
-	}
-	toolRegistry := registry.New(registry.Config{
-		SwitchBotToken:     cfg.SwitchBot.Token,
-		SwitchBotSecret:    cfg.SwitchBot.Secret,
-		SwitchBotDeviceMap: cfg.SwitchBot.DeviceMap,
-		SwitchBotClient:    switchBotClient,
-		SwitchBotScenes:    switchBotScenes,
-		CalendarClient:     calendarClient,
+	var resultCommitter *conversationcommitter.ResultAPI
+	stages.committer, resultCommitter = conversationcommitter.NewStage(conversationcommitter.Config{
+		History:    historyStore,
+		Generation: generationStore,
 	})
-	responsesStage, err = responsesapi.NewStage(responsesapi.Config{
+	if stages.committer != nil {
+		stages.committer.Name = "conversationcommitter"
+	}
+	stages.llm, err = llm.NewStage(llm.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
-		Tools:        toolRegistry.Definitions(),
+		History:      historyStore,
 	})
 	if err != nil {
-		if ttsStage != nil {
-			ttsStage.Close()
+		if stages.tts != nil {
+			stages.tts.Close()
 		}
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init responses stage: %w", err)
+		return appStages{}, fmt.Errorf("failed to init llm stage: %w", err)
 	}
-	if responsesStage != nil {
-		responsesStage.Name = "responsesapi"
+	if stages.llm != nil {
+		stages.llm.Name = "llm"
 	}
-	toolStage = toolcaller.NewStage(toolRegistry.Handlers())
-	if toolStage != nil {
-		toolStage.Name = "toolcaller"
+	stages.filterLLM = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
+	stages.filterLLM.Name = "generationfilter-llm"
+	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
+	stages.filterTTS.Name = "generationfilter-tts"
+	stages.filterSched = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
+	stages.filterSched.Name = "generationfilter-scheduler"
+	stages.scheduler = scheduler.NewStage(scheduler.Config{})
+	stages.scheduler.Name = "scheduler"
+	stages.router = router.NewStage(router.Config{})
+	stages.router.Name = "router"
+	stages.tool = toolcaller.NewStage(nil, resultCommitter)
+	if stages.tool != nil {
+		stages.tool.Name = "toolcaller"
 	}
-	rtcStage, err = rtc.NewStage(rtc.Config{
+	stages.rtc, err = rtc.NewStage(rtc.Config{
 		IceHostIPs:       cfg.RTCIceHostIPs,
 		SpeechProjectID:  cfg.GoogleCloudProject,
 		SpeechRecognizer: cfg.GoogleRecognizer,
@@ -162,15 +204,15 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (responsesStage, ttsSta
 		SpeechCredsJSON:  cfg.GoogleCredentials,
 	})
 	if err != nil {
-		if ttsStage != nil {
-			ttsStage.Close()
+		if stages.tts != nil {
+			stages.tts.Close()
 		}
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to init rtc stage: %w", err)
+		return appStages{}, fmt.Errorf("failed to init rtc stage: %w", err)
 	}
-	if rtcStage != nil {
-		rtcStage.Name = "rtc"
+	if stages.rtc != nil {
+		stages.rtc.Name = "rtc"
 	}
-	return responsesStage, ttsStage, rtcStage, toolStage, convStage, nil
+	return stages, nil
 }
 
 func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
@@ -196,11 +238,7 @@ func runHTTPServer(server *http.Server) {
 	}()
 }
 
-func newCalendarClient() *calendarapi.Client {
-	return calendarapi.NewClient(calendarapi.Config{})
-}
-
-func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, toolStage, convStage *graph.Stage) {
+func wireGraph(g *graph.Graph, stages appStages) {
 	add := func(stage *graph.Stage) *graph.Node {
 		if stage == nil {
 			return nil
@@ -208,59 +246,42 @@ func wireGraph(g *graph.Graph, responsesStage, ttsStage, chatStage, rtcStage, to
 		return g.AddNode(stage)
 	}
 
-	responsesNode := add(responsesStage)
-	convNode := add(convStage)
-	ttsNode := add(ttsStage)
-	rtcNode := add(rtcStage)
-	chatNode := add(chatStage)
+	chatNode := add(stages.chat)
+	rtcNode := add(stages.rtc)
+	utteranceNode := add(stages.utterance)
+	committerNode := add(stages.committer)
+	llmNode := add(stages.llm)
+	filterLLMNode := add(stages.filterLLM)
+	ttsNode := add(stages.tts)
+	filterTTSNode := add(stages.filterTTS)
+	schedulerNode := add(stages.scheduler)
+	filterSchedNode := add(stages.filterSched)
+	routerNode := add(stages.router)
+	toolNode := add(stages.tool)
 
-	if responsesNode != nil && chatNode != nil {
-		g.Connect(responsesNode, chatNode)
+	connectKinds(g, chatNode, rtcNode, types.EventRTCSignal)
+	connectKinds(g, rtcNode, chatNode, types.EventRTCSignal, types.EventSpeechEnd, types.EventRTCVADStatus)
+	connectKinds(g, rtcNode, utteranceNode, types.EventHumanUtterance)
+	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
+	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
+	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
+	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
+	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem)
+	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech)
+	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech)
+	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem)
+	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
+	connectKinds(g, routerNode, rtcNode, types.EventRealtimeAudio)
+	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
+	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
+	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
+}
+
+func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {
+	if from == nil || to == nil {
+		return
 	}
-	if convNode != nil && responsesNode != nil {
-		g.Connect(convNode, responsesNode)
-		g.Connect(responsesNode, convNode)
-	}
-	if ttsNode != nil {
-		if convNode != nil {
-			g.Connect(convNode, ttsNode)
-			g.Connect(ttsNode, convNode)
-		}
-		if rtcNode != nil {
-			g.Connect(ttsNode, rtcNode)
-		}
-	}
-	var toolNode *graph.Node
-	if node := add(toolStage); node != nil {
-		toolNode = node
-		if responsesNode != nil {
-			g.Connect(responsesNode, toolNode)
-			g.Connect(toolNode, responsesNode)
-		}
-	}
-	if toolNode != nil && convNode != nil {
-		g.Connect(toolNode, convNode)
-	}
-	if chatNode != nil {
-		if convNode != nil {
-			g.Connect(chatNode, convNode)
-			g.Connect(convNode, chatNode)
-		}
-		if rtcNode != nil {
-			g.Connect(chatNode, rtcNode)
-			g.Connect(rtcNode, chatNode)
-		}
-		if toolNode != nil {
-			g.Connect(toolNode, chatNode)
-		}
-	}
-	if rtcNode != nil && responsesNode != nil {
-		g.Connect(rtcNode, responsesNode)
-	}
-	if convNode != nil && rtcNode != nil {
-		g.Connect(convNode, rtcNode)
-		g.Connect(rtcNode, convNode)
-	}
+	g.ConnectKinds(from, to, kinds...)
 }
 
 func registerWebUI(mux *http.ServeMux, distDir string) {

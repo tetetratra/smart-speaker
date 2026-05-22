@@ -6,7 +6,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-// Handler はfunction callingから呼び出されるツールの実体です。
+// Handler はNDJSON tool itemから呼び出されるツールの実体です。
 type Handler interface {
 	Name() string
 	Run(args map[string]any) (map[string]any, error)
@@ -22,7 +22,7 @@ type EventEmitterAware interface {
 	SetEventEmitter(func(types.Event))
 }
 
-// DefinitionProvider はResponses API向けのtools定義を提供します。
+// DefinitionProvider はLLM prompt向けのtool定義を提供します。
 type DefinitionProvider interface {
 	Definition() map[string]any
 }

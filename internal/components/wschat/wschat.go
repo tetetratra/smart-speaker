@@ -147,42 +147,6 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 		if line.Source != "" {
 			msg["source"] = line.Source
 		}
-	case types.EventHumanUtterance:
-		line, ok := evt.Payload.(types.OutputLine)
-		if !ok {
-			return
-		}
-		msg = map[string]any{
-			"type": "message",
-			"role": line.Role,
-			"text": line.Text,
-		}
-		if line.Source != "" {
-			msg["source"] = line.Source
-		}
-	case types.EventToolRequest:
-		req, ok := evt.Payload.(types.ToolRequest)
-		if !ok {
-			return
-		}
-		msg = map[string]any{
-			"type":         "function_call",
-			"tool_call_id": req.ToolCallID,
-			"name":         req.Name,
-			"arguments":    json.RawMessage(req.Arguments),
-			"response_id":  req.ResponseID,
-		}
-	case types.EventToolResponse:
-		resp, ok := evt.Payload.(types.ToolResponse)
-		if !ok {
-			return
-		}
-		msg = map[string]any{
-			"type":         "function_result",
-			"tool_call_id": resp.ToolCallID,
-			"name":         resp.Name,
-			"output":       json.RawMessage(resp.Output),
-		}
 	case types.EventRTCSignal:
 		sig, ok := evt.Payload.(types.RTCSignal)
 		if !ok {

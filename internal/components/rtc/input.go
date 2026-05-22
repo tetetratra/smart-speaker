@@ -14,6 +14,8 @@ import (
 	speechpb "cloud.google.com/go/speech/apiv2/speechpb"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	opus "gopkg.in/hraban/opus.v2"
 
 	types "smart-speaker/internal/types"
@@ -246,7 +248,7 @@ func (s *stage) consumeSpeechResponses(stream speechpb.Speech_StreamingRecognize
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+			if !isExpectedSpeechStreamClose(err) {
 				log.Printf("rtc: speech stream recv error: %v", err)
 			}
 			return
@@ -265,6 +267,16 @@ func (s *stage) consumeSpeechResponses(stream speechpb.Speech_StreamingRecognize
 			s.emit(types.Event{Kind: types.EventHumanUtterance, Payload: types.OutputLine{Role: "user", Text: text, Source: "server-stt"}})
 		}
 	}
+}
+
+func isExpectedSpeechStreamClose(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+		return true
+	}
+	return status.Code(err) == codes.Canceled
 }
 
 func (s *stage) sendSpeechAudio(audio []byte) {

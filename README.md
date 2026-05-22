@@ -141,45 +141,50 @@ docker compose up web
 ```mermaid
 flowchart LR
   wschat["wschat (/ws/chat)"]
-  conversation["conversation"]
-  responses["responsesapi"]
-  toolcaller["toolcaller"]
+  ub["utterancebuffer"]
+  committer["conversationcommitter"]
+  llm["llm"]
+  gf1["generationfilter"]
   tts["tts (ElevenLabs)"]
+  gf2["generationfilter"]
+  scheduler["scheduler"]
+  gf3["generationfilter"]
+  router["router"]
+  toolcaller["toolcaller"]
   rtc["rtc (WebRTC)"]
 
-  conversation -- "EventRealtimeOutput" --> wschat
-
-  conversation -- "EventResponsesRequest" --> responses
-  responses -- "EventResponsesResponse" --> conversation
-
-  responses -- "EventToolRequest" --> toolcaller
-  responses -- "EventToolRequest (function_call表示)" --> wschat
-  toolcaller -- "EventToolResponse" --> responses
-
-  toolcaller -- "EventToolResponse" --> conversation
-  toolcaller -- "EventToolResponse (function_result表示)" --> wschat
-
-  conversation -- "EventRealtimeOutput / EventTTSCancel" --> tts
-  tts -- "EventTTSEnd" --> conversation
-  tts -- "EventRealtimeAudio" --> rtc
-  conversation -- "EventTTSCancel" --> rtc
+  rtc -- "EventHumanUtterance" --> ub
+  ub -- "EventConversationCommitRequest" --> committer
+  committer -- "EventLLMRequest" --> llm
+  committer -- "EventRealtimeOutput" --> wschat
+  llm -- "EventTimelineItem" --> gf1
+  gf1 --> tts
+  tts -- "EventPlayableSpeech / EventTimelineItem" --> gf2
+  gf2 --> scheduler
+  scheduler -- "EventScheduledItem" --> gf3
+  gf3 --> router
+  router -- "EventRealtimeAudio" --> rtc
+  router -- "assistant commit" --> committer
+  router -- "EventToolRequest" --> toolcaller
+  toolcaller -. "CommitToolResult API" .-> committer
+  toolcaller -- "tool内部event" --> wschat
 
   wschat -- "EventRTCSignal" --> rtc
   rtc -- "EventRTCSignal" --> wschat
-  rtc -. "EventRTCSignal（現状 responsesapi では未処理）" .-> responses
 ```
 
 - HTTP サーバー起動は `main` が直接担当し、`ServeMux` に `wschat` と Web UI をぶら下げる
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはサーバー側で実施
+- LLM 出力は `speech` / `wait` / `tool` の NDJSON timeline として扱う
+- OpenAI Responses API の function calling は使わない
 - 旧 `internal/state` パッケージは削除済み
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`
 - 配信内容（例）:
   - 人間/AI: `{"type":"message","role":"user|assistant|system","text":"...","response_id":"...","final":false}`
-  - Function Call: `{"type":"function_call","tool_call_id":"...","name":"...","arguments":{...}}`
-  - Function Result: `{"type":"function_result","tool_call_id":"...","output":{...}}`
+  - Tool call / tool result は通常の会話UIには配信しません
   - WebRTC offer/answer/ice: `{"type":"webrtc.offer|webrtc.answer|webrtc.ice","sdp":"...","candidate":{...}}`
 
 ## 備考

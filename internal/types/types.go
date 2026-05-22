@@ -4,17 +4,20 @@ import "time"
 
 // アシスタントやユーザーの 1 行分の出力
 type OutputLine struct {
-	Role       string
-	Text       string
-	ResponseID string
-	Final      bool
-	Source     string
+	Role         string
+	Text         string
+	ResponseID   string
+	Final        bool
+	Source       string
+	GenerationID GenerationID
 }
 
 // OutputAudio represents an assistant audio response chunk.
 type OutputAudio struct {
-	Role  string
-	Audio string
+	Role         string
+	Audio        string
+	Text         string
+	GenerationID GenerationID
 }
 
 // SpeechEvent は文字起こしの終了イベントを表します。
@@ -35,11 +38,6 @@ type TTSEvent struct {
 	ResponseID      string
 	AudioStartAt    time.Time
 	DurationSeconds float64
-}
-
-// TTSCancel はTTSの中断を表します。
-type TTSCancel struct {
-	ResponseID string
 }
 
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
@@ -64,33 +62,4 @@ type RTCSignal struct {
 type ChatMessage struct {
 	Role    string
 	Content string
-}
-
-// ResponsesRequest はResponses APIへの要求を表します。
-type ResponsesRequest struct {
-	Role         string
-	Text         string
-	Messages     []ChatMessage
-	RequestID    string
-	SystemPrompt *string
-	ToolChoice   any
-	Tools        []any
-}
-
-// ResponsesResponse はResponses APIの応答を表します。
-type ResponsesResponse struct {
-	Text        string
-	ResponseID  string
-	RequestID   string
-	HasResponse bool
-	ToolCalls   []ToolRequest
-}
-
-// ResponsesStreamChunk はResponses API streamingから復元済みの1行、完了、エラーを表します。
-type ResponsesStreamChunk struct {
-	RequestID  string
-	ResponseID string
-	Line       string
-	Done       bool
-	Err        string
 }
