@@ -41,7 +41,7 @@
 
 1. 世代の採番: `utterancebuffer` が STT の確定テキストをまとめ、flush 時に `generation.Store.Next()` を呼んで新しい `GenerationID` を採番する。
 2. LLM request の作成: `conversationcommitter` が user の `ConversationCommitRequest` を履歴へ保存し、同じ `GenerationID` を持つ `EventLLMRequest` を発行する。
-3. timeline item の生成: `llm` が Responses API の NDJSON 出力を `types.TimelineItem` に変換し、request と同じ `GenerationID` を設定する。
+3. timeline item の生成: `llm` が Responses API の Structured Outputs JSON を `types.TimelineItem` に変換し、request と同じ `GenerationID` を設定する。
 4. TTS 変換: `tts` は `speech` の `TimelineItem` を `types.PlayableSpeech` に変換し、元の `GenerationID` を引き継ぐ。`speech` 以外の timeline item はそのまま後続へ流す。
 5. スケジューリング: `scheduler` は `PlayableSpeech` と `TimelineItem` を世代ごとに worker へ enqueue し、再生可能音声や tool item を `EventScheduledItem` として出力する。
 6. 世代フィルタ: `generationfilter` は event payload から `GenerationID` を取り出し、`generation.Store.IsCurrent(id)` が true の event だけを `Downstream` へ送る。

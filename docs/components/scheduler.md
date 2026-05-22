@@ -50,7 +50,7 @@
 
 ### シナリオ: speech の後に tool を実行する
 
-1. LLM が `speech` / `tool` などの NDJSON timeline を生成し、`llm` が `EventTimelineItem` を順番に発行する。
+1. LLM が `speech` / `tool` などの JSON timeline を生成し、`llm` が `EventTimelineItem` を順番に発行する。
 2. `tts` は `TimelineKindSpeech` を音声化し、`types.PlayableSpeech` を `EventPlayableSpeech` として発行する。`wait` / `tool` は `EventTimelineItem` のまま通す。
 3. `generationfilter-tts` は現在世代の `EventPlayableSpeech` / `EventTimelineItem` だけを scheduler へ通す。
 4. scheduler は payload の `GenerationID` を取り出し、該当世代の worker channel へ enqueue する。worker が未作成なら新規 channel と goroutine を作る。
@@ -177,7 +177,7 @@ flowchart TD
 
 ### speech / tool の順序制御
 
-- LLM の契約上、tool は 1 回の LLM 応答の末尾に最大 1 件だけ許可される。これは `internal/components/llm/contract.go` の `parseTimeline` が `seenTool` 後の item をエラーにすることで担保している。
+- LLM の契約上、tool は 1 回の LLM 応答の末尾に最大 1 件だけ許可される。これは `internal/components/llm/contract.go` の `parseTimelineJSON` が `seenTool` 後の item をエラーにすることで担保している。
 - scheduler は tool が末尾かどうかを再検証しない。入力済み timeline item を、世代別 queue の順序に従って処理する。
 - `internal/components/pipeline/conversation_pipeline_test.go` では、`PlayableSpeech` の後に tool item を投入した場合、router の出力が `EventRealtimeAudio`、`EventConversationCommitRequest`、`EventToolRequest` の順になることを確認している。
 

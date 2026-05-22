@@ -98,36 +98,36 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 	systemPrompt := s.systemPrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
 		messages := s.messages(req)
-		lines := []string{}
-		err := s.client.CreateResponseStream(ctx, messages, appendCurrentTimestamp(systemPrompt), func(line string) error {
-			lines = append(lines, line)
-			return nil
-		})
+		rawText, err := s.client.CreateResponseStream(ctx, messages, appendCurrentTimestamp(systemPrompt))
 		if err != nil {
 			return nil, err
 		}
-		items, err := parseTimeline(lines, req.GenerationID)
+		items, err := parseTimelineJSON(rawText, req.GenerationID)
 		if err == nil {
 			return items, nil
 		}
 		lastErr = err
-		rawLinePreview := rawLinePreviewFromError(err)
-		log.Printf("llm: invalid ndjson response generation=%d request_id=%s attempt=%d/%d err=%v raw_line_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawLinePreview)
-		systemPrompt = appendRetryInstruction(s.systemPrompt, err, rawLinePreview)
+		rawPreview := rawPreviewFromError(err)
+		if rawPreview == "" {
+			rawPreview = rawText
+		}
+		rawPreview = rawPreviewText(rawPreview)
+		log.Printf("llm: invalid timeline response generation=%d request_id=%s attempt=%d/%d err=%v raw_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawPreview)
+		systemPrompt = appendRetryInstruction(s.systemPrompt, err, rawPreview)
 	}
 	return nil, lastErr
 }
 
-func rawLinePreviewFromError(err error) string {
+func rawPreviewFromError(err error) string {
 	var parseErr *timelineParseError
 	if !errors.As(err, &parseErr) {
 		return ""
 	}
-	return rawLinePreview(parseErr.RawLine())
+	return parseErr.RawPreview()
 }
 
-func rawLinePreview(rawLine string) string {
-	trimmed := strings.TrimSpace(rawLine)
+func rawPreviewText(rawText string) string {
+	trimmed := strings.TrimSpace(rawText)
 	runes := []rune(trimmed)
 	if len(runes) <= maxRawLinePreviewRunes {
 		return trimmed

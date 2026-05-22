@@ -24,7 +24,7 @@ type Config struct {
 }
 
 type responseClient interface {
-	CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string, onLine func(string) error) error
+	CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error)
 }
 
 type historyReader interface {
@@ -36,6 +36,7 @@ type Client struct {
 	model    string
 	client   *http.Client
 	endpoint string
+	text     map[string]any
 }
 
 func NewClient(cfg Config) (*Client, error) {
@@ -50,10 +51,11 @@ func NewClient(cfg Config) (*Client, error) {
 		model:    cfg.Model,
 		client:   &http.Client{},
 		endpoint: "https://api.openai.com/v1/responses",
+		text:     timelineTextFormat(cfg.ToolSchemas),
 	}, nil
 }
 
-func (c *Client) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string, onLine func(string) error) error {
+func (c *Client) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(systemContent) != "" {
 		input = append(input, map[string]any{"role": "system", "content": systemContent})
@@ -70,43 +72,46 @@ func (c *Client) CreateResponseStream(ctx context.Context, messages []types.Chat
 		input = append(input, map[string]any{"role": role, "content": content})
 	}
 	if len(input) == 0 {
-		return fmt.Errorf("llm: input is empty")
+		return "", fmt.Errorf("llm: input is empty")
 	}
 	payload := map[string]any{
 		"model":  c.model,
 		"input":  input,
 		"stream": true,
 	}
+	if c.text != nil {
+		payload["text"] = c.text
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("llm: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		return "", fmt.Errorf("llm: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
-	return readResponseStream(resp.Body, onLine)
+	return readResponseStream(resp.Body)
 }
 
-func readResponseStream(r io.Reader, onLine func(string) error) error {
+func readResponseStream(r io.Reader) (string, error) {
 	reader := bufio.NewReader(r)
 	var textBuffer strings.Builder
 	for {
 		raw, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
-			return err
+			return "", err
 		}
 		line := strings.TrimSpace(raw)
 		if strings.HasPrefix(line, "data:") {
@@ -114,10 +119,10 @@ func readResponseStream(r io.Reader, onLine func(string) error) error {
 			if data != "" && data != "[DONE]" {
 				var evt map[string]any
 				if err := json.Unmarshal([]byte(data), &evt); err != nil {
-					return err
+					return "", err
 				}
-				if err := handleStreamEvent(evt, &textBuffer, onLine); err != nil {
-					return err
+				if err := handleStreamEvent(evt, &textBuffer); err != nil {
+					return "", err
 				}
 			}
 		}
@@ -125,17 +130,14 @@ func readResponseStream(r io.Reader, onLine func(string) error) error {
 			break
 		}
 	}
-	if tail := strings.TrimSpace(textBuffer.String()); tail != "" && onLine != nil {
-		return onLine(tail)
-	}
-	return nil
+	return strings.TrimSpace(textBuffer.String()), nil
 }
 
-func handleStreamEvent(evt map[string]any, textBuffer *strings.Builder, onLine func(string) error) error {
+func handleStreamEvent(evt map[string]any, textBuffer *strings.Builder) error {
 	switch asString(evt["type"]) {
 	case "response.output_text.delta":
 		delta, _ := evt["delta"].(string)
-		return appendStreamDelta(textBuffer, delta, onLine)
+		textBuffer.WriteString(delta)
 	case "response.failed":
 		if errObj, ok := evt["error"].(map[string]any); ok {
 			if msg := strings.TrimSpace(asString(errObj["message"])); msg != "" {
@@ -145,32 +147,6 @@ func handleStreamEvent(evt map[string]any, textBuffer *strings.Builder, onLine f
 		return fmt.Errorf("llm: stream failed")
 	}
 	return nil
-}
-
-func appendStreamDelta(buffer *strings.Builder, delta string, onLine func(string) error) error {
-	if delta == "" {
-		return nil
-	}
-	buffer.WriteString(delta)
-	for {
-		current := buffer.String()
-		idx := strings.IndexByte(current, '\n')
-		if idx < 0 {
-			return nil
-		}
-		line := strings.TrimSpace(current[:idx])
-		rest := current[idx+1:]
-		buffer.Reset()
-		buffer.WriteString(rest)
-		if line == "" {
-			continue
-		}
-		if onLine != nil {
-			if err := onLine(line); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 func appendCurrentTimestamp(prompt string) string {

@@ -44,7 +44,7 @@
 
 ### シナリオ: `speech` item が音声化され、再生可能な event になるまで
 
-1. **LLM が timeline item を発行する**: `llm` は NDJSON の `{"type":"speech","text":"..."}` を検証し、`types.TimelineItem{Kind: "speech"}` として `EventTimelineItem` を出力する。
+1. **LLM が timeline item を発行する**: `llm` は Structured Outputs の JSON timeline を検証し、`types.TimelineItem{Kind: "speech"}` として `EventTimelineItem` を出力する。
 2. **generationfilter を通過する**: 最新世代の `EventTimelineItem` だけが `tts` に届く。
 3. **tts が speech を判定する**: `tts` は event kind が `EventTimelineItem` で、payload が `types.TimelineItem` であり、`Kind` が `speech` であることを確認する。
 4. **ElevenLabs を呼び出す**: `tts` は `POST https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream?output_format=pcm_24000` を呼ぶ。リクエスト body は `text`、`model_id`、`language_code: "ja"`、必要に応じて `voice_settings` を含む。
