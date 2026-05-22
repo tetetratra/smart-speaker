@@ -16,21 +16,18 @@ import (
 
 type fakeClient struct {
 	calls     int
-	responses [][]string
+	responses []string
+	prompts   []string
 }
 
-func (f *fakeClient) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string, onLine func(string) error) error {
+func (f *fakeClient) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
+	f.prompts = append(f.prompts, systemContent)
 	idx := f.calls
 	f.calls++
 	if idx >= len(f.responses) {
 		idx = len(f.responses) - 1
 	}
-	for _, line := range f.responses[idx] {
-		if err := onLine(line); err != nil {
-			return err
-		}
-	}
-	return nil
+	return f.responses[idx], nil
 }
 
 func TestStageRetriesInvalidResponse(t *testing.T) {
@@ -41,9 +38,9 @@ func TestStageRetriesInvalidResponse(t *testing.T) {
 
 	history := conversationhistory.NewStore()
 	history.Append(types.ConversationRecord{Role: types.RoleUser, Text: "温度見て", GenerationID: 1})
-	client := &fakeClient{responses: [][]string{
-		{`{"type":"speech","text":""}`},
-		{`{"type":"speech","text":"確認するね"}`},
+	client := &fakeClient{responses: []string{
+		`{"items":[{"type":"speech","text":""}]}`,
+		`{"items":[{"type":"speech","text":"確認するね"}]}`,
 	}}
 	st, err := NewStage(Config{History: history, Client: client})
 	if err != nil {
@@ -72,12 +69,12 @@ func TestStageRetriesInvalidResponse(t *testing.T) {
 	}
 	logText := logs.String()
 	for _, want := range []string{
-		"llm: invalid ndjson response",
+		"llm: invalid timeline response",
 		"generation=1",
 		"request_id=req-1",
 		"attempt=1/10",
 		"err=speech text is required",
-		`raw_line_preview="{\"type\":\"speech\",\"text\":\"\"}"`,
+		`raw_preview="{\"type\":\"speech\",\"text\":\"\"}"`,
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("log = %q, want it to contain %q", logText, want)
@@ -85,17 +82,17 @@ func TestStageRetriesInvalidResponse(t *testing.T) {
 	}
 }
 
-func TestAppendRetryInstructionIncludesRawLinePreview(t *testing.T) {
-	prompt := appendRetryInstruction("base prompt", errors.New("invalid ndjson"), "うん続けて、聞いてるよ")
+func TestAppendRetryInstructionIncludesRawPreview(t *testing.T) {
+	prompt := appendRetryInstruction("base prompt", errors.New("invalid timeline json"), "うん続けて、聞いてるよ")
 	for _, want := range []string{
 		"base prompt",
 		"通常の文章を絶対に出力しないでください",
 		"正しい出力例:",
-		`{"type":"speech","text":"うん、聞いてるよ"}`,
+		`{"items":[{"type":"speech","text":"うん、聞いてるよ"}`,
 		"悪い出力例:",
-		"直前に出力した不正な行:",
+		"直前に出力した不正な内容:",
 		"うん続けて、聞いてるよ",
-		"違反理由:\ninvalid ndjson",
+		"違反理由:\ninvalid timeline json",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt = %q, want it to contain %q", prompt, want)
@@ -105,7 +102,7 @@ func TestAppendRetryInstructionIncludesRawLinePreview(t *testing.T) {
 
 func TestRawLinePreviewTruncatesRunes(t *testing.T) {
 	rawLine := strings.Repeat("あ", maxRawLinePreviewRunes+1)
-	preview := rawLinePreview(rawLine)
+	preview := rawPreviewText(rawLine)
 	if got := len([]rune(preview)); got != maxRawLinePreviewRunes+len([]rune(rawLinePreviewSuffix)) {
 		t.Fatalf("preview rune length = %d, want %d", got, maxRawLinePreviewRunes+len([]rune(rawLinePreviewSuffix)))
 	}
@@ -118,7 +115,7 @@ func TestRawLinePreviewTruncatesRunes(t *testing.T) {
 }
 
 func TestRawLinePreviewFromNonParseErrorIsEmpty(t *testing.T) {
-	if got := rawLinePreviewFromError(os.ErrNotExist); got != "" {
+	if got := rawPreviewFromError(os.ErrNotExist); got != "" {
 		t.Fatalf("preview = %q, want empty", got)
 	}
 }
