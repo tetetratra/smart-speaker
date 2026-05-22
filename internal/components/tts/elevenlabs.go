@@ -20,6 +20,7 @@ const (
 	elevenlabsSampleRate     = 24000
 	elevenlabsBytesPerSample = 2
 	elevenlabsChannels       = 1
+	ttsPlaybackPaddingSec    = 0.2
 )
 
 type Config struct {
@@ -224,7 +225,7 @@ func ttsDurationSeconds(bytes int64) float64 {
 		return 0
 	}
 	denom := float64(elevenlabsSampleRate * elevenlabsBytesPerSample * elevenlabsChannels)
-	return float64(bytes) / denom
+	return float64(bytes)/denom + ttsPlaybackPaddingSec
 }
 
 func ptrBool(v bool) *bool {

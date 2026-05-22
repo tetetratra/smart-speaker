@@ -48,7 +48,7 @@
 2. **generationfilter を通過する**: 最新世代の `EventTimelineItem` だけが `tts` に届く。
 3. **tts が speech を判定する**: `tts` は event kind が `EventTimelineItem` で、payload が `types.TimelineItem` であり、`Kind` が `speech` であることを確認する。
 4. **ElevenLabs を呼び出す**: `tts` は `POST https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream?output_format=pcm_24000` を呼ぶ。リクエスト body は `text`、`model_id`、`language_code: "ja"`、必要に応じて `voice_settings` を含む。
-5. **音声 duration を算出する**: レスポンス body の raw PCM byte 数を `24000 sample/sec * 2 bytes/sample * 1 channel` で割り、秒数を算出する。
+5. **音声 duration を算出する**: レスポンス body の raw PCM byte 数を `24000 sample/sec * 2 bytes/sample * 1 channel` で割った実音声秒数に、再生後の間を作るための 0.2 秒を加算する。
 6. **PlayableSpeech を出力する**: raw PCM を base64 encode し、`GenerationID`、`SequenceID`、`Text`、`DurationSeconds`、`OriginalTimeline` とともに `EventPlayableSpeech` として下流へ送る。
 7. **後段が再生順序を制御する**: `scheduler` は `EventPlayableSpeech` を `EventScheduledItem` として出力し、その後 `DurationSeconds` だけ待つ。
 8. **router が音声再生と履歴保存へ分配する**: `router` は `PlayableSpeech` から `EventRealtimeAudio` と `EventConversationCommitRequest` を順に出力する。
@@ -131,10 +131,11 @@ sequenceDiagram
         - `(*streamTTS).synthesize`: ElevenLabs API を呼び、raw PCM を base64 化し、byte 数から duration を算出する。
         - `(*streamTTS).close`: upstream channel を一度だけ close する。
         - `(*streamTTS).buildVoiceSettings`: voice settings のデフォルト値と設定値を合成し、API payload 用の map を作る。
-        - `ttsDurationSeconds`: PCM byte 数から秒数を算出する。0 byte 以下は 0 秒。
+        - `ttsDurationSeconds`: PCM byte 数から秒数を算出し、0.2 秒の再生後 padding を加算する。0 byte 以下は 0 秒。
         - `normalizeStability`: `eleven_v3` 系 model の stability を `0`、`0.5`、`1` のいずれかへ丸める。
       - elevenlabs_test.go: duration 算出と `eleven_v3` の stability 丸めを検証する。
-        - `TestTTSDurationSeconds`: 24000Hz、16bit、mono の1秒分 byte 数が 1 秒になることを検証する。
+        - `TestTTSDurationSeconds`: 24000Hz、16bit、mono の1秒分 byte 数が 1.2 秒になることを検証する。
+        - `TestTTSDurationSecondsReturnsZeroForEmptyAudio`: 0 byte の音声は padding を加算せず 0 秒になることを検証する。
         - `TestNormalizeStabilityForV3`: `eleven_v3` で `0.6` が `0.5` に丸められることを検証する。
 
 - internal/
@@ -193,7 +194,7 @@ sequenceDiagram
 
 - ElevenLabs の出力形式は URL query で `pcm_24000` に固定されている。
 - 実装上の前提は `sample rate = 24000`、`bytes per sample = 2`、`channels = 1`。
-- 算出式は `duration_seconds = raw_pcm_bytes / (24000 * 2 * 1)`。
+- 算出式は `duration_seconds = raw_pcm_bytes / (24000 * 2 * 1) + 0.2`。
 - raw byte 数が 0 以下の場合は 0 秒。
 - この duration は `tts` 内では待機に使われず、後段の `scheduler` が `PlayableSpeech.DurationSeconds` として参照する。
 
