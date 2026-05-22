@@ -107,7 +107,7 @@ sequenceDiagram
 
 ### シナリオ: JSON timeline 契約違反時の retry
 
-1. `llm.stage` は1回の Responses API stream から得た JSON object 文字列を `parseTimelineJSON` に渡す。
+1. `llm.stage` は1回の Responses API 非stream response body から取り出した JSON object 文字列を `parseTimelineJSON` に渡す。
 2. `parseTimelineJSON` がエラーを返した場合、`llm.stage` は `llm: invalid timeline response generation=... request_id=... attempt=... err=... raw_preview=...` をログ出力する。
 3. `raw_preview` は応答全体を一定文字数で truncate したもので、契約違反 retry prompt にも含める。
 4. 次回 attempt では元の system prompt に「直前の応答はJSON timeline契約違反でした」と違反理由、禁止事項、正しい例を追記して再度 Responses API を呼ぶ。
@@ -232,4 +232,4 @@ sequenceDiagram
 - 実装: `cmd/smart-speaker/main.go`
 - OpenAI 公式: [Responses API reference](https://platform.openai.com/docs/api-reference/responses)
 - OpenAI 公式: [Structured model outputs](https://platform.openai.com/docs/guides/structured-outputs)
-- OpenAI 公式: [Streaming API responses](https://platform.openai.com/docs/guides/streaming-responses)
+- OpenAI 公式: [Text generation with the Responses API](https://platform.openai.com/docs/guides/text?api-mode=responses)
