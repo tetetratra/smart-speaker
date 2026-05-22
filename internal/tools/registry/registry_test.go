@@ -50,6 +50,33 @@ func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
 	}
 }
 
+func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
+	reg := New(Config{})
+
+	for _, name := range []string{"switchbot_execute_scene", "hub2_get_environment"} {
+		if _, ok := reg.DefinitionByName(name); ok {
+			t.Fatalf("%s should not be registered", name)
+		}
+		if _, ok := reg.Handlers()[name]; ok {
+			t.Fatalf("%s handler should not be registered", name)
+		}
+	}
+	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
+		t.Fatal("set_whiteboard should be registered")
+	}
+}
+
+func TestRegistryOmitsWebSearchTool(t *testing.T) {
+	reg := New(Config{})
+
+	if _, ok := reg.DefinitionByName("web_search"); ok {
+		t.Fatal("web_search should not be registered")
+	}
+	if _, ok := reg.Handlers()["web_search"]; ok {
+		t.Fatal("web_search handler should not be registered")
+	}
+}
+
 func TestRegistryOmitsSetVolumeTool(t *testing.T) {
 	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
 	reg := New(Config{SwitchBotClient: client})
