@@ -6,7 +6,7 @@
 * **ターゲットユーザー**: 音声でスマートスピーカーに話しかける利用者、および pipeline を保守する開発者。
 * **提供価値**: OpenAI Responses API の自然言語出力を直接下流へ流さず、`speech` / `wait` / `tool` の NDJSON 契約に検証してから `TimelineItem` に変換することで、TTS・scheduler・toolcaller が同じ順序制御で扱える。
 * **安全性の考え方**: 契約違反の LLM 応答は最大5回 retry し、それでも失敗した場合はログを出して応答を捨てる。壊れた timeline を下流へ流さないことを優先している。
-* **現在の実装上の制約**: `llm.Config` は tool schema を system prompt に追加できるが、`cmd/smart-speaker/main.go` の通常起動では `ToolSchemas` を渡していない。また `toolcaller.NewStage(nil, resultCommitter)` として起動しているため、通常起動で local tool handler は登録されていない。tool registry の定義は存在するが、通常 pipeline へ接続されていることは実コードから確認できない。
+* **tool 連携の考え方**: 通常起動では `cmd/smart-speaker/main.go` が local tool registry を構築し、`llm.Config.ToolSchemas` と `toolcaller.NewStage` の handler map に同じ registry 由来の定義・handler を渡す。これにより LLM は system prompt 内の tool schema を参照し、NDJSON の `tool` item として local tool 呼び出しを表現できる。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -185,7 +185,8 @@ sequenceDiagram
 
 - LLM component は OpenAI function calling を使わず、tool call を NDJSON の `tool` item として扱う。
 - `prompt_tools.go` の system prompt も「OpenAI function callingは使わず、tool呼び出しもNDJSON行として表現」と明記している。
-- `ToolSchemas` が渡された場合は `利用可能なlocal tool schema:` に続けて JSON 化される。ただし JSON marshal に失敗した場合は schema 部分は追加されない。
+- 通常起動では `buildToolRegistry` が返す `registry.Definitions()` が `ToolSchemas` に渡され、`利用可能なlocal tool schema:` に続けて JSON 化される。ただし JSON marshal に失敗した場合は schema 部分は追加されない。
+- `web_search` は local handler 未実装のため registry から除外されており、通常起動の `ToolSchemas` にも含まれない。
 - `conversationhistory.ToChatMessages` は role `tool` の record を OpenAI の `tool` role ではなく、role `user` の JSON 文字列に変換する。形式は `{"type":"tool_result","tool_name":"...","generation_id":...,"output":...}` に metadata を加えたもの。
 - `ToolResultRecord` には `CurrentGenerationID` と `Stale` がある。`ResultAPI.CommitToolResult` は現在世代と tool result の世代が違う場合に stale 情報を設定する。
 

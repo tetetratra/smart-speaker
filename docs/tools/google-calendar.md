@@ -11,6 +11,7 @@
 - `google_calendar_update`
   - `action=update`
   - `action=delete`
+- 通常起動では local tool registry 経由で `google_calendar_list` / `google_calendar_create` / `google_calendar_update` の定義が LLM に渡り、handler が `toolcaller` に登録される。
 - 会話文脈注入は旧 `conversation` component 削除により現在未接続
 - `internal/googlecalendar/*` の共通 client
 - `internal/oauth/googlecalendar/*` の認証前提
@@ -28,7 +29,7 @@
 | `internal/oauth/googlecalendar` | OAuth 設定読み込み、認可 URL 生成、callback 処理、token 保存、access token 更新を担う。 |
 | `internal/googlecalendar.Client` | Google Calendar REST API の共通 client。一覧取得、作成、更新、削除と一覧 cache を持つ。 |
 | `internal/tools/functions/googlecalendar` | tool 引数を解釈し、共通 client を呼ぶ薄い adapter。 |
-| `cmd/smart-speaker/main.go` | Google OAuth handler を登録する。現時点では calendar tool registry は未接続。 |
+| `cmd/smart-speaker/main.go` | Google OAuth handler を登録し、通常 pipeline 用の local tool registry を構築して `llm` と `toolcaller` に接続する。 |
 
 ## 5. tool 一覧
 ### `google_calendar_list`
@@ -166,11 +167,13 @@
 
 ## 8. 主要データフロー
 ### シナリオ: 認証済み状態で予定一覧を取得する
-1. tool caller が `google_calendar_list` を実行する。
-2. tool が引数を解釈し、`ListEventsRequest` を組み立てる。
-3. 共通 client が access token を取得する。
-4. 共通 client が Google Calendar API の `events` 一覧取得を呼ぶ。
-5. 結果を tool 出力形式へ整形して返す。
+1. 通常起動時に `cmd/smart-speaker/main.go` が registry を構築し、`google_calendar_list` の schema を LLM へ、handler を `toolcaller` へ渡す。
+2. LLM が NDJSON の `{"type":"tool","name":"google_calendar_list","args":{...}}` を出力する。
+3. scheduler / router が tool item を `EventToolRequest` に変換し、toolcaller が `google_calendar_list` を実行する。
+4. tool が引数を解釈し、`ListEventsRequest` を組み立てる。
+5. 共通 client が access token を取得する。
+6. 共通 client が Google Calendar API の `events` 一覧取得を呼ぶ。
+7. 結果を tool 出力形式へ整形し、tool result として会話履歴へ保存する。
 
 ### シナリオ: 予定を作成する
 1. tool caller が `google_calendar_create` を実行する。
