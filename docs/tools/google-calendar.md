@@ -139,6 +139,9 @@
 - cache への保存時と返却時に `[]Event` を clone し、呼び出し側の変更が cache に混ざらないようにしている。
 
 ## 7. 会話文脈注入
+旧 `conversation` component の削除により、この経路は現在未接続です。
+以下は再導入時に参照する旧実装の挙動です。
+
 ### 役割
 - 会話 request の直前に、Google Calendar の予定を system message として注入する。
 - これは tool 呼び出しとは別経路であり、assistant が予定を参照しながら応答するための文脈補強である。
@@ -186,7 +189,6 @@
 4. 更新または削除の結果を tool 出力として返す。
 
 ### シナリオ: 会話時に予定を文脈へ注入する
-旧 `conversation` component の削除により、この経路は現在未接続です。
 再導入する場合は、`llm` component の prompt 構築または会話履歴Storeへの system record 追加として設計します。
 
 ## 9. 再設計で維持したい性質

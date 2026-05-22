@@ -162,8 +162,10 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 - ElevenLabs による音声再生が行われる。
 
 ### ツール実行
-- `function call` と `function result` が UI またはログで追える。
-- tool 実行結果が後続メッセージとして返る。
+- OpenAI function calling は使わず、LLM の NDJSON `tool` item が `scheduler` / `router` を経由して `EventToolRequest` になる。
+- 現行の通常起動では `toolcaller.NewStage(nil, resultCommitter)` のため、登録済み handler は 0 件である。
+- tool 実行経路を確認する場合は、`EventToolRequest`、`toolcaller` の unknown function ログ、`conversationcommitter` への tool result commit をログで追う。
+- UI で観測できるのは通常 message と `whiteboard_update` などの tool 副作用 event であり、function call / result 専用 message は現行 server から配信されない。
 
 ### OAuth
 - Google Calendar OAuth を開始できる。

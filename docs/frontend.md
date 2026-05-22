@@ -45,7 +45,8 @@
 - 音声エラーと文字起こしエラーを表示する。
 - メッセージログを表示する。
   - user / assistant / system
-  - tool call / tool result は通常の会話UIには表示しない。
+  - 現行の `/ws/chat` は OpenAI function call / result 専用 message を配信しない。
+  - tool 実行による UI 副作用は `whiteboard_update` などの個別 message として扱う。
 
 ## 3. 接続開始と接続ライフサイクル
 
@@ -90,8 +91,9 @@ sequenceDiagram
   - 入力音量としきい値を更新する。
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard に反映する。
-- tool call / tool result
-  - 通常の会話UIには表示しない。
+- tool 実行関連
+  - OpenAI function call / result 専用 message は現行 server からは届かない。
+  - tool が UI 副作用 event を出す場合は、`whiteboard_update` などの個別 message として反映する。
 - `webrtc.answer` / `webrtc.ice`
   - メッセージログには積まず、PeerConnection に反映する。
   - remote description 設定前の ICE は一時キューに保持する。
@@ -167,7 +169,8 @@ sequenceDiagram
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
 - whiteboard 更新は通常メッセージとは別イベントで流れる。
-- 管理画面は function call / result をそのまま観測できる。
+- 管理画面は server から届く message log と pipeline 状態を観測できる。
+- OpenAI function call / result は現行 pipeline では WebSocket message として配信されない。
 - 再生音量はブラウザ側の `GainNode` で制御している。
 - 手動切断と異常切断で再接続ポリシーが異なる。
 
