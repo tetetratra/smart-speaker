@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"log"
+	"strings"
 	"sync"
 
 	"smart-speaker/internal/graph"
@@ -11,6 +13,8 @@ import (
 )
 
 const maxContractRetries = 5
+const maxRawLinePreviewRunes = 400
+const rawLinePreviewSuffix = "..."
 
 type stage struct {
 	upstream     chan types.Event
@@ -107,10 +111,27 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 			return items, nil
 		}
 		lastErr = err
-		log.Printf("llm: invalid ndjson response attempt=%d/%d request_id=%s err=%v", attempt, maxContractRetries, req.RequestID, err)
+		log.Printf("llm: invalid ndjson response generation=%d request_id=%s attempt=%d/%d err=%v raw_line_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawLinePreviewFromError(err))
 		systemPrompt = appendRetryInstruction(s.systemPrompt, err)
 	}
 	return nil, lastErr
+}
+
+func rawLinePreviewFromError(err error) string {
+	var parseErr *timelineParseError
+	if !errors.As(err, &parseErr) {
+		return ""
+	}
+	return rawLinePreview(parseErr.RawLine())
+}
+
+func rawLinePreview(rawLine string) string {
+	trimmed := strings.TrimSpace(rawLine)
+	runes := []rune(trimmed)
+	if len(runes) <= maxRawLinePreviewRunes {
+		return trimmed
+	}
+	return string(runes[:maxRawLinePreviewRunes]) + rawLinePreviewSuffix
 }
 
 func (s *stage) messages(req types.LLMRequest) []types.ChatMessage {
