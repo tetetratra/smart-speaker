@@ -14,12 +14,12 @@
 
 - **`llm.stage`**
   - `EventLLMRequest` だけを受け取り、`types.LLMRequest` に変換できたものを非同期に処理する。
-  - OpenAI Responses API の streaming 呼び出し、JSON timeline 契約検証、`EventTimelineItem` の発行を担当する。
+  - OpenAI Responses API の非stream呼び出し、JSON timeline 契約検証、`EventTimelineItem` の発行を担当する。
   - `EventLLMRequest` 以外の event、または payload 型が異なる event は無視する。
 - **`responseClient` / `Client`**
-  - `CreateResponseStream` で `POST https://api.openai.com/v1/responses` を呼び出す。
-  - request body は `model`、`input`、`stream: true`、`text.format` を設定する。
-  - SSE の `response.output_text.delta` を結合し、最終的な JSON object 文字列を返す。
+  - `CreateResponse` で `POST https://api.openai.com/v1/responses` を呼び出す。
+  - request body は `model`、`input`、`text.format` を設定する。
+  - 非streamの最終response JSONから `output[].content[].text` を取り出し、JSON object 文字列として返す。
   - OpenAI function calling 用の `tools`、`tool_choice`、`function_call_output` は送信しない。
 - **Structured Outputs schema**
   - `schema.go` が `{"items":[...]}` を root とする JSON schema を生成する。
@@ -31,7 +31,7 @@
   - 各 API 呼び出し直前に `現在日時` と `現在時刻` を追記する。
   - retry 時は契約違反理由と raw preview を追記した system prompt で再実行する。
 - **JSON timeline parser**
-  - stream 完了後の output text 全体を `parseTimelineJSON` で `types.TimelineItem` に変換する。
+  - response body から取り出した output text 全体を `parseTimelineJSON` で `types.TimelineItem` に変換する。
   - 未知の `type`、必須値不足、負の wait 秒数、tool 後続 item はエラーにする。
 - **`conversationhistory.Store`**
   - LLM に渡す会話履歴の正本。
@@ -50,9 +50,9 @@
 
 1. ユーザー発話の保存: `conversationcommitter` が user の `ConversationCommitRequest` を `conversationhistory.Store` に保存し、`EventLLMRequest` を発行する。
 2. 履歴 snapshot の取得: `llm.stage` は `history.Snapshot()` が1件以上あれば、それを `conversationhistory.ToChatMessages` で `[]types.ChatMessage` に変換する。
-3. Responses API 呼び出し: `Client.CreateResponseStream` が system prompt と chat messages を `input` 配列にして、Responses API を `stream: true` と `text.format: json_schema` で呼び出す。
-4. stream の読解: SSE の `data:` 行を JSON として読み、`response.output_text.delta` の `delta` だけをテキスト buffer に追加する。
-5. timeline 変換: stream 完了後、`parseTimelineJSON` が `{"items":[...]}` を `TimelineItem` に変換し、各 item に `GenerationID` と `SequenceID` を付与する。
+3. Responses API 呼び出し: `Client.CreateResponse` が system prompt と chat messages を `input` 配列にして、Responses API を `text.format: json_schema` で呼び出す。
+4. response body の読解: 非streamの最終response JSONから `output[].content[].text` を取り出す。
+5. timeline 変換: `parseTimelineJSON` が `{"items":[...]}` を `TimelineItem` に変換し、各 item に `GenerationID` と `SequenceID` を付与する。
 6. 下流への発行: `llm.stage` が `EventTimelineItem` を順番に下流へ送る。
 7. 再生と保存: `speech` は `tts` で `PlayableSpeech` になり、`scheduler` と `router` を経て `EventRealtimeAudio` と assistant の `ConversationCommitRequest` になる。
 
@@ -69,8 +69,8 @@ sequenceDiagram
   Committer->>History: Append(user record)
   Committer->>LLM: EventLLMRequest
   LLM->>History: Snapshot()
-  LLM->>OpenAI: POST /v1/responses stream=true text.format=json_schema
-  OpenAI-->>LLM: response.output_text.delta
+  LLM->>OpenAI: POST /v1/responses text.format=json_schema
+  OpenAI-->>LLM: response JSON
   LLM->>LLM: JSON object -> TimelineItem
   LLM->>TTS: EventTimelineItem(speech/wait/tool)
   TTS->>Scheduler: EventPlayableSpeech or EventTimelineItem
@@ -139,11 +139,11 @@ sequenceDiagram
         - `buildSystemPrompt`: base instruction、JSON timeline 契約、tool schemas JSON を結合する。
         - `timelineJSONInstruction`: LLM に要求する JSON object 形式を返す。
         - `appendRetryInstruction`: retry 用の契約違反理由と raw preview を prompt に追記する。
-      - `responses_client.go`: OpenAI Responses API との HTTP 通信と SSE stream 読み取りを担当する。
+      - `responses_client.go`: OpenAI Responses API との HTTP 通信と非stream response body の読み取りを担当する。
         - `NewClient`: API key と model を検証し、endpoint `https://api.openai.com/v1/responses` を持つ client を作る。
-        - `CreateResponseStream`: `model`、`input`、`stream: true`、`text.format` で Responses API を呼ぶ。
-        - `readResponseStream`: SSE の `data:` 行を読み、stream event を処理する。
-        - `handleStreamEvent`: `response.output_text.delta` と `response.failed` を処理する。
+        - `CreateResponse`: `model`、`input`、`text.format` で Responses API を呼ぶ。
+        - `readResponseBody`: response JSON を decode し、出力テキストを抽出する。
+        - `extractResponseText`: `output[].content[]` の `output_text` を集約する。
         - `appendCurrentTimestamp`: system prompt 末尾に現在日付・時刻を追記する。
   - `states/`
     - `conversationhistory/`
@@ -182,7 +182,6 @@ sequenceDiagram
     {"role": "system", "content": "<system prompt + JSON timeline契約 + 現在日時>"},
     {"role": "user", "content": "..."}
   ],
-  "stream": true,
   "text": {
     "format": {
       "type": "json_schema",
@@ -204,7 +203,7 @@ sequenceDiagram
 - `model` は `llm.Config.Model` から渡る。通常起動では `OPENAI_RESPONSES_MODEL` が未設定の場合、`internal/app/config.go` の default により `gpt-5.4-mini` になる。
 - `input` は system prompt を先頭に追加し、その後に履歴由来の message を追加する。role が空なら `user` になる。content が空の message は送らない。
 - HTTP status が 300 以上の場合、body を読んで `llm: <status>: <body>` としてエラーにする。この場合は JSON timeline retry ではなく、その request 自体を失敗として捨てる。
-- stream event は `response.output_text.delta` のみを通常出力として扱う。`response.failed` はエラーにする。それ以外の event type は無視する。
+- response body は `output[].content[]` のうち `type: "output_text"` の `text` を通常出力として扱う。text が空の場合はエラーにする。
 - Structured Outputs により通常は schema 違反の出力が抑制されるが、Go 側の parser validation は防御線として残す。
 
 ### tool形式と履歴への戻し方

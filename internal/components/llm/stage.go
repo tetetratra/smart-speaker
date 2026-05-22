@@ -98,7 +98,7 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 	systemPrompt := s.systemPrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
 		messages := s.messages(req)
-		rawText, err := s.client.CreateResponseStream(ctx, messages, appendCurrentTimestamp(systemPrompt))
+		rawText, err := s.client.CreateResponse(ctx, messages, appendCurrentTimestamp(systemPrompt))
 		if err != nil {
 			return nil, err
 		}

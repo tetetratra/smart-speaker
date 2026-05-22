@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -24,7 +23,7 @@ type Config struct {
 }
 
 type responseClient interface {
-	CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error)
+	CreateResponse(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error)
 }
 
 type historyReader interface {
@@ -55,7 +54,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
+func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
 	input := []map[string]any{}
 	if strings.TrimSpace(systemContent) != "" {
 		input = append(input, map[string]any{"role": "system", "content": systemContent})
@@ -75,9 +74,8 @@ func (c *Client) CreateResponseStream(ctx context.Context, messages []types.Chat
 		return "", fmt.Errorf("llm: input is empty")
 	}
 	payload := map[string]any{
-		"model":  c.model,
-		"input":  input,
-		"stream": true,
+		"model": c.model,
+		"input": input,
 	}
 	if c.text != nil {
 		payload["text"] = c.text
@@ -102,51 +100,66 @@ func (c *Client) CreateResponseStream(ctx context.Context, messages []types.Chat
 		msg, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("llm: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
-	return readResponseStream(resp.Body)
+	return readResponseBody(resp.Body)
 }
 
-func readResponseStream(r io.Reader) (string, error) {
-	reader := bufio.NewReader(r)
-	var textBuffer strings.Builder
-	for {
-		raw, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return "", err
-		}
-		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "data:") {
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if data != "" && data != "[DONE]" {
-				var evt map[string]any
-				if err := json.Unmarshal([]byte(data), &evt); err != nil {
-					return "", err
-				}
-				if err := handleStreamEvent(evt, &textBuffer); err != nil {
-					return "", err
-				}
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-	}
-	return strings.TrimSpace(textBuffer.String()), nil
+type responseBody struct {
+	OutputText string               `json:"output_text"`
+	Output     []responseOutputItem `json:"output"`
+	Error      *responseError       `json:"error"`
 }
 
-func handleStreamEvent(evt map[string]any, textBuffer *strings.Builder) error {
-	switch asString(evt["type"]) {
-	case "response.output_text.delta":
-		delta, _ := evt["delta"].(string)
-		textBuffer.WriteString(delta)
-	case "response.failed":
-		if errObj, ok := evt["error"].(map[string]any); ok {
-			if msg := strings.TrimSpace(asString(errObj["message"])); msg != "" {
-				return fmt.Errorf("llm: stream failed: %s", msg)
+type responseError struct {
+	Message string `json:"message"`
+}
+
+type responseOutputItem struct {
+	Type    string                  `json:"type"`
+	Content []responseOutputContent `json:"content"`
+}
+
+type responseOutputContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func readResponseBody(r io.Reader) (string, error) {
+	var body responseBody
+	if err := json.NewDecoder(r).Decode(&body); err != nil {
+		return "", err
+	}
+	return extractResponseText(body)
+}
+
+func extractResponseText(body responseBody) (string, error) {
+	if body.Error != nil {
+		msg := strings.TrimSpace(body.Error.Message)
+		if msg == "" {
+			msg = "unknown error"
+		}
+		return "", fmt.Errorf("llm: response failed: %s", msg)
+	}
+	if text := strings.TrimSpace(body.OutputText); text != "" {
+		return text, nil
+	}
+	var parts []string
+	for _, item := range body.Output {
+		for _, content := range item.Content {
+			if content.Type != "output_text" {
+				continue
+			}
+			if text := strings.TrimSpace(content.Text); text != "" {
+				parts = append(parts, text)
 			}
 		}
-		return fmt.Errorf("llm: stream failed")
 	}
-	return nil
+	if len(parts) == 0 {
+		return "", fmt.Errorf("llm: response text is empty")
+	}
+	if len(parts) > 1 {
+		return "", fmt.Errorf("llm: response has multiple output_text parts")
+	}
+	return parts[0], nil
 }
 
 func appendCurrentTimestamp(prompt string) string {
