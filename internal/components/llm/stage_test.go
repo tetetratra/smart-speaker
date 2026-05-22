@@ -1,7 +1,11 @@
 package llm
 
 import (
+	"bytes"
 	"context"
+	"log"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +33,11 @@ func (f *fakeClient) CreateResponseStream(ctx context.Context, messages []types.
 }
 
 func TestStageRetriesInvalidResponse(t *testing.T) {
+	var logs bytes.Buffer
+	prevOutput := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(prevOutput)
+
 	history := conversationhistory.NewStore()
 	history.Append(types.ConversationRecord{Role: types.RoleUser, Text: "温度見て", GenerationID: 1})
 	client := &fakeClient{responses: [][]string{
@@ -59,5 +68,38 @@ func TestStageRetriesInvalidResponse(t *testing.T) {
 	}
 	if client.calls != 2 {
 		t.Fatalf("calls = %d, want 2", client.calls)
+	}
+	logText := logs.String()
+	for _, want := range []string{
+		"llm: invalid ndjson response",
+		"generation=1",
+		"request_id=req-1",
+		"attempt=1/5",
+		"err=speech text is required",
+		`raw_line_preview="{\"type\":\"speech\",\"text\":\"\"}"`,
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("log = %q, want it to contain %q", logText, want)
+		}
+	}
+}
+
+func TestRawLinePreviewTruncatesRunes(t *testing.T) {
+	rawLine := strings.Repeat("あ", maxRawLinePreviewRunes+1)
+	preview := rawLinePreview(rawLine)
+	if got := len([]rune(preview)); got != maxRawLinePreviewRunes+len([]rune(rawLinePreviewSuffix)) {
+		t.Fatalf("preview rune length = %d, want %d", got, maxRawLinePreviewRunes+len([]rune(rawLinePreviewSuffix)))
+	}
+	if !strings.HasSuffix(preview, rawLinePreviewSuffix) {
+		t.Fatalf("preview = %q, want suffix %q", preview, rawLinePreviewSuffix)
+	}
+	if !strings.Contains(preview, "あ") {
+		t.Fatalf("preview = %q, want multibyte text preserved", preview)
+	}
+}
+
+func TestRawLinePreviewFromNonParseErrorIsEmpty(t *testing.T) {
+	if got := rawLinePreviewFromError(os.ErrNotExist); got != "" {
+		t.Fatalf("preview = %q, want empty", got)
 	}
 }

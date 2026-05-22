@@ -103,7 +103,7 @@ sequenceDiagram
 ### シナリオ: NDJSON 契約違反時の retry
 
 1. `llm.stage` は1回の Responses API stream から得た行を `parseTimeline` に渡す。
-2. `parseTimeline` がエラーを返した場合、`llm.stage` は `llm: invalid ndjson response attempt=...` をログ出力する。
+2. `parseTimeline` がエラーを返した場合、`llm.stage` は `llm: invalid ndjson response generation=... request_id=... attempt=... err=... raw_line_preview=...` をログ出力する。`raw_line_preview` は問題になった行だけを対象にし、長文や機密情報の露出を抑えるため一定文字数で truncate する。
 3. 次回 attempt では元の system prompt に「直前の応答はNDJSON契約違反でした」と違反理由を追記して再度 Responses API を呼ぶ。
 4. retry は最大5回。途中で valid な timeline が得られればそれを採用する。
 5. 5回すべて失敗した場合は `llm: drop response ...` をログ出力し、その LLM 応答からは下流 event を発行しない。

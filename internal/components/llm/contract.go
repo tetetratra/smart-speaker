@@ -16,20 +16,45 @@ type rawTimelineItem struct {
 	Args json.RawMessage `json:"args"`
 }
 
+type timelineParseError struct {
+	err     error
+	rawLine string
+}
+
+func (e *timelineParseError) Error() string {
+	return e.err.Error()
+}
+
+func (e *timelineParseError) Unwrap() error {
+	return e.err
+}
+
+func (e *timelineParseError) RawLine() string {
+	return e.rawLine
+}
+
+func newTimelineParseError(rawLine string, format string, args ...any) error {
+	return &timelineParseError{
+		err:     fmt.Errorf(format, args...),
+		rawLine: rawLine,
+	}
+}
+
 func parseTimeline(lines []string, generationID types.GenerationID) ([]types.TimelineItem, error) {
 	items := make([]types.TimelineItem, 0, len(lines))
 	seenTool := false
 	for i, line := range lines {
-		line = strings.TrimSpace(line)
+		rawLine := line
+		line = strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
 		}
 		if seenTool {
-			return nil, fmt.Errorf("tool must be the last item")
+			return nil, newTimelineParseError(rawLine, "tool must be the last item")
 		}
 		var raw rawTimelineItem
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
-			return nil, fmt.Errorf("invalid ndjson: %w", err)
+			return nil, newTimelineParseError(rawLine, "invalid ndjson: %w", err)
 		}
 		item := types.TimelineItem{
 			Kind:         strings.TrimSpace(raw.Type),
@@ -40,20 +65,20 @@ func parseTimeline(lines []string, generationID types.GenerationID) ([]types.Tim
 		case types.TimelineKindSpeech:
 			item.Text = strings.TrimSpace(raw.Text)
 			if item.Text == "" {
-				return nil, fmt.Errorf("speech text is required")
+				return nil, newTimelineParseError(rawLine, "speech text is required")
 			}
 		case types.TimelineKindWait:
 			if raw.Sec == nil {
-				return nil, fmt.Errorf("wait sec is required")
+				return nil, newTimelineParseError(rawLine, "wait sec is required")
 			}
 			if *raw.Sec < 0 {
-				return nil, fmt.Errorf("wait sec must be non-negative")
+				return nil, newTimelineParseError(rawLine, "wait sec must be non-negative")
 			}
 			item.Sec = *raw.Sec
 		case types.TimelineKindTool:
 			item.ToolName = strings.TrimSpace(raw.Name)
 			if item.ToolName == "" {
-				return nil, fmt.Errorf("tool name is required")
+				return nil, newTimelineParseError(rawLine, "tool name is required")
 			}
 			if len(raw.Args) == 0 {
 				raw.Args = json.RawMessage(`{}`)
@@ -61,7 +86,7 @@ func parseTimeline(lines []string, generationID types.GenerationID) ([]types.Tim
 			item.ToolArgs = raw.Args
 			seenTool = true
 		default:
-			return nil, fmt.Errorf("unknown timeline item type: %s", item.Kind)
+			return nil, newTimelineParseError(rawLine, "unknown timeline item type: %s", item.Kind)
 		}
 		items = append(items, item)
 	}
