@@ -132,7 +132,7 @@ func (t *listTool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
 		"name":        listToolName,
-		"description": "Googleカレンダーの予定一覧を取得します。date か time_min/time_max を指定してください。",
+		"description": "Googleカレンダーの予定一覧を取得します。date か time_min/time_max を指定してください。取得した情報は基本的に画面のボードにも記載してください",
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
