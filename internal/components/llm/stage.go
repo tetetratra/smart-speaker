@@ -12,7 +12,7 @@ import (
 	types "smart-speaker/internal/types"
 )
 
-const maxContractRetries = 5
+const maxContractRetries = 10
 const maxRawLinePreviewRunes = 400
 const rawLinePreviewSuffix = "..."
 
@@ -111,8 +111,9 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 			return items, nil
 		}
 		lastErr = err
-		log.Printf("llm: invalid ndjson response generation=%d request_id=%s attempt=%d/%d err=%v raw_line_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawLinePreviewFromError(err))
-		systemPrompt = appendRetryInstruction(s.systemPrompt, err)
+		rawLinePreview := rawLinePreviewFromError(err)
+		log.Printf("llm: invalid ndjson response generation=%d request_id=%s attempt=%d/%d err=%v raw_line_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawLinePreview)
+		systemPrompt = appendRetryInstruction(s.systemPrompt, err, rawLinePreview)
 	}
 	return nil, lastErr
 }

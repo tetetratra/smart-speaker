@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -74,12 +75,30 @@ func TestStageRetriesInvalidResponse(t *testing.T) {
 		"llm: invalid ndjson response",
 		"generation=1",
 		"request_id=req-1",
-		"attempt=1/5",
+		"attempt=1/10",
 		"err=speech text is required",
 		`raw_line_preview="{\"type\":\"speech\",\"text\":\"\"}"`,
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("log = %q, want it to contain %q", logText, want)
+		}
+	}
+}
+
+func TestAppendRetryInstructionIncludesRawLinePreview(t *testing.T) {
+	prompt := appendRetryInstruction("base prompt", errors.New("invalid ndjson"), "うん続けて、聞いてるよ")
+	for _, want := range []string{
+		"base prompt",
+		"通常の文章を絶対に出力しないでください",
+		"正しい出力例:",
+		`{"type":"speech","text":"うん、聞いてるよ"}`,
+		"悪い出力例:",
+		"直前に出力した不正な行:",
+		"うん続けて、聞いてるよ",
+		"違反理由:\ninvalid ndjson",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt = %q, want it to contain %q", prompt, want)
 		}
 	}
 }
