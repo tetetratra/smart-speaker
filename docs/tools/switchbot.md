@@ -6,12 +6,13 @@
 ## 前提設定
 ### 共通
 - SwitchBot Open API を利用できる `token` と `secret` が必要です。
-- `registry.New` は `Config.SwitchBotClient` が未指定の場合、`SwitchBotToken` / `SwitchBotSecret` / `SwitchBotDeviceMap` から `switchbot.Client` を生成します。
-- `SwitchBotToken` または `SwitchBotSecret` が空だと `switchbot.NewSwitchbotClient` は panic します。
+- 通常起動では `cmd/smart-speaker/main.go` が `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を確認し、どちらかが空の場合は SwitchBot tool 群を登録せずに起動を継続します。
+- `registry.New` は `Config.SwitchBotClient` が未指定で、かつ `SwitchBotToken` / `SwitchBotSecret` がどちらも空でない場合に `SwitchBotDeviceMap` から `switchbot.Client` を生成します。
+- `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` 未設定時は `switchbot_execute_scene` と `hub2_get_environment` は LLM に提示されず、handler も登録されません。
 
 ### `hub2_get_environment`
 - 登録には有効な `switchbot.Client` が必要です。
-- `hub2` というエイリアスが `SwitchBotDeviceMap` に含まれている必要があります。
+- 実行には `hub2` というエイリアスが `SwitchBotDeviceMap` に含まれている必要があります。通常起動では token/secret が揃っていれば tool は登録され、`hub2` alias 未設定は実行時エラーとして返ります。
 - `SwitchBotDeviceMap` は JSON オブジェクト文字列です。キーはエイリアス、値は device ID です。
 
 例:
@@ -24,6 +25,8 @@
 
 ### `switchbot_execute_scene`
 - 登録には有効な `switchbot.Client` が必要です。
+- 通常起動では起動時に SwitchBot API から scene 一覧を取得し、その結果が `Config.SwitchBotScenes` として渡されます。
+- scene 一覧取得に失敗した場合、`switchbot_execute_scene` だけが登録されません。`hub2_get_environment` は token/secret が揃っていれば登録されます。
 - 起動時に取得した `Config.SwitchBotScenes` が 1 件以上必要です。
 - scene 名と scene ID のどちらかが空の項目は登録対象から除外されます。
 - `Config.SwitchBotScenes` が空、または有効な scene が 0 件の場合は tool 自体が登録されません。

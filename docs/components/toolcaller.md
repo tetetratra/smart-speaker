@@ -5,7 +5,7 @@
 - **解決する課題**: LLM が生成した `tool` item を、会話生成パイプライン内で local tool 実行へ橋渡しする。
 - **提供価値**: tool 実行結果を会話履歴へ戻し、必要に応じて LLM の次の推論へつなげる。UI 副作用を持つ tool は、tool result とは別に graph event として下流へ通知できる。
 - **責務の境界**: `toolcaller` は tool の実行と結果 commit API 呼び出しを担う。tool request の生成は `scheduler` / `router`、結果の履歴保存と LLM 再投入は `conversationcommitter` の責務。
-- **現在の通常起動での制約**: `cmd/smart-speaker/main.go` では `toolcaller.NewStage(nil, resultCommitter)` として生成されるため、通常起動で登録済み handler は 0 件である。`internal/tools/registry/registry.go` には `Handlers()` が存在するが、通常 pipeline で `toolcaller` へ接続されていることは確認できない。
+- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` を `toolcaller.NewStage(toolHandlers, resultCommitter)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
 - **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`、`internal/types/event.go`、`internal/types/conversation_record.go`、`internal/components/conversationcommitter/tool_result_api.go`。
 
 ## 2. 論理構造・機能俯瞰
@@ -145,13 +145,13 @@ sequenceDiagram
   - tools/
     - interfaces.go: `Handler`、`ContextAware`、`EventEmitterAware`、`DefinitionProvider` を定義する。
     - registry/
-      - registry.go: tool definitions と handler map を構築する。ただし通常起動で `toolcaller` に接続されていることは確認できない。
+      - registry.go: tool definitions と handler map を構築する。通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` 経由で `llm` と `toolcaller` に接続される。
     - functions/
       - whiteboard/
         - tool.go: `EventEmitterAware` の確認済み実装。`set_whiteboard` 実行時に `EventWhiteboardUpdate` を emit する。
 - cmd/
   - smart-speaker/
-    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(nil, resultCommitter)` のため通常起動の handler 登録は空。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
+    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers, resultCommitter)` に registry 由来の handler map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
 
 ### Event 設計
 
@@ -178,9 +178,10 @@ sequenceDiagram
 
 - `toolcaller.NewStage` の第 1 引数が実行可能な handler map である。
 - map key は `ToolRequest.Name` と照合される。`registry.Handlers()` は `handler.Name()` を key にした map を返す。
-- registry で handler が nil の entry は handler map に含まれない。`web_search` は definition のみで handler がないため、`Handlers()` には入らない。
-- 通常起動の `cmd/smart-speaker/main.go` では `NewStage(nil, resultCommitter)` のため、registry の handler は使われていない。
-- 通常起動で local tool を有効にする設計・実装方針は、このコードからは不明。
+- registry で handler が nil の entry は handler map に含まれない。
+- `web_search` は今回の実装では registry definition からも除外されているため、LLM に提示されず handler map にも入らない。
+- 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が registry を作り、`registry.Definitions()` を `llm.Config.ToolSchemas` に、`registry.Handlers()` を `toolcaller.NewStage` に渡す。
+- SwitchBot tool は `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` が揃う場合だけ登録される。scene 一覧取得に失敗した場合は `switchbot_execute_scene` のみ未登録になり、Hub 2 tool は token/secret が揃っていれば残る。
 
 ### エラー処理・副作用
 
