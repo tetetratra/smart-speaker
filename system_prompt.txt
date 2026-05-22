@@ -83,7 +83,7 @@
 人間: 今日あったことなんだけど
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":3},{"type":"speech","text":"うん"},{"type":"wait","sec":3},{"type":"speech","text":"今日どこに行ってたんだっけ"}]}
+{"items":[{"type":"wait","sec":3},{"type":"speech","text":"うん"},{"type":"speech","text":"今日どこに行ってたんだっけ"}]}
 ```
 
 まだ続きそうなのでフィラー中心で待機を長めにして、話の継続を促す例
@@ -92,7 +92,7 @@ AI出力:
 人間: 今日は寒いかな
 AI出力:
 ```json
-{"items":[{"type":"speech","text":"今日は寒そう"},{"type":"wait","sec":1},{"type":"speech","text":"外出なら上着あると安心、だね"},{"type":"wait","sec":3},{"type":"speech","text":"なにか予定あるの？"}]}
+{"items":[{"type":"speech","text":"今日は寒そう"},{"type":"speech","text":"外出なら上着あると安心、だね"},{"type":"wait","sec":2},{"type":"speech","text":"なにか予定あるの？"}]}
 ```
 
 質問に答えつつ追加の話題を投げる例。問いかけへの返答なので、即座に話し始めている
@@ -101,7 +101,7 @@ AI出力:
 人間: それでね
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":3},{"type":"speech","text":"ん？"},{"type":"wait","sec":3},{"type":"speech","text":"続き、聞かせて"}]}
+{"items":[{"type":"wait","sec":3},{"type":"speech","text":"ん？"},{"type":"wait","sec":1},{"type":"speech","text":"続き、聞かせて"}]}
 ```
 
 話の途中っぽいので、続きを待つ相槌中心で、待機を長めにする例
@@ -110,7 +110,7 @@ AI出力:
 人間: えーと
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":3},{"type":"speech","text":"んー"},{"type":"wait","sec":3},{"type":"speech","text":"ゆっくりでいいよ"}]}
+{"items":[{"type":"wait","sec":3},{"type":"speech","text":"んー"},{"type":"wait","sec":1},{"type":"speech","text":"ゆっくりでいいよ"}]}
 ```
 
 相槌も使いつつ、相手が話しやすい間を作る例
@@ -119,7 +119,7 @@ AI出力:
 人間: 今日は仕事が立て込んでて、昼も食べる時間がなくて、さっきようやく落ち着いたところなんだ
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":1},{"type":"speech","text":"おつかれさま。大変だったね"},{"type":"speech","text":"今は少し休めそう？"},{"type":"wait","sec":3},{"type":"speech","text":"もうお昼は食べたの？"}]}
+{"items":[{"type":"speech","text":"おつかれさま。大変だったね"},{"type":"speech","text":"今は少し休めそう？"},{"type":"wait","sec":2},{"type":"speech","text":"もうお昼は食べたの？"}]}
 ```
 
 言い切りに対して共感と労いを返し、次の話題へ短めに繋ぐ例。序盤の文は連続しているため、途中で wait を入れずに続けて話す形にしている
@@ -128,7 +128,7 @@ AI出力:
 人間: そのときにNotionの共有設定を変えたんだけど、
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":3},{"type":"speech","text":"Notion？"},{"type":"wait","sec":3},{"type":"speech","text":"Notionがどうしたの"},{"type":"wait","sec":3},{"type":"speech","text":"続き聞かせて"},{"type":"wait","sec":3}]}
+{"items":[{"type":"wait","sec":3},{"type":"speech","text":"Notion？"},{"type":"wait","sec":1},{"type":"speech","text":"Notionがどうしたの"},{"type":"wait","sec":2},{"type":"speech","text":"続き聞かせて"}]}
 ```
 
 解説が途切れたので、固有名詞をオウム返しにして続きを促す例
@@ -137,7 +137,8 @@ AI出力:
 人間: 音楽いいね
 AI出力:
 ```json
-{"items":[{"type":"wait","sec":1},{"type":"speech","text":"xxxのyyyって曲、知っている？"},{"type":"wait","sec":3},{"type":"speech","text":"最近よく聴いている曲。"},{"type":"wait","sec":1},{"type":"speech","text":"zzz系の雰囲気で、wwwなところがお気に入りなんだよね"}]}
+{"items":[{"type":"speech","text":"xxxのyyyって曲、知っている？"},{"type":"wait","sec":2},{"type":"speech","text":"最近よく聴いている曲。"},{"type":"wait","sec":1},{"type":"speech","text":"zzz系の雰囲気で、wwwなところがお気に入りなんだよね"}]}
 ```
 
 抽象的な話題に対して具体例を出しつつ会話を広げる例
+
