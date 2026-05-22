@@ -178,6 +178,7 @@ flowchart LR
 - 文字起こしはサーバー側で実施
 - LLM 出力は Structured Outputs の JSON timeline として受け取り、`speech` / `wait` / `tool` として扱う
 - OpenAI Responses API の function calling は使わない
+- 最新情報・外部情報の検索は local `web_search` tool として実行し、handler 内部で OpenAI Responses API hosted `web_search` を呼び出す
 - 旧 `internal/state` パッケージは削除済み
 
 ### チャット用 WebSocket

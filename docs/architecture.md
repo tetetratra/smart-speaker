@@ -55,6 +55,8 @@ LLM には `{"items":[{"type":"tool","name":"...","args":{...}}]}` 形式の JSO
 tool は1回の LLM 応答の末尾に最大1件だけ許可し、tool の後に `speech` / `wait` / `tool` が続いた場合は契約違反として LLM component が最大10回 retry する。
 10回失敗した場合はログに出して、その応答は捨てる。
 
+`web_search` もこの local tool 経路で扱う。LLM は `web_search` を JSON timeline の `tool` item として呼び出し、`toolcaller` が local handler を実行する。handler 内部では OpenAI Responses API の hosted `web_search` を別 request で使うが、会話 pipeline 上は通常の local tool result と同じく `conversationcommitter` へ戻る。引数は `query` のみ、戻り値は `result` のみとする。
+
 ## 世代と履歴
 
 世代idは `internal/states/generation` が保持する。
