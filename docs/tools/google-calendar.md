@@ -168,7 +168,7 @@
 ## 8. 主要データフロー
 ### シナリオ: 認証済み状態で予定一覧を取得する
 1. 通常起動時に `cmd/smart-speaker/main.go` が registry を構築し、`google_calendar_list` の schema を LLM へ、handler を `toolcaller` へ渡す。
-2. LLM が NDJSON の `{"type":"tool","name":"google_calendar_list","args":{...}}` を出力する。
+2. LLM が JSON timeline の `{"type":"tool","name":"google_calendar_list","args":{...}}` item を出力する。
 3. scheduler / router が tool item を `EventToolRequest` に変換し、toolcaller が `google_calendar_list` を実行する。
 4. tool が引数を解釈し、`ListEventsRequest` を組み立てる。
 5. 共通 client が access token を取得する。

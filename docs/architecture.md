@@ -41,7 +41,7 @@ flowchart LR
 
 - `utterancebuffer` は STT 由来の文字起こしを短時間バッファし、1つの user 発話にまとめて世代idを進める。
 - `conversationcommitter` は user / assistant / tool result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
-- `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、`speech` / `wait` / `tool` の NDJSON timeline を検証する。
+- `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
 - `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
@@ -51,9 +51,9 @@ flowchart LR
 ## Tool 呼び出し
 
 OpenAI Responses API の function calling は使わない。
-LLM には `{"type":"tool","name":"...","args":{...}}` 形式の NDJSON を出力させる。
-tool は1回の LLM 応答の末尾に最大1件だけ許可し、tool の後に `speech` / `wait` / `tool` が続いた場合は契約違反として LLM component が最大5回 retry する。
-5回失敗した場合はログに出して、その応答は捨てる。
+LLM には `{"items":[{"type":"tool","name":"...","args":{...}}]}` 形式の JSON timeline を出力させる。
+tool は1回の LLM 応答の末尾に最大1件だけ許可し、tool の後に `speech` / `wait` / `tool` が続いた場合は契約違反として LLM component が最大10回 retry する。
+10回失敗した場合はログに出して、その応答は捨てる。
 
 ## 世代と履歴
 

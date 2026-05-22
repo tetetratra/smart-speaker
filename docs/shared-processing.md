@@ -26,4 +26,4 @@
 ## function calling
 
 OpenAI function calling 用の event と payload は削除済みです。
-tool 呼び出しは LLM が NDJSON `tool` item として出力し、scheduler / router を通って `toolcaller` へ到達します。
+tool 呼び出しは LLM が Structured Outputs の JSON timeline 内の `tool` item として出力し、scheduler / router を通って `toolcaller` へ到達します。

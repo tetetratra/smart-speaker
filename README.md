@@ -176,7 +176,7 @@ flowchart LR
 - HTTP サーバー起動は `main` が直接担当し、`ServeMux` に `wschat` と Web UI をぶら下げる
 - `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
 - 文字起こしはサーバー側で実施
-- LLM 出力は `speech` / `wait` / `tool` の NDJSON timeline として扱う
+- LLM 出力は Structured Outputs の JSON timeline として受け取り、`speech` / `wait` / `tool` として扱う
 - OpenAI Responses API の function calling は使わない
 - 旧 `internal/state` パッケージは削除済み
 
