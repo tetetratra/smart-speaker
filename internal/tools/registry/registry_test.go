@@ -74,7 +74,30 @@ func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
 	}
 }
 
-func TestRegistryOmitsWebSearchTool(t *testing.T) {
+func TestRegistryRegistersWebSearchToolWithOpenAIConfig(t *testing.T) {
+	reg := New(Config{OpenAIAPIKey: "key", OpenAIModel: "model"})
+
+	def, ok := reg.DefinitionByName("web_search")
+	if !ok {
+		t.Fatal("web_search should be registered")
+	}
+	params, ok := def["parameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("parameters = %#v", def["parameters"])
+	}
+	props, ok := params["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("properties = %#v", params["properties"])
+	}
+	if _, ok := props["query"]; !ok || len(props) != 1 {
+		t.Fatalf("properties = %#v, want query only", props)
+	}
+	if _, ok := reg.Handlers()["web_search"]; !ok {
+		t.Fatal("web_search handler should be registered")
+	}
+}
+
+func TestRegistryOmitsWebSearchToolWithoutOpenAIConfig(t *testing.T) {
 	reg := New(Config{})
 
 	if _, ok := reg.DefinitionByName("web_search"); ok {
