@@ -131,15 +131,18 @@ func TestReadResponseBodyFailsWhenTextIsEmpty(t *testing.T) {
 	}
 }
 
-func TestReadResponseBodyFailsWhenMultipleOutputTextParts(t *testing.T) {
+func TestReadResponseBodyUsesFirstOutputTextPart(t *testing.T) {
 	raw := `{
 		"output": [
-			{"type": "message", "content": [{"type": "output_text", "text": "{\"items\":[]}" }]},
-			{"type": "message", "content": [{"type": "output_text", "text": "{\"items\":[]}" }]}
+			{"type": "message", "content": [{"type": "output_text", "text": "{\"items\":[{\"type\":\"speech\",\"text\":\"1つ目\"}]}" }]},
+			{"type": "message", "content": [{"type": "output_text", "text": "{\"items\":[{\"type\":\"speech\",\"text\":\"2つ目\"}]}" }]}
 		]
 	}`
-	_, err := readResponseBody(strings.NewReader(raw))
-	if err == nil || !strings.Contains(err.Error(), "multiple output_text parts") {
-		t.Fatalf("err = %v, want multiple output_text parts", err)
+	got, err := readResponseBody(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != `{"items":[{"type":"speech","text":"1つ目"}]}` {
+		t.Fatalf("text = %q", got)
 	}
 }

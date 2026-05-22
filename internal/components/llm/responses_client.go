@@ -156,9 +156,6 @@ func extractResponseText(body responseBody) (string, error) {
 	if len(parts) == 0 {
 		return "", fmt.Errorf("llm: response text is empty")
 	}
-	if len(parts) > 1 {
-		return "", fmt.Errorf("llm: response has multiple output_text parts")
-	}
 	return parts[0], nil
 }
 
