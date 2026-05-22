@@ -82,6 +82,35 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 	}
 }
 
+func TestTimelineSchemaIncludesWebSearchQueryOnly(t *testing.T) {
+	text := timelineTextFormat([]any{
+		map[string]any{
+			"type": "function",
+			"name": "web_search",
+			"parameters": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string"},
+				},
+				"required":             []string{"query"},
+				"additionalProperties": false,
+			},
+		},
+	})
+	encoded, _ := json.Marshal(text)
+	schemaText := string(encoded)
+	for _, want := range []string{`"web_search"`, `"query"`} {
+		if !strings.Contains(schemaText, want) {
+			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
+		}
+	}
+	for _, unwanted := range []string{`"context"`, `"max_results"`} {
+		if strings.Contains(schemaText, unwanted) {
+			t.Fatalf("schema = %s, want it not to contain %s", schemaText, unwanted)
+		}
+	}
+}
+
 func TestReadResponseBodyReturnsOutputTextContent(t *testing.T) {
 	raw := `{
 		"output": [

@@ -230,6 +230,8 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler) {
 	reg := registry.New(registry.Config{
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
+		OpenAIAPIKey:    cfg.APIKey,
+		OpenAIModel:     cfg.ResponsesModel,
 	})
 	return reg.Definitions(), reg.Handlers()
 }

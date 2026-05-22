@@ -179,7 +179,8 @@ sequenceDiagram
 - `toolcaller.NewStage` の第 1 引数が実行可能な handler map である。
 - map key は `ToolRequest.Name` と照合される。`registry.Handlers()` は `handler.Name()` を key にした map を返す。
 - registry で handler が nil の entry は handler map に含まれない。
-- `web_search` は今回の実装では registry definition からも除外されているため、LLM に提示されず handler map にも入らない。
+- `web_search` は `OPENAI_API_KEY` と `OPENAI_RESPONSES_MODEL` が registry config に渡される通常起動で登録される。LLM には local tool schema として提示され、handler map にも `web_search` key で入る。
+- `web_search` handler は `query` 以外の引数を拒否し、OpenAI Responses API hosted `web_search` の回答本文を `{"result":"..."}` として commit 対象にする。citations や sources は tool result には含めない。
 - 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が registry を作り、`registry.Definitions()` を `llm.Config.ToolSchemas` に、`registry.Handlers()` を `toolcaller.NewStage` に渡す。
 - SwitchBot tool は `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` が揃う場合だけ登録される。scene 一覧取得に失敗した場合は `switchbot_execute_scene` のみ未登録になり、Hub 2 tool は token/secret が揃っていれば残る。
 

@@ -7,6 +7,7 @@ import (
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/googlecalendar"
 	"smart-speaker/internal/tools/functions/switchbot"
+	"smart-speaker/internal/tools/functions/websearch"
 	"smart-speaker/internal/tools/functions/whiteboard"
 )
 
@@ -28,6 +29,9 @@ type Config struct {
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client
+	OpenAIAPIKey       string
+	OpenAIModel        string
+	WebSearchClient    websearch.SearchClient
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -48,11 +52,15 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
+	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
+	}
+	if webSearchTool != nil {
+		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
 	}
 	if hub2Tool != nil {
 		toolEntries = append([]entry{{def: hub2Tool.Definition(), handler: hub2Tool}}, toolEntries...)
@@ -65,6 +73,19 @@ func New(cfg Config) *Registry {
 	}
 
 	return &Registry{entries: entries}
+}
+
+func newWebSearchTool(cfg Config) *websearch.Tool {
+	if cfg.WebSearchClient != nil {
+		return websearch.New(websearch.Config{Client: cfg.WebSearchClient})
+	}
+	if strings.TrimSpace(cfg.OpenAIAPIKey) == "" || strings.TrimSpace(cfg.OpenAIModel) == "" {
+		return nil
+	}
+	return websearch.New(websearch.Config{
+		APIKey: cfg.OpenAIAPIKey,
+		Model:  cfg.OpenAIModel,
+	})
 }
 
 // Definitions はResponses API向けのtools定義を返します。
