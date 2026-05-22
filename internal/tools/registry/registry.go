@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"strings"
+
 	calendarapi "smart-speaker/internal/googlecalendar"
 	"smart-speaker/internal/tools"
 	"smart-speaker/internal/tools/functions/googlecalendar"
@@ -33,7 +35,7 @@ func New(cfg Config) *Registry {
 	var entries []entry
 
 	switchBotClient := cfg.SwitchBotClient
-	if switchBotClient == nil {
+	if switchBotClient == nil && strings.TrimSpace(cfg.SwitchBotToken) != "" && strings.TrimSpace(cfg.SwitchBotSecret) != "" {
 		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	}
 	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
@@ -43,12 +45,13 @@ func New(cfg Config) *Registry {
 	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
 	whiteboardTool := whiteboard.New()
 	toolEntries := []entry{
-		{def: hub2Tool.Definition(), handler: hub2Tool},
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
-		{def: map[string]any{"type": "web_search"}},
+	}
+	if hub2Tool != nil {
+		toolEntries = append([]entry{{def: hub2Tool.Definition(), handler: hub2Tool}}, toolEntries...)
 	}
 	if sceneTool != nil {
 		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
@@ -70,30 +73,6 @@ func (r *Registry) Definitions() []any {
 		if e.def != nil {
 			defs = append(defs, e.def)
 		}
-	}
-	return defs
-}
-
-// DefinitionsExcluding returns tool definitions excluding specified tool names.
-func (r *Registry) DefinitionsExcluding(names ...string) []any {
-	if r == nil {
-		return nil
-	}
-	exclude := map[string]struct{}{}
-	for _, name := range names {
-		exclude[name] = struct{}{}
-	}
-	defs := make([]any, 0, len(r.entries))
-	for _, e := range r.entries {
-		if e.def == nil {
-			continue
-		}
-		if name, ok := e.def["name"].(string); ok {
-			if _, found := exclude[name]; found {
-				continue
-			}
-		}
-		defs = append(defs, e.def)
 	}
 	return defs
 }

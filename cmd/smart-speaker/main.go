@@ -29,6 +29,9 @@ import (
 	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
 	"smart-speaker/internal/states/conversationhistory"
 	"smart-speaker/internal/states/generation"
+	"smart-speaker/internal/tools"
+	"smart-speaker/internal/tools/functions/switchbot"
+	"smart-speaker/internal/tools/registry"
 	types "smart-speaker/internal/types"
 )
 
@@ -167,11 +170,13 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.committer != nil {
 		stages.committer.Name = "conversationcommitter"
 	}
+	toolSchemas, toolHandlers := buildToolRegistry(cfg)
 	stages.llm, err = llm.NewStage(llm.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		History:      historyStore,
+		ToolSchemas:  toolSchemas,
 	})
 	if err != nil {
 		if stages.tts != nil {
@@ -192,7 +197,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	stages.scheduler.Name = "scheduler"
 	stages.router = router.NewStage(router.Config{})
 	stages.router.Name = "router"
-	stages.tool = toolcaller.NewStage(nil, resultCommitter)
+	stages.tool = toolcaller.NewStage(toolHandlers, resultCommitter)
 	if stages.tool != nil {
 		stages.tool.Name = "toolcaller"
 	}
@@ -213,6 +218,39 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 		stages.rtc.Name = "rtc"
 	}
 	return stages, nil
+}
+
+func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler) {
+	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
+	var scenes []switchbot.Scene
+	if switchBotClient != nil {
+		scenes = loadSwitchBotScenes(switchBotClient)
+	}
+
+	reg := registry.New(registry.Config{
+		SwitchBotClient: switchBotClient,
+		SwitchBotScenes: scenes,
+	})
+	return reg.Definitions(), reg.Handlers()
+}
+
+func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
+	if strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(cfg.Secret) == "" {
+		log.Println("switchbot: token or secret not set; switchbot tools disabled")
+		return nil
+	}
+	return switchbot.NewSwitchbotClient(cfg.Token, cfg.Secret, cfg.DeviceMap)
+}
+
+func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	scenes, err := client.ListScenes(ctx)
+	if err != nil {
+		log.Printf("switchbot: failed to list scenes; switchbot_execute_scene disabled: %v", err)
+		return nil
+	}
+	return scenes
 }
 
 func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
