@@ -20,7 +20,7 @@ type fakeClient struct {
 	prompts   []string
 }
 
-func (f *fakeClient) CreateResponseStream(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
+func (f *fakeClient) CreateResponse(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
 	f.prompts = append(f.prompts, systemContent)
 	idx := f.calls
 	f.calls++
