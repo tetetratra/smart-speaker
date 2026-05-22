@@ -47,7 +47,7 @@
 - **Whiteboard関連events**
   - `internal/tools/functions/whiteboard/tool.go` の `set_whiteboard` tool は `EventWhiteboardUpdate` を emit する。
   - `wschat` は `types.WhiteboardUpdate.Content` を `type: "whiteboard_update", content: ...` に変換する。
-  - UIは `content` が空でなければ `setBoardText(content)` で表示内容を更新する。差分更新ではなく、少なくとも `web/src/main.tsx` 上は受信内容で state を置き換えている。
+  - UIは `content` が空でなければ `boardEntries` の末尾へ追記する。通常画面ではentry間に罫線を表示し、追記時にスクロール位置を末尾へ移動する。
 
 ## 3. 主要なデータフロー
 
@@ -129,7 +129,7 @@ sequenceDiagram
 1. tool実行: `set_whiteboard` tool が `content` をtrimし、空でなければ `EventWhiteboardUpdate` を emitする。
 2. JSON変換: `wschat.handleEvent` が `types.WhiteboardUpdate.Content` を `whiteboard_update` JSON に変換する。
 3. broadcast: `targetID` は空のため、全WebSocket接続に送信される。
-4. UI反映: UIは `content` をtrimし、空でなければ `setBoardText(content)` を実行する。
+4. UI反映: UIは `content` をtrimし、空でなければ `boardEntries` の末尾へ追記する。
 
 ```mermaid
 sequenceDiagram
@@ -139,7 +139,7 @@ sequenceDiagram
 
     Tool->>WS: EventWhiteboardUpdate{Content}
     WS->>UI: {"type":"whiteboard_update","content":"..."}
-    UI->>UI: setBoardText(content)
+    UI->>UI: boardEntriesへ追記し末尾へスクロール
 ```
 
 ## 4. 詳細設計

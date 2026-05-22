@@ -89,7 +89,8 @@ sequenceDiagram
 - `rtc_vad_status`
   - 入力音量としきい値を更新する。
 - `whiteboard_update`
-  - 空文字でない `content` を whiteboard に反映する。
+  - 空文字でない `content` を whiteboard の末尾に追記する。
+  - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。
 - tool call / tool result
   - 通常の会話UIには表示しない。
 - `webrtc.answer` / `webrtc.ice`
@@ -148,7 +149,7 @@ sequenceDiagram
   - `speechThreshold`
 - 表示用状態を保持する。
   - `messages`
-  - `boardText`
+  - `boardEntries`
   - `lastUserMessage`
   - `lastAssistantMessage`
   - `playbackVolumeLevel`
@@ -166,7 +167,7 @@ sequenceDiagram
 ## 5. 再設計時に崩すと挙動変更になる現行前提
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
-- whiteboard 更新は通常メッセージとは別イベントで流れる。
+- whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
 - 管理画面は function call / result をそのまま観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
 - 手動切断と異常切断で再接続ポリシーが異なる。

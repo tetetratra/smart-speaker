@@ -11,12 +11,12 @@ import (
 const toolName = "set_whiteboard"
 
 const (
-	toolDescription = `アプリ画面のホワイトボード表示を更新します。
+	toolDescription = `アプリ画面のホワイトボード表示へ情報を追記します。
 予定・注意事項・要点など、口頭だけでは伝わりにくい情報を画面に残したいときに使ってください。
 画面表示が必要な内容はspeech本文に長く含めず、このツールで表示してください。
 返答や感想ではなく、表示用の簡潔な内容だけを書いてください。
 `
-	contentDescription = `ホワイトボードに表示する文章。7行程度を目安にし、URLやリンク付きテキストは含めないでください。`
+	contentDescription = `ホワイトボードに追記する文章。7行程度を目安にし、URLやリンク付きテキストは含めないでください。`
 )
 
 type Tool struct {

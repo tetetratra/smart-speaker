@@ -9,6 +9,7 @@ type ChatMessage =
 
 type StatusTone = 'idle' | 'active' | 'done' | 'error'
 type ButtonTone = 'primary' | 'secondary'
+type BoardEntry = { id: number; content: string }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -303,17 +304,22 @@ const liveRootStyle = `
     line-height: 1.4;
     color: var(--live-text);
     box-shadow: inset 0 0 0 1px var(--live-inset-line);
-    white-space: pre-wrap;
     overflow: auto;
     min-height: 0;
     height: 100%;
   }
-  .live-board-title {
-    font-size: 11px;
+  .live-board-empty {
     color: var(--live-muted);
-    margin-bottom: 6px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    opacity: 0.72;
+  }
+  .live-board-entry {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .live-board-separator {
+    border: 0;
+    border-top: 1px solid var(--live-line);
+    margin: 10px 0;
   }
   .live-mini {
     width: 100%;
@@ -407,7 +413,7 @@ type LiveViewProps = {
   speechThreshold: number
   lastAssistantMessage: string
   lastUserMessage: string
-  boardText: string
+  boardEntries: BoardEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
@@ -428,7 +434,7 @@ function App() {
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
   const [inputLevel, setInputLevel] = useState(0)
   const [speechThreshold, setSpeechThreshold] = useState(0)
-  const [boardText, setBoardText] = useState("")
+  const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
@@ -578,7 +584,7 @@ function App() {
         case 'whiteboard_update': {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
-          setBoardText(content)
+          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content }])
           break
         }
         case 'function_call': {
@@ -936,7 +942,7 @@ function App() {
           speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
-          boardText={boardText}
+          boardEntries={boardEntries}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
@@ -1099,7 +1105,7 @@ function LiveView(props: LiveViewProps) {
     speechThreshold,
     lastAssistantMessage,
     lastUserMessage,
-    boardText,
+    boardEntries,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
     connect,
@@ -1107,6 +1113,7 @@ function LiveView(props: LiveViewProps) {
     goAdmin,
   } = props
   const [isNightMode, setIsNightMode] = useState(() => isNightModeTime(new Date()))
+  const boardRef = useRef<HTMLDivElement | null>(null)
   const handleToggle = useCallback(() => {
     if (connected) {
       disconnect()
@@ -1120,6 +1127,11 @@ function LiveView(props: LiveViewProps) {
     const timer = window.setInterval(updateNightMode, minuteMs)
     return () => window.clearInterval(timer)
   }, [])
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    board.scrollTop = board.scrollHeight
+  }, [boardEntries])
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
@@ -1129,7 +1141,20 @@ function LiveView(props: LiveViewProps) {
       <div className={`live-frame ${isNightMode ? 'live-night-mode' : ''}`}>
         <div className="live-main">
           <div className="live-left">
-            <div className="live-board">{boardText}</div>
+            <div className="live-board" ref={boardRef}>
+              {boardEntries.length === 0 ? (
+                <div className="live-board-empty">ホワイトボード</div>
+              ) : (
+                boardEntries.map((entry, index) => (
+                  <React.Fragment key={entry.id}>
+                    {index > 0 && <hr className="live-board-separator" />}
+                    <div className="live-board-entry">
+                      {entry.content}
+                    </div>
+                  </React.Fragment>
+                ))
+              )}
+            </div>
             <div className="live-bubble">
               {lastAssistantMessage && (
                 <div className="live-bubble-content">
