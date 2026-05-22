@@ -40,9 +40,13 @@ func New(cfg Config) *Registry {
 	}
 	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
 	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
-	googleCalendarList := googlecalendar.NewList(cfg.CalendarClient)
-	googleCalendarCreate := googlecalendar.NewCreate(cfg.CalendarClient)
-	googleCalendarUpdate := googlecalendar.NewUpdate(cfg.CalendarClient)
+	calendarClient := cfg.CalendarClient
+	if calendarClient == nil {
+		calendarClient = calendarapi.NewClient(calendarapi.Config{})
+	}
+	googleCalendarList := googlecalendar.NewList(calendarClient)
+	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
+	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},

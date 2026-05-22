@@ -64,6 +64,14 @@ func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
 	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
 		t.Fatal("set_whiteboard should be registered")
 	}
+	for _, name := range []string{"google_calendar_list", "google_calendar_create", "google_calendar_update"} {
+		if _, ok := reg.DefinitionByName(name); !ok {
+			t.Fatalf("%s should be registered", name)
+		}
+		if _, ok := reg.Handlers()[name]; !ok {
+			t.Fatalf("%s handler should be registered", name)
+		}
+	}
 }
 
 func TestRegistryOmitsWebSearchTool(t *testing.T) {
