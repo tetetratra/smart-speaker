@@ -62,6 +62,43 @@ func TestStageAddsIdleFollowupInstructionAfterLongGap(t *testing.T) {
 	}
 }
 
+func TestStageKeepsIdleFollowupInstructionOnRetry(t *testing.T) {
+	now := time.Now()
+	history := conversationhistory.NewStore()
+	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-11 * time.Minute)})
+	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
+	client := &fakeClient{responses: []string{
+		`{"items":[{"type":"speech","text":""}]}`,
+		`{"items":[]}`,
+	}}
+	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items len = %d, want 0", len(items))
+	}
+	if client.calls != 2 {
+		t.Fatalf("calls = %d, want 2", client.calls)
+	}
+	for i, prompt := range client.prompts {
+		for _, want := range []string{
+			"前回のユーザー発話から11分",
+			"独り言",
+			`{"items":[]}`,
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("prompt[%d] = %q, want it to contain %q", i, prompt, want)
+			}
+		}
+	}
+	if !strings.Contains(client.prompts[1], "直前の応答はJSON timeline契約違反でした") {
+		t.Fatalf("retry prompt = %q, want retry instruction", client.prompts[1])
+	}
+}
+
 func TestStageDoesNotAddIdleFollowupInstructionWithinThreshold(t *testing.T) {
 	now := time.Now()
 	history := conversationhistory.NewStore()
