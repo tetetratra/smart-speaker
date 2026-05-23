@@ -40,7 +40,7 @@ flowchart TB
   UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
 
-  COMMIT -->|"user/assistant/tool履歴を保存する"| HSTORE
+  COMMIT -.->|"user/assistant/tool履歴を保存する"| HSTORE
   LLM -.->|"LLM入力用の履歴を読む"| HSTORE
   GF1 -.->|"最新世代idを読む"| GSTORE
   GF2 -.->|"最新世代idを読む"| GSTORE
@@ -61,7 +61,7 @@ flowchart TB
   ROUTER -->|"EventToolRequest<br/>実行タイミングのtoolを渡す"| TOOL
 
   TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
-  ToolRuntime -->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
+  ToolRuntime -.->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
   TOOL -.->|"CommitToolResult API<br/>tool結果を会話履歴へ戻す"| COMMIT
 ```
 
