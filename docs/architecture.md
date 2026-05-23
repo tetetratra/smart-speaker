@@ -6,35 +6,65 @@
 ## 全体像
 
 ```mermaid
-flowchart LR
-  Browser["Browser / Web UI"] -->|/ws/chat| WS["wschat"]
-  Browser <-->|WebRTC 音声| RTC["rtc"]
+flowchart TB
+  USER(("ユーザー発話<br/>マイクから入る人間の音声"))
+  Browser(["ブラウザ<br/>Web UI、マイク入力、音声再生"])
+  ToolRuntime{{ツールランタイム<br/>外部API呼び出しや副作用を実行}}
 
-  WS -->|EventRTCSignal| RTC
-  RTC -->|EventRTCSignal / VAD状態| WS
-  RTC -->|EventHumanUtterance| UB["utterancebuffer"]
-  UB -->|user commit| COMMIT["conversationcommitter"]
+  WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
+  RTC["rtc<br/>WebRTC音声入出力、VAD、Google STTを担当"]
+  UB["utterancebuffer<br/>STT結果を短時間バッファして1発話にまとめる"]
+  COMMIT["conversationcommitter<br/>履歴保存後にUI表示やLLM要求へ振り分ける"]
+  LLM["llm<br/>履歴を読んでResponses APIからJSON timelineを作る"]
+  GF1["generationfilter<br/>LLM出力の世代を検査する"]
+  TTS["tts<br/>speechを音声化し、wait/toolは順序維持で通す"]
+  GF2["generationfilter<br/>TTS出力の世代を検査する"]
+  SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火する"]
+  GF3["generationfilter<br/>scheduler出力の世代を検査する"]
+  ROUTER["router<br/>再生、assistant保存、tool実行へ振り分ける"]
+  TOOL["toolcaller<br/>local tool handlerを呼び出して結果を会話へ戻す"]
 
-  GSTORE[("generation Store")]
-  HSTORE[("conversation history Store")]
+  GSTORE[("generation Store<br/>最新の世代idを保持する")]
+  HSTORE[("conversation history Store<br/>user/assistant/toolの履歴を保持する")]
 
-  UB -.->|Next| GSTORE
-  COMMIT -.->|Append| HSTORE
-  HSTORE -.->|Snapshot| LLM["llm"]
+  USER -->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
+  Browser <-->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
+  Browser <-->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTC
 
-  COMMIT -->|EventLLMRequest| LLM
-  COMMIT -->|EventRealtimeOutput| WS
-  LLM -->|EventTimelineItem| GF1["generationfilter"]
-  GF1 --> TTS["tts"]
-  TTS -->|EventPlayableSpeech / EventTimelineItem| GF2["generationfilter"]
-  GF2 --> SCH["scheduler"]
-  SCH -->|EventScheduledItem| GF3["generationfilter"]
-  GF3 --> ROUTER["router"]
-  ROUTER -->|EventRealtimeAudio| RTC
-  ROUTER -->|assistant commit| COMMIT
-  ROUTER -->|EventToolRequest| TOOL["toolcaller"]
-  TOOL -.->|CommitToolResult API| COMMIT
-  TOOL -->|tool内部event| WS
+  WS -->|"EventRTCSignal<br/>offer/iceをRTCへ渡す"| RTC
+  RTC -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
+  RTC -->|"EventSpeechEnd<br/>発話終了をUIへ通知する"| WS
+  RTC -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
+  RTC -->|"EventHumanUtterance<br/>STT final transcriptを流す"| UB
+
+  UB -.->|"Next<br/>新しい確定発話ごとに世代idを進める"| GSTORE
+  UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
+
+  COMMIT -->|"Append<br/>user/assistant/tool履歴を保存する"| HSTORE
+  HSTORE -.->|"Snapshot<br/>LLM入力用の履歴を読む"| LLM
+  GSTORE -.->|"Current<br/>最新世代idを読む"| COMMIT
+  GSTORE -.->|"Current<br/>最新世代idを読む"| GF1
+  GSTORE -.->|"Current<br/>最新世代idを読む"| GF2
+  GSTORE -.->|"Current<br/>最新世代idを読む"| GF3
+
+  COMMIT -->|"EventRealtimeOutput<br/>user/assistant表示をUIへ送る"| WS
+  COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
+
+  LLM -->|"EventTimelineItem<br/>speech/wait/toolを出力する"| GF1
+  GF1 -->|"EventTimelineItem<br/>最新世代だけを通す"| TTS
+  TTS -->|"EventPlayableSpeech / EventTimelineItem<br/>音声化済みspeechとwait/toolを流す"| GF2
+  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>最新世代だけを通す"| SCH
+  SCH -->|"EventScheduledItem<br/>再生時間やwait秒数に従って発火する"| GF3
+  GF3 -->|"EventScheduledItem<br/>最新世代だけを通す"| ROUTER
+
+  ROUTER -->|"EventRealtimeAudio<br/>再生音声をRTCへ渡す"| RTC
+  ROUTER -->|"EventConversationCommitRequest<br/>assistant発話の保存を要求する"| COMMIT
+  ROUTER -->|"EventToolRequest<br/>実行タイミングのtoolを渡す"| TOOL
+
+  TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
+  ToolRuntime -->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
+  TOOL -.->|"CommitToolResult API<br/>tool結果を会話履歴へ戻す"| COMMIT
+  ToolRuntime -.->|"tool内部event<br/>whiteboard更新などをUIへ通知する"| WS
 ```
 
 ## 主要な責務

@@ -137,49 +137,8 @@ docker compose up web
 ポートは `http://localhost:5173/` です。依存は `node_modules` ボリュームに保持されます。
 ブラウザは getUserMedia のマイク音声を WebRTC でサーバーに送信します。文字起こしはサーバー側で行い、TTS 音声は WebRTC で受信して再生します。
 
-## 構成図（ステージ接続）
-```mermaid
-flowchart LR
-  wschat["wschat (/ws/chat)"]
-  ub["utterancebuffer"]
-  committer["conversationcommitter"]
-  llm["llm"]
-  gf1["generationfilter"]
-  tts["tts (ElevenLabs)"]
-  gf2["generationfilter"]
-  scheduler["scheduler"]
-  gf3["generationfilter"]
-  router["router"]
-  toolcaller["toolcaller"]
-  rtc["rtc (WebRTC)"]
-
-  rtc -- "EventHumanUtterance" --> ub
-  ub -- "EventConversationCommitRequest" --> committer
-  committer -- "EventLLMRequest" --> llm
-  committer -- "EventRealtimeOutput" --> wschat
-  llm -- "EventTimelineItem" --> gf1
-  gf1 --> tts
-  tts -- "EventPlayableSpeech / EventTimelineItem" --> gf2
-  gf2 --> scheduler
-  scheduler -- "EventScheduledItem" --> gf3
-  gf3 --> router
-  router -- "EventRealtimeAudio" --> rtc
-  router -- "assistant commit" --> committer
-  router -- "EventToolRequest" --> toolcaller
-  toolcaller -. "CommitToolResult API" .-> committer
-  toolcaller -- "tool内部event" --> wschat
-
-  wschat -- "EventRTCSignal" --> rtc
-  rtc -- "EventRTCSignal" --> wschat
-```
-
-- HTTP サーバー起動は `main` が直接担当し、`ServeMux` に `wschat` と Web UI をぶら下げる
-- `rtc` が WebRTC 音声入出力（TTS 再生用）を担当
-- 文字起こしはサーバー側で実施
-- LLM 出力は Structured Outputs の JSON timeline として受け取り、`speech` / `wait` / `tool` として扱う
-- OpenAI Responses API の function calling は使わない
-- 最新情報・外部情報の検索は local `web_search` tool として実行し、handler 内部で OpenAI Responses API hosted `web_search` を呼び出す
-- 旧 `internal/state` パッケージは削除済み
+## 構成図
+会話 pipeline の構成図は二重管理を避けるため、[docs/architecture.md](docs/architecture.md) に集約しています。
 
 ### チャット用 WebSocket
 - エンドポイント: `ws://<WS_ADDR>/ws/chat`
