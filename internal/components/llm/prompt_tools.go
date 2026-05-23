@@ -22,8 +22,19 @@ itemsの各要素は {"type":"speech","text":"..."}、{"type":"wait","sec":0.5}�
 speechとwaitは複数item出せます。
 toolは1回の応答の末尾に最大1itemだけ出せます。
 toolの後にspeech、wait、toolを続けてはいけません。
+ユーザー発話に対して応答しないべき場合だけ、itemsを空配列にして {"items":[]} と出力できます。
 最新情報・外部情報が必要な場合はlocal web_search toolを使ってください。web_searchのargsはqueryのみ指定し、tool結果のresultだけを根拠に後続応答を作ってください。
 OpenAI function callingは使わず、tool呼び出しもitems内のtool objectとして表現してください。`)
+}
+
+func appendIdleFollowupInstruction(prompt string, gap string) string {
+	instruction := strings.TrimSpace(`前回のユーザー発話から` + gap + `経ってからのユーザー発話です。
+短い発話、意味不明な発話、感嘆、独り言のように見える場合は、スマートスピーカーへの依頼ではない可能性を考慮してください。
+応答しない方が自然だと判断した場合は、speechやtoolを出さず {"items":[]} だけを出力してください。`)
+	if strings.TrimSpace(prompt) == "" {
+		return instruction
+	}
+	return strings.TrimRight(prompt, "\n") + "\n\n" + instruction
 }
 
 func appendRetryInstruction(prompt string, err error, rawPreview string) string {

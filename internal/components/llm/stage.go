@@ -3,9 +3,11 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"smart-speaker/internal/graph"
 	"smart-speaker/internal/states/conversationhistory"
@@ -15,6 +17,7 @@ import (
 const maxContractRetries = 10
 const maxRawLinePreviewRunes = 400
 const rawLinePreviewSuffix = "..."
+const idleFollowupThreshold = 10 * time.Minute
 
 type stage struct {
 	upstream     chan types.Event
@@ -95,7 +98,11 @@ func (s *stage) handleRequest(ctx context.Context, req types.LLMRequest) {
 
 func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]types.TimelineItem, error) {
 	var lastErr error
-	systemPrompt := s.systemPrompt
+	basePrompt := s.systemPrompt
+	if gap, ok := s.idleGapBefore(req); ok {
+		basePrompt = appendIdleFollowupInstruction(basePrompt, formatDurationMinutes(gap))
+	}
+	systemPrompt := basePrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
 		messages := s.messages(req)
 		rawText, err := s.client.CreateResponse(ctx, messages, appendCurrentTimestamp(systemPrompt))
@@ -113,7 +120,7 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 		}
 		rawPreview = rawPreviewText(rawPreview)
 		log.Printf("llm: invalid timeline response generation=%d request_id=%s attempt=%d/%d err=%v raw_preview=%q", req.GenerationID, req.RequestID, attempt, maxContractRetries, err, rawPreview)
-		systemPrompt = appendRetryInstruction(s.systemPrompt, err, rawPreview)
+		systemPrompt = appendRetryInstruction(basePrompt, err, rawPreview)
 	}
 	return nil, lastErr
 }
@@ -146,6 +153,57 @@ func (s *stage) messages(req types.LLMRequest) []types.ChatMessage {
 		role = types.RoleUser
 	}
 	return []types.ChatMessage{{Role: role, Content: req.Text}}
+}
+
+func (s *stage) idleGapBefore(req types.LLMRequest) (time.Duration, bool) {
+	if s.history == nil {
+		return 0, false
+	}
+	gap, ok := idleGapBeforeRequest(s.history.Snapshot(), req)
+	if !ok || gap < idleFollowupThreshold {
+		return 0, false
+	}
+	return gap, true
+}
+
+func idleGapBeforeRequest(records []types.ConversationRecord, req types.LLMRequest) (time.Duration, bool) {
+	currentIndex := -1
+	reqText := strings.TrimSpace(req.Text)
+	for i, rec := range records {
+		if strings.TrimSpace(rec.Role) != types.RoleUser {
+			continue
+		}
+		if rec.ID == req.RequestID || (rec.GenerationID == req.GenerationID && strings.TrimSpace(rec.Text) == reqText) {
+			currentIndex = i
+		}
+	}
+	if currentIndex < 0 {
+		return 0, false
+	}
+	current := records[currentIndex]
+	if current.CreatedAt.IsZero() {
+		return 0, false
+	}
+	for i := currentIndex - 1; i >= 0; i-- {
+		prev := records[i]
+		if strings.TrimSpace(prev.Role) != types.RoleUser || prev.CreatedAt.IsZero() {
+			continue
+		}
+		gap := current.CreatedAt.Sub(prev.CreatedAt)
+		if gap < 0 {
+			return 0, false
+		}
+		return gap, true
+	}
+	return 0, false
+}
+
+func formatDurationMinutes(d time.Duration) string {
+	minutes := int(d.Round(time.Minute) / time.Minute)
+	if minutes <= 0 {
+		return d.String()
+	}
+	return fmt.Sprintf("%d分", minutes)
 }
 
 func (s *stage) close() error {

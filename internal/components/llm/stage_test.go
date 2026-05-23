@@ -18,9 +18,11 @@ type fakeClient struct {
 	calls     int
 	responses []string
 	prompts   []string
+	messages  [][]types.ChatMessage
 }
 
 func (f *fakeClient) CreateResponse(ctx context.Context, messages []types.ChatMessage, systemContent string) (string, error) {
+	f.messages = append(f.messages, append([]types.ChatMessage(nil), messages...))
 	f.prompts = append(f.prompts, systemContent)
 	idx := f.calls
 	f.calls++
@@ -28,6 +30,56 @@ func (f *fakeClient) CreateResponse(ctx context.Context, messages []types.ChatMe
 		idx = len(f.responses) - 1
 	}
 	return f.responses[idx], nil
+}
+
+func TestStageAddsIdleFollowupInstructionAfterLongGap(t *testing.T) {
+	now := time.Now()
+	history := conversationhistory.NewStore()
+	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-11 * time.Minute)})
+	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
+	client := &fakeClient{responses: []string{`{"items":[]}`}}
+	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items len = %d, want 0", len(items))
+	}
+	if client.calls != 1 {
+		t.Fatalf("calls = %d, want 1", client.calls)
+	}
+	prompt := client.prompts[0]
+	for _, want := range []string{
+		"前回のユーザー発話から11分",
+		"独り言",
+		`{"items":[]}`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt = %q, want it to contain %q", prompt, want)
+		}
+	}
+}
+
+func TestStageDoesNotAddIdleFollowupInstructionWithinThreshold(t *testing.T) {
+	now := time.Now()
+	history := conversationhistory.NewStore()
+	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-9 * time.Minute)})
+	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
+	client := &fakeClient{responses: []string{`{"items":[{"type":"speech","text":"どうしたの？"}]}`}}
+	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	if strings.Contains(client.prompts[0], "前回のユーザー発話から") {
+		t.Fatalf("prompt = %q, want no idle followup instruction", client.prompts[0])
+	}
 }
 
 func TestStageRetriesInvalidResponse(t *testing.T) {
