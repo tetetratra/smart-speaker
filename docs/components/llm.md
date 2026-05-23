@@ -6,6 +6,7 @@
 * **ターゲットユーザー**: 音声でスマートスピーカーに話しかける利用者、および会話 pipeline を保守する開発者。
 * **提供価値**: OpenAI Responses API の出力を Structured Outputs の JSON schema で `speech` / `wait` / `tool` の timeline object に制約し、Go 側でも検証してから `TimelineItem` に変換する。
 * **安全性の考え方**: 契約違反の LLM 応答は最大10回 retry し、それでも失敗した場合はログを出して応答を捨てる。壊れた timeline を下流へ流さないことを優先する。
+* **無応答の考え方**: ユーザー発話に対して応答しない方が自然な場合は、LLM が `{"items":[]}` を出力できる。空 timeline は有効な応答として扱われ、下流 event は発行されない。
 * **tool 連携の考え方**: OpenAI function calling は使わない。通常起動では local tool registry 由来の schema を LLM の Structured Outputs schema と system prompt に渡し、LLM は JSON timeline の末尾 item として tool 呼び出しを表現する。
 
 ## 2. 論理構造・機能俯瞰
@@ -29,6 +30,7 @@
 - **system prompt builder**
   - `cfg.Instructions`、JSON timeline 契約文、任意の `cfg.ToolSchemas` を結合して system prompt を作る。
   - 各 API 呼び出し直前に `現在日時` と `現在時刻` を追記する。
+  - 現在のユーザー発話が直前のユーザー発話から10分以上空いている場合は、ひとりごと・感嘆・意味不明な短文の可能性と `{"items":[]}` による無応答を追加で指示する。
   - retry 時は契約違反理由と raw preview を追記した system prompt で再実行する。
 - **JSON timeline parser**
   - response body から取り出した output text 全体を `parseTimelineJSON` で `types.TimelineItem` に変換する。
@@ -76,6 +78,33 @@ sequenceDiagram
   TTS->>Scheduler: EventPlayableSpeech or EventTimelineItem
   Scheduler->>Router: EventScheduledItem
   Router->>Committer: assistant ConversationCommitRequest
+```
+
+### シナリオ: 長い無音後のひとりごと候補を無応答にする
+
+1. `conversationcommitter` が user record を保存し、`EventLLMRequest` を発行する。user record には `CreatedAt` が入る。
+2. `llm.stage` は履歴 snapshot から現在の user record を `RequestID` 優先で特定し、その直前の user record との `CreatedAt` 差分を計算する。
+3. 差分が10分未満、現在または直前の `CreatedAt` がない、または現在発話を特定できない場合は、通常の system prompt のまま Responses API を呼び出す。
+4. 差分が10分以上の場合は、前回ユーザー発話からの経過時間、短い発話・意味不明な発話・感嘆・独り言の可能性、応答しない場合の `{"items":[]}` 出力を system prompt に追加する。
+5. LLM が `{"items":[]}` を返した場合、`parseTimelineJSON` は空 slice を正常結果として返す。
+6. `llm.stage` は発行対象の `EventTimelineItem` がないため、下流へ何も流さず処理を終える。
+
+```mermaid
+sequenceDiagram
+  participant Committer as conversationcommitter
+  participant History as conversationhistory.Store
+  participant LLM as llm.stage
+  participant OpenAI as OpenAI Responses API
+  participant Down as downstream
+
+  Committer->>History: Append(current user record with CreatedAt)
+  Committer->>LLM: EventLLMRequest(RequestID=current)
+  LLM->>History: Snapshot()
+  LLM->>LLM: 直前user発話とのgapを計算
+  LLM->>OpenAI: 10分以上ならidle後発話向け指示を追加して呼び出し
+  OpenAI-->>LLM: {"items":[]}
+  LLM->>LLM: 空timelineを有効な応答として扱う
+  Note over LLM,Down: EventTimelineItemは発行しない
 ```
 
 ### シナリオ: tool item が出力され、結果が再度 LLM に渡るまで
@@ -127,6 +156,8 @@ sequenceDiagram
         - `consume`: upstream から `EventLLMRequest` を読み、request ごとに `handleRequest` を goroutine で実行する。
         - `handleRequest`: `requestTimeline` の結果を `EventTimelineItem` として順番に下流へ送る。
         - `requestTimeline`: Responses API 呼び出し、`parseTimelineJSON`、最大10回 retry を行う。
+        - `idleGapBefore`: 現在 user 発話と直前 user 発話の時刻差が10分以上か判定する。
+        - `idleGapBeforeRequest`: 履歴 snapshot と `LLMRequest` から現在発話を特定し、直前 user 発話との時刻差を返す。
         - `messages`: 履歴 snapshot があれば履歴全体を chat messages にする。履歴がない場合だけ request の role/text から1 message を作る。
         - `close`: cancel を呼び、upstream channel を閉じる。
       - `contract.go`: JSON timeline 契約を `TimelineItem` へ変換する。
@@ -138,6 +169,7 @@ sequenceDiagram
       - `prompt_tools.go`: system prompt に JSON timeline 契約と tool schema を埋め込む。
         - `buildSystemPrompt`: base instruction、JSON timeline 契約、tool schemas JSON を結合する。
         - `timelineJSONInstruction`: LLM に要求する JSON object 形式を返す。
+        - `appendIdleFollowupInstruction`: 10分以上空いた後のユーザー発話に、ひとりごと候補なら `{"items":[]}` を返せることを追加指示する。
         - `appendRetryInstruction`: retry 用の契約違反理由と raw preview を prompt に追記する。
       - `responses_client.go`: OpenAI Responses API との HTTP 通信と非stream response body の読み取りを担当する。
         - `NewClient`: API key と model を検証し、endpoint `https://api.openai.com/v1/responses` を持つ client を作る。
@@ -165,7 +197,7 @@ sequenceDiagram
 - `speech`: `{"type":"speech","text":"..."}`。`text` は trim 後に空であってはいけない。
 - `wait`: `{"type":"wait","sec":0.5}`。`sec` は必須で、0以上でなければならない。
 - `tool`: `{"type":"tool","name":"tool_name","args":{...}}`。`name` は trim 後に空であってはいけない。`args` がない場合は `{}` として扱う。
-- timeline は1 item 以上必要。空の `items` は `timeline is empty` で契約違反になる。
+- ユーザー発話に対して応答しないべき場合だけ、空の `items` を持つ `{"items":[]}` を有効な timeline として扱う。この場合、下流へ `EventTimelineItem` は発行されない。
 - `tool` は末尾に最大1件だけ許可される。`tool` の後に `speech` / `wait` / `tool` が続くと `tool must be the last item` で契約違反になる。
 - 各 item の `SequenceID` は `items` 配列 index を基に `1`、`2`、`3` ... の文字列として付与される。
 
