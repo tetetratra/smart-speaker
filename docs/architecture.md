@@ -7,8 +7,8 @@
 
 ```mermaid
 flowchart TB
-  USER(("ユーザー発話<br/>マイクから入る人間の音声"))
-  Browser(["ブラウザ<br/>Web UI、マイク入力、音声再生"])
+  USER{{"ユーザー発話<br/>マイクから入る人間の音声"}}
+  Browser{{"ブラウザ<br/>Web UI、マイク入力、音声再生"}}
   ToolRuntime{{ツールランタイム<br/>外部API呼び出しや副作用を実行}}
 
   WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
@@ -27,9 +27,9 @@ flowchart TB
   GSTORE[("generation Store<br/>最新の世代idを保持する")]
   HSTORE[("conversation history Store<br/>user/assistant/toolの履歴を保持する")]
 
-  USER -->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
-  Browser <-->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
-  Browser <-->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTC
+  USER -.->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
+  Browser <-.->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
+  Browser <-.->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTC
 
   WS -->|"EventRTCSignal<br/>offer/iceをRTCへ渡す"| RTC
   RTC -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
@@ -37,15 +37,15 @@ flowchart TB
   RTC -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
   RTC -->|"EventHumanUtterance<br/>STT final transcriptを流す"| UB
 
-  UB -.->|"Next<br/>新しい確定発話ごとに世代idを進める"| GSTORE
+  UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
 
-  COMMIT -->|"Append<br/>user/assistant/tool履歴を保存する"| HSTORE
-  HSTORE -.->|"Snapshot<br/>LLM入力用の履歴を読む"| LLM
-  GSTORE -.->|"Current<br/>最新世代idを読む"| COMMIT
-  GSTORE -.->|"Current<br/>最新世代idを読む"| GF1
-  GSTORE -.->|"Current<br/>最新世代idを読む"| GF2
-  GSTORE -.->|"Current<br/>最新世代idを読む"| GF3
+  COMMIT -->|"user/assistant/tool履歴を保存する"| HSTORE
+  HSTORE -.->|"LLM入力用の履歴を読む"| LLM
+  GSTORE -.->|"最新世代idを読む"| COMMIT
+  GSTORE -.->|"最新世代idを読む"| GF1
+  GSTORE -.->|"最新世代idを読む"| GF2
+  GSTORE -.->|"最新世代idを読む"| GF3
 
   COMMIT -->|"EventRealtimeOutput<br/>user/assistant表示をUIへ送る"| WS
   COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
