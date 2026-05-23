@@ -215,7 +215,8 @@ func (s *stage) startSpeechStream(sampleRate int32, channels int32, prebuffer []
 		StreamingRequest: &speechpb.StreamingRecognizeRequest_StreamingConfig{
 			StreamingConfig: &speechpb.StreamingRecognitionConfig{
 				Config: &speechpb.RecognitionConfig{
-					Model: speechModel,
+					Model:      speechModel,
+					Adaptation: buildSpeechAdaptation(s.cfg.SpeechPhrases),
 					DecodingConfig: &speechpb.RecognitionConfig_ExplicitDecodingConfig{
 						ExplicitDecodingConfig: &speechpb.ExplicitDecodingConfig{
 							Encoding:          speechpb.ExplicitDecodingConfig_LINEAR16,
@@ -241,6 +242,35 @@ func (s *stage) startSpeechStream(sampleRate int32, channels int32, prebuffer []
 
 	if len(prebuffer) > 0 {
 		go s.sendSpeechAudio(prebuffer)
+	}
+}
+
+func buildSpeechAdaptation(phrases []string) *speechpb.SpeechAdaptation {
+	if len(phrases) == 0 {
+		return nil
+	}
+	pbPhrases := make([]*speechpb.PhraseSet_Phrase, 0, len(phrases))
+	for _, phrase := range phrases {
+		trimmed := strings.TrimSpace(phrase)
+		if trimmed == "" {
+			continue
+		}
+		pbPhrases = append(pbPhrases, &speechpb.PhraseSet_Phrase{Value: trimmed})
+	}
+	if len(pbPhrases) == 0 {
+		return nil
+	}
+	return &speechpb.SpeechAdaptation{
+		PhraseSets: []*speechpb.SpeechAdaptation_AdaptationPhraseSet{
+			{
+				Value: &speechpb.SpeechAdaptation_AdaptationPhraseSet_InlinePhraseSet{
+					InlinePhraseSet: &speechpb.PhraseSet{
+						Phrases: pbPhrases,
+						Boost:   20,
+					},
+				},
+			},
+		},
 	}
 }
 

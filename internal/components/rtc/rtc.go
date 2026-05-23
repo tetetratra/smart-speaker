@@ -42,6 +42,7 @@ type Config struct {
 	SpeechRecognizer string
 	SpeechLanguage   string
 	SpeechCredsJSON  string
+	SpeechPhrases    []string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
