@@ -80,13 +80,12 @@ func TestParseTimelineJSONErrorKeepsRawPreview(t *testing.T) {
 	}
 }
 
-func TestParseTimelineJSONEmptyTimelineHasNoRawPreview(t *testing.T) {
-	_, err := parseTimelineJSON(`{"items":[]}`, 1)
-	if err == nil {
-		t.Fatal("err = nil, want error")
+func TestParseTimelineJSONAcceptsEmptyTimeline(t *testing.T) {
+	items, err := parseTimelineJSON(`{"items":[]}`, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var parseErr *timelineParseError
-	if errors.As(err, &parseErr) {
-		t.Fatalf("timelineParseError.RawPreview = %q, want no raw preview", parseErr.RawPreview())
+	if len(items) != 0 {
+		t.Fatalf("len = %d, want 0", len(items))
 	}
 }

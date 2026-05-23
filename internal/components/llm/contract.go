@@ -94,9 +94,6 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 		}
 		items = append(items, item)
 	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("timeline is empty")
-	}
 	return items, nil
 }
 
