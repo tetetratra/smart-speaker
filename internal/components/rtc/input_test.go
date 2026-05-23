@@ -114,3 +114,33 @@ func TestIsExpectedSpeechStreamClose(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildSpeechAdaptation(t *testing.T) {
+	adaptation := buildSpeechAdaptation([]string{" tetetratra ", "", "スマートスピーカー"})
+	if adaptation == nil {
+		t.Fatal("expected adaptation")
+	}
+	if len(adaptation.PhraseSets) != 1 {
+		t.Fatalf("expected 1 phrase set, got %d", len(adaptation.PhraseSets))
+	}
+	phraseSet := adaptation.PhraseSets[0].GetInlinePhraseSet()
+	if phraseSet == nil {
+		t.Fatal("expected inline phrase set")
+	}
+	if phraseSet.Boost != 20 {
+		t.Fatalf("expected boost 20, got %v", phraseSet.Boost)
+	}
+	got := phraseSet.Phrases
+	if len(got) != 2 {
+		t.Fatalf("expected 2 phrases, got %d", len(got))
+	}
+	if got[0].Value != "tetetratra" || got[1].Value != "スマートスピーカー" {
+		t.Fatalf("unexpected phrases: %#v", got)
+	}
+}
+
+func TestBuildSpeechAdaptationReturnsNilWithoutPhrases(t *testing.T) {
+	if got := buildSpeechAdaptation([]string{" ", ""}); got != nil {
+		t.Fatalf("expected nil adaptation, got %#v", got)
+	}
+}

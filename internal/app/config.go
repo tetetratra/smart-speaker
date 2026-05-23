@@ -24,6 +24,7 @@ type Config struct {
 	GoogleRecognizer   string
 	GoogleLanguage     string
 	GoogleCredentials  string
+	STTPhrases         []string
 	RTCIceHostIPs      []string
 	WSAddr             string
 	WebDistDir         string
@@ -102,6 +103,7 @@ func LoadConfig(promptPath string) Config {
 		googleLanguage = "ja-JP"
 	}
 	googleCredentials := strings.TrimSpace(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+	sttPhrases := readSTTPhrases("stt_phrases.txt")
 
 	return Config{
 		APIKey:             apiKey,
@@ -115,6 +117,7 @@ func LoadConfig(promptPath string) Config {
 		GoogleRecognizer:   googleRecognizer,
 		GoogleLanguage:     googleLanguage,
 		GoogleCredentials:  googleCredentials,
+		STTPhrases:         sttPhrases,
 		RTCIceHostIPs:      rtcIceHostIPs,
 		WSAddr:             wsAddr,
 		WebDistDir:         webDistDir,
@@ -161,6 +164,54 @@ func readPromptFile(path string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func readSTTPhrases(path string) []string {
+	phrases, err := readPhraseFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "warning: failed to read STT phrases (%v)\n", err)
+	}
+
+	localPath := filepath.Join(filepath.Dir(path), "stt_phrases.local.txt")
+	localPhrases, err := readPhraseFile(localPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "warning: failed to read local STT phrases (%v)\n", err)
+	}
+
+	return uniqueStrings(append(phrases, localPhrases...))
+}
+
+func readPhraseFile(path string) ([]string, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	phrases := make([]string, 0, len(lines))
+	for _, line := range lines {
+		phrase := strings.TrimSpace(line)
+		if phrase == "" || strings.HasPrefix(phrase, "#") {
+			continue
+		}
+		phrases = append(phrases, phrase)
+	}
+	return phrases, nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func joinPrompts(mainPrompt, localPrompt string) string {

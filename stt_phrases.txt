@@ -1,0 +1,2 @@
+# Google Speech-to-Text v2 PhraseSet hints.
+# Add one word or phrase per line. stt_phrases.local.txt is also loaded when present.

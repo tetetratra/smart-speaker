@@ -207,6 +207,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 		SpeechRecognizer: cfg.GoogleRecognizer,
 		SpeechLanguage:   cfg.GoogleLanguage,
 		SpeechCredsJSON:  cfg.GoogleCredentials,
+		SpeechPhrases:    cfg.STTPhrases,
 	})
 	if err != nil {
 		if stages.tts != nil {
