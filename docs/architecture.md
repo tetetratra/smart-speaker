@@ -41,11 +41,10 @@ flowchart TB
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
 
   COMMIT -->|"user/assistant/tool履歴を保存する"| HSTORE
-  HSTORE -.->|"LLM入力用の履歴を読む"| LLM
-  GSTORE -.->|"最新世代idを読む"| COMMIT
-  GSTORE -.->|"最新世代idを読む"| GF1
-  GSTORE -.->|"最新世代idを読む"| GF2
-  GSTORE -.->|"最新世代idを読む"| GF3
+  LLM -.->|"LLM入力用の履歴を読む"| HSTORE
+  GF1 -.->|"最新世代idを読む"| GSTORE
+  GF2 -.->|"最新世代idを読む"| GSTORE
+  GF3 -.->|"最新世代idを読む"| GSTORE
 
   COMMIT -->|"EventRealtimeOutput<br/>user/assistant表示をUIへ送る"| WS
   COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
@@ -64,7 +63,6 @@ flowchart TB
   TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
   ToolRuntime -->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
   TOOL -.->|"CommitToolResult API<br/>tool結果を会話履歴へ戻す"| COMMIT
-  ToolRuntime -.->|"tool内部event<br/>whiteboard更新などをUIへ通知する"| WS
 ```
 
 ## 主要な責務
