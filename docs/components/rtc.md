@@ -40,6 +40,8 @@
 - **server STT**
   - speech start 時に Google Speech-to-Text v2 の `StreamingRecognize` を開始する。
   - model は `chirp_3`、region は `asia-northeast1`、encoding は `LINEAR16`。
+  - 起動時に `stt_phrases.txt` と任意の `stt_phrases.local.txt` から語彙を読み込み、語彙がある場合だけ inline PhraseSet として `RecognitionConfig.Adaptation.PhraseSets` に渡す。
+  - PhraseSet の boost は `20`。語彙ファイルでは空行と `#` 始まりのコメント行を無視し、重複語彙は最初の出現だけを使う。
   - final result の transcript のみを `EventHumanUtterance` として出す。interim result は downstream へ出さない。
 
 - **音声出力**
@@ -92,9 +94,10 @@ sequenceDiagram
 4. `activeSpeakerID` が空、または現在の peer と一致する場合だけ音声処理を続行する。他 peer が active speaker の場合は処理しない。
 5. 直近 1 分の energy 履歴から適応しきい値を 1 秒間隔で更新し、250ms 間隔で `EventRTCVADStatus` を emit する。
 6. speech frame が 200ms 続いたら speech start とし、active speaker を獲得できた場合に Speech-to-Text stream を開始する。stream 開始時には prebuffer snapshot も STT に送る。
-7. 発話中の audio は `sendSpeechAudio` で 25,600 bytes ごとに分割され、Google Speech-to-Text v2 stream へ送られる。
-8. non-speech frame が 500ms 続いたら `EventSpeechEnd` を emit し、STT stream の `CloseSend` を schedule する。現行定数では `sttStopDelay` は 0ms。
-9. STT response の final transcript が空でなければ、`EventHumanUtterance` として emit する。
+7. STT 語彙が設定されている場合、streaming config の `RecognitionConfig.Adaptation.PhraseSets` に inline PhraseSet として渡される。
+8. 発話中の audio は `sendSpeechAudio` で 25,600 bytes ごとに分割され、Google Speech-to-Text v2 stream へ送られる。
+9. non-speech frame が 500ms 続いたら `EventSpeechEnd` を emit し、STT stream の `CloseSend` を schedule する。現行定数では `sttStopDelay` は 0ms。
+10. STT response の final transcript が空でなければ、`EventHumanUtterance` として emit する。
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +111,7 @@ sequenceDiagram
   RTC->>RTC: Decode Opus / downmix mono / measure energy
   RTC-->>WS: EventRTCVADStatus(input_level, threshold)
   RTC->>RTC: 200ms speech 継続で speech start
-  RTC->>STT: StreamingRecognize config(chirp_3, LINEAR16)
+  RTC->>STT: StreamingRecognize config(chirp_3, LINEAR16, optional PhraseSet)
   RTC->>STT: prebuffer + live PCM audio
   RTC->>RTC: 500ms silence 継続で speech end
   RTC-->>WS: EventSpeechEnd(source=server-vad)
@@ -171,6 +174,7 @@ sequenceDiagram
       - input.go: WebRTC 上り音声、server VAD、Google Speech-to-Text v2 streaming を扱う。
         - `handleIncomingTrack`: RTP/Opus を PCM に変換し、VAD と STT 送信を制御する。
         - `startSpeechStream`: Google Speech-to-Text v2 の streaming recognition を開始し、config と prebuffer を送る。
+        - `buildSpeechAdaptation`: STT 語彙から Google Speech-to-Text v2 の inline PhraseSet を組み立てる。語彙が空の場合は adaptation を設定しない。
         - `consumeSpeechResponses`: final transcript を `EventHumanUtterance` として emit する。
         - `isExpectedSpeechStreamClose`: context cancel、EOF、gRPC canceled を想定内の終了として扱う。
         - `sendSpeechAudio`: PCM audio を 25,600 bytes 単位で STT stream へ送る。
@@ -237,6 +241,7 @@ sequenceDiagram
 - WebRTC 下り音声: sample rate `48000`、default channels `1`、Opus frame `20ms`。
 - server VAD: prebuffer `3s`、speech start `200ms`、speech end `500ms`、履歴 window `1m`、しきい値更新 `1s`、status emit `250ms`、offset `50`、minimum threshold `50`。
 - STT: chunk `25,600 bytes`、model `chirp_3`、region `asia-northeast1`、default recognizer `_`、default language `ja-JP`、stop delay `0ms`。
+- STT PhraseSet: 起動時にリポジトリルート基準の `stt_phrases.txt` と `stt_phrases.local.txt` を読む。空行と `#` 始まりのコメント行は無視し、重複語彙は最初の出現だけを使う。語彙がある場合だけ inline PhraseSet を `RecognitionConfig.Adaptation.PhraseSets` に設定し、boost は `20`。
 - ICE: UDP ephemeral port range `50000-50100`。`IceHostIPs` が設定されていれば Pion の NAT 1:1 host IP に使う。
 
 ### 不明点
@@ -244,3 +249,4 @@ sequenceDiagram
 - `OutputAudio.Audio` の元 PCM sample rate は `rtc` の型や event payload には含まれていない。`rtc` は受け取った PCM を常に 2 倍 upsample して 48kHz 用 Opus encoder に渡すが、元 sample rate の仕様は `rtc` の実コードだけからは確定できない。
 - ブラウザ側の WebRTC offer 作成、audio track 制約、UI 上の VAD 表示方法は `internal/components/rtc/` には含まれていないため、この文書では未記載。
 - Google Speech-to-Text v2 の recognizer `_` がどのリソース設定を参照するかは Google Cloud 側の設定に依存し、この repository の実コードからは不明。
+- `stt_phrases.local.txt` は個人環境向けの語彙調整ファイルで、git 管理外にする前提。
