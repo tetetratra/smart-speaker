@@ -22,7 +22,7 @@ func appendIdleFollowupInstruction(prompt string, gap string) string {
 	if strings.TrimSpace(prompt) == "" {
 		return instruction
 	}
-	return strings.TrimRight(prompt, "\n") + "\n\n" + instruction
+	return instruction + "\n\n" + strings.TrimRight(prompt, "\n")
 }
 
 func appendRetryInstruction(prompt string, err error, rawPreview string) string {
