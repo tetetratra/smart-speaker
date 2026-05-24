@@ -6,25 +6,13 @@ import (
 )
 
 func buildSystemPrompt(base string, toolSchemas []any) string {
-	parts := []string{strings.TrimSpace(base), timelineJSONInstruction()}
+	parts := []string{strings.TrimSpace(base)}
 	if len(toolSchemas) > 0 {
 		if encoded, err := json.Marshal(toolSchemas); err == nil {
 			parts = append(parts, "利用可能なlocal tool schema:\n"+string(encoded))
 		}
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
-}
-
-func timelineJSONInstruction() string {
-	return strings.TrimSpace(`出力は必ずJSON objectのみで返してください。
-root objectは {"items":[...]} の形です。
-itemsの各要素は {"type":"speech","text":"..."}、{"type":"wait","sec":0.5}、{"type":"tool","name":"tool_name","args":{...}} のいずれかです。
-speechとwaitは複数item出せます。
-toolは1回の応答の末尾に最大1itemだけ出せます。
-toolの後にspeech、wait、toolを続けてはいけません。
-ユーザー発話に対して応答しないべき場合だけ、itemsを空配列にして {"items":[]} と出力できます。
-最新情報・外部情報が必要な場合はlocal web_search toolを使ってください。web_searchのargsはqueryのみ指定し、tool結果のresultだけを根拠に後続応答を作ってください。
-OpenAI function callingは使わず、tool呼び出しもitems内のtool objectとして表現してください。`)
 }
 
 func appendIdleFollowupInstruction(prompt string, gap string) string {
