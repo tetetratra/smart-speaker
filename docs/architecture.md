@@ -21,11 +21,11 @@ flowchart TB
   GF2["generationfilter<br/>TTS出力の世代を検査する"]
   SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火する"]
   GF3["generationfilter<br/>scheduler出力の世代を検査する"]
-  ROUTER["router<br/>再生、assistant保存、tool実行へ振り分ける"]
+  ROUTER["router<br/>再生、agent保存、tool実行へ振り分ける"]
   TOOL["toolcaller<br/>local tool handlerを呼び出して結果を会話へ戻す"]
 
   GSTORE[("generation Store<br/>最新の世代idを保持する")]
-  HSTORE[("conversation history Store<br/>user/assistant/toolの履歴を保持する")]
+  HSTORE[("conversation history Store<br/>user/agent/tool_call/tool_resultの履歴を保持する")]
 
   USER -.->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
   Browser <-.->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
@@ -40,13 +40,13 @@ flowchart TB
   UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
 
-  COMMIT -.->|"user/assistant/tool履歴を保存する"| HSTORE
+  COMMIT -.->|"user/agent/tool_call/tool_result履歴を保存する"| HSTORE
   LLM -.->|"LLM入力用の履歴を読む"| HSTORE
   GF1 -.->|"最新世代idを読む"| GSTORE
   GF2 -.->|"最新世代idを読む"| GSTORE
   GF3 -.->|"最新世代idを読む"| GSTORE
 
-  COMMIT -->|"EventRealtimeOutput<br/>user/assistant表示をUIへ送る"| WS
+  COMMIT -->|"EventRealtimeOutput<br/>user/agent表示をUIへ送る"| WS
   COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
 
   LLM -->|"EventTimelineItem<br/>speech/wait/toolを出力する"| GF1
@@ -57,7 +57,7 @@ flowchart TB
   GF3 -->|"EventScheduledItem<br/>最新世代だけを通す"| ROUTER
 
   ROUTER -->|"EventRealtimeAudio<br/>再生音声をRTCへ渡す"| RTC
-  ROUTER -->|"EventConversationCommitRequest<br/>assistant発話の保存を要求する"| COMMIT
+  ROUTER -->|"EventConversationCommitRequest<br/>agent発話の保存を要求する"| COMMIT
   ROUTER -->|"EventToolRequest<br/>実行タイミングのtoolを渡す"| TOOL
 
   TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
@@ -68,7 +68,7 @@ flowchart TB
 ## 主要な責務
 
 - `utterancebuffer` は STT 由来の文字起こしを短時間バッファし、1つの user 発話にまとめて世代idを進める。
-- `conversationcommitter` は user / assistant / tool result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
+- `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
 - `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
 - `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。

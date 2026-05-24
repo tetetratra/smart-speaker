@@ -44,11 +44,11 @@
 - **下流 component**
   - `tts` は `speech` item を音声化し、`wait` / `tool` item は順序維持のためそのまま流す。
   - `scheduler` は speech の再生時間、wait 秒数、tool 呼び出し順を同じ generation 内で制御する。
-  - `router` は音声再生、assistant 履歴 commit、toolcaller への `EventToolRequest` に振り分ける。
+  - `router` は音声再生、agent 履歴 commit、toolcaller への `EventToolRequest` に振り分ける。
 
 ## 3. 主要なデータフロー
 
-### シナリオ: ユーザー発話から assistant 発話が再生・保存されるまで
+### シナリオ: ユーザー発話から agent 発話が再生・保存されるまで
 
 1. ユーザー発話の保存: `conversationcommitter` が user の `ConversationCommitRequest` を `conversationhistory.Store` に保存し、`EventLLMRequest` を発行する。
 2. 履歴 snapshot の取得: `llm.stage` は `history.Snapshot()` が1件以上あれば、それを `conversationhistory.ToChatMessages` で `[]types.ChatMessage` に変換する。
@@ -56,7 +56,7 @@
 4. response body の読解: 非streamの最終response JSONから `output[].content[].text` を取り出す。
 5. timeline 変換: `parseTimelineJSON` が `{"items":[...]}` を `TimelineItem` に変換し、各 item に `GenerationID` と `SequenceID` を付与する。
 6. 下流への発行: `llm.stage` が `EventTimelineItem` を順番に下流へ送る。
-7. 再生と保存: `speech` は `tts` で `PlayableSpeech` になり、`scheduler` と `router` を経て `EventRealtimeAudio` と assistant の `ConversationCommitRequest` になる。
+7. 再生と保存: `speech` は `tts` で `PlayableSpeech` になり、`scheduler` と `router` を経て `EventRealtimeAudio` と agent の `ConversationCommitRequest` になる。
 
 ```mermaid
 sequenceDiagram
@@ -77,7 +77,7 @@ sequenceDiagram
   LLM->>TTS: EventTimelineItem(speech/wait/tool)
   TTS->>Scheduler: EventPlayableSpeech or EventTimelineItem
   Scheduler->>Router: EventScheduledItem
-  Router->>Committer: assistant ConversationCommitRequest
+  Router->>Committer: agent ConversationCommitRequest
 ```
 
 ### シナリオ: 長い無音後のひとりごと候補を無応答にする
@@ -112,10 +112,10 @@ sequenceDiagram
 1. LLM の tool 表現: LLM は `{"type":"tool","name":"...","args":{...}}` を `items` 配列の末尾 item として出す。tool は1応答につき最大1件で、後続 item は禁止される。
 2. `TimelineItem` 化: `parseTimelineJSON` は `name` を `ToolName`、`args` を `ToolArgs` に入れる。`args` が空の場合は `{}` を設定する。
 3. scheduler 変換: `scheduler` は tool item を `types.ToolRequest` に変換し、`ToolCallID` と `SequenceID` に timeline の `SequenceID` を入れる。
-4. router 振り分け: `router` は `ToolRequest` を `EventToolRequest` として `toolcaller` へ送る。
+4. router 振り分け: `router` は `ToolRequest` を `tool_call` として履歴保存した後、`EventToolRequest` として `toolcaller` へ送る。
 5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行し、結果を `ToolResultRecord` として `conversationcommitter.ResultAPI.CommitToolResult` へ渡す。handler がない場合は `{"error":"unknown function: <name>"}` を結果にする。
-6. 履歴への保存: `conversationcommitter` は tool result を role `tool` の record として保存する。
-7. LLM への再投入: tool result 保存後、`conversationcommitter` は role `tool` の `EventLLMRequest` を発行する。`llm.messages` は履歴がある場合 request の `Role` / `Text` ではなく履歴 snapshot 全体を使う。
+6. 履歴への保存: `conversationcommitter` は tool result を role `tool_result` の record として保存する。
+7. LLM への再投入: tool result 保存後、`conversationcommitter` は role `tool_result` の `EventLLMRequest` を発行する。`llm.messages` は履歴がある場合 request の `Role` / `Text` ではなく履歴 snapshot 全体を使う。
 
 ```mermaid
 sequenceDiagram
@@ -184,7 +184,7 @@ sequenceDiagram
         - `Snapshot`: 全 record の clone を返す。
         - `Reset`: 履歴を空にする。
       - `record.go`: commit request と conversation record の変換を担当する。
-        - `NewRecord`: user / assistant / tool result の record を作る。
+        - `NewRecord`: user / agent / tool_call / tool_result の record を作る。
         - `ToChatMessages`: record 群を Responses API 入力向けの chat messages に変換する。
   - `types/`
     - `conversation_record.go`: `ConversationRecord`、`ConversationCommitRequest`、`LLMRequest`、`ToolResultRecord` を定義する。
@@ -245,7 +245,8 @@ sequenceDiagram
 - 通常起動では `buildToolRegistry` が返す `registry.Definitions()` が `ToolSchemas` に渡され、Structured Outputs schema と `利用可能なlocal tool schema:` の両方に反映される。ただし JSON marshal に失敗した場合は prompt 用 schema 部分は追加されない。
 - `web_search` は OpenAI 設定がある通常起動で registry に登録される。LLM は `{"type":"tool","name":"web_search","args":{"query":"..."}}` の形で local tool として呼び出し、handler 内部だけが Responses API hosted `web_search` を別 request で利用する。
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
-- `conversationhistory.ToChatMessages` は role `tool` の record を OpenAI の `tool` role ではなく、role `user` の JSON 文字列に変換する。形式は `{"type":"tool_result","tool_name":"...","generation_id":...,"output":...}` に metadata を加えたもの。
+- `conversationhistory.ToChatMessages` は `user` / `agent` / `tool_call` / `tool_result` の正規 role を保持した `types.ChatMessage` を返す。content は `{"type":"message",...}`、`{"type":"tool_call",...}`、`{"type":"tool_result",...}` の JSON 文字列になる。
+- `responses_client` は HTTP payload 作成直前で Responses API が受け付ける transport role に包む。履歴 message の外側 `input[].role` は `user`、意味上の role は content 内の JSON に残す。
 - `ToolResultRecord` には `CurrentGenerationID` と `Stale` がある。`ResultAPI.CommitToolResult` は現在世代と tool result の世代が違う場合に stale 情報を設定する。
 
 ### 参照元

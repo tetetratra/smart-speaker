@@ -8,14 +8,14 @@
 ## 主要 event
 
 - `EventHumanUtterance`: STT の確定テキスト。
-- `EventConversationCommitRequest`: user / assistant / tool result の履歴保存要求。
+- `EventConversationCommitRequest`: user / agent / tool_call / tool_result の履歴保存要求。
 - `EventLLMRequest`: LLM component への推論要求。
 - `EventTimelineItem`: LLM が返す `speech` / `wait` / `tool` item。
 - `EventPlayableSpeech`: TTS 済みの speech item。
 - `EventScheduledItem`: scheduler が実行タイミングに到達した item。
 - `EventToolRequest`: router から toolcaller へ渡す tool 実行要求。
-- `EventRealtimeOutput`: UI 表示用の user / assistant message。
-- `EventRealtimeAudio`: rtc 再生用の assistant 音声。
+- `EventRealtimeOutput`: UI 表示用の user / agent message。
+- `EventRealtimeAudio`: rtc 再生用の agent 音声。
 
 ## 共有Store
 

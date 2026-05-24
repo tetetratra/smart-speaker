@@ -185,9 +185,9 @@ func buildPipeline(ctx context.Context, cfg app.Config) (*graph.Stage, <-chan ty
 
 func waitForResponse(ctx context.Context, collected <-chan types.Event) error {
 	var sawUser bool
-	var sawAssistant bool
+	var sawAgent bool
 	var sawAudio bool
-	for !(sawUser && sawAssistant && sawAudio) {
+	for !(sawUser && sawAgent && sawAudio) {
 		select {
 		case evt := <-collected:
 			switch evt.Kind {
@@ -197,9 +197,9 @@ func waitForResponse(ctx context.Context, collected <-chan types.Event) error {
 					sawUser = true
 					fmt.Printf("USER_TEXT=%s\n", line.Text)
 				}
-				if line.Role == types.RoleAssistant {
-					sawAssistant = true
-					fmt.Printf("ASSISTANT_TEXT=%s\n", line.Text)
+				if line.Role == types.RoleAgent {
+					sawAgent = true
+					fmt.Printf("AGENT_TEXT=%s\n", line.Text)
 				}
 			case types.EventRealtimeAudio:
 				audio := evt.Payload.(types.OutputAudio)
@@ -209,7 +209,7 @@ func waitForResponse(ctx context.Context, collected <-chan types.Event) error {
 				}
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("timeout: user=%t assistant=%t audio=%t: %w", sawUser, sawAssistant, sawAudio, ctx.Err())
+			return fmt.Errorf("timeout: user=%t agent=%t audio=%t: %w", sawUser, sawAgent, sawAudio, ctx.Err())
 		}
 	}
 	return nil

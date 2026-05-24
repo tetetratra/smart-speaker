@@ -64,7 +64,7 @@
 7. handler を実行する: `ToolRequest.Name` に対応する handler があれば `Run(args)` を呼ぶ。未登録の場合は unknown function error、handler error の場合は error 文字列を map に入れる。
 8. 結果を JSON 化する: `map[string]any` を `json.Marshal` し、失敗した場合は `{"error":"result encoding failed"}` に置き換える。
 9. tool result を commit する: `types.ToolResultRecord` を作り、`ToolResultCommitter.CommitToolResult` を呼ぶ。committer が nil の場合は log を出して終了し、downstream event は出さない。
-10. conversationcommitter が保存要求へ変換する: `ResultAPI.CommitToolResult` は `types.ConversationCommitRequest{Role: RoleTool, ToolResult: &result}` を作り、`EventConversationCommitRequest` として committer stage の upstream へ送る。
+10. conversationcommitter が保存要求へ変換する: `ResultAPI.CommitToolResult` は `types.ConversationCommitRequest{Role: RoleToolResult, ToolResult: &result}` を作り、`EventConversationCommitRequest` として committer stage の upstream へ送る。
 11. 会話履歴へ保存される: `conversationcommitter` は `conversationhistory.NewRecord` を経由して tool result を履歴化し、trim 後の text が空でなければ `EventLLMRequest` を `Role: "tool"` で発行する。
 
 ```mermaid
@@ -87,8 +87,8 @@ sequenceDiagram
     TC->>H: Run(args)
     H-->>TC: map[string]any / error
     TC->>API: CommitToolResult(ToolResultRecord)
-    API->>CC: EventConversationCommitRequest(RoleTool, ToolResult)
-    CC-->>LLM: EventLLMRequest(RoleTool)
+    API->>CC: EventConversationCommitRequest(RoleToolResult, ToolResult)
+    CC-->>LLM: EventLLMRequest(RoleToolResult)
 ```
 
 ### シナリオ: EventEmitterAware tool が UI 副作用 event を出す場合
@@ -205,6 +205,6 @@ sequenceDiagram
 
 - `CommitToolResult(ctx, result)`: tool 実行結果を会話履歴 commit request に変換して `conversationcommitter` に戻す。
   - 入力: `types.ToolResultRecord{ToolCallID, Name, Output, GenerationID}`
-  - 内部生成: `types.ConversationCommitRequest{Role: types.RoleTool, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}`
+  - 内部生成: `types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}`
   - 成功時: `EventConversationCommitRequest` を committer stage の upstream に送信する。
   - context canceled 時: `ctx.Err()` を返す。
