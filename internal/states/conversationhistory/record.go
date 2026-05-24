@@ -48,25 +48,65 @@ func ToChatMessages(records []types.ConversationRecord) []types.ChatMessage {
 		if role == types.RoleTool {
 			content = formatToolContent(rec)
 			role = types.RoleUser
+		} else {
+			content = formatConversationContent(role, content)
 		}
 		messages = append(messages, types.ChatMessage{Role: role, Content: content})
 	}
 	return messages
 }
 
-func formatToolContent(rec types.ConversationRecord) string {
-	payload := map[string]any{
-		"type":          "tool_result",
-		"tool_name":     rec.Source,
-		"generation_id": uint64(rec.GenerationID),
-		"output":        json.RawMessage(rec.Text),
+func formatConversationContent(role string, content string) string {
+	switch role {
+	case types.RoleUser:
+		return "ユーザー: " + content
+	case types.RoleAssistant:
+		return "あなた: " + content
+	default:
+		return content
 	}
+}
+
+func formatToolContent(rec types.ConversationRecord) string {
+	payload := toolPayload(rec)
 	for key, value := range rec.Metadata {
+		if key == "tool_name" {
+			continue
+		}
 		payload[key] = value
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return rec.Text
+		encoded, err = json.Marshal(toolPayload(rec))
+		if err != nil {
+			return "ツール結果: " + rec.Text
+		}
 	}
-	return string(encoded)
+	return "ツール結果: " + string(encoded)
+}
+
+func toolPayload(rec types.ConversationRecord) map[string]any {
+	return map[string]any{
+		"type":          "tool_result",
+		"tool_name":     toolName(rec),
+		"generation_id": uint64(rec.GenerationID),
+		"output":        toolOutput(rec.Text),
+	}
+}
+
+func toolName(rec types.ConversationRecord) string {
+	if name, ok := rec.Metadata["tool_name"].(string); ok {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			return trimmed
+		}
+	}
+	return strings.TrimSpace(rec.Source)
+}
+
+func toolOutput(text string) any {
+	var raw json.RawMessage
+	if err := json.Unmarshal([]byte(text), &raw); err == nil {
+		return raw
+	}
+	return text
 }

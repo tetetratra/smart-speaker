@@ -35,7 +35,7 @@
 - **conversationhistory.Store**
   - `ConversationRecord` の正本をメモリ上に保持する。
   - `Append` と `Snapshot` は mutex で保護され、`Snapshot` は slice と metadata map を clone して返す。
-  - `ToChatMessages(records)` は LLM に渡す `[]types.ChatMessage` に変換する。tool record は `role=user` の JSON 文字列に変換される。
+  - `ToChatMessages(records)` は LLM に渡す `[]types.ChatMessage` に変換する。user / assistant record は `ユーザー: ...` / `あなた: ...` の content になり、tool record は `role=user` の `ツール結果: {...}` content に変換される。
 
 - **generation.Store**
   - 現在の `types.GenerationID` を保持するメモリストア。
@@ -110,7 +110,7 @@ sequenceDiagram
 5. `conversationhistory.NewRecord` が `ToolResult.Output` を `record.Text` にし、`Role` を `tool`、`Source` を tool 名、`GenerationID` を tool result の世代にする。
 6. metadata に `tool_call_id`, `tool_name`, `current_generation_id`, `stale` を保存する。
 7. `committer.emitToolResult` が `record.Text` を trim し、空でなければ `EventLLMRequest` を `Role: "tool"` で発行する。
-8. `llm.messages` は履歴がある場合、request 本体ではなく `conversationhistory.Store.Snapshot()` 全体を `ToChatMessages` で変換して使う。tool record は `formatToolContent` により JSON 文字列化され、role は `user` になる。
+8. `llm.messages` は履歴がある場合、request 本体ではなく `conversationhistory.Store.Snapshot()` 全体を `ToChatMessages` で変換して使う。tool record は `formatToolContent` により `ツール結果: {...}` に整形され、role は `user` になる。
 
 ```mermaid
 sequenceDiagram
@@ -158,8 +158,8 @@ sequenceDiagram
     - conversationhistory/
       - `record.go`: commit request と履歴 record、LLM 用 chat message の変換を定義する。
         - `NewRecord`: role の default、text/source trim、record ID 生成、tool metadata 付与を行う。
-        - `ToChatMessages`: 空 role/text を除外し、tool record を user role の JSON content に変換する。
-        - `formatToolContent`: tool result の JSON content を組み立てる。marshal に失敗した場合は元の text を返す。
+        - `ToChatMessages`: 空 role/text を除外し、user / assistant / tool record を LLM が役割を読み取りやすい content に変換する。
+        - `formatToolContent`: `ツール結果: ` prefix と tool result の JSON payload を組み立てる。payload には `tool_name` を必ず含める。
       - `store.go`: 会話履歴のメモリストア。
         - `NewStore`: 空の store を作る。
         - `Append`: record を clone して追加する。

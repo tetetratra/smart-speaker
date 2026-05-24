@@ -245,7 +245,8 @@ sequenceDiagram
 - 通常起動では `buildToolRegistry` が返す `registry.Definitions()` が `ToolSchemas` に渡され、Structured Outputs schema と `利用可能なlocal tool schema:` の両方に反映される。ただし JSON marshal に失敗した場合は prompt 用 schema 部分は追加されない。
 - `web_search` は OpenAI 設定がある通常起動で registry に登録される。LLM は `{"type":"tool","name":"web_search","args":{"query":"..."}}` の形で local tool として呼び出し、handler 内部だけが Responses API hosted `web_search` を別 request で利用する。
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
-- `conversationhistory.ToChatMessages` は role `tool` の record を OpenAI の `tool` role ではなく、role `user` の JSON 文字列に変換する。形式は `{"type":"tool_result","tool_name":"...","generation_id":...,"output":...}` に metadata を加えたもの。
+- `conversationhistory.ToChatMessages` は履歴本文に役割が残るよう、`user` record を `ユーザー: ...`、`assistant` record を `あなた: ...` の content に変換する。
+- `conversationhistory.ToChatMessages` は role `tool` の record を OpenAI の `tool` role ではなく、role `user` の `ツール結果: {...}` content に変換する。JSON payload は `{"type":"tool_result","tool_name":"...","generation_id":...,"output":...}` に metadata を加えたもので、`tool_name` は metadata の非空値を優先し、なければ record の `Source` を使う。
 - `ToolResultRecord` には `CurrentGenerationID` と `Stale` がある。`ResultAPI.CommitToolResult` は現在世代と tool result の世代が違う場合に stale 情報を設定する。
 
 ### 参照元
