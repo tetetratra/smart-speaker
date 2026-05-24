@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
 const sceneToolName = "switchbot_execute_scene"

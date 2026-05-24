@@ -3,7 +3,7 @@ package generation
 import (
 	"sync"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 // Store は現在の会話世代idの正本です。

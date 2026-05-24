@@ -1,4 +1,4 @@
-module smart-speaker
+module github.com/tetetratra/smart-speaker
 
 go 1.25.0
 

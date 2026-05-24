@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Node struct {

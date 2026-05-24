@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"smart-speaker/internal/graph"
-	"smart-speaker/internal/states/generation"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {

@@ -3,12 +3,12 @@ package registry
 import (
 	"strings"
 
-	calendarapi "smart-speaker/internal/googlecalendar"
-	"smart-speaker/internal/tools"
-	"smart-speaker/internal/tools/functions/googlecalendar"
-	"smart-speaker/internal/tools/functions/switchbot"
-	"smart-speaker/internal/tools/functions/websearch"
-	"smart-speaker/internal/tools/functions/whiteboard"
+	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
+	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
+	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。

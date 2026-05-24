@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type fakeCommitter struct {

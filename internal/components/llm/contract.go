@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type rawTimelineItem struct {

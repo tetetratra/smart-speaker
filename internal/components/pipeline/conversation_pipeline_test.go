@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"smart-speaker/internal/components/generationfilter"
-	"smart-speaker/internal/components/router"
-	"smart-speaker/internal/components/scheduler"
-	"smart-speaker/internal/states/generation"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
+	"github.com/tetetratra/smart-speaker/internal/components/router"
+	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestSchedulerRouterKeepsSpeechBeforeTool(t *testing.T) {

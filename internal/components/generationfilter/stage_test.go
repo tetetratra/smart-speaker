@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"smart-speaker/internal/states/generation"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestStagePassesOnlyCurrentGeneration(t *testing.T) {

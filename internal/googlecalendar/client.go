@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	oauthgooglecalendar "smart-speaker/internal/oauth/googlecalendar"
+	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 )
 
 const (

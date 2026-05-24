@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"smart-speaker/internal/states/conversationhistory"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type fakeClient struct {

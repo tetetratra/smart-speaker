@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	calendarapi "smart-speaker/internal/googlecalendar"
+	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 )
 
 type stubClient struct {

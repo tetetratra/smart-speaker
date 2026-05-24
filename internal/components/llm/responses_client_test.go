@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {

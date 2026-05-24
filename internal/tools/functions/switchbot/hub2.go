@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
 const hub2ToolName = "hub2_get_environment"

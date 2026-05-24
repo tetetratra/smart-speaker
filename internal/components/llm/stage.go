@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"smart-speaker/internal/graph"
-	"smart-speaker/internal/states/conversationhistory"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const maxContractRetries = 10

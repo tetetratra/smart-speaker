@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"smart-speaker/internal/tools"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/tools"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const toolName = "set_whiteboard"
