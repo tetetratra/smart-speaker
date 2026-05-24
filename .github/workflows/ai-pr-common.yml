@@ -28,6 +28,8 @@ on:
     secrets:
       CODEX_AUTH_JSON_B64:
         required: false
+      STATE_ENCRYPTION_PASSPHRASE:
+        required: false
 
 permissions:
   actions: write
@@ -84,6 +86,7 @@ jobs:
         shell: bash
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
+          STATE_ENCRYPTION_PASSPHRASE: ${{ secrets.STATE_ENCRYPTION_PASSPHRASE }}
         run: |
           bash .github/scripts/ai_pr/common/restore_state_artifact.sh
 
@@ -134,12 +137,29 @@ jobs:
               bash /workspace/.github/scripts/ai_pr/common/run_codex.sh
             '
 
+      - name: 状態 Artifact を暗号化する
+        if: always() && steps.auth.outputs.available == 'true'
+        shell: bash
+        env:
+          PASSPHRASE: ${{ secrets.STATE_ENCRYPTION_PASSPHRASE }}
+        run: |
+          upload_path="${STATE_ROOT}"
+          if [ -n "$PASSPHRASE" ]; then
+            echo "Encrypting state artifact..."
+            mkdir -p "${RUNNER_TEMP}/encrypted-state"
+            bash .github/scripts/ai_pr/common/state_crypto.sh encrypt "${STATE_ROOT}" "${RUNNER_TEMP}/encrypted-state/state.tar.gz.gpg" "$PASSPHRASE"
+            upload_path="${RUNNER_TEMP}/encrypted-state"
+          else
+            echo "warning: STATE_ENCRYPTION_PASSPHRASE is not set. Uploading state in plaintext."
+          fi
+          echo "upload_path=$upload_path" >> "$GITHUB_ENV"
+
       - name: 状態 Artifact を保存する
         if: always() && steps.auth.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.state.outputs.artifact_name }}
-          path: ${{ env.STATE_ROOT }}
+          path: ${{ env.upload_path }}
           retention-days: 30
           overwrite: true
 
