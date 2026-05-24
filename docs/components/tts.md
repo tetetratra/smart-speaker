@@ -221,12 +221,12 @@ sequenceDiagram
 
 ## 参照元
 
-- [internal/components/tts/elevenlabs.go](/Users/kondo.daichi/p/smart-speaker/internal/components/tts/elevenlabs.go)
-- [internal/components/tts/elevenlabs_test.go](/Users/kondo.daichi/p/smart-speaker/internal/components/tts/elevenlabs_test.go)
-- [internal/types/timeline_item.go](/Users/kondo.daichi/p/smart-speaker/internal/types/timeline_item.go)
-- [internal/types/event.go](/Users/kondo.daichi/p/smart-speaker/internal/types/event.go)
-- [internal/types/types.go](/Users/kondo.daichi/p/smart-speaker/internal/types/types.go)
-- [internal/components/llm/contract.go](/Users/kondo.daichi/p/smart-speaker/internal/components/llm/contract.go)
-- [internal/components/scheduler/stage.go](/Users/kondo.daichi/p/smart-speaker/internal/components/scheduler/stage.go)
-- [internal/components/router/stage.go](/Users/kondo.daichi/p/smart-speaker/internal/components/router/stage.go)
-- [cmd/smart-speaker/main.go](/Users/kondo.daichi/p/smart-speaker/cmd/smart-speaker/main.go)
+- [internal/components/tts/elevenlabs.go](/internal/components/tts/elevenlabs.go)
+- [internal/components/tts/elevenlabs_test.go](/internal/components/tts/elevenlabs_test.go)
+- [internal/types/timeline_item.go](/internal/types/timeline_item.go)
+- [internal/types/event.go](/internal/types/event.go)
+- [internal/types/types.go](/internal/types/types.go)
+- [internal/components/llm/contract.go](/internal/components/llm/contract.go)
+- [internal/components/scheduler/stage.go](/internal/components/scheduler/stage.go)
+- [internal/components/router/stage.go](/internal/components/router/stage.go)
+- [cmd/smart-speaker/main.go](/cmd/smart-speaker/main.go)

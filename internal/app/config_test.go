@@ -12,15 +12,15 @@ func TestReadSTTPhrasesLoadsMainAndLocalFiles(t *testing.T) {
 	mainPath := filepath.Join(dir, "stt_phrases.txt")
 	localPath := filepath.Join(dir, "stt_phrases.local.txt")
 
-	if err := os.WriteFile(mainPath, []byte("スマートスピーカー\n\n# comment\ntetetratra\n"), 0o644); err != nil {
+	if err := os.WriteFile(mainPath, []byte("スマートスピーカー\n\n# comment\nyour-username\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(localPath, []byte("tetetratra\nPhraseSet\n"), 0o644); err != nil {
+	if err := os.WriteFile(localPath, []byte("your-username\nPhraseSet\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	got := readSTTPhrases(mainPath)
-	want := []string{"スマートスピーカー", "tetetratra", "PhraseSet"}
+	want := []string{"スマートスピーカー", "your-username", "PhraseSet"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %#v, got %#v", want, got)
 	}

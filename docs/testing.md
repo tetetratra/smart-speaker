@@ -7,7 +7,7 @@
 ## 2. 前提条件
 
 ### 共通
-- 作業ディレクトリ: `/Users/kondo.daichi/p/smart-speaker`
+- 作業ディレクトリ: `.`
 - 参照元の `README.md` では以下が前提です。
   - Go `1.25` 以降
   - Node `20` 以降

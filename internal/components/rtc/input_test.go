@@ -116,7 +116,7 @@ func TestIsExpectedSpeechStreamClose(t *testing.T) {
 }
 
 func TestBuildSpeechAdaptation(t *testing.T) {
-	adaptation := buildSpeechAdaptation([]string{" tetetratra ", "", "スマートスピーカー"})
+	adaptation := buildSpeechAdaptation([]string{" your-username ", "", "スマートスピーカー"})
 	if adaptation == nil {
 		t.Fatal("expected adaptation")
 	}
@@ -134,7 +134,7 @@ func TestBuildSpeechAdaptation(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 phrases, got %d", len(got))
 	}
-	if got[0].Value != "tetetratra" || got[1].Value != "スマートスピーカー" {
+	if got[0].Value != "your-username" || got[1].Value != "スマートスピーカー" {
 		t.Fatalf("unexpected phrases: %#v", got)
 	}
 }

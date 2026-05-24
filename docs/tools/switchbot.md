@@ -119,9 +119,9 @@
 - `hub2_get_environment` の照度 `lightLevel` の単位や値域は、このコードベースの参照範囲からは不明です。
 
 ## 参照元
-- [internal/tools/functions/switchbot/scene.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/functions/switchbot/scene.go)
-- [internal/tools/functions/switchbot/hub2.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/functions/switchbot/hub2.go)
-- [internal/tools/functions/switchbot/switchbot.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/functions/switchbot/switchbot.go)
-- [internal/tools/registry/registry.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/registry/registry.go)
+- [internal/tools/functions/switchbot/scene.go](/internal/tools/functions/switchbot/scene.go)
+- [internal/tools/functions/switchbot/hub2.go](/internal/tools/functions/switchbot/hub2.go)
+- [internal/tools/functions/switchbot/switchbot.go](/internal/tools/functions/switchbot/switchbot.go)
+- [internal/tools/registry/registry.go](/internal/tools/registry/registry.go)
 - 旧 docs: `git show HEAD^:docs/8.生活操作ツール群.md`
 - SwitchBot Open API: https://github.com/OpenWonderLabs/SwitchBotAPI

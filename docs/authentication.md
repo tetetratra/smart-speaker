@@ -105,10 +105,10 @@
 - callback 成功後の画面遷移要件は、不明。現状は完了 HTML を返している。
 
 ## 8. 参照元
-- [README.md](/Users/kondo.daichi/p/smart-speaker/README.md)
-- [internal/oauth/googlecalendar/config.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/config.go)
-- [internal/oauth/googlecalendar/auth_flow.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/auth_flow.go)
-- [internal/oauth/googlecalendar/http_handlers.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/http_handlers.go)
-- [internal/oauth/googlecalendar/token_store.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/token_store.go)
-- [internal/oauth/googlecalendar/token_store_test.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/token_store_test.go)
+- [README.md](/README.md)
+- [internal/oauth/googlecalendar/config.go](/internal/oauth/googlecalendar/config.go)
+- [internal/oauth/googlecalendar/auth_flow.go](/internal/oauth/googlecalendar/auth_flow.go)
+- [internal/oauth/googlecalendar/http_handlers.go](/internal/oauth/googlecalendar/http_handlers.go)
+- [internal/oauth/googlecalendar/token_store.go](/internal/oauth/googlecalendar/token_store.go)
+- [internal/oauth/googlecalendar/token_store_test.go](/internal/oauth/googlecalendar/token_store_test.go)
 - 旧資料: `git show HEAD^:docs/7.Googleカレンダー連携.md`

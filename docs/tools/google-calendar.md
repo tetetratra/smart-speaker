@@ -206,13 +206,13 @@
 - 会話文脈へ注入する 3 日分という期間を今後も維持すべきかは不明。
 
 ## 11. 参照元
-- [internal/tools/functions/googlecalendar/tool.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/functions/googlecalendar/tool.go)
-- [internal/googlecalendar/client.go](/Users/kondo.daichi/p/smart-speaker/internal/googlecalendar/client.go)
-- [internal/googlecalendar/cache.go](/Users/kondo.daichi/p/smart-speaker/internal/googlecalendar/cache.go)
-- [internal/googlecalendar/types.go](/Users/kondo.daichi/p/smart-speaker/internal/googlecalendar/types.go)
-- [internal/oauth/googlecalendar/config.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/config.go)
-- [internal/oauth/googlecalendar/auth_flow.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/auth_flow.go)
-- [internal/oauth/googlecalendar/http_handlers.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/http_handlers.go)
-- [internal/oauth/googlecalendar/token_store.go](/Users/kondo.daichi/p/smart-speaker/internal/oauth/googlecalendar/token_store.go)
-- [cmd/smart-speaker/main.go](/Users/kondo.daichi/p/smart-speaker/cmd/smart-speaker/main.go)
+- [internal/tools/functions/googlecalendar/tool.go](/internal/tools/functions/googlecalendar/tool.go)
+- [internal/googlecalendar/client.go](/internal/googlecalendar/client.go)
+- [internal/googlecalendar/cache.go](/internal/googlecalendar/cache.go)
+- [internal/googlecalendar/types.go](/internal/googlecalendar/types.go)
+- [internal/oauth/googlecalendar/config.go](/internal/oauth/googlecalendar/config.go)
+- [internal/oauth/googlecalendar/auth_flow.go](/internal/oauth/googlecalendar/auth_flow.go)
+- [internal/oauth/googlecalendar/http_handlers.go](/internal/oauth/googlecalendar/http_handlers.go)
+- [internal/oauth/googlecalendar/token_store.go](/internal/oauth/googlecalendar/token_store.go)
+- [cmd/smart-speaker/main.go](/cmd/smart-speaker/main.go)
 - 旧資料: `git show HEAD^:docs/7.Googleカレンダー連携.md`

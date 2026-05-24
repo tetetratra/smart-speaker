@@ -94,9 +94,9 @@ WebSocket で送られるメッセージ形式:
 - 再設計後に `content` 以外の構造化フィールドを持たせる方針があるかは、この参照範囲からは不明です。
 
 ## 参照元
-- [internal/tools/functions/whiteboard/tool.go](/Users/kondo.daichi/p/smart-speaker/internal/tools/functions/whiteboard/tool.go)
-- [internal/components/wschat/wschat.go](/Users/kondo.daichi/p/smart-speaker/internal/components/wschat/wschat.go)
-- [internal/types/event.go](/Users/kondo.daichi/p/smart-speaker/internal/types/event.go)
-- [internal/types/types.go](/Users/kondo.daichi/p/smart-speaker/internal/types/types.go)
+- [internal/tools/functions/whiteboard/tool.go](/internal/tools/functions/whiteboard/tool.go)
+- [internal/components/wschat/wschat.go](/internal/components/wschat/wschat.go)
+- [internal/types/event.go](/internal/types/event.go)
+- [internal/types/types.go](/internal/types/types.go)
 - 旧 docs: `git show HEAD^:docs/8.生活操作ツール群.md`
 - 旧 docs: `git show HEAD^:docs/6.ツール実行基盤.md`
