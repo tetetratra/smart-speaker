@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,7 +29,24 @@ func TestStageRoutesToolRequest(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 
-	st.Upstream <- types.Event{Kind: types.EventScheduledItem, Payload: types.ToolRequest{Name: "get_temp", GenerationID: 1}}
+	st.Upstream <- types.Event{Kind: types.EventScheduledItem, Payload: types.ToolRequest{
+		ToolCallID:   "call-1",
+		Name:         "get_temp",
+		Arguments:    json.RawMessage(`{"room":"living"}`),
+		GenerationID: 1,
+	}}
+	commitEvt := expectKind(t, st.Downstream, types.EventConversationCommitRequest)
+	commit := commitEvt.Payload.(types.ConversationCommitRequest)
+	if commit.ToolCall == nil {
+		t.Fatalf("ToolCall is nil")
+	}
+	if commit.ToolCall.Name != "get_temp" {
+		t.Fatalf("ToolCall.Name = %q, want get_temp", commit.ToolCall.Name)
+	}
+	if string(commit.ToolCall.Arguments) != `{"room":"living"}` {
+		t.Fatalf("ToolCall.Arguments = %s, want room args", commit.ToolCall.Arguments)
+	}
+
 	evt := expectKind(t, st.Downstream, types.EventToolRequest)
 	req := evt.Payload.(types.ToolRequest)
 	if req.Name != "get_temp" {

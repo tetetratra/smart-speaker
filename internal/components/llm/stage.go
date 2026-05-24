@@ -149,7 +149,7 @@ func (s *stage) messages(req types.LLMRequest) []types.ChatMessage {
 		}
 	}
 	role := req.Role
-	if role == "" || role == types.RoleTool {
+	if role == "" || role == types.RoleTool || role == types.RoleToolCall {
 		role = types.RoleUser
 	}
 	return []types.ChatMessage{{Role: role, Content: req.Text}}

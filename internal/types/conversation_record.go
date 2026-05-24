@@ -9,6 +9,7 @@ const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
 	RoleTool      = "tool"
+	RoleToolCall  = "tool_call"
 )
 
 // ConversationRecord は LLM に渡す会話履歴の1件です。
@@ -32,6 +33,14 @@ type ToolResultRecord struct {
 	Stale               bool
 }
 
+// ToolCallRecord は tool 呼び出しを履歴へ保存するための payload です。
+type ToolCallRecord struct {
+	ToolCallID   string
+	Name         string
+	Arguments    json.RawMessage
+	GenerationID GenerationID
+}
+
 // ConversationCommitRequest は会話履歴への保存要求です。
 type ConversationCommitRequest struct {
 	Role         string
@@ -39,6 +48,7 @@ type ConversationCommitRequest struct {
 	GenerationID GenerationID
 	Source       string
 	ToolResult   *ToolResultRecord
+	ToolCall     *ToolCallRecord
 }
 
 // LLMRequest は LLM component への推論要求です。

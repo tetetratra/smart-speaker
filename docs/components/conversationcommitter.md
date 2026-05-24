@@ -35,7 +35,7 @@
 - **conversationhistory.Store**
   - `ConversationRecord` の正本をメモリ上に保持する。
   - `Append` と `Snapshot` は mutex で保護され、`Snapshot` は slice と metadata map を clone して返す。
-  - `ToChatMessages(records)` は LLM に渡す `[]types.ChatMessage` に変換する。user / assistant record は `ユーザー: ...` / `あなた: ...` の content になり、tool record は `role=user` の `ツール結果: {...}` content に変換される。
+  - `ToChatMessages(records)` は LLM に渡す `[]types.ChatMessage` に変換する。user / assistant record は `ユーザー: ...` / `あなた: ...` の content になり、tool call record は `role=assistant` の `ツール呼び出し: {...}` content、tool result record は `role=user` の `ツール結果: {...}` content に変換される。
 
 - **generation.Store**
   - 現在の `types.GenerationID` を保持するメモリストア。
@@ -45,7 +45,7 @@
 
 - **関連する上流・下流 component**
   - `utterancebuffer`: `EventHumanUtterance` を一定時間まとめ、`RoleUser` の `ConversationCommitRequest` を発行する。
-  - `router`: `PlayableSpeech` を受け、音声再生 event と `RoleAssistant` の `ConversationCommitRequest` を発行する。
+  - `router`: `PlayableSpeech` を受け、音声再生 event と `RoleAssistant` の `ConversationCommitRequest` を発行する。`ToolRequest` を受けた場合は、tool 実行前に `RoleToolCall` の `ConversationCommitRequest` を発行してから `EventToolRequest` を流す。
   - `toolcaller`: `ToolRequest` を実行し、downstream event ではなく `ResultAPI.CommitToolResult` で tool result を返す。
   - `llm`: `EventLLMRequest` を受け、履歴ストアの `Snapshot()` があればそれを `ToChatMessages` で変換して Responses API へ渡す。
 
@@ -103,14 +103,16 @@ sequenceDiagram
 
 ### シナリオ: tool 実行結果が履歴へ保存され、LLM request が発行される
 
-1. `toolcaller` が `types.ToolRequest` を実行し、`types.ToolResultRecord` を作る。
-2. `toolcaller` は `ResultAPI.CommitToolResult(ctx, result)` を呼ぶ。
-3. `ResultAPI` は `generation.Store.Current()` を読み、`result.CurrentGenerationID` と `result.Stale` を設定する。
-4. `ResultAPI` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として stage の `upstream` に送る。`Text` はこの時点では設定しない。
-5. `conversationhistory.NewRecord` が `ToolResult.Output` を `record.Text` にし、`Role` を `tool`、`Source` を tool 名、`GenerationID` を tool result の世代にする。
-6. metadata に `tool_call_id`, `tool_name`, `current_generation_id`, `stale` を保存する。
-7. `committer.emitToolResult` が `record.Text` を trim し、空でなければ `EventLLMRequest` を `Role: "tool"` で発行する。
-8. `llm.messages` は履歴がある場合、request 本体ではなく `conversationhistory.Store.Snapshot()` 全体を `ToChatMessages` で変換して使う。tool record は `formatToolContent` により `ツール結果: {...}` に整形され、role は `user` になる。
+1. `router` が `types.ToolRequest` を受け、`ToolCall` を含む `ConversationCommitRequest` を発行する。
+2. `conversationhistory.NewRecord` が tool call を role `tool_call` の record として保存し、metadata に `tool_call_id` と `tool_name` を保存する。tool call record は UI 出力や LLM request を発行しない。
+3. `router` が `EventToolRequest` を発行し、`toolcaller` が `types.ToolRequest` を実行して `types.ToolResultRecord` を作る。
+4. `toolcaller` は `ResultAPI.CommitToolResult(ctx, result)` を呼ぶ。
+5. `ResultAPI` は `generation.Store.Current()` を読み、`result.CurrentGenerationID` と `result.Stale` を設定する。
+6. `ResultAPI` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として stage の `upstream` に送る。`Text` はこの時点では設定しない。
+7. `conversationhistory.NewRecord` が `ToolResult.Output` を `record.Text` にし、`Role` を `tool`、`Source` を tool 名、`GenerationID` を tool result の世代にする。
+8. metadata に `tool_call_id`, `tool_name`, `current_generation_id`, `stale` を保存する。
+9. `committer.emitToolResult` が `record.Text` を trim し、空でなければ `EventLLMRequest` を `Role: "tool"` で発行する。
+10. `llm.messages` は履歴がある場合、request 本体ではなく `conversationhistory.Store.Snapshot()` 全体を `ToChatMessages` で変換して使う。tool call record は `ツール呼び出し: {...}`、tool result record は `ツール結果: {...}` に整形される。
 
 ```mermaid
 sequenceDiagram
@@ -157,8 +159,9 @@ sequenceDiagram
   - states/
     - conversationhistory/
       - `record.go`: commit request と履歴 record、LLM 用 chat message の変換を定義する。
-        - `NewRecord`: role の default、text/source trim、record ID 生成、tool metadata 付与を行う。
-        - `ToChatMessages`: 空 role/text を除外し、user / assistant / tool record を LLM が役割を読み取りやすい content に変換する。
+        - `NewRecord`: role の default、text/source trim、record ID 生成、tool call / tool result metadata 付与を行う。
+        - `ToChatMessages`: 空 role/text を除外し、user / assistant / tool call / tool result record を LLM が役割を読み取りやすい content に変換する。
+        - `formatToolCallContent`: `ツール呼び出し: ` prefix と tool call の JSON payload を組み立てる。payload には `tool_name` と `args` を含める。
         - `formatToolContent`: `ツール結果: ` prefix と tool result の JSON payload を組み立てる。payload には `tool_name` を必ず含める。
       - `store.go`: 会話履歴のメモリストア。
         - `NewStore`: 空の store を作る。
@@ -219,6 +222,14 @@ sequenceDiagram
   - `Metadata["tool_name"]` は `Name`。
   - `Metadata["current_generation_id"]` は `uint64(currentGeneration)`。
   - `Metadata["stale"]` は `req.ToolResult.GenerationID != currentGeneration`。
+
+- tool call request
+  - `Role` は強制的に `tool_call` になる。
+  - `Text` は `string(req.ToolCall.Arguments)` になる。空の場合は `{}` になる。
+  - `GenerationID` は `req.ToolCall.GenerationID` になる。
+  - `Source` は `req.ToolCall.Name` になる。
+  - `Metadata["tool_call_id"]` は `ToolCallID`。
+  - `Metadata["tool_name"]` は `Name`。
 
 ### API設計
 

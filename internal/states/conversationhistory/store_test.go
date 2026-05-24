@@ -50,3 +50,30 @@ func TestNewRecordMarksStaleToolResult(t *testing.T) {
 		t.Fatalf("stale = %v, want true", record.Metadata["stale"])
 	}
 }
+
+func TestNewRecordStoresToolCall(t *testing.T) {
+	record := NewRecord(types.ConversationCommitRequest{
+		ToolCall: &types.ToolCallRecord{
+			ToolCallID:   "call-1",
+			Name:         "web_search",
+			Arguments:    json.RawMessage(`{"query":"東京 天気"}`),
+			GenerationID: 3,
+		},
+	}, 3)
+
+	if record.Role != types.RoleToolCall {
+		t.Fatalf("Role = %s, want tool_call", record.Role)
+	}
+	if record.Source != "web_search" {
+		t.Fatalf("Source = %q, want web_search", record.Source)
+	}
+	if record.Text != `{"query":"東京 天気"}` {
+		t.Fatalf("Text = %q, want args json", record.Text)
+	}
+	if record.Metadata["tool_call_id"] != "call-1" {
+		t.Fatalf("tool_call_id = %v, want call-1", record.Metadata["tool_call_id"])
+	}
+	if record.Metadata["tool_name"] != "web_search" {
+		t.Fatalf("tool_name = %v, want web_search", record.Metadata["tool_name"])
+	}
+}

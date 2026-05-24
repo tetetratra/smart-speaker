@@ -112,7 +112,7 @@ sequenceDiagram
 1. LLM の tool 表現: LLM は `{"type":"tool","name":"...","args":{...}}` を `items` 配列の末尾 item として出す。tool は1応答につき最大1件で、後続 item は禁止される。
 2. `TimelineItem` 化: `parseTimelineJSON` は `name` を `ToolName`、`args` を `ToolArgs` に入れる。`args` が空の場合は `{}` を設定する。
 3. scheduler 変換: `scheduler` は tool item を `types.ToolRequest` に変換し、`ToolCallID` と `SequenceID` に timeline の `SequenceID` を入れる。
-4. router 振り分け: `router` は `ToolRequest` を `EventToolRequest` として `toolcaller` へ送る。
+4. router 振り分け: `router` は tool 実行前に `ToolCall` を含む `ConversationCommitRequest` を発行し、tool call を role `tool_call` の履歴 record として保存する。その後、`ToolRequest` を `EventToolRequest` として `toolcaller` へ送る。
 5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行し、結果を `ToolResultRecord` として `conversationcommitter.ResultAPI.CommitToolResult` へ渡す。handler がない場合は `{"error":"unknown function: <name>"}` を結果にする。
 6. 履歴への保存: `conversationcommitter` は tool result を role `tool` の record として保存する。
 7. LLM への再投入: tool result 保存後、`conversationcommitter` は role `tool` の `EventLLMRequest` を発行する。`llm.messages` は履歴がある場合 request の `Role` / `Text` ではなく履歴 snapshot 全体を使う。
@@ -246,6 +246,7 @@ sequenceDiagram
 - `web_search` は OpenAI 設定がある通常起動で registry に登録される。LLM は `{"type":"tool","name":"web_search","args":{"query":"..."}}` の形で local tool として呼び出し、handler 内部だけが Responses API hosted `web_search` を別 request で利用する。
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
 - `conversationhistory.ToChatMessages` は履歴本文に役割が残るよう、`user` record を `ユーザー: ...`、`assistant` record を `あなた: ...` の content に変換する。
+- `conversationhistory.ToChatMessages` は role `tool_call` の record を role `assistant` の `ツール呼び出し: {...}` content に変換する。JSON payload は `{"type":"tool_call","tool_name":"...","generation_id":...,"args":...}` に metadata を加えたもので、`tool_name` は metadata の非空値を優先し、なければ record の `Source` を使う。
 - `conversationhistory.ToChatMessages` は role `tool` の record を OpenAI の `tool` role ではなく、role `user` の `ツール結果: {...}` content に変換する。JSON payload は `{"type":"tool_result","tool_name":"...","generation_id":...,"output":...}` に metadata を加えたもので、`tool_name` は metadata の非空値を優先し、なければ record の `Source` を使う。
 - `ToolResultRecord` には `CurrentGenerationID` と `Stale` がある。`ResultAPI.CommitToolResult` は現在世代と tool result の世代が違う場合に stale 情報を設定する。
 

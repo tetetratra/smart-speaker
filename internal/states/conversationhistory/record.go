@@ -34,6 +34,14 @@ func NewRecord(req types.ConversationCommitRequest, currentGeneration types.Gene
 		record.Metadata["current_generation_id"] = uint64(currentGeneration)
 		record.Metadata["stale"] = req.ToolResult.GenerationID != currentGeneration
 	}
+	if req.ToolCall != nil {
+		record.Role = types.RoleToolCall
+		record.Text = string(toolCallArgs(req.ToolCall.Arguments))
+		record.GenerationID = req.ToolCall.GenerationID
+		record.Source = req.ToolCall.Name
+		record.Metadata["tool_call_id"] = req.ToolCall.ToolCallID
+		record.Metadata["tool_name"] = req.ToolCall.Name
+	}
 	return record
 }
 
@@ -45,10 +53,14 @@ func ToChatMessages(records []types.ConversationRecord) []types.ChatMessage {
 		if role == "" || content == "" {
 			continue
 		}
-		if role == types.RoleTool {
+		switch role {
+		case types.RoleTool:
 			content = formatToolContent(rec)
 			role = types.RoleUser
-		} else {
+		case types.RoleToolCall:
+			content = formatToolCallContent(rec)
+			role = types.RoleAssistant
+		default:
 			content = formatConversationContent(role, content)
 		}
 		messages = append(messages, types.ChatMessage{Role: role, Content: content})
@@ -85,6 +97,35 @@ func formatToolContent(rec types.ConversationRecord) string {
 	return "ツール結果: " + string(encoded)
 }
 
+func formatToolCallContent(rec types.ConversationRecord) string {
+	payload := map[string]any{
+		"type":          "tool_call",
+		"tool_name":     toolName(rec),
+		"generation_id": uint64(rec.GenerationID),
+		"args":          toolOutput(rec.Text),
+	}
+	for key, value := range rec.Metadata {
+		if key == "tool_name" {
+			continue
+		}
+		payload[key] = value
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		fallback := map[string]any{
+			"type":          "tool_call",
+			"tool_name":     toolName(rec),
+			"generation_id": uint64(rec.GenerationID),
+			"args":          toolOutput(rec.Text),
+		}
+		encoded, err = json.Marshal(fallback)
+		if err != nil {
+			return "ツール呼び出し: " + rec.Text
+		}
+	}
+	return "ツール呼び出し: " + string(encoded)
+}
+
 func toolPayload(rec types.ConversationRecord) map[string]any {
 	return map[string]any{
 		"type":          "tool_result",
@@ -109,4 +150,11 @@ func toolOutput(text string) any {
 		return raw
 	}
 	return text
+}
+
+func toolCallArgs(args json.RawMessage) json.RawMessage {
+	if len(args) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return args
 }

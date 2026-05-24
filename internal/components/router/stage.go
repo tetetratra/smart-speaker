@@ -70,6 +70,17 @@ func (s *stage) route(ctx context.Context, payload any) {
 			Source:       "llm",
 		}})
 	case types.ToolRequest:
+		s.emit(ctx, types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
+			Role:         types.RoleToolCall,
+			GenerationID: item.GenerationID,
+			Source:       "llm",
+			ToolCall: &types.ToolCallRecord{
+				ToolCallID:   item.ToolCallID,
+				Name:         item.Name,
+				Arguments:    item.Arguments,
+				GenerationID: item.GenerationID,
+			},
+		}})
 		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: item})
 	}
 }

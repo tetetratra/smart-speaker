@@ -14,6 +14,16 @@ func TestToChatMessagesFormatsNaturalLanguageHistory(t *testing.T) {
 		{Role: types.RoleUser, Text: "今日の天気どう？"},
 		{Role: types.RoleAssistant, Text: "うん、見てみるね"},
 		{
+			Role:         types.RoleToolCall,
+			Text:         `{"query":"東京 天気"}`,
+			GenerationID: 3,
+			Source:       "web_search",
+			Metadata: map[string]any{
+				"tool_call_id": "call-1",
+				"tool_name":    "web_search",
+			},
+		},
+		{
 			Role:         types.RoleTool,
 			Text:         `{"result":"晴れ"}`,
 			GenerationID: 3,
@@ -25,8 +35,8 @@ func TestToChatMessagesFormatsNaturalLanguageHistory(t *testing.T) {
 		},
 	})
 
-	if len(messages) != 3 {
-		t.Fatalf("messages len = %d, want 3", len(messages))
+	if len(messages) != 4 {
+		t.Fatalf("messages len = %d, want 4", len(messages))
 	}
 	if got, want := messages[0], (types.ChatMessage{Role: types.RoleUser, Content: "ユーザー: 今日の天気どう？"}); got != want {
 		t.Fatalf("messages[0] = %#v, want %#v", got, want)
@@ -34,11 +44,28 @@ func TestToChatMessagesFormatsNaturalLanguageHistory(t *testing.T) {
 	if got, want := messages[1], (types.ChatMessage{Role: types.RoleAssistant, Content: "あなた: うん、見てみるね"}); got != want {
 		t.Fatalf("messages[1] = %#v, want %#v", got, want)
 	}
-	if messages[2].Role != types.RoleUser {
-		t.Fatalf("messages[2].Role = %q, want user", messages[2].Role)
+	if messages[2].Role != types.RoleAssistant {
+		t.Fatalf("messages[2].Role = %q, want assistant", messages[2].Role)
+	}
+	callPayload := parseToolCallContent(t, messages[2].Content)
+	if got, want := callPayload["type"], "tool_call"; got != want {
+		t.Fatalf("type = %v, want %v", got, want)
+	}
+	if got, want := callPayload["tool_name"], "web_search"; got != want {
+		t.Fatalf("tool_name = %v, want %v", got, want)
+	}
+	if got, want := callPayload["tool_call_id"], "call-1"; got != want {
+		t.Fatalf("tool_call_id = %v, want %v", got, want)
+	}
+	if got, want := callPayload["args"], map[string]any{"query": "東京 天気"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("args = %#v, want %#v", got, want)
 	}
 
-	payload := parseToolContent(t, messages[2].Content)
+	if messages[3].Role != types.RoleUser {
+		t.Fatalf("messages[3].Role = %q, want user", messages[3].Role)
+	}
+
+	payload := parseToolContent(t, messages[3].Content)
 	if got, want := payload["type"], "tool_result"; got != want {
 		t.Fatalf("type = %v, want %v", got, want)
 	}
@@ -132,6 +159,19 @@ func parseToolContent(t *testing.T, content string) map[string]any {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		t.Fatalf("unmarshal tool content: %v", err)
+	}
+	return payload
+}
+
+func parseToolCallContent(t *testing.T, content string) map[string]any {
+	t.Helper()
+	raw, ok := strings.CutPrefix(content, "ツール呼び出し: ")
+	if !ok {
+		t.Fatalf("content = %q, want tool call prefix", content)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("unmarshal tool call content: %v", err)
 	}
 	return payload
 }
