@@ -10,7 +10,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	opus "gopkg.in/hraban/opus.v2"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type peerState struct {

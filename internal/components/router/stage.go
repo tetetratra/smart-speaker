@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"smart-speaker/internal/graph"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/graph"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct{}

@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	opus "gopkg.in/hraban/opus.v2"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemote) {

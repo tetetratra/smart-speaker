@@ -6,9 +6,9 @@ import (
 	"log"
 	"sync"
 
-	"smart-speaker/internal/graph"
-	"smart-speaker/internal/tools"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/tools"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type toolCaller struct {

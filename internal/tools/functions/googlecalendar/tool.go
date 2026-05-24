@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	calendarapi "smart-speaker/internal/googlecalendar"
-	"smart-speaker/internal/tools"
+	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
 const (

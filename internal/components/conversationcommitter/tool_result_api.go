@@ -3,8 +3,8 @@ package conversationcommitter
 import (
 	"context"
 
-	"smart-speaker/internal/states/generation"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type ResultAPI struct {

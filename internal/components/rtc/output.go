@@ -7,7 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v4/pkg/media"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func (s *stage) sendLoop() {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func NewRecord(req types.ConversationCommitRequest, currentGeneration types.GenerationID) types.ConversationRecord {

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"smart-speaker/internal/states/conversationhistory"
-	"smart-speaker/internal/states/generation"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestStageCommitsUserBeforeLLMRequest(t *testing.T) {

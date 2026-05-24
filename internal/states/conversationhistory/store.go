@@ -3,7 +3,7 @@ package conversationhistory
 import (
 	"sync"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 // Store は LLM に渡す会話履歴の正本です。

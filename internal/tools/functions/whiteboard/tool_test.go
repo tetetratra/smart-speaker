@@ -3,7 +3,7 @@ package whiteboard
 import (
 	"testing"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestToolRunEmitsWhiteboardUpdate(t *testing.T) {

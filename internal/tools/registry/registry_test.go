@@ -3,7 +3,7 @@ package registry
 import (
 	"testing"
 
-	"smart-speaker/internal/tools/functions/switchbot"
+	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
 
 func TestRegistrySwitchBotTools(t *testing.T) {

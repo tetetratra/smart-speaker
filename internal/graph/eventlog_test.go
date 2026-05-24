@@ -3,7 +3,7 @@ package graph
 import (
 	"testing"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestShouldLogForwardEvent(t *testing.T) {

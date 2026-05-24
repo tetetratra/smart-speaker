@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 // Handler はNDJSON tool itemから呼び出されるツールの実体です。

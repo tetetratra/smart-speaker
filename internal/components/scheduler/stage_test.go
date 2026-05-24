@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	types "smart-speaker/internal/types"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestStageSchedulesSpeechWaitAndToolInOrder(t *testing.T) {

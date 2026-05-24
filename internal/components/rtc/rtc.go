@@ -10,8 +10,8 @@ import (
 	speech "cloud.google.com/go/speech/apiv2"
 	speechpb "cloud.google.com/go/speech/apiv2/speechpb"
 
-	"smart-speaker/internal/graph"
-	types "smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/graph"
+	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const (
