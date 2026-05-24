@@ -2,11 +2,11 @@
 
 ## 1. ビジネスコンテキスト
 
-* **解決する課題**: ブラウザで動作するスマートスピーカー UI と Go サーバーの間で、低遅延な双方向音声を扱う。ブラウザのマイク音声を受け取り、サーバー側で VAD と STT を実行し、assistant の音声を WebRTC の下り audio track として返す。
-* **ターゲットユーザー**: ブラウザ UI から音声で対話する利用者。実装上は `/ws/chat` を担当する `wschat`、発話をまとめる `utterancebuffer`、assistant 音声を配送する `router` と接続する。
-* **価値定義**: ブラウザ側に STT 処理を持たせず、サーバー側で発話開始・終了、文字起こし、assistant 音声返送を一元化することで、会話パイプラインに `EventHumanUtterance` と `EventRealtimeAudio` を接続できる。
-* **責務の境界**: `rtc` は WebRTC signaling、RTP 音声入力、server VAD、Google Speech-to-Text v2 への streaming、assistant 音声の WebRTC 出力を担当する。assistant 応答生成、TTS API 呼び出し、発話バッファ後の会話履歴 commit は担当しない。
-* **根拠**: `internal/components/rtc/` の実装、`internal/types/` のイベント定義、`cmd/smart-speaker/main.go` の graph wiring、`internal/components/wschat/wschat.go` の WebSocket 変換、`internal/components/router/stage.go` の assistant 音声配送。
+* **解決する課題**: ブラウザで動作するスマートスピーカー UI と Go サーバーの間で、低遅延な双方向音声を扱う。ブラウザのマイク音声を受け取り、サーバー側で VAD と STT を実行し、agent の音声を WebRTC の下り audio track として返す。
+* **ターゲットユーザー**: ブラウザ UI から音声で対話する利用者。実装上は `/ws/chat` を担当する `wschat`、発話をまとめる `utterancebuffer`、agent 音声を配送する `router` と接続する。
+* **価値定義**: ブラウザ側に STT 処理を持たせず、サーバー側で発話開始・終了、文字起こし、agent 音声返送を一元化することで、会話パイプラインに `EventHumanUtterance` と `EventRealtimeAudio` を接続できる。
+* **責務の境界**: `rtc` は WebRTC signaling、RTP 音声入力、server VAD、Google Speech-to-Text v2 への streaming、agent 音声の WebRTC 出力を担当する。agent 応答生成、TTS API 呼び出し、発話バッファ後の会話履歴 commit は担当しない。
+* **根拠**: `internal/components/rtc/` の実装、`internal/types/` のイベント定義、`cmd/smart-speaker/main.go` の graph wiring、`internal/components/wschat/wschat.go` の WebSocket 変換、`internal/components/router/stage.go` の agent 音声配送。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -19,7 +19,7 @@
 
 - **peerState**
   - WebRTC peer ごとの状態。
-  - `PeerConnection`、下り音声用の local track、Opus encoder、pending ICE、assistant 音声の PCM buffer、入力音声の prebuffer、VAD 状態、適応しきい値履歴を保持する。
+  - `PeerConnection`、下り音声用の local track、Opus encoder、pending ICE、agent 音声の PCM buffer、入力音声の prebuffer、VAD 状態、適応しきい値履歴を保持する。
   - `ClientID` は `wschat` の WebSocket 接続 ID に対応し、空の場合は `default` に正規化される。
 
 - **WebRTC signaling**
@@ -49,7 +49,7 @@
 
 - **関連 events**
   - `EventRTCSignal`: `wschat` と `rtc` 間の WebRTC signaling。WebSocket JSON の `webrtc.*` message と相互変換される。
-  - `EventRealtimeAudio`: assistant 音声 chunk。`router` から `rtc` へ送られ、WebRTC 下り音声として再生される。
+  - `EventRealtimeAudio`: agent 音声 chunk。`router` から `rtc` へ送られ、WebRTC 下り音声として再生される。
   - `EventHumanUtterance`: Google STT の final transcript。`utterancebuffer` へ送られる。
   - `EventSpeechEnd`: server VAD の発話終了通知。`wschat` へ送られ、UI には `speech_end` として通知される。
   - `EventRTCVADStatus`: server VAD の入力 level としきい値。`wschat` へ送られ、UI には `rtc_vad_status` として通知される。
@@ -117,7 +117,7 @@ sequenceDiagram
   RTC-->>UB: EventHumanUtterance(role=user, source=server-stt)
 ```
 
-### シナリオ: assistant 音声を WebRTC で再生する
+### シナリオ: agent 音声を WebRTC で再生する
 
 1. `router` が `PlayableSpeech` を `EventRealtimeAudio` に変換して `rtc` へ流す。
 2. `rtc` は `OutputAudio.Audio` を base64 decode し、little endian PCM16 として読み取る。
@@ -191,7 +191,7 @@ sequenceDiagram
         - `prebufferBytes`: sample rate、channels、seconds から prebuffer byte 数を計算する。
         - `newPCMRingBuffer`: PCM prebuffer 用 ring buffer を作る。
         - `recognizerPath`: Google Speech recognizer の resource path を組み立てる。
-      - output.go: assistant 音声を WebRTC 下り track に送る。
+      - output.go: agent 音声を WebRTC 下り track に送る。
         - `sendLoop`: 20ms ticker で `sendOpusFrame` を呼ぶ。
         - `sendOpusFrame`: peer の PCM buffer から 20ms frame を取り出し、Opus encode して track に書く。
         - `handleTTSAudio`: `EventRealtimeAudio` の base64 PCM を decode / upsample し、各 peer の再生 buffer に追加する。
@@ -217,7 +217,7 @@ sequenceDiagram
   - payload: `types.RTCSignal`。`ClientID` は JSON には出ず、WebSocket 接続ごとの routing に使われる。
 
 - `EventRealtimeAudio`
-  - 入力: `router` から `rtc` へ assistant 音声を渡す。
+  - 入力: `router` から `rtc` へ agent 音声を渡す。
   - payload: `types.OutputAudio`。`Audio` は base64 文字列。サンプルレートなどの明示フィールドはないため、入力 PCM の元レートは `rtc` 単体のコードからは不明。
 
 - `EventHumanUtterance`

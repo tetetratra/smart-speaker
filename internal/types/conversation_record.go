@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	RoleUser      = "user"
-	RoleAssistant = "assistant"
-	RoleTool      = "tool"
+	RoleUser       = "user"
+	RoleAgent      = "agent"
+	RoleToolCall   = "tool_call"
+	RoleToolResult = "tool_result"
 )
 
 // ConversationRecord は LLM に渡す会話履歴の1件です。
@@ -20,6 +21,14 @@ type ConversationRecord struct {
 	Source       string
 	Metadata     map[string]any
 	CreatedAt    time.Time
+}
+
+// ToolCallRecord は tool 呼び出しを履歴へ保存するための payload です。
+type ToolCallRecord struct {
+	ToolCallID   string
+	Name         string
+	Arguments    json.RawMessage
+	GenerationID GenerationID
 }
 
 // ToolResultRecord は tool 実行結果を履歴へ保存するための payload です。
@@ -38,6 +47,7 @@ type ConversationCommitRequest struct {
 	Text         string
 	GenerationID GenerationID
 	Source       string
+	ToolCall     *ToolCallRecord
 	ToolResult   *ToolResultRecord
 }
 

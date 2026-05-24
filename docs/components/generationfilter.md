@@ -45,7 +45,7 @@
 4. TTS 変換: `tts` は `speech` の `TimelineItem` を `types.PlayableSpeech` に変換し、元の `GenerationID` を引き継ぐ。`speech` 以外の timeline item はそのまま後続へ流す。
 5. スケジューリング: `scheduler` は `PlayableSpeech` と `TimelineItem` を世代ごとに worker へ enqueue し、再生可能音声や tool item を `EventScheduledItem` として出力する。
 6. 世代フィルタ: `generationfilter` は event payload から `GenerationID` を取り出し、`generation.Store.IsCurrent(id)` が true の event だけを `Downstream` へ送る。
-7. 後続 routing: `router` は通過した `EventScheduledItem` を `EventRealtimeAudio`、assistant の `EventConversationCommitRequest`、または `EventToolRequest` に変換する。
+7. 後続 routing: `router` は通過した `EventScheduledItem` を `EventRealtimeAudio`、agent の `EventConversationCommitRequest`、または `EventToolRequest` に変換する。
 
 ```mermaid
 sequenceDiagram

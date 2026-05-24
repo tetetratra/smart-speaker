@@ -4,7 +4,7 @@
 
 - **解決する課題**: LLM が生成した `speech` / `wait` / `tool` の timeline を、そのまま下流へ流すと、音声再生中に tool 実行が先行するなど、会話体験上不自然な順序になる。scheduler は TTS 済み音声の再生時間と wait 秒数を使い、実行タイミングに到達した item だけを下流へ出す。
 - **ターゲットユーザー**: スマートスピーカー利用者、会話 pipeline を保守する開発者、tool 実行や音声出力の順序を調整する開発者。
-- **価値定義**: assistant の発話を先に再生・履歴化し、その後に必要な tool を実行する順序を保つことで、会話応答の聞こえ方と tool 呼び出しのタイミングを一致させる。
+- **価値定義**: agent の発話を先に再生・履歴化し、その後に必要な tool を実行する順序を保つことで、会話応答の聞こえ方と tool 呼び出しのタイミングを一致させる。
 - **根拠**: `internal/components/scheduler/stage.go`、`internal/components/scheduler/stage_test.go`、`internal/components/pipeline/conversation_pipeline_test.go`、`internal/types/event.go`、`internal/types/timeline_item.go`、`cmd/smart-speaker/main.go` に基づく。外部 URL は参照していない。
 
 ## 2. 論理構造・機能俯瞰
@@ -44,7 +44,7 @@
   - `EventPlayableSpeech`: TTS が speech item を音声化して作る再生可能な発話。
   - `EventScheduledItem`: scheduler が実行タイミングに到達した item として発行する event。
   - `EventToolRequest`: router が `EventScheduledItem` payload の `ToolRequest` を受けて発行する event。
-  - `EventRealtimeAudio` / `EventConversationCommitRequest`: router が `PlayableSpeech` を受け、音声再生と assistant 履歴保存用に発行する event。
+  - `EventRealtimeAudio` / `EventConversationCommitRequest`: router が `PlayableSpeech` を受け、音声再生と agent 履歴保存用に発行する event。
 
 ## 3. 主要なデータフロー
 
@@ -56,7 +56,7 @@
 4. scheduler は payload の `GenerationID` を取り出し、該当世代の worker channel へ enqueue する。worker が未作成なら新規 channel と goroutine を作る。
 5. worker は `PlayableSpeech` を受け、`EventScheduledItem(Payload: PlayableSpeech)` を発行する。
 6. scheduler は `PlayableSpeech.DurationSeconds` 秒だけ待つ。この間、同じ世代の次 item は処理されない。
-7. router は `EventScheduledItem(Payload: PlayableSpeech)` を受け、`EventRealtimeAudio` と assistant の `EventConversationCommitRequest` を順に発行する。
+7. router は `EventScheduledItem(Payload: PlayableSpeech)` を受け、`EventRealtimeAudio` と agent の `EventConversationCommitRequest` を順に発行する。
 8. scheduler の同じ世代 worker は待機完了後、次の `TimelineKindTool` を `ToolRequest` に変換し、`EventScheduledItem(Payload: ToolRequest)` を発行する。
 9. `generationfilter-scheduler` が現在世代の scheduled item だけを router へ通す。
 10. router は `ToolRequest` を `EventToolRequest` として toolcaller へ渡す。
@@ -80,7 +80,7 @@ sequenceDiagram
     S->>S: wait(DurationSeconds)
     GF2->>R: EventScheduledItem(PlayableSpeech)
     R->>RTC: EventRealtimeAudio
-    R->>CC: EventConversationCommitRequest(RoleAssistant)
+    R->>CC: EventConversationCommitRequest(RoleAgent)
     LLM->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)
     GF1->>S: EventTimelineItem(tool, GenerationID)
@@ -141,7 +141,7 @@ flowchart TD
     - generationfilter/
       - `stage.go`: scheduler 前後で現在世代の event だけを通す。scheduler 内部では世代の新旧判定を行わない。
     - router/
-      - `stage.go`: `EventScheduledItem` を受け、`PlayableSpeech` は音声再生と assistant commit へ、`ToolRequest` は `EventToolRequest` へ変換する。
+      - `stage.go`: `EventScheduledItem` を受け、`PlayableSpeech` は音声再生と agent commit へ、`ToolRequest` は `EventToolRequest` へ変換する。
     - pipeline/
       - `conversation_pipeline_test.go`: scheduler、generationfilter、router を組み合わせ、speech の audio / commit が tool request より先に出ることを検証する。
 
@@ -163,7 +163,7 @@ flowchart TD
   - 処理: `types.ToolRequest` に変換し、`EventScheduledItem` として出力する。
 
 - **出力: `EventScheduledItem`**
-  - payload が `types.PlayableSpeech` の場合、router が `EventRealtimeAudio` と assistant の `EventConversationCommitRequest` に変換する。
+  - payload が `types.PlayableSpeech` の場合、router が `EventRealtimeAudio` と agent の `EventConversationCommitRequest` に変換する。
   - payload が `types.ToolRequest` の場合、router が `EventToolRequest` に変換する。
 
 ### 世代ごとの queue / wait 制御

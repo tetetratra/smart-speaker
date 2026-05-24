@@ -40,8 +40,16 @@ func TestSchedulerRouterKeepsSpeechBeforeTool(t *testing.T) {
 	if evt := expect(t, rt.Downstream); evt.Kind != types.EventConversationCommitRequest {
 		t.Fatalf("second Kind = %s, want EventConversationCommitRequest", evt.Kind)
 	}
+	evt := expect(t, rt.Downstream)
+	if evt.Kind != types.EventConversationCommitRequest {
+		t.Fatalf("third Kind = %s, want EventConversationCommitRequest", evt.Kind)
+	}
+	req := evt.Payload.(types.ConversationCommitRequest)
+	if req.Role != types.RoleToolCall {
+		t.Fatalf("third Role = %s, want tool_call", req.Role)
+	}
 	if evt := expect(t, rt.Downstream); evt.Kind != types.EventToolRequest {
-		t.Fatalf("third Kind = %s, want EventToolRequest", evt.Kind)
+		t.Fatalf("fourth Kind = %s, want EventToolRequest", evt.Kind)
 	}
 }
 

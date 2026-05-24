@@ -3,7 +3,6 @@ package conversationcommitter
 import (
 	"context"
 	"log"
-	"strings"
 
 	"smart-speaker/internal/states/conversationhistory"
 	"smart-speaker/internal/states/generation"
@@ -34,9 +33,11 @@ func (c *committer) Commit(ctx context.Context, req types.ConversationCommitRequ
 	switch record.Role {
 	case types.RoleUser:
 		c.emitUser(ctx, record)
-	case types.RoleAssistant:
-		c.emitAssistant(ctx, record)
-	case types.RoleTool:
+	case types.RoleAgent:
+		c.emitAgent(ctx, record)
+	case types.RoleToolCall:
+		c.emitToolCall(ctx, record)
+	case types.RoleToolResult:
 		c.emitToolResult(ctx, record)
 	}
 }
@@ -58,9 +59,20 @@ func (c *committer) emitUser(ctx context.Context, record types.ConversationRecor
 	_ = ctx
 }
 
-func (c *committer) emitAssistant(ctx context.Context, record types.ConversationRecord) {
+func (c *committer) emitAgent(ctx context.Context, record types.ConversationRecord) {
 	c.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
-		Role:         types.RoleAssistant,
+		Role:         types.RoleAgent,
+		Text:         record.Text,
+		Source:       record.Source,
+		GenerationID: record.GenerationID,
+		Final:        true,
+	}})
+	_ = ctx
+}
+
+func (c *committer) emitToolCall(ctx context.Context, record types.ConversationRecord) {
+	c.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
+		Role:         types.RoleToolCall,
 		Text:         record.Text,
 		Source:       record.Source,
 		GenerationID: record.GenerationID,
@@ -70,14 +82,17 @@ func (c *committer) emitAssistant(ctx context.Context, record types.Conversation
 }
 
 func (c *committer) emitToolResult(ctx context.Context, record types.ConversationRecord) {
-	text := strings.TrimSpace(record.Text)
-	if text == "" {
-		return
-	}
+	c.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
+		Role:         types.RoleToolResult,
+		Text:         record.Text,
+		Source:       record.Source,
+		GenerationID: record.GenerationID,
+		Final:        true,
+	}})
 	c.emit(types.Event{Kind: types.EventLLMRequest, Payload: types.LLMRequest{
 		RequestID:    record.ID,
-		Role:         types.RoleTool,
-		Text:         text,
+		Role:         types.RoleToolResult,
+		Text:         record.Text,
 		GenerationID: record.GenerationID,
 	}})
 	_ = ctx

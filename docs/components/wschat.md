@@ -34,7 +34,7 @@
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
   - `web/src/main.tsx` は `message`, `speech_end`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
-  - `function_call` / `function_result` を処理するUI分岐は存在するが、`wschat.go` はそれらの message type を生成していない。
+  - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
   - `wschat` は `ClientID` を付与して `EventRTCSignal` として graph downstream に流す。
@@ -43,7 +43,7 @@
 - **Realtime output**
   - `types.OutputLine` を `type: "message"` の JSON に変換する。
   - `role`, `text`, `response_id`, `final` を常に含め、`source` は空でない場合だけ含める。
-  - UIは `role` に応じて user / assistant / system message として表示する。`source == "server-stt"` かつ user message の場合は STT状態を完了、発話検知状態を待機中にする。
+  - UIは `role` に応じて user / agent / system message として表示する。`source == "server-stt"` かつ user message の場合は STT状態を完了、発話検知状態を待機中にする。
 - **Whiteboard関連events**
   - `internal/tools/functions/whiteboard/tool.go` の `set_whiteboard` tool は `EventWhiteboardUpdate` を emit する。
   - `wschat` は `types.WhiteboardUpdate.Content` を `type: "whiteboard_update", content: ...` に変換する。
@@ -89,7 +89,7 @@ sequenceDiagram
 1. 出力発生: upstream側の component が `types.Event{Kind: EventRealtimeOutput, Payload: types.OutputLine{...}}` を `wschat.Upstream` に流す。
 2. JSON変換: `wschat.handleEvent` が `OutputLine` を `type: "message"` の JSON に変換する。
 3. broadcast: `targetID` は空のため、`connHolder.snapshot()` の全接続に送信される。
-4. UI反映: `web/src/main.tsx` の `handleChatMessage` が `message` を受け、roleを user / assistant / system に正規化して `appendMessage` する。
+4. UI反映: `web/src/main.tsx` の `handleChatMessage` が `message` を受け、roleを user / agent / system に正規化して `appendMessage` する。
 
 ```mermaid
 sequenceDiagram
@@ -183,7 +183,7 @@ sequenceDiagram
 **サーバーからブラウザへのmessage**
 
 - `message`: realtime output をチャットUIへ表示する。
-  - 例: `{ "type": "message", "role": "assistant", "text": "...", "response_id": "...", "final": true, "source": "..." }`
+  - 例: `{ "type": "message", "role": "agent", "text": "...", "response_id": "...", "final": true, "source": "..." }`
   - `source` は `OutputLine.Source` が空でない場合だけ含まれる。
 - `webrtc.answer`: RTC componentが生成したanswerを、該当 `ClientID` のWebSocketに返す。
   - 例: `{ "type": "webrtc.answer", "sdp": "...", "candidate": null }`
@@ -220,4 +220,4 @@ sequenceDiagram
 - `/ws/chat` の認証・認可、Origin制限、CSRF対策の方針は `wschat.go` からは確認できない。`websocket.AcceptOptions{InsecureSkipVerify: true}` は設定されている。
 - message schema のバージョニングや後方互換性ポリシーは確認できない。
 - 複数ブラウザ接続時に realtime output / speech / VAD / whiteboard を全接続へbroadcastすることが仕様上の意図か、一時的な実装判断かは不明。
-- `function_call` / `function_result` はUI側に処理分岐があるが、`wschat.go` から送信される経路は確認できない。
+- `tool_call` / `tool_result` は通常 message と同じ経路で扱い、role によって表示ラベルを分ける。

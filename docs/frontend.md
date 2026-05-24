@@ -30,7 +30,7 @@
   - しきい値
 - 接続 / マイク / 認識の簡易状態を表示する。
 - whiteboard の内容を表示する。
-- 直近の user / assistant 発話を表示する。
+- 直近の user / agent 発話を表示する。
 - 再生音量をスライダーで切り替える。
 
 ### 2.4 管理画面の責務
@@ -44,7 +44,7 @@
   - Google 文字起こし
 - 音声エラーと文字起こしエラーを表示する。
 - メッセージログを表示する。
-  - user / assistant / system
+  - user / agent / system
   - tool call / tool result は通常の会話UIには表示しない。
 
 ## 3. 接続開始と接続ライフサイクル
@@ -82,7 +82,7 @@ sequenceDiagram
 
 ### 3.2 接続中のイベント反映
 - `message`
-  - `user` / `assistant` / `system` をメッセージ一覧へ追加する。
+  - `user` / `agent` / `system` をメッセージ一覧へ追加する。
   - `source: "server-stt"` かつ `role: "user"` の場合は、STT 状態を `完了` に戻す。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。

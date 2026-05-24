@@ -21,7 +21,7 @@ func (a *ResultAPI) CommitToolResult(ctx context.Context, result types.ToolResul
 		result.Stale = result.GenerationID != result.CurrentGenerationID
 	}
 	req := types.ConversationCommitRequest{
-		Role:         types.RoleTool,
+		Role:         types.RoleToolResult,
 		GenerationID: result.GenerationID,
 		Source:       result.Name,
 		ToolResult:   &result,

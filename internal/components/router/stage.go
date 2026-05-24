@@ -58,18 +58,29 @@ func (s *stage) route(ctx context.Context, payload any) {
 	switch item := payload.(type) {
 	case types.PlayableSpeech:
 		s.emit(ctx, types.Event{Kind: types.EventRealtimeAudio, Payload: types.OutputAudio{
-			Role:         types.RoleAssistant,
+			Role:         types.RoleAgent,
 			Audio:        item.Audio,
 			Text:         item.Text,
 			GenerationID: item.GenerationID,
 		}})
 		s.emit(ctx, types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
-			Role:         types.RoleAssistant,
+			Role:         types.RoleAgent,
 			Text:         item.Text,
 			GenerationID: item.GenerationID,
 			Source:       "llm",
 		}})
 	case types.ToolRequest:
+		s.emit(ctx, types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
+			Role:         types.RoleToolCall,
+			GenerationID: item.GenerationID,
+			Source:       item.Name,
+			ToolCall: &types.ToolCallRecord{
+				ToolCallID:   item.ToolCallID,
+				Name:         item.Name,
+				Arguments:    item.Arguments,
+				GenerationID: item.GenerationID,
+			},
+		}})
 		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: item})
 	}
 }

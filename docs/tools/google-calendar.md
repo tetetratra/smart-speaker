@@ -142,7 +142,7 @@
 ## 7. 会話文脈注入
 ### 役割
 - 会話 request の直前に、Google Calendar の予定を system message として注入する。
-- これは tool 呼び出しとは別経路であり、assistant が予定を参照しながら応答するための文脈補強である。
+- これは tool 呼び出しとは別経路であり、agent が予定を参照しながら応答するための文脈補強である。
 
 ### 挙動
 - `contextProvider.buildCalendarContext` が保存済み token の有無を `LoadToken` で確認する。

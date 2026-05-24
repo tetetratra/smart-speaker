@@ -37,7 +37,7 @@
   - `EventPlayableSpeech`: `speech` を ElevenLabs で音声化した後に `tts` が出力する event。
   - `EventScheduledItem`: 後段の `scheduler` が `EventPlayableSpeech` や `tool` item を実行タイミング付きで出力する event。
   - `EventRealtimeAudio`: 後段の `router` が `PlayableSpeech.Audio` から生成し、RTC 音声再生へ渡す event。
-  - `EventConversationCommitRequest`: 後段の `router` が `PlayableSpeech.Text` から生成し、assistant 発話として会話履歴保存へ渡す event。
+  - `EventConversationCommitRequest`: 後段の `router` が `PlayableSpeech.Text` から生成し、agent 発話として会話履歴保存へ渡す event。
   - `EventTTSEnd`: 型定義は存在するが、現行コード上で `tts` から発行されている箇所は確認できない。
 
 ## 3. 主要なデータフロー

@@ -54,6 +54,7 @@ func TestResultAPICommitsToolResultAsStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	expectEvent(t, st.Downstream, types.EventRealtimeOutput)
 	expectEvent(t, st.Downstream, types.EventLLMRequest)
 	records := history.Snapshot()
 	if len(records) != 1 {
@@ -61,6 +62,36 @@ func TestResultAPICommitsToolResultAsStale(t *testing.T) {
 	}
 	if records[0].Metadata["stale"] != true {
 		t.Fatalf("stale = %v, want true", records[0].Metadata["stale"])
+	}
+}
+
+func TestStageCommitsToolCallToRealtimeOutput(t *testing.T) {
+	history := conversationhistory.NewStore()
+	gen := generation.NewStore()
+	st, _ := NewStage(Config{History: history, Generation: gen})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+
+	st.Upstream <- types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
+		Role: types.RoleToolCall,
+		ToolCall: &types.ToolCallRecord{
+			ToolCallID:   "call-1",
+			Name:         "get_temp",
+			Arguments:    json.RawMessage(`{"place":"living"}`),
+			GenerationID: 1,
+		},
+	}}
+
+	evt := expectEvent(t, st.Downstream, types.EventRealtimeOutput)
+	line := evt.Payload.(types.OutputLine)
+	if line.Role != types.RoleToolCall {
+		t.Fatalf("OutputLine.Role = %s, want tool_call", line.Role)
+	}
+	records := history.Snapshot()
+	if len(records) != 1 || records[0].Role != types.RoleToolCall {
+		t.Fatalf("records = %#v, want one tool_call", records)
 	}
 }
 

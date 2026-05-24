@@ -62,6 +62,18 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 	if _, ok := payload["stream"]; ok {
 		t.Fatalf("payload stream = %#v, want omitted", payload["stream"])
 	}
+	input := payload["input"].([]any)
+	message := input[1].(map[string]any)
+	if message["role"] != types.RoleUser {
+		t.Fatalf("transport role = %v, want user", message["role"])
+	}
+	var content map[string]any
+	if err := json.Unmarshal([]byte(message["content"].(string)), &content); err != nil {
+		t.Fatalf("history content JSON: %v", err)
+	}
+	if content["role"] != types.RoleUser {
+		t.Fatalf("history role = %v, want user", content["role"])
+	}
 	text, ok := payload["text"].(map[string]any)
 	if !ok {
 		t.Fatalf("payload text = %#v", payload["text"])
@@ -79,6 +91,54 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 		if !strings.Contains(schemaText, want) {
 			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
 		}
+	}
+}
+
+func TestCreateResponseWrapsAppRolesForResponsesAPI(t *testing.T) {
+	var payload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output_text":"{\"items\":[]}"}`))
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		apiKey:   "test-key",
+		model:    "test-model",
+		client:   srv.Client(),
+		endpoint: srv.URL,
+	}
+	_, err := client.CreateResponse(context.Background(), []types.ChatMessage{
+		{Role: types.RoleAgent, Content: `{"type":"message","text":"確認します"}`},
+		{Role: types.RoleToolCall, Content: `{"type":"tool_call","tool_call_id":"call-1","arguments":{"place":"living"}}`},
+		{Role: types.RoleToolResult, Content: `{"type":"tool_result","tool_call_id":"call-1","output":{"temp":29}}`},
+	}, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := payload["input"].([]any)
+	if len(input) != 4 {
+		t.Fatalf("input len = %d, want 4", len(input))
+	}
+	for i := 1; i < len(input); i++ {
+		item := input[i].(map[string]any)
+		if item["role"] != types.RoleUser {
+			t.Fatalf("input[%d].role = %v, want user transport role", i, item["role"])
+		}
+	}
+	var wrapped map[string]any
+	if err := json.Unmarshal([]byte(input[2].(map[string]any)["content"].(string)), &wrapped); err != nil {
+		t.Fatalf("wrapped content JSON: %v", err)
+	}
+	if wrapped["role"] != types.RoleToolCall {
+		t.Fatalf("wrapped role = %v, want tool_call", wrapped["role"])
+	}
+	content := wrapped["content"].(map[string]any)
+	if content["type"] != "tool_call" || content["tool_call_id"] != "call-1" {
+		t.Fatalf("wrapped content = %#v", content)
 	}
 }
 

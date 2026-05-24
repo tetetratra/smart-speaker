@@ -68,7 +68,7 @@ func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessag
 		if content == "" {
 			continue
 		}
-		input = append(input, map[string]any{"role": role, "content": content})
+		input = append(input, map[string]any{"role": transportRole(role), "content": encodeHistoryContent(role, content)})
 	}
 	if len(input) == 0 {
 		return "", fmt.Errorf("llm: input is empty")
@@ -101,6 +101,33 @@ func (c *Client) CreateResponse(ctx context.Context, messages []types.ChatMessag
 		return "", fmt.Errorf("llm: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
 	return readResponseBody(resp.Body)
+}
+
+func transportRole(role string) string {
+	if strings.TrimSpace(role) == "system" {
+		return "system"
+	}
+	return types.RoleUser
+}
+
+func encodeHistoryContent(role, content string) string {
+	payload := map[string]any{
+		"role":    strings.TrimSpace(role),
+		"content": json.RawMessage(content),
+	}
+	if payload["role"] == "" {
+		payload["role"] = types.RoleUser
+	}
+	encoded, err := json.Marshal(payload)
+	if err == nil {
+		return string(encoded)
+	}
+	payload["content"] = content
+	encoded, err = json.Marshal(payload)
+	if err != nil {
+		return content
+	}
+	return string(encoded)
 }
 
 type responseBody struct {

@@ -31,24 +31,29 @@
 - **`types.ToolRequest`**
   - 関数呼び出しが必要なときの要求を表す。
   - 主なフィールドは `ResponseID`、`ToolCallID`、`Name`、`Arguments`、`GenerationID`、`SequenceID`。
-  - `router` は値を加工せず、`EventToolRequest` の payload としてそのまま下流へ流す。
+  - `router` は実行前に `RoleToolCall` の `EventConversationCommitRequest` を発行し、その後 `EventToolRequest` の payload としてそのまま下流へ流す。
 
 - **出力イベント: `EventRealtimeAudio`**
   - `types.PlayableSpeech` から生成される。
   - payload は `types.OutputAudio`。
-  - `Role` は常に `types.RoleAssistant`。
+  - `Role` は常に `types.RoleAgent`。
   - `rtc` コンポーネントは `EventRealtimeAudio` を受け取り、payload が `types.OutputAudio` の場合に TTS 音声を処理する。
 
 - **出力イベント: `EventConversationCommitRequest`**
   - `types.PlayableSpeech` から生成される。
   - payload は `types.ConversationCommitRequest`。
-  - `Role` は常に `types.RoleAssistant`、`Source` は常に `"llm"`。
+  - `Role` は常に `types.RoleAgent`、`Source` は常に `"llm"`。
   - `conversationcommitter` は `EventConversationCommitRequest` を受け取り、会話履歴保存と後続の LLM request 生成を担う。
 
 - **出力イベント: `EventToolRequest`**
   - `types.ToolRequest` から生成される。
   - payload は入力された `ToolRequest` と同一値。
   - `toolcaller` は `EventToolRequest` を受け取り、`Name` に対応するツールを実行する。
+
+- **出力イベント: tool_call の `EventConversationCommitRequest`**
+  - `types.ToolRequest` から生成される。
+  - payload は `types.ConversationCommitRequest{Role: types.RoleToolCall, ToolCall: ...}`。
+  - `ToolCall` には `ToolCallID`、`Name`、`Arguments`、`GenerationID` を保持し、履歴上で後続の `tool_result` と対応できるようにする。
 
 ## 3. 主要なデータフロー
 
@@ -57,8 +62,8 @@
 1. 前段がスケジュール済み item を送る: `scheduler` は `types.PlayableSpeech` を受け取ると、`EventScheduledItem` として下流へ出力し、その後 `DurationSeconds` 分だけ待つ。
 2. router が入力を選別する: `router.consume` は `EventScheduledItem` 以外を無視し、該当イベントの `Payload` を `route` に渡す。
 3. payload 型を判定する: `route` は payload が `types.PlayableSpeech` の場合、音声出力用イベントと会話保存用イベントを順番に emit する。
-4. 音声出力イベントを生成する: `EventRealtimeAudio` の payload として `types.OutputAudio{Role: assistant, Audio, Text, GenerationID}` を出力する。
-5. 会話保存イベントを生成する: `EventConversationCommitRequest` の payload として `types.ConversationCommitRequest{Role: assistant, Text, GenerationID, Source: "llm"}` を出力する。
+4. 音声出力イベントを生成する: `EventRealtimeAudio` の payload として `types.OutputAudio{Role: agent, Audio, Text, GenerationID}` を出力する。
+5. 会話保存イベントを生成する: `EventConversationCommitRequest` の payload として `types.ConversationCommitRequest{Role: agent, Text, GenerationID, Source: "llm"}` を出力する。
 6. 後段が処理する: `rtc` は `EventRealtimeAudio` を処理し、`conversationcommitter` は `EventConversationCommitRequest` を処理する。具体的な接続構成はこのファイル群だけでは断定できないが、`internal/components/pipeline/conversation_pipeline_test.go` では `scheduler -> generationfilter -> router` の順に接続され、音声、commit、tool の順序が検証されている。
 
 ```mermaid
@@ -78,18 +83,20 @@ sequenceDiagram
 
 1. 前段がツール要求を送る: `scheduler` は `TimelineKindTool` の `types.TimelineItem` を受け取ると、`types.ToolRequest` を作り、`EventScheduledItem` として出力する。
 2. router が入力を選別する: `router.consume` は `EventScheduledItem` の payload だけを `route` に渡す。
-3. payload 型を判定する: `route` は payload が `types.ToolRequest` の場合、`EventToolRequest` を emit する。
-4. ツール要求を加工せず渡す: `ToolRequest` の `ToolCallID`、`Name`、`Arguments`、`GenerationID`、`SequenceID` は `router` では変更されない。
-5. 後段が処理する: `toolcaller` は `EventToolRequest` を受け取り、`Name` に対応するツールを非同期に実行する。
+3. payload 型を判定する: `route` は payload が `types.ToolRequest` の場合、まず tool call 保存用の `EventConversationCommitRequest` を emit する。
+4. ツール要求を加工せず渡す: 続けて `EventToolRequest` を emit する。`ToolRequest` の `ToolCallID`、`Name`、`Arguments`、`GenerationID`、`SequenceID` は変更されない。
+5. 後段が処理する: `conversationcommitter` は tool call を保存し、`toolcaller` は `EventToolRequest` を受け取り、`Name` に対応するツールを非同期に実行する。
 
 ```mermaid
 sequenceDiagram
     participant Scheduler as scheduler
     participant Router as router
+    participant Committer as conversationcommitter
     participant ToolCaller as toolcaller
 
     Scheduler->>Router: EventScheduledItem(Payload: ToolRequest)
     Router->>Router: Payload type switch
+    Router->>Committer: EventConversationCommitRequest(RoleToolCall, ToolCall)
     Router->>ToolCaller: EventToolRequest(ToolRequest)
 ```
 
@@ -104,7 +111,7 @@ sequenceDiagram
         - `NewStage`: `upstream`、`downstream`、`Run`、`CloseFn` を持つ `graph.Stage` を生成する。現時点で `Config` に設定項目はない。
         - `run`: 親 context からキャンセル可能な context を作り、`consume` を goroutine として開始する。
         - `consume`: `upstream` からイベントを読み、`EventScheduledItem` だけを `route` へ渡す。終了時に `downstream` を close する。
-        - `route`: payload の具象型に応じて出力イベントを作る。`PlayableSpeech` は `EventRealtimeAudio` と `EventConversationCommitRequest`、`ToolRequest` は `EventToolRequest` へ変換する。
+        - `route`: payload の具象型に応じて出力イベントを作る。`PlayableSpeech` は `EventRealtimeAudio` と `EventConversationCommitRequest`、`ToolRequest` は tool call 保存用の `EventConversationCommitRequest` と `EventToolRequest` へ変換する。
         - `emit`: context がキャンセルされていなければ `downstream` にイベントを送る。
         - `close`: cancel を呼び、`upstream` を close する。
       - `stage_test.go`: `PlayableSpeech` が音声出力と会話保存に分配されること、`ToolRequest` が `EventToolRequest` として出力されることを検証する。
@@ -124,11 +131,11 @@ flowchart LR
   - `Payload.Audio` は `OutputAudio.Audio` へコピーされる。
   - `Payload.Text` は `OutputAudio.Text` と `ConversationCommitRequest.Text` へコピーされる。
   - `Payload.GenerationID` は `OutputAudio.GenerationID` と `ConversationCommitRequest.GenerationID` へコピーされる。
-  - `OutputAudio.Role` と `ConversationCommitRequest.Role` は `types.RoleAssistant` に固定される。
+  - `OutputAudio.Role` と `ConversationCommitRequest.Role` は `types.RoleAgent` に固定される。
   - `ConversationCommitRequest.Source` は `"llm"` に固定される。
 
 - **入力: `types.Event{Kind: EventScheduledItem, Payload: types.ToolRequest}`**
-  - `Payload` は加工されず、`types.Event{Kind: EventToolRequest, Payload: item}` として出力される。
+  - `Payload` から `RoleToolCall` の `ConversationCommitRequest` が作られた後、`types.Event{Kind: EventToolRequest, Payload: item}` として出力される。
 
 - **無視される入力**
   - `EventScheduledItem` 以外の `EventKind` は `consume` で無視される。
