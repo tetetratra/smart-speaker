@@ -9,22 +9,8 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-type fakeCommitter struct {
-	ch chan types.ToolResultRecord
-}
-
-func (f *fakeCommitter) CommitToolResult(ctx context.Context, result types.ToolResultRecord) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case f.ch <- result:
-		return nil
-	}
-}
-
-func TestStageCommitsUnknownToolResult(t *testing.T) {
-	committer := &fakeCommitter{ch: make(chan types.ToolResultRecord, 1)}
-	st := NewStage(nil, committer)
+func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
+	st := NewStage(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -38,7 +24,24 @@ func TestStageCommitsUnknownToolResult(t *testing.T) {
 	}}
 
 	select {
-	case result := <-committer.ch:
+	case evt := <-st.Downstream:
+		if evt.Kind != types.EventConversationCommitRequest {
+			t.Fatalf("Kind = %s, want EventConversationCommitRequest", evt.Kind)
+		}
+		req, ok := evt.Payload.(types.ConversationCommitRequest)
+		if !ok {
+			t.Fatalf("Payload type = %T, want ConversationCommitRequest", evt.Payload)
+		}
+		if req.Role != types.RoleToolResult {
+			t.Fatalf("Role = %q, want tool_result", req.Role)
+		}
+		if req.Source != "unknown" {
+			t.Fatalf("Source = %q, want unknown", req.Source)
+		}
+		if req.ToolResult == nil {
+			t.Fatal("ToolResult is nil")
+		}
+		result := req.ToolResult
 		if result.Name != "unknown" {
 			t.Fatalf("Name = %q", result.Name)
 		}
@@ -49,11 +52,6 @@ func TestStageCommitsUnknownToolResult(t *testing.T) {
 			t.Fatal("Output is empty")
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timeout waiting tool result")
-	}
-	select {
-	case evt := <-st.Downstream:
-		t.Fatalf("unexpected downstream event: %s", evt.Kind)
-	default:
+		t.Fatal("timeout waiting commit request")
 	}
 }
