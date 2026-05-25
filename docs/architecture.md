@@ -66,7 +66,7 @@ flowchart TB
 
   TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
   ToolRuntime -.->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
-  TOOL -.->|"CommitToolResult API<br/>tool結果を会話履歴へ戻す"| COMMIT
+  TOOL -->|"EventConversationCommitRequest<br/>tool結果の保存を要求する"| COMMIT
 ```
 
 ## 主要な責務
@@ -79,7 +79,7 @@ flowchart TB
 - `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
-- `toolcaller` は local tool を実行し、結果を downstream event ではなく `CommitToolResult` API で会話コミッターへ戻す。
+- `toolcaller` は local tool を非同期に実行し、結果を `EventConversationCommitRequest` として会話コミッターへ戻す。tool 固有の UI 副作用 event とは event kind で分けて接続する。
 
 ## Tool 呼び出し
 

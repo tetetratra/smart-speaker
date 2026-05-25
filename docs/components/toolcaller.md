@@ -4,16 +4,16 @@
 
 - **解決する課題**: LLM が生成した `tool` item を、会話生成パイプライン内で local tool 実行へ橋渡しする。
 - **提供価値**: tool 実行結果を会話履歴へ戻し、必要に応じて LLM の次の推論へつなげる。UI 副作用を持つ tool は、tool result とは別に graph event として下流へ通知できる。
-- **責務の境界**: `toolcaller` は tool の実行と結果 commit API 呼び出しを担う。tool request の生成は `scheduler` / `router`、結果の履歴保存と LLM 再投入は `conversationcommitter` の責務。
-- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` を `toolcaller.NewStage(toolHandlers, resultCommitter)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
-- **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`、`internal/types/event.go`、`internal/types/conversation_record.go`、`internal/components/conversationcommitter/tool_result_api.go`。
+- **責務の境界**: `toolcaller` は tool の実行と tool result 保存要求 event の発行を担う。tool request の生成は `scheduler` / `router`、結果の履歴保存と LLM 再投入は `conversationcommitter` の責務。
+- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` を `toolcaller.NewStage(toolHandlers)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
+- **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`、`internal/types/event.go`、`internal/types/conversation_record.go`。
 
 ## 2. 論理構造・機能俯瞰
 
 **主要なモデル・コンポーネント**
 
 - **`toolcaller.NewStage`**
-  - `handlers map[string]tools.Handler` と `ToolResultCommitter` を受け取り、graph stage を作る。
+  - `handlers map[string]tools.Handler` を受け取り、graph stage を作る。
   - `handlers == nil` の場合は空 map に正規化する。
   - stage の `Upstream` / `Downstream` はどちらも `graph.DefaultChannelBufferSize` の channel。
 
@@ -44,12 +44,7 @@
 - **`types.ToolResultRecord`**
   - tool 実行結果を履歴へ保存するための payload。
   - `toolcaller` が設定するのは `ToolCallID`、`Name`、`Output`、`GenerationID`。
-  - `CurrentGenerationID` と `Stale` は `conversationcommitter.ResultAPI.CommitToolResult` 側で generation store がある場合に設定される。
-
-- **`ToolResultCommitter`**
-  - `toolcaller` 側で定義される interface。
-  - 実装として確認できるのは `conversationcommitter.ResultAPI`。
-  - `CommitToolResult(context.Context, types.ToolResultRecord) error` により、tool result を `EventConversationCommitRequest` として `conversationcommitter` の upstream に戻す。
+  - `CurrentGenerationID` と `Stale` は互換用フィールド。履歴 metadata の最終値は `conversationcommitter` が保存時の current generation から計算する。
 
 ## 3. 主要なデータフロー
 
@@ -63,9 +58,8 @@
 6. 引数を decode する: `ToolRequest.Arguments` が空でなければ JSON object として `map[string]any` へ unmarshal する。失敗した場合は log を出し、空 map で処理を続ける。
 7. handler を実行する: `ToolRequest.Name` に対応する handler があれば `Run(args)` を呼ぶ。未登録の場合は unknown function error、handler error の場合は error 文字列を map に入れる。
 8. 結果を JSON 化する: `map[string]any` を `json.Marshal` し、失敗した場合は `{"error":"result encoding failed"}` に置き換える。
-9. tool result を commit する: `types.ToolResultRecord` を作り、`ToolResultCommitter.CommitToolResult` を呼ぶ。committer が nil の場合は log を出して終了し、downstream event は出さない。
-10. conversationcommitter が保存要求へ変換する: `ResultAPI.CommitToolResult` は `types.ConversationCommitRequest{Role: RoleToolResult, ToolResult: &result}` を作り、`EventConversationCommitRequest` として committer stage の upstream へ送る。
-11. 会話履歴へ保存される: `conversationcommitter` は `conversationhistory.NewRecord` を経由して tool result を履歴化し、trim 後の text が空でなければ `EventLLMRequest` を `Role: "tool"` で発行する。
+9. tool result 保存要求を emit する: `types.ToolResultRecord` を作り、`types.ConversationCommitRequest{Role: RoleToolResult, ToolResult: &result}` を payload にした `EventConversationCommitRequest` を downstream へ流す。
+10. 会話履歴へ保存される: graph 接続で `conversationcommitter` に届き、`conversationhistory.NewRecord` を経由して tool result を履歴化する。trim 後の text が空でなければ `EventLLMRequest` を `Role: "tool_result"` で発行する。
 
 ```mermaid
 sequenceDiagram
@@ -76,7 +70,6 @@ sequenceDiagram
     participant R as router
     participant TC as toolcaller
     participant H as tools.Handler
-    participant API as conversationcommitter.ResultAPI
     participant CC as conversationcommitter
 
     LLM->>GF1: EventTimelineItem(TimelineKindTool)
@@ -86,8 +79,7 @@ sequenceDiagram
     R->>TC: EventToolRequest(ToolRequest)
     TC->>H: Run(args)
     H-->>TC: map[string]any / error
-    TC->>API: CommitToolResult(ToolResultRecord)
-    API->>CC: EventConversationCommitRequest(RoleToolResult, ToolResult)
+    TC->>CC: EventConversationCommitRequest(RoleToolResult, ToolResult)
     CC-->>LLM: EventLLMRequest(RoleToolResult)
 ```
 
@@ -121,14 +113,14 @@ sequenceDiagram
 - internal/
   - components/
     - toolcaller/
-      - toolcaller.go: `EventToolRequest` を受けて local tool handler を実行し、結果を `ToolResultCommitter` に渡す stage。
-        - `NewStage`: handler map と committer から graph stage を生成する。nil handler map は空 map にする。
+      - toolcaller.go: `EventToolRequest` を受けて local tool handler を実行し、結果保存用の `EventConversationCommitRequest` を downstream へ流す stage。
+        - `NewStage`: handler map から graph stage を生成する。nil handler map は空 map にする。
         - `run`: stage context を作り、`ContextAware` / `EventEmitterAware` handler へ依存を注入したうえで upstream を購読する。
-        - `dispatchTool`: 1 request ごとに goroutine を起動し、tool 実行と result commit を行う。
+        - `dispatchTool`: 1 request ごとに goroutine を起動し、tool 実行と result commit event 発行を行う。
         - `executeTool`: JSON 引数 decode、handler lookup、handler 実行、error 正規化、結果 JSON encode、`ToolResultRecord` 生成を行う。
         - `close`: context cancel、受信 goroutine 待機、upstream close を行う。
         - `emit`: `EventEmitterAware` tool から受けた event を context cancel を尊重して downstream へ流す。
-      - toolcaller_test.go: 未登録 tool が空 output ではない `ToolResultRecord` として commit され、downstream event が出ないことを検証する。
+      - toolcaller_test.go: 未登録 tool が空 output ではない `ToolResultRecord` を含む `EventConversationCommitRequest` として downstream へ出ることを検証する。
   - types/
     - event.go: graph event と `EventToolRequest`、`ToolRequest` を定義する。
     - conversation_record.go: `ToolResultRecord` と `ConversationCommitRequest` を定義する。
@@ -138,7 +130,6 @@ sequenceDiagram
     - router/
       - stage.go: `EventScheduledItem` の payload が `ToolRequest` の場合、`EventToolRequest` として `toolcaller` へ渡す。
     - conversationcommitter/
-      - tool_result_api.go: `ToolResultRecord` を `ConversationCommitRequest` に包み、`EventConversationCommitRequest` として committer stage に投入する。
       - committer.go: tool result を履歴保存し、空でない場合は `EventLLMRequest` を発行する。
     - wschat/
       - wschat.go: `EventWhiteboardUpdate` を websocket の `whiteboard_update` message に変換する。
@@ -151,7 +142,7 @@ sequenceDiagram
         - tool.go: `EventEmitterAware` の確認済み実装。`set_whiteboard` 実行時に `EventWhiteboardUpdate` を emit する。
 - cmd/
   - smart-speaker/
-    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers, resultCommitter)` に registry 由来の handler map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
+    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers)` に registry 由来の handler map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> conversationcommitter` は `EventConversationCommitRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
 
 ### Event 設計
 
@@ -167,8 +158,9 @@ sequenceDiagram
   - 注意: tool 実行結果を表す event ではなく、UI 更新用の別経路 event。
 
 - **commit 用 event: `EventConversationCommitRequest`**
-  - `toolcaller` の downstream からは出ない。
-  - `ToolResultCommitter` 実装である `conversationcommitter.ResultAPI` が、committer stage の upstream へ直接投入する。
+  - payload: `types.ConversationCommitRequest`
+  - tool result の場合、`Role: types.RoleToolResult` と `ToolResult: *types.ToolResultRecord` を持つ。
+  - 通常 pipeline では `toolcaller -> conversationcommitter` にこの event kind だけを接続する。
 
 - **再推論 event: `EventLLMRequest`**
   - `toolcaller` は直接出さない。
@@ -190,9 +182,7 @@ sequenceDiagram
 - unknown tool: `{"error":"unknown function: <name>"}` を `ToolResultRecord.Output` に入れる。
 - handler error: `{"error":"<err.Error()>"}` を `ToolResultRecord.Output` に入れる。
 - result JSON encode error: `{"error":"result encoding failed"}` を `ToolResultRecord.Output` に入れる。
-- committer nil: log 出力のみで終了する。tool result は保存されず、downstream event も出ない。
-- `CommitToolResult` error: stage context が cancel 済みでなければ log 出力する。
-- `ResultAPI.CommitToolResult` の副作用: generation store がある場合、`CurrentGenerationID` と `Stale` を設定し、`EventConversationCommitRequest` を committer stage に投入する。
+- tool result commit event: stage context が cancel 済みでなければ `EventConversationCommitRequest` として downstream へ流す。
 - `conversationcommitter` 側の副作用: tool result は会話履歴に保存され、空でなければ `EventLLMRequest` として LLM に戻る。
 
 ### テーブル設計
@@ -201,10 +191,8 @@ sequenceDiagram
 
 ### API設計
 
-外部 HTTP API は該当なし。内部 API として `ToolResultCommitter.CommitToolResult(ctx, result)` を使う。
+外部 HTTP API は該当なし。内部の戻し口も専用 API ではなく graph event を使う。
 
-- `CommitToolResult(ctx, result)`: tool 実行結果を会話履歴 commit request に変換して `conversationcommitter` に戻す。
-  - 入力: `types.ToolResultRecord{ToolCallID, Name, Output, GenerationID}`
-  - 内部生成: `types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}`
-  - 成功時: `EventConversationCommitRequest` を committer stage の upstream に送信する。
-  - context canceled 時: `ctx.Err()` を返す。
+- `EventConversationCommitRequest`: tool 実行結果を会話履歴 commit request に変換して `conversationcommitter` に戻す。
+  - payload: `types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}`
+  - graph 接続: 通常 pipeline では `toolcaller -> conversationcommitter` に `EventConversationCommitRequest` を接続する。

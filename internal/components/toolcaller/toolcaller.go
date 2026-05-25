@@ -20,15 +20,10 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools     map[string]tools.Handler
-	committer ToolResultCommitter
+	tools map[string]tools.Handler
 }
 
-type ToolResultCommitter interface {
-	CommitToolResult(context.Context, types.ToolResultRecord) error
-}
-
-func NewStage(handlers map[string]tools.Handler, committer ToolResultCommitter) *graph.Stage {
+func NewStage(handlers map[string]tools.Handler) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
@@ -36,7 +31,6 @@ func NewStage(handlers map[string]tools.Handler, committer ToolResultCommitter) 
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
-		committer:  committer,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -94,13 +88,15 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	go func() {
 		defer s.taskGroup.Done()
 		result := s.executeTool(req)
-		if s.committer == nil {
-			log.Printf("toolcaller: result committer is nil")
-			return
-		}
-		if err := s.committer.CommitToolResult(s.ctx, result); err != nil && s.ctx.Err() == nil {
-			log.Printf("toolcaller: commit result error: %v", err)
-		}
+		s.emit(types.Event{
+			Kind: types.EventConversationCommitRequest,
+			Payload: types.ConversationCommitRequest{
+				Role:         types.RoleToolResult,
+				GenerationID: result.GenerationID,
+				Source:       result.Name,
+				ToolResult:   &result,
+			},
+		})
 	}()
 }
 

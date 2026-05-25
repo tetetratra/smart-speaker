@@ -173,8 +173,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.sessionReset != nil {
 		stages.sessionReset.Name = "sessionreset"
 	}
-	var resultCommitter *conversationcommitter.ResultAPI
-	stages.committer, resultCommitter = conversationcommitter.NewStage(conversationcommitter.Config{
+	stages.committer = conversationcommitter.NewStage(conversationcommitter.Config{
 		History:    historyStore,
 		Generation: generationStore,
 	})
@@ -208,7 +207,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	stages.scheduler.Name = "scheduler"
 	stages.router = router.NewStage(router.Config{})
 	stages.router.Name = "router"
-	stages.tool = toolcaller.NewStage(toolHandlers, resultCommitter)
+	stages.tool = toolcaller.NewStage(toolHandlers)
 	if stages.tool != nil {
 		stages.tool.Name = "toolcaller"
 	}
@@ -328,6 +327,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, routerNode, rtcNode, types.EventRealtimeAudio)
 	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
+	connectKinds(g, toolNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
 }
 
