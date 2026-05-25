@@ -825,8 +825,6 @@ function App() {
       await startRTC()
       if (isAutoReconnect) {
         console.log('[ws reconnect] connected')
-      } else {
-        appendMessage({ id: Date.now(), type: 'agent', text: '接続しました。話しかけてください。' })
       }
     } catch (e) {
       console.error('connect error', e)
