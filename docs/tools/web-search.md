@@ -65,7 +65,7 @@ OpenAI function calling は使いません。
 5. request body には `tools: [{"type":"web_search"}]` を指定します。
 6. response の `output_text` を優先して読み、空の場合は `output[].content[].text` の `output_text` を fallback として読みます。
 7. 抽出した本文を `{"result":"..."}` として `toolcaller` に返します。
-8. `toolcaller` が JSON 化して `ToolResultRecord.Output` に入れ、`conversationcommitter.ResultAPI.CommitToolResult` で会話履歴に保存します。
+8. `toolcaller` が JSON 化して `ToolResultRecord.Output` に入れ、`EventConversationCommitRequest` として `conversationcommitter` に送り、会話履歴に保存します。
 
 Responses API request の概形:
 
