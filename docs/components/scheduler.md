@@ -70,7 +70,7 @@ sequenceDiagram
     participant GF2 as generationfilter-scheduler
     participant R as router
     participant TC as toolcaller
-    participant RTC as rtc
+    participant RTCOut as rtcout
     participant CC as conversationcommitter
 
     LLM->>TTS: EventTimelineItem(speech, GenerationID)
@@ -79,7 +79,7 @@ sequenceDiagram
     S->>GF2: EventScheduledItem(PlayableSpeech)
     S->>S: wait(DurationSeconds)
     GF2->>R: EventScheduledItem(PlayableSpeech)
-    R->>RTC: EventRealtimeAudio
+    R->>RTCOut: EventRealtimeAudio
     R->>CC: EventConversationCommitRequest(RoleAgent)
     LLM->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)

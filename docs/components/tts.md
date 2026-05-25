@@ -62,7 +62,7 @@ sequenceDiagram
   participant GF2 as generationfilter
   participant SCH as scheduler
   participant R as router
-  participant RTC as rtc
+  participant RTCOut as rtcout
   participant COMMIT as conversationcommitter
 
   LLM->>GF1: EventTimelineItem(TimelineItem speech)
@@ -73,7 +73,7 @@ sequenceDiagram
   GF2->>SCH: EventPlayableSpeech(PlayableSpeech)
   SCH->>R: EventScheduledItem(PlayableSpeech)
   SCH-->>SCH: DurationSeconds だけ待機
-  R->>RTC: EventRealtimeAudio
+  R->>RTCOut: EventRealtimeAudio
   R->>COMMIT: EventConversationCommitRequest
 ```
 

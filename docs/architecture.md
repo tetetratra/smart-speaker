@@ -12,7 +12,10 @@ flowchart TB
   ToolRuntime{{ツールランタイム<br/>外部API呼び出しや副作用を実行}}
 
   WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
-  RTC["rtc<br/>WebRTC音声入出力、VAD、Google STTを担当"]
+  RTCPeer["rtcpeer<br/>WebRTC signaling、peer lifecycle、track境界を担当"]
+  RTCVAD["rtcvad<br/>上り音声のVAD、prebuffer、UI向け状態通知を担当"]
+  STT["stt<br/>Google STT streamとfinal transcript出力を担当"]
+  RTCOut["rtcout<br/>assistant音声をWebRTC下りtrackへ書き込む"]
   UB["utterancebuffer<br/>STT結果を短時間バッファして1発話にまとめる"]
   SR["sessionreset<br/>user発話後の無音時間を監視して履歴と世代をリセットする"]
   COMMIT["conversationcommitter<br/>履歴保存後にUI表示やLLM要求へ振り分ける"]
@@ -30,13 +33,15 @@ flowchart TB
 
   USER -.->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
   Browser <-.->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
-  Browser <-.->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTC
+  Browser <-.->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTCPeer
 
-  WS -->|"EventRTCSignal<br/>offer/iceをRTCへ渡す"| RTC
-  RTC -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
-  RTC -->|"EventSpeechEnd<br/>発話終了をUIへ通知する"| WS
-  RTC -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
-  RTC -->|"EventHumanUtterance<br/>STT final transcriptを流す"| UB
+  WS -->|"EventRTCSignal<br/>offer/iceをrtcpeerへ渡す"| RTCPeer
+  RTCPeer -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
+  RTCPeer -->|"EventRTCPeerAudioFrame<br/>decode済みPCM frameを渡す"| RTCVAD
+  RTCVAD -->|"EventSpeechEnd<br/>発話終了をUIへ通知する"| WS
+  RTCVAD -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
+  RTCVAD -->|"EventRTCSpeechAudio<br/>発話開始、音声、終了を渡す"| STT
+  STT -->|"EventHumanUtterance<br/>STT final transcriptを流す"| UB
 
   UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
@@ -60,7 +65,8 @@ flowchart TB
   SCH -->|"EventScheduledItem<br/>再生時間やwait秒数に従って発火する"| GF3
   GF3 -->|"EventScheduledItem<br/>最新世代だけを通す"| ROUTER
 
-  ROUTER -->|"EventRealtimeAudio<br/>再生音声をRTCへ渡す"| RTC
+  RTCPeer -->|"EventRTCPeerOutputSink<br/>下り音声を書けるpeer sinkを通知する"| RTCOut
+  ROUTER -->|"EventRealtimeAudio<br/>再生音声をrtcoutへ渡す"| RTCOut
   ROUTER -->|"EventConversationCommitRequest<br/>agent発話の保存を要求する"| COMMIT
   ROUTER -->|"EventToolRequest<br/>実行タイミングのtoolを渡す"| TOOL
 
@@ -72,6 +78,10 @@ flowchart TB
 ## 主要な責務
 
 - `utterancebuffer` は STT 由来の文字起こしを短時間バッファし、1つの user 発話にまとめて世代idを進める。
+- `rtcpeer` は WebRTC signaling、peer lifecycle、remote track decode、下り音声 sink 通知を担当する。
+- `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、UI向け状態通知を担当する。
+- `stt` は Google Speech-to-Text v2 の streaming recognition と final transcript 出力を担当する。
+- `rtcout` は agent 音声を WebRTC の下り audio track へ書き込む。
 - `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させる。
 - `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
 - `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
@@ -127,3 +137,7 @@ graph 上に reset 用 event は流さず、`sessionreset` の downstream は会
 - `internal/components/scheduler/stage.go`
 - `internal/components/router/stage.go`
 - `internal/components/toolcaller/toolcaller.go`
+- `internal/components/rtcpeer/`
+- `internal/components/rtcvad/`
+- `internal/components/stt/`
+- `internal/components/rtcout/`

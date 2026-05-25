@@ -27,7 +27,7 @@
 
 ### シナリオ: 断片的な STT 結果を 1 つの確定発話にまとめる
 
-1. `rtc` から `EventHumanUtterance` が届く。
+1. `stt` から `EventHumanUtterance` が届く。
 2. `stage.consume` が payload を `types.OutputLine` として取り出し、空文字でなければ `buffer.append` に渡す。
 3. `buffer.append` は前後空白を除いたテキストを `parts` に追加する。
 4. 新しい断片が届くたびに timer を `Config.Delay` にリセットする。
@@ -37,14 +37,14 @@
 
 ```mermaid
 sequenceDiagram
-    participant RTC as rtc
+    participant STT as stt
     participant UB as utterancebuffer
     participant GEN as generation.Store
     participant CC as conversationcommitter
 
-    RTC->>UB: EventHumanUtterance("えーっと")
+    STT->>UB: EventHumanUtterance("えーっと")
     UB->>UB: buffer.append / timer reset
-    RTC->>UB: EventHumanUtterance("明日の予定は")
+    STT->>UB: EventHumanUtterance("明日の予定は")
     UB->>UB: buffer.append / timer reset
     UB->>UB: delay 経過で flush
     UB->>GEN: Next()

@@ -6,7 +6,7 @@
 - **ターゲットユーザー**: 実コードから確認できる直接の利用者は `web/src/main.tsx` のブラウザUI利用者。利用者の業務属性や利用シーンは `internal/components/wschat/` の実装だけからは不明。
 - **提供価値**: UIは `/ws/chat` に接続するだけで、会話メッセージ表示、RTC接続確立、VAD状態表示、ホワイトボード表示更新を受け取れる。サーバー側の各 component は `types.Event` を流すだけで、ブラウザ向け JSON 形式を意識しなくてよい。
 - **責務の境界**: `wschat` は HTTP WebSocket endpoint とイベント変換を担当する。LLM生成、STT、TTS、RTC media処理、whiteboard content生成は担当しない。
-- **参照元**: `internal/components/wschat/wschat.go`, `internal/types/types.go`, `internal/types/event.go`, `web/src/ws.ts`, `web/src/main.tsx`, `internal/components/rtc/signaling.go`, `internal/tools/functions/whiteboard/tool.go`。
+- **参照元**: `internal/components/wschat/wschat.go`, `internal/types/types.go`, `internal/types/event.go`, `web/src/ws.ts`, `web/src/main.tsx`, `internal/components/rtcpeer/signaling.go`, `internal/tools/functions/whiteboard/tool.go`。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -38,7 +38,7 @@
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
   - `wschat` は `ClientID` を付与して `EventRTCSignal` として graph downstream に流す。
-  - `internal/components/rtc/signaling.go` は `webrtc.offer`, `webrtc.answer`, `webrtc.ice` を処理し、answerやICE候補を `EventRTCSignal` として emit する。
+  - `internal/components/rtcpeer/signaling.go` は `webrtc.offer`, `webrtc.answer`, `webrtc.ice` を処理し、answerやICE候補を `EventRTCSignal` として emit する。
   - `wschat` は `EventRTCSignal.ClientID` がある場合、その接続IDの WebSocket にだけ signaling 応答を返す。
 - **Realtime output**
   - `types.OutputLine` を `type: "message"` の JSON に変換する。
@@ -58,28 +58,28 @@
 3. RTC開始: UIの `startRTC` が `RTCPeerConnection` を作り、マイク音声trackを追加する。
 4. offer送信: UIが `peer.createOffer()` と `setLocalDescription` の後、`{ "type": "webrtc.offer", "sdp": ... }` を WebSocket で送る。
 5. Event化: `wschat.handleWS` が JSON を parseし、`types.RTCSignal{Type, SDP, Candidate, ClientID}` を `EventRTCSignal` として `downstream` に送る。
-6. RTC component処理: `rtc.handleSignal` が `webrtc.offer` を処理し、PeerConnectionを作成して answer を生成する。
-7. answer返信: RTC component が `EventRTCSignal{Type: "webrtc.answer", SDP, ClientID}` を emitし、`wschat.handleEvent` が該当 `ClientID` の接続にだけ JSON を返す。
-8. ICE交換: ブラウザとRTC componentは `webrtc.ice` を同じ WebSocket message / `EventRTCSignal` 経路で交換する。
+6. rtcpeer component処理: `rtc.handleSignal` が `webrtc.offer` を処理し、PeerConnectionを作成して answer を生成する。
+7. answer返信: rtcpeer component が `EventRTCSignal{Type: "webrtc.answer", SDP, ClientID}` を emitし、`wschat.handleEvent` が該当 `ClientID` の接続にだけ JSON を返す。
+8. ICE交換: ブラウザとrtcpeer componentは `webrtc.ice` を同じ WebSocket message / `EventRTCSignal` 経路で交換する。
 
 ```mermaid
 sequenceDiagram
     participant UI as Browser UI
     participant WS as wschat /ws/chat
     participant Graph as graph pipeline
-    participant RTC as rtc component
+    participant RTCPeer as rtcpeer component
 
     UI->>WS: WebSocket connect
     WS->>WS: connID = ws-N を登録
     UI->>WS: {"type":"webrtc.offer","sdp":"..."}
     WS->>Graph: EventRTCSignal{Type, SDP, ClientID}
-    Graph->>RTC: EventRTCSignal
-    RTC->>Graph: EventRTCSignal{Type:"webrtc.answer", SDP, ClientID}
+    Graph->>RTCPeer: EventRTCSignal
+    RTCPeer->>Graph: EventRTCSignal{Type:"webrtc.answer", SDP, ClientID}
     Graph->>WS: EventRTCSignal
     WS->>UI: {"type":"webrtc.answer","sdp":"...","candidate":null}
     UI->>WS: {"type":"webrtc.ice","candidate":{...}}
     WS->>Graph: EventRTCSignal{Type:"webrtc.ice", Candidate, ClientID}
-    RTC->>Graph: EventRTCSignal{Type:"webrtc.ice", Candidate, ClientID}
+    RTCPeer->>Graph: EventRTCSignal{Type:"webrtc.ice", Candidate, ClientID}
     Graph->>WS: EventRTCSignal
     WS->>UI: {"type":"webrtc.ice","sdp":"","candidate":{...}}
 ```
@@ -112,14 +112,14 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant RTC as rtc/input component
+    participant VAD as rtcvad
     participant WS as wschat
     participant UI as Browser UI
 
-    RTC->>WS: EventSpeechEnd{Source, CapturedAt}
+    VAD->>WS: EventSpeechEnd{Source, CapturedAt}
     WS->>UI: {"type":"speech_end","source":"...","captured_at":"..."}
     UI->>UI: speech/STT status更新
-    RTC->>WS: EventRTCVADStatus{InputLevel, Threshold, CapturedAt}
+    VAD->>WS: EventRTCVADStatus{InputLevel, Threshold, CapturedAt}
     WS->>UI: {"type":"rtc_vad_status","input_level":...,"threshold":...,"captured_at":"..."}
     UI->>UI: inputLevel / speechThreshold更新
 ```
@@ -172,22 +172,22 @@ sequenceDiagram
 
 **ブラウザからサーバーへのmessage**
 
-- `webrtc.offer`: WebRTC offer をRTC componentへ渡す。
+- `webrtc.offer`: WebRTC offer をrtcpeer componentへ渡す。
   - リクエスト例: `{ "type": "webrtc.offer", "sdp": "..." }`
   - サーバー内部変換: `EventRTCSignal{Type: "webrtc.offer", SDP: "...", ClientID: "ws-N"}`
-- `webrtc.ice`: ブラウザ側ICE候補をRTC componentへ渡す。
+- `webrtc.ice`: ブラウザ側ICE候補をrtcpeer componentへ渡す。
   - リクエスト例: `{ "type": "webrtc.ice", "candidate": { "candidate": "...", "sdpMid": "0", "sdpMLineIndex": 0 } }`
   - サーバー内部変換: `EventRTCSignal{Type: "webrtc.ice", Candidate: ..., ClientID: "ws-N"}`
-- `webrtc.answer`: `wschat` は `webrtc.` prefix として downstream に流せるが、現在のUI実装ではブラウザから送っていない。RTC component側には `handleAnswer` が存在する。
+- `webrtc.answer`: `wschat` は `webrtc.` prefix として downstream に流せるが、現在のUI実装ではブラウザから送っていない。rtcpeer component側には `handleAnswer` が存在する。
 
 **サーバーからブラウザへのmessage**
 
 - `message`: realtime output をチャットUIへ表示する。
   - 例: `{ "type": "message", "role": "agent", "text": "...", "response_id": "...", "final": true, "source": "..." }`
   - `source` は `OutputLine.Source` が空でない場合だけ含まれる。
-- `webrtc.answer`: RTC componentが生成したanswerを、該当 `ClientID` のWebSocketに返す。
+- `webrtc.answer`: rtcpeer componentが生成したanswerを、該当 `ClientID` のWebSocketに返す。
   - 例: `{ "type": "webrtc.answer", "sdp": "...", "candidate": null }`
-- `webrtc.ice`: RTC componentが生成したICE候補を、該当 `ClientID` のWebSocketに返す。
+- `webrtc.ice`: rtcpeer componentが生成したICE候補を、該当 `ClientID` のWebSocketに返す。
   - 例: `{ "type": "webrtc.ice", "sdp": "", "candidate": { "candidate": "...", "sdpMid": "0", "sdpMLineIndex": 0 } }`
 - `speech_end`: 発話終了をUIへ通知する。
   - 例: `{ "type": "speech_end", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
