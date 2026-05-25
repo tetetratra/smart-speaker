@@ -14,7 +14,7 @@ import (
 func TestStageCommitsUserBeforeLLMRequest(t *testing.T) {
 	history := conversationhistory.NewStore()
 	gen := generation.NewStore()
-	st, _ := NewStage(Config{History: history, Generation: gen})
+	st := NewStage(Config{History: history, Generation: gen})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -34,25 +34,28 @@ func TestStageCommitsUserBeforeLLMRequest(t *testing.T) {
 	}
 }
 
-func TestResultAPICommitsToolResultAsStale(t *testing.T) {
+func TestStageCommitsToolResultEventAsStale(t *testing.T) {
 	history := conversationhistory.NewStore()
 	gen := generation.NewStore()
 	gen.Next()
 	gen.Next()
-	st, api := NewStage(Config{History: history, Generation: gen})
+	st := NewStage(Config{History: history, Generation: gen})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
 	defer st.Close()
 
-	if err := api.CommitToolResult(ctx, types.ToolResultRecord{
-		ToolCallID:   "call-1",
-		Name:         "get_temp",
-		Output:       json.RawMessage(`{"temp":29}`),
+	st.Upstream <- types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
+		Role:         types.RoleToolResult,
 		GenerationID: 1,
-	}); err != nil {
-		t.Fatal(err)
-	}
+		Source:       "get_temp",
+		ToolResult: &types.ToolResultRecord{
+			ToolCallID:   "call-1",
+			Name:         "get_temp",
+			Output:       json.RawMessage(`{"temp":29}`),
+			GenerationID: 1,
+		},
+	}}
 
 	expectEvent(t, st.Downstream, types.EventRealtimeOutput)
 	expectEvent(t, st.Downstream, types.EventLLMRequest)
@@ -68,7 +71,7 @@ func TestResultAPICommitsToolResultAsStale(t *testing.T) {
 func TestStageCommitsToolCallToRealtimeOutput(t *testing.T) {
 	history := conversationhistory.NewStore()
 	gen := generation.NewStore()
-	st, _ := NewStage(Config{History: history, Generation: gen})
+	st := NewStage(Config{History: history, Generation: gen})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)

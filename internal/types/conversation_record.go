@@ -33,12 +33,10 @@ type ToolCallRecord struct {
 
 // ToolResultRecord は tool 実行結果を履歴へ保存するための payload です。
 type ToolResultRecord struct {
-	ToolCallID          string
-	Name                string
-	Output              json.RawMessage
-	GenerationID        GenerationID
-	CurrentGenerationID GenerationID
-	Stale               bool
+	ToolCallID   string
+	Name         string
+	Output       json.RawMessage
+	GenerationID GenerationID
 }
 
 // ConversationCommitRequest は会話履歴への保存要求です。

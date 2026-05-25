@@ -113,7 +113,7 @@ sequenceDiagram
 2. `TimelineItem` 化: `parseTimelineJSON` は `name` を `ToolName`、`args` を `ToolArgs` に入れる。`args` が空の場合は `{}` を設定する。
 3. scheduler 変換: `scheduler` は tool item を `types.ToolRequest` に変換し、`ToolCallID` と `SequenceID` に timeline の `SequenceID` を入れる。
 4. router 振り分け: `router` は `ToolRequest` を `tool_call` として履歴保存した後、`EventToolRequest` として `toolcaller` へ送る。
-5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行し、結果を `ToolResultRecord` として `conversationcommitter.ResultAPI.CommitToolResult` へ渡す。handler がない場合は `{"error":"unknown function: <name>"}` を結果にする。
+5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行し、結果を `ToolResultRecord` として `EventConversationCommitRequest` で `conversationcommitter` へ渡す。handler がない場合は `{"error":"unknown function: <name>"}` を結果にする。
 6. 履歴への保存: `conversationcommitter` は tool result を role `tool_result` の record として保存する。
 7. LLM への再投入: tool result 保存後、`conversationcommitter` は role `tool_result` の `EventLLMRequest` を発行する。`llm.messages` は履歴がある場合 request の `Role` / `Text` ではなく履歴 snapshot 全体を使う。
 
@@ -129,9 +129,9 @@ sequenceDiagram
   LLM->>Scheduler: EventTimelineItem(type=tool)
   Scheduler->>Router: EventScheduledItem(ToolRequest)
   Router->>Tool: EventToolRequest
-  Tool->>Committer: CommitToolResult(ToolResultRecord)
-  Committer->>History: Append(role=tool)
-  Committer->>LLM: EventLLMRequest(role=tool)
+  Tool->>Committer: EventConversationCommitRequest(ToolResultRecord)
+  Committer->>History: Append(role=tool_result)
+  Committer->>LLM: EventLLMRequest(role=tool_result)
 ```
 
 ### シナリオ: JSON timeline 契約違反時の retry
@@ -247,7 +247,7 @@ sequenceDiagram
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
 - `conversationhistory.ToChatMessages` は `user` / `agent` / `tool_call` / `tool_result` の正規 role を保持した `types.ChatMessage` を返す。content は `{"type":"message",...}`、`{"type":"tool_call",...}`、`{"type":"tool_result",...}` の JSON 文字列になる。
 - `responses_client` は HTTP payload 作成直前で Responses API が受け付ける transport role に包む。履歴 message の外側 `input[].role` は `user`、意味上の role は content 内の JSON に残す。
-- `ToolResultRecord` には `CurrentGenerationID` と `Stale` がある。`ResultAPI.CommitToolResult` は現在世代と tool result の世代が違う場合に stale 情報を設定する。
+- 履歴 metadata の `current_generation_id` と `stale` は、`conversationhistory.NewRecord` が現在世代と tool result の世代を比較して設定する。
 
 ### 参照元
 
