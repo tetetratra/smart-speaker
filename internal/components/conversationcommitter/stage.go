@@ -23,7 +23,7 @@ type stage struct {
 	cancel     context.CancelFunc
 }
 
-func NewStage(cfg Config) (*graph.Stage, *ResultAPI) {
+func NewStage(cfg Config) *graph.Stage {
 	s := &stage{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
@@ -33,13 +33,12 @@ func NewStage(cfg Config) (*graph.Stage, *ResultAPI) {
 		generation: cfg.Generation,
 		emit:       s.emit,
 	}
-	api := &ResultAPI{input: s.upstream, generation: cfg.Generation}
 	return &graph.Stage{
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
 		CloseFn:    s.close,
-	}, api
+	}
 }
 
 func (s *stage) run(parent context.Context) {
