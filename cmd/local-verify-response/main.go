@@ -110,7 +110,7 @@ func buildPipeline(ctx context.Context, cfg app.Config) (*graph.Stage, <-chan ty
 		Generation: generationStore,
 	})
 	utterance.Name = "utterancebuffer"
-	committer, _ := conversationcommitter.NewStage(conversationcommitter.Config{
+	committer := conversationcommitter.NewStage(conversationcommitter.Config{
 		History:    historyStore,
 		Generation: generationStore,
 	})
