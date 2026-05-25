@@ -14,6 +14,7 @@ flowchart TB
   WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
   RTC["rtc<br/>WebRTC音声入出力、VAD、Google STTを担当"]
   UB["utterancebuffer<br/>STT結果を短時間バッファして1発話にまとめる"]
+  SR["sessionreset<br/>user発話後の無音時間を監視して履歴と世代をリセットする"]
   COMMIT["conversationcommitter<br/>履歴保存後にUI表示やLLM要求へ振り分ける"]
   LLM["llm<br/>履歴を読んでResponses APIからJSON timelineを作る"]
   GF1["generationfilter<br/>LLM出力の世代を検査する"]
@@ -39,12 +40,15 @@ flowchart TB
 
   UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
+  UB -->|"EventConversationCommitRequest<br/>user発話だけをactivityとして監視する"| SR
 
   COMMIT -.->|"user/agent/tool_call/tool_result履歴を保存する"| HSTORE
   LLM -.->|"LLM入力用の履歴を読む"| HSTORE
   GF1 -.->|"最新世代idを読む"| GSTORE
   GF2 -.->|"最新世代idを読む"| GSTORE
   GF3 -.->|"最新世代idを読む"| GSTORE
+  SR -.->|"idle timeout後に履歴を空にする"| HSTORE
+  SR -.->|"idle timeout後に世代idを前進させる"| GSTORE
 
   COMMIT -->|"EventRealtimeOutput<br/>user/agent表示をUIへ送る"| WS
   COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
@@ -68,6 +72,7 @@ flowchart TB
 ## 主要な責務
 
 - `utterancebuffer` は STT 由来の文字起こしを短時間バッファし、1つの user 発話にまとめて世代idを進める。
+- `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させる。
 - `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
 - `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
@@ -89,10 +94,21 @@ tool は1回の LLM 応答の末尾に最大1件だけ許可し、tool の後に
 
 世代idは `internal/states/generation` が保持する。
 新しい確定 user 発話ごとに世代idを単調増加させ、古い LLM chunk や古い scheduler item は generationfilter で落とす。
+また、長時間 user 発話がない場合は `sessionreset` が世代idをさらに前進させ、reset 前の古い event が後続へ反映されないようにする。
 
 会話履歴は `internal/states/conversationhistory` が保持する。
 LLM request は必ず保存済みの履歴 snapshot から作る。
 古い世代の tool result は実行済みの事実として保存し、`stale` metadata を付ける。
+`sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()` を呼び、次の user 発話で古い会話文脈を LLM に渡さない。
+
+## セッションリセット
+
+`CONVERSATION_IDLE_TIMEOUT_SECONDS` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
+未設定時は 600 秒、`0` は無効化、不正値や負値は既定値として扱う。
+
+リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進める。
+hook が error を返してもログに残して後続 hook とリセット処理を継続する。
+graph 上に reset 用 event は流さず、`sessionreset` の downstream は会話 pipeline へ接続しない。
 
 ## 参照元
 
@@ -103,6 +119,7 @@ LLM request は必ず保存済みの履歴 snapshot から作る。
 - `internal/states/generation/store.go`
 - `internal/states/conversationhistory/store.go`
 - `internal/components/utterancebuffer/stage.go`
+- `internal/components/sessionreset/stage.go`
 - `internal/components/conversationcommitter/stage.go`
 - `internal/components/llm/stage.go`
 - `internal/components/generationfilter/stage.go`

@@ -22,6 +22,14 @@
 - `internal/states/generation` は最新世代idを保持する。
 - `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
 - Store は graph node ではなく、必要な component へ依存注入する。
+- `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()` と `generation.Store.Next()` を呼び、履歴クリアと古い世代の抑止を同時に行う。
+
+## セッションリセット
+
+- `sessionreset` は `utterancebuffer` から出る user の `EventConversationCommitRequest` を横付けで監視する。
+- `CONVERSATION_IDLE_TIMEOUT_SECONDS` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させる。
+- `CONVERSATION_IDLE_TIMEOUT_SECONDS=0` の場合、idle reset は無効になる。
+- reset 用の graph event は発行しない。
 
 ## function calling
 

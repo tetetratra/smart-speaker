@@ -14,11 +14,12 @@
   - `OPENAI_API_KEY`
   - `ELEVENLABS_API_KEY`
   - `ELEVENLABS_VOICE_ID`
-- 任意の環境変数として `README.md` に記載があるもの:
+- 任意の環境変数:
   - `ELEVENLABS_MODEL_ID`
   - `RTC_ICE_HOST_IPS`
   - `WEB_DIST_DIR`
   - `WS_ADDR`
+  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 600 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
 
 ### 音声入力・Google Speech 関連
@@ -172,6 +173,7 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 ### ログ・障害
 - `error`、`fatal`、`panic` が継続して出ない。
 - 接続、文字起こし、TTS、ツール実行の失敗箇所をログから切り分けられる。
+- idle reset を確認する場合、`sessionreset: reset requested_at=...` と `sessionreset: generation advanced ...` のログが出る。
 
 ## 6. 将来の自動テスト観点
 - 起動確認:
