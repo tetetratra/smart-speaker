@@ -2,6 +2,7 @@ package sessionreset
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -66,19 +67,86 @@ func (s *stage) run(parent context.Context) {
 
 func (s *stage) consume(ctx context.Context) {
 	defer close(s.downstream)
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	stopTimer := func() {
+		if timer == nil {
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer = nil
+		timerC = nil
+	}
+	resetTimer := func() {
+		if s.idleTimeout <= 0 {
+			return
+		}
+		if timer == nil {
+			timer = time.NewTimer(s.idleTimeout)
+			timerC = timer.C
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(s.idleTimeout)
+		timerC = timer.C
+	}
+	defer stopTimer()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-s.upstream:
+		case <-timerC:
+			timer = nil
+			timerC = nil
+			s.fireReset(ctx)
+		case evt, ok := <-s.upstream:
 			if !ok {
 				return
+			}
+			if s.isUserCommitRequest(evt) {
+				resetTimer()
 			}
 		}
 	}
 }
 
+func (s *stage) isUserCommitRequest(evt types.Event) bool {
+	if evt.Kind != types.EventConversationCommitRequest {
+		return false
+	}
+	req, ok := evt.Payload.(types.ConversationCommitRequest)
+	return ok && req.Role == types.RoleUser
+}
+
 func (s *stage) fireReset(ctx context.Context) {
+	requestedAt := s.now()
+	formatted := requestedAt.Format(time.RFC3339Nano)
+	log.Printf("sessionreset: reset requested_at=%s", formatted)
+	for _, hook := range s.hooks {
+		if hook == nil {
+			continue
+		}
+		if err := hook.Exec(ctx); err != nil {
+			log.Printf("sessionreset: hook error requested_at=%s err=%v", formatted, err)
+		}
+	}
+	if s.history != nil {
+		s.history.Reset()
+	}
+	if s.generation != nil {
+		next := s.generation.Next()
+		log.Printf("sessionreset: generation advanced requested_at=%s generation=%d", formatted, next)
+	}
 }
 
 func (s *stage) close() error {
