@@ -24,7 +24,7 @@ const reconnectInitialDelayMs = 1000
 const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
-const toolToastDurationMs = 1000
+const toolToastDurationMs = 5000
 
 type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
@@ -135,11 +135,16 @@ const liveRootStyle = `
     overflow: hidden;
     min-height: 88px;
   }
-  .live-tool-toast {
+  .live-tool-toast-stack {
     position: absolute;
     top: 8px;
     left: 10px;
     right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .live-tool-toast {
     min-height: 32px;
     border: 1px solid transparent;
     border-radius: 8px;
@@ -152,7 +157,10 @@ const liveRootStyle = `
     line-height: 1.2;
     font-weight: 700;
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    animation: live-tool-toast-slide 1000ms ease-out forwards;
+    transform-origin: top center;
+    will-change: transform, opacity;
+    pointer-events: none;
+    animation: live-tool-toast-slide 5000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .live-tool-toast.call {
     background: #fff7ed;
@@ -164,9 +172,6 @@ const liveRootStyle = `
     border-color: #93c5fd;
     color: #1d4ed8;
   }
-  .live-tool-toast:nth-child(2) {
-    top: 48px;
-  }
   .live-tool-toast-tool {
     min-width: 0;
     overflow: hidden;
@@ -176,19 +181,23 @@ const liveRootStyle = `
   @keyframes live-tool-toast-slide {
     0% {
       opacity: 0;
-      transform: translateY(-120%);
+      transform: translateY(-10px) scale(0.98);
     }
-    14% {
+    18% {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(1px) scale(1);
     }
-    82% {
+    28% {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
+    }
+    76% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
     }
     100% {
       opacity: 0;
-      transform: translateY(-120%);
+      transform: translateY(-6px) scale(0.985);
     }
   }
   .live-volume-slider {
@@ -524,7 +533,7 @@ function App() {
   const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
     const normalizedToolName = toolName.trim() || 'unknown_tool'
     const id = nextMessageId()
-    setToolToasts((prev) => [...prev.slice(-1), { id, kind, toolName: normalizedToolName }])
+    setToolToasts((prev) => [{ id, kind, toolName: normalizedToolName }, ...prev.slice(0, 1)])
     window.setTimeout(() => {
       setToolToasts((prev) => prev.filter((toast) => toast.id !== id))
     }, toolToastDurationMs)
@@ -1246,12 +1255,13 @@ function LiveView(props: LiveViewProps) {
               onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
             />
             <div className="live-volume-control" aria-label="キャラクターエリア">
-              {toolToasts.map((toast) => (
-                <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
-                  <span>{toast.kind === 'call' ? 'ツール呼び出し' : 'ツール結果受信'}</span>
-                  <span className="live-tool-toast-tool">{toast.toolName}</span>
-                </div>
-              ))}
+              <div className="live-tool-toast-stack">
+                {toolToasts.map((toast) => (
+                  <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
+                    <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="live-mini"></div>
           </div>
