@@ -21,6 +21,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/rtc"
 	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
+	"github.com/tetetratra/smart-speaker/internal/components/sessionreset"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
@@ -103,18 +104,19 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat        *graph.Stage
-	rtc         *graph.Stage
-	utterance   *graph.Stage
-	committer   *graph.Stage
-	llm         *graph.Stage
-	filterLLM   *graph.Stage
-	tts         *graph.Stage
-	filterTTS   *graph.Stage
-	scheduler   *graph.Stage
-	filterSched *graph.Stage
-	router      *graph.Stage
-	tool        *graph.Stage
+	chat         *graph.Stage
+	rtc          *graph.Stage
+	utterance    *graph.Stage
+	sessionReset *graph.Stage
+	committer    *graph.Stage
+	llm          *graph.Stage
+	filterLLM    *graph.Stage
+	tts          *graph.Stage
+	filterTTS    *graph.Stage
+	scheduler    *graph.Stage
+	filterSched  *graph.Stage
+	router       *graph.Stage
+	tool         *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
@@ -122,6 +124,7 @@ func (s appStages) all() []*graph.Stage {
 		s.chat,
 		s.rtc,
 		s.utterance,
+		s.sessionReset,
 		s.committer,
 		s.llm,
 		s.filterLLM,
@@ -161,6 +164,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	})
 	if stages.utterance != nil {
 		stages.utterance.Name = "utterancebuffer"
+	}
+	stages.sessionReset = sessionreset.NewStage(sessionreset.Config{
+		IdleTimeout: cfg.ConversationIdleTimeout,
+		History:     historyStore,
+		Generation:  generationStore,
+	})
+	if stages.sessionReset != nil {
+		stages.sessionReset.Name = "sessionreset"
 	}
 	var resultCommitter *conversationcommitter.ResultAPI
 	stages.committer, resultCommitter = conversationcommitter.NewStage(conversationcommitter.Config{
@@ -290,6 +301,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	chatNode := add(stages.chat)
 	rtcNode := add(stages.rtc)
 	utteranceNode := add(stages.utterance)
+	sessionResetNode := add(stages.sessionReset)
 	committerNode := add(stages.committer)
 	llmNode := add(stages.llm)
 	filterLLMNode := add(stages.filterLLM)
@@ -304,6 +316,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, rtcNode, chatNode, types.EventRTCSignal, types.EventSpeechEnd, types.EventRTCVADStatus)
 	connectKinds(g, rtcNode, utteranceNode, types.EventHumanUtterance)
 	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
+	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
 	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
 	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
 	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
