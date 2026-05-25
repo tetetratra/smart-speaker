@@ -8,6 +8,8 @@ type ChatMessage =
 type StatusTone = 'idle' | 'active' | 'done' | 'error'
 type ButtonTone = 'primary' | 'secondary'
 type BoardEntry = { id: number; content: string }
+type ToolToastKind = 'call' | 'result'
+type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -22,6 +24,7 @@ const reconnectInitialDelayMs = 1000
 const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
+const toolToastDurationMs = 5000
 
 type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
@@ -128,8 +131,74 @@ const liveRootStyle = `
     background: var(--live-panel-soft);
     border-radius: 10px;
     padding: 8px 10px 7px;
-    display: grid;
+    position: relative;
+    overflow: hidden;
+    min-height: 88px;
+  }
+  .live-tool-toast-stack {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+  }
+  .live-tool-toast {
+    min-height: 32px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 7px 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transform-origin: top center;
+    will-change: transform, opacity;
+    pointer-events: none;
+    animation: live-tool-toast-slide 5000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .live-tool-toast.call {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #9a3412;
+  }
+  .live-tool-toast.result {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+  .live-tool-toast-tool {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @keyframes live-tool-toast-slide {
+    0% {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.98);
+    }
+    18% {
+      opacity: 1;
+      transform: translateY(1px) scale(1);
+    }
+    28% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    76% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.985);
+    }
   }
   .live-volume-slider {
     width: 100%;
@@ -412,6 +481,7 @@ type LiveViewProps = {
   lastAssistantMessage: string
   lastUserMessage: string
   boardEntries: BoardEntry[]
+  toolToasts: ToolToast[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
@@ -433,6 +503,7 @@ function App() {
   const [inputLevel, setInputLevel] = useState(0)
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
+  const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
@@ -458,6 +529,15 @@ function App() {
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
   }, [])
+
+  const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
+    const normalizedToolName = toolName.trim() || 'unknown_tool'
+    const id = nextMessageId()
+    setToolToasts((prev) => [{ id, kind, toolName: normalizedToolName }, ...prev.slice(0, 1)])
+    window.setTimeout(() => {
+      setToolToasts((prev) => prev.filter((toast) => toast.id !== id))
+    }, toolToastDurationMs)
+  }, [nextMessageId])
 
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
 
@@ -555,6 +635,9 @@ function App() {
           else if (raw.role === 'agent') role = 'agent'
           else if (raw.role === 'tool_call') role = 'tool_call'
           else if (raw.role === 'tool_result') role = 'tool_result'
+          if (role === 'tool_call' || role === 'tool_result') {
+            showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
+          }
           if (raw.source === 'server-stt' && role === 'user') {
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
@@ -592,7 +675,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, nextMessageId],
+    [appendMessage, handleRTCSignal, nextMessageId, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -924,6 +1007,7 @@ function App() {
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
           boardEntries={boardEntries}
+          toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
@@ -1073,6 +1157,7 @@ function LiveView(props: LiveViewProps) {
     lastAssistantMessage,
     lastUserMessage,
     boardEntries,
+    toolToasts,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
     connect,
@@ -1170,6 +1255,13 @@ function LiveView(props: LiveViewProps) {
               onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
             />
             <div className="live-volume-control" aria-label="キャラクターエリア">
+              <div className="live-tool-toast-stack">
+                {toolToasts.map((toast) => (
+                  <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
+                    <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="live-mini"></div>
           </div>

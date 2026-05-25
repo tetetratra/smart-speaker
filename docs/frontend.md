@@ -32,6 +32,9 @@
 - whiteboard の内容を表示する。
 - 直近の user / agent 発話を表示する。
 - 再生音量をスライダーで切り替える。
+- tool call / tool result を右側のキャラクターエリア上部に短時間のトーストとして表示する。
+  - 通常の会話UIには追加しない。
+  - 表示内容はツール名と call / result の区別に限定し、引数や結果本文は表示しない。
 
 ### 2.4 管理画面の責務
 - 接続 / 切断を明示的に操作できる。
@@ -93,6 +96,9 @@ sequenceDiagram
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。
 - tool call / tool result
   - 通常の会話UIには表示しない。
+  - 通常画面では右側のキャラクターエリア上部にトースト表示する。
+  - `source` のツール名を表示し、`tool_call` と `tool_result` は文言と色で区別する。
+  - トーストは最大2件まで保持し、一定時間後に自動削除する。
 - `webrtc.answer` / `webrtc.ice`
   - メッセージログには積まず、PeerConnection に反映する。
   - remote description 設定前の ICE は一時キューに保持する。
@@ -150,6 +156,7 @@ sequenceDiagram
 - 表示用状態を保持する。
   - `messages`
   - `boardEntries`
+  - `toolToasts`
   - `lastUserMessage`
   - `lastAssistantMessage`
   - `playbackVolumeLevel`
@@ -168,7 +175,7 @@ sequenceDiagram
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
 - whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
-- 管理画面は function call / result をそのまま観測できる。
+- tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
 - 手動切断と異常切断で再接続ポリシーが異なる。
 
