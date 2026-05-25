@@ -13,21 +13,21 @@ import (
 
 // Config holds runtime settings.
 type Config struct {
-	APIKey             string
-	ResponsesModel     string
-	SystemPrompt       string
-	AutoPromptInterval time.Duration
-	AutoPromptMessage  string
-	ElevenLabs         ElevenLabsConfig
-	SwitchBot          SwitchBotConfig
-	GoogleCloudProject string
-	GoogleRecognizer   string
-	GoogleLanguage     string
-	GoogleCredentials  string
-	STTPhrases         []string
-	RTCIceHostIPs      []string
-	WSAddr             string
-	WebDistDir         string
+	APIKey                  string
+	ResponsesModel          string
+	SystemPrompt            string
+	ConversationIdleTimeout time.Duration
+	AutoPromptMessage       string
+	ElevenLabs              ElevenLabsConfig
+	SwitchBot               SwitchBotConfig
+	GoogleCloudProject      string
+	GoogleRecognizer        string
+	GoogleLanguage          string
+	GoogleCredentials       string
+	STTPhrases              []string
+	RTCIceHostIPs           []string
+	WSAddr                  string
+	WebDistDir              string
 }
 
 type SwitchBotConfig struct {
@@ -64,12 +64,7 @@ func LoadConfig(promptPath string) Config {
 		webDistDir = "web/dist"
 	}
 
-	interval := time.Minute * 10
-	if raw := strings.TrimSpace(os.Getenv("AUTO_PROMPT_INTERVAL")); raw != "" {
-		if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
-			interval = time.Duration(secs) * time.Second
-		}
-	}
+	conversationIdleTimeout := conversationIdleTimeoutFromEnv(os.Getenv("CONVERSATION_IDLE_TIMEOUT_SECONDS"))
 	message := strings.TrimSpace(os.Getenv("AUTO_PROMPT_MESSAGE"))
 
 	switchCfg := SwitchBotConfig{
@@ -106,22 +101,35 @@ func LoadConfig(promptPath string) Config {
 	sttPhrases := readSTTPhrases("stt_phrases.txt")
 
 	return Config{
-		APIKey:             apiKey,
-		ResponsesModel:     responsesModel,
-		SystemPrompt:       prompt,
-		AutoPromptInterval: interval,
-		AutoPromptMessage:  message,
-		ElevenLabs:         elv,
-		SwitchBot:          switchCfg,
-		GoogleCloudProject: googleProject,
-		GoogleRecognizer:   googleRecognizer,
-		GoogleLanguage:     googleLanguage,
-		GoogleCredentials:  googleCredentials,
-		STTPhrases:         sttPhrases,
-		RTCIceHostIPs:      rtcIceHostIPs,
-		WSAddr:             wsAddr,
-		WebDistDir:         webDistDir,
+		APIKey:                  apiKey,
+		ResponsesModel:          responsesModel,
+		SystemPrompt:            prompt,
+		ConversationIdleTimeout: conversationIdleTimeout,
+		AutoPromptMessage:       message,
+		ElevenLabs:              elv,
+		SwitchBot:               switchCfg,
+		GoogleCloudProject:      googleProject,
+		GoogleRecognizer:        googleRecognizer,
+		GoogleLanguage:          googleLanguage,
+		GoogleCredentials:       googleCredentials,
+		STTPhrases:              sttPhrases,
+		RTCIceHostIPs:           rtcIceHostIPs,
+		WSAddr:                  wsAddr,
+		WebDistDir:              webDistDir,
 	}
+}
+
+func conversationIdleTimeoutFromEnv(raw string) time.Duration {
+	const defaultConversationIdleTimeout = 10 * time.Minute
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return defaultConversationIdleTimeout
+	}
+	secs, err := strconv.Atoi(trimmed)
+	if err != nil || secs < 0 {
+		return defaultConversationIdleTimeout
+	}
+	return time.Duration(secs) * time.Second
 }
 
 func splitComma(raw string) []string {
