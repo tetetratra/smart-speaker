@@ -19,9 +19,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
-	"github.com/tetetratra/smart-speaker/internal/components/rtc"
+	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
+	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
+	"github.com/tetetratra/smart-speaker/internal/components/rtcvad"
 	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
 	"github.com/tetetratra/smart-speaker/internal/components/sessionreset"
+	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
@@ -105,7 +108,10 @@ func closeStages(stages ...*graph.Stage) {
 
 type appStages struct {
 	chat         *graph.Stage
-	rtc          *graph.Stage
+	rtcpeer      *graph.Stage
+	rtcvad       *graph.Stage
+	stt          *graph.Stage
+	rtcout       *graph.Stage
 	utterance    *graph.Stage
 	sessionReset *graph.Stage
 	committer    *graph.Stage
@@ -122,7 +128,10 @@ type appStages struct {
 func (s appStages) all() []*graph.Stage {
 	return []*graph.Stage{
 		s.chat,
-		s.rtc,
+		s.rtcpeer,
+		s.rtcvad,
+		s.stt,
+		s.rtcout,
 		s.utterance,
 		s.sessionReset,
 		s.committer,
@@ -212,8 +221,29 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.tool != nil {
 		stages.tool.Name = "toolcaller"
 	}
-	stages.rtc, err = rtc.NewStage(rtc.Config{
-		IceHostIPs:       cfg.RTCIceHostIPs,
+	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{
+		IceHostIPs: cfg.RTCIceHostIPs,
+	})
+	if err != nil {
+		if stages.tts != nil {
+			stages.tts.Close()
+		}
+		return appStages{}, fmt.Errorf("failed to init rtcpeer stage: %w", err)
+	}
+	if stages.rtcpeer != nil {
+		stages.rtcpeer.Name = "rtcpeer"
+	}
+	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{})
+	if err != nil {
+		if stages.tts != nil {
+			stages.tts.Close()
+		}
+		return appStages{}, fmt.Errorf("failed to init rtcvad stage: %w", err)
+	}
+	if stages.rtcvad != nil {
+		stages.rtcvad.Name = "rtcvad"
+	}
+	stages.stt, err = stt.NewStage(stt.Config{
 		SpeechProjectID:  cfg.GoogleCloudProject,
 		SpeechRecognizer: cfg.GoogleRecognizer,
 		SpeechLanguage:   cfg.GoogleLanguage,
@@ -224,10 +254,20 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 		if stages.tts != nil {
 			stages.tts.Close()
 		}
-		return appStages{}, fmt.Errorf("failed to init rtc stage: %w", err)
+		return appStages{}, fmt.Errorf("failed to init stt stage: %w", err)
 	}
-	if stages.rtc != nil {
-		stages.rtc.Name = "rtc"
+	if stages.stt != nil {
+		stages.stt.Name = "stt"
+	}
+	stages.rtcout, err = rtcout.NewStage(rtcout.Config{})
+	if err != nil {
+		if stages.tts != nil {
+			stages.tts.Close()
+		}
+		return appStages{}, fmt.Errorf("failed to init rtcout stage: %w", err)
+	}
+	if stages.rtcout != nil {
+		stages.rtcout.Name = "rtcout"
 	}
 	return stages, nil
 }
@@ -299,7 +339,10 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	}
 
 	chatNode := add(stages.chat)
-	rtcNode := add(stages.rtc)
+	rtcpeerNode := add(stages.rtcpeer)
+	rtcvadNode := add(stages.rtcvad)
+	sttNode := add(stages.stt)
+	rtcoutNode := add(stages.rtcout)
 	utteranceNode := add(stages.utterance)
 	sessionResetNode := add(stages.sessionReset)
 	committerNode := add(stages.committer)
@@ -312,9 +355,13 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	routerNode := add(stages.router)
 	toolNode := add(stages.tool)
 
-	connectKinds(g, chatNode, rtcNode, types.EventRTCSignal)
-	connectKinds(g, rtcNode, chatNode, types.EventRTCSignal, types.EventSpeechEnd, types.EventRTCVADStatus)
-	connectKinds(g, rtcNode, utteranceNode, types.EventHumanUtterance)
+	connectKinds(g, chatNode, rtcpeerNode, types.EventRTCSignal)
+	connectKinds(g, rtcpeerNode, chatNode, types.EventRTCSignal)
+	connectKinds(g, rtcpeerNode, rtcvadNode, types.EventRTCPeerAudioFrame)
+	connectKinds(g, rtcpeerNode, rtcoutNode, types.EventRTCPeerOutputSink)
+	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechEnd, types.EventRTCVADStatus)
+	connectKinds(g, rtcvadNode, sttNode, types.EventRTCSpeechAudio)
+	connectKinds(g, sttNode, utteranceNode, types.EventHumanUtterance)
 	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
 	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
@@ -325,7 +372,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech)
 	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem)
 	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
-	connectKinds(g, routerNode, rtcNode, types.EventRealtimeAudio)
+	connectKinds(g, routerNode, rtcoutNode, types.EventRealtimeAudio)
 	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
 	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
