@@ -16,12 +16,14 @@ permissions:
 jobs:
   bootstrap:
     if: >-
-      (
-        github.event.action == 'opened' &&
-        contains(github.event.issue.labels.*.name, 'AI主導開発')
-      ) || (
-        github.event.action == 'labeled' &&
-        github.event.label.name == 'AI主導開発'
+      github.event.issue.state == 'open' && (
+        (
+          github.event.action == 'opened' &&
+          contains(github.event.issue.labels.*.name, 'AI主導開発')
+        ) || (
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'AI主導開発'
+        )
       )
     runs-on: ubuntu-latest
     outputs:
