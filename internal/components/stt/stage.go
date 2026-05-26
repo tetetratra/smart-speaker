@@ -1,4 +1,4 @@
-package rtc
+package stt
 
 import (
 	"context"
@@ -15,29 +15,13 @@ import (
 )
 
 const (
-	webrtcSampleRate = 48000
-	webrtcChannels   = 1
-	opusFrameMs      = 20
-
-	prebufferSeconds  = 3
-	vadStartThreshold = 200
-	vadEndThreshold   = 500
-	// final-only の現行 STT では CloseSend が遅いほど final の見え方も遅くなる。
-	// 無音 500ms の speech end 判定は別で入っているため、応答速度優先で追加待ちを 0ms にする。
 	sttStopDelay          = 0 * time.Millisecond
 	speechAudioChunkBytes = 25600
 	speechModel           = "chirp_3"
 	speechRegion          = "asia-northeast1"
-
-	adaptiveVADHistoryWindow            = time.Minute
-	adaptiveVADThresholdRefreshInterval = time.Second
-	adaptiveVADStatusEmitInterval       = 250 * time.Millisecond
-	adaptiveVADThresholdOffset          = 50
-	adaptiveVADMinThreshold             = 50
 )
 
 type Config struct {
-	IceHostIPs       []string
 	SpeechProjectID  string
 	SpeechRecognizer string
 	SpeechLanguage   string
@@ -52,16 +36,16 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	if strings.TrimSpace(cfg.SpeechLanguage) == "" {
 		cfg.SpeechLanguage = "ja-JP"
 	}
-	r := &stage{
+	s := &stage{
 		cfg:        cfg,
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 	}
 	return &graph.Stage{
-		Upstream:   r.upstream,
-		Downstream: r.downstream,
-		Run:        r.run,
-		CloseFn:    r.close,
+		Upstream:   s.upstream,
+		Downstream: s.downstream,
+		Run:        s.run,
+		CloseFn:    s.close,
 	}, nil
 }
 
@@ -74,10 +58,8 @@ type stage struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu              sync.Mutex
-	peers           map[string]*peerState
-	activeSpeakerID string
-	closed          bool
+	mu     sync.Mutex
+	closed bool
 
 	speechClient *speech.Client
 	speechStream speechpb.Speech_StreamingRecognizeClient
@@ -88,7 +70,6 @@ type stage struct {
 func (s *stage) run(parent context.Context) {
 	s.ctx, s.cancel = context.WithCancel(parent)
 	go s.consume()
-	go s.sendLoop()
 }
 
 func (s *stage) consume() {
@@ -101,20 +82,14 @@ func (s *stage) consume() {
 			if !ok {
 				return
 			}
-			switch evt.Kind {
-			case types.EventRTCSignal:
-				sig, ok := evt.Payload.(types.RTCSignal)
-				if !ok {
-					continue
-				}
-				s.handleSignal(sig)
-			case types.EventRealtimeAudio:
-				audio, ok := evt.Payload.(types.OutputAudio)
-				if !ok {
-					continue
-				}
-				s.handleTTSAudio(audio)
+			if evt.Kind != types.EventRTCSpeechAudio {
+				continue
 			}
+			audio, ok := evt.Payload.(types.RTCSpeechAudio)
+			if !ok {
+				continue
+			}
+			s.handleSpeechAudio(audio)
 		}
 	}
 }
@@ -140,20 +115,12 @@ func (s *stage) close() error {
 	s.stopSpeechLocked()
 	if s.speechClient != nil {
 		if err := s.speechClient.Close(); err != nil {
-			log.Printf("rtc: speech client close error: %v", err)
+			log.Printf("stt: speech client close error: %v", err)
 		}
 		s.speechClient = nil
 	}
-	s.resetAllPeersLocked()
 	close(s.upstream)
 	return nil
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func min(a, b int) int {

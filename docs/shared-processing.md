@@ -15,7 +15,7 @@
 - `EventScheduledItem`: scheduler が実行タイミングに到達した item。
 - `EventToolRequest`: router から toolcaller へ渡す tool 実行要求。
 - `EventRealtimeOutput`: UI 表示用の user / agent message。
-- `EventRealtimeAudio`: rtc 再生用の agent 音声。
+- `EventRealtimeAudio`: rtcout 再生用の agent 音声。
 
 ## 共有Store
 

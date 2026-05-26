@@ -1,14 +1,12 @@
-package rtc
+package rtcpeer
 
 import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
-	opus "gopkg.in/hraban/opus.v2"
 
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -19,22 +17,9 @@ type peerState struct {
 
 	peer         *webrtc.PeerConnection
 	track        *webrtc.TrackLocalStaticSample
-	encoder      *opus.Encoder
 	pendingICE   []webrtc.ICECandidateInit
-	audioBuf     []int16
 	connected    bool
 	opusChannels int
-
-	inputSampleRate int
-	prebuffer       *pcmRingBuffer
-	speechActive    bool
-	voicedMs        int
-	silenceMs       int
-
-	backgroundEnergies       []energySample
-	speechThreshold          int
-	speechThresholdUpdatedAt time.Time
-	lastVADStatusSentAt      time.Time
 }
 
 func (s *stage) handleSignal(sig types.RTCSignal) {
@@ -90,39 +75,34 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		}})
 	})
 	peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Printf("rtc: connection state=%s", state.String())
+		log.Printf("rtcpeer: connection state=%s", state.String())
 		if state == webrtc.PeerConnectionStateClosed || state == webrtc.PeerConnectionStateFailed {
 			peerState.mu.Lock()
 			peerState.connected = false
 			peerState.mu.Unlock()
-			s.clearActiveSpeaker(clientID, true)
+			s.emitPeerOutputSink(clientID, nil, opusChannels, false)
 		}
 	})
 	peer.OnTrack(func(trackRemote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		log.Printf("rtc: incoming track kind=%s codec=%s/%d channels=%d", trackRemote.Kind().String(), trackRemote.Codec().MimeType, trackRemote.Codec().ClockRate, trackRemote.Codec().Channels)
+		log.Printf("rtcpeer: incoming track kind=%s codec=%s/%d channels=%d", trackRemote.Kind().String(), trackRemote.Codec().MimeType, trackRemote.Codec().ClockRate, trackRemote.Codec().Channels)
 		go s.handleIncomingTrack(clientID, trackRemote)
 	})
 
-	encoder, err := opus.NewEncoder(webrtcSampleRate, opusChannels, opus.AppVoIP)
-	if err != nil {
-		log.Printf("rtc: opus encoder error: %v", err)
-	}
-	log.Printf("rtc: using opus channels=%d", opusChannels)
+	log.Printf("rtcpeer: using opus channels=%d", opusChannels)
 
 	peerState.mu.Lock()
 	peerState.peer = peer
 	peerState.track = track
-	peerState.encoder = encoder
-	peerState.audioBuf = nil
 	peerState.connected = true
 	peerState.opusChannels = opusChannels
 	peerState.mu.Unlock()
+	s.emitPeerOutputSink(clientID, track, opusChannels, true)
 
 	if err := peer.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
 		SDP:  sig.SDP,
 	}); err != nil {
-		log.Printf("rtc: set remote desc error: %v", err)
+		log.Printf("rtcpeer: set remote desc error: %v", err)
 		return
 	}
 	peerState.mu.Lock()
@@ -131,17 +111,17 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	peerState.mu.Unlock()
 	for _, cand := range pendingICE {
 		if err := peer.AddICECandidate(cand); err != nil {
-			log.Printf("rtc: add pending ice error: %v", err)
+			log.Printf("rtcpeer: add pending ice error: %v", err)
 		}
 	}
 
 	answer, err := peer.CreateAnswer(nil)
 	if err != nil {
-		log.Printf("rtc: create answer error: %v", err)
+		log.Printf("rtcpeer: create answer error: %v", err)
 		return
 	}
 	if err := peer.SetLocalDescription(answer); err != nil {
-		log.Printf("rtc: set local desc error: %v", err)
+		log.Printf("rtcpeer: set local desc error: %v", err)
 		return
 	}
 	s.emit(types.Event{Kind: types.EventRTCSignal, Payload: types.RTCSignal{
@@ -166,9 +146,9 @@ func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
 	if err := s.SetEphemeralUDPPortRange(icePortMin, icePortMax); err != nil {
 		return nil, err
 	}
-	log.Printf("rtc: use ICE UDP port range %d-%d", icePortMin, icePortMax)
+	log.Printf("rtcpeer: use ICE UDP port range %d-%d", icePortMin, icePortMax)
 	if len(iceHostIPs) > 0 {
-		log.Printf("rtc: use ICE host IPs: %s", strings.Join(iceHostIPs, ","))
+		log.Printf("rtcpeer: use ICE host IPs: %s", strings.Join(iceHostIPs, ","))
 		s.SetNAT1To1IPs(iceHostIPs, webrtc.ICECandidateTypeHost)
 	}
 	api := webrtc.NewAPI(
@@ -195,7 +175,7 @@ func (s *stage) handleAnswer(sig types.RTCSignal) {
 		Type: webrtc.SDPTypeAnswer,
 		SDP:  sig.SDP,
 	}); err != nil {
-		log.Printf("rtc: set remote answer error: %v", err)
+		log.Printf("rtcpeer: set remote answer error: %v", err)
 	}
 }
 
@@ -217,7 +197,7 @@ func (s *stage) handleICE(sig types.RTCSignal) {
 		return
 	}
 	if err := peerState.peer.AddICECandidate(init); err != nil {
-		log.Printf("rtc: add ice error: %v", err)
+		log.Printf("rtcpeer: add ice error: %v", err)
 	}
 }
 
@@ -273,88 +253,46 @@ func (s *stage) getOrCreatePeer(id string) *peerState {
 	return peer
 }
 
-func (s *stage) canProcessAudio(peerID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.activeSpeakerID == "" || s.activeSpeakerID == peerID
-}
-
-func (s *stage) isActiveSpeaker(peerID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.activeSpeakerID == peerID
-}
-
-func (s *stage) activateSpeaker(peerID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.activeSpeakerID == "" || s.activeSpeakerID == peerID {
-		s.activeSpeakerID = peerID
-		return true
-	}
-	return false
-}
-
-func (s *stage) clearActiveSpeaker(peerID string, forceStop bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.activeSpeakerID != peerID {
-		return
-	}
-	s.activeSpeakerID = ""
-	if forceStop {
-		s.stopSpeechLocked()
-	}
-}
-
 func (s *stage) resetPeer(peer *peerState) {
 	if peer == nil {
 		return
 	}
+	s.emitPeerOutputSink(peer.id, nil, peer.opusChannels, false)
 	peer.mu.Lock()
 	if peer.peer != nil {
 		_ = peer.peer.Close()
 		peer.peer = nil
 	}
-	peer.encoder = nil
 	peer.track = nil
 	peer.pendingICE = nil
-	peer.audioBuf = nil
-	peer.prebuffer = nil
-	peer.speechActive = false
-	peer.voicedMs = 0
-	peer.silenceMs = 0
-	peer.backgroundEnergies = nil
-	peer.speechThreshold = 0
-	peer.speechThresholdUpdatedAt = time.Time{}
-	peer.lastVADStatusSentAt = time.Time{}
 	peer.connected = false
 	peer.mu.Unlock()
-	s.clearActiveSpeaker(peer.id, true)
 }
 
 func (s *stage) resetAllPeersLocked() {
 	for _, peer := range s.peers {
+		s.emitPeerOutputSink(peer.id, nil, peer.opusChannels, false)
 		peer.mu.Lock()
 		if peer.peer != nil {
 			_ = peer.peer.Close()
 			peer.peer = nil
 		}
-		peer.encoder = nil
 		peer.track = nil
 		peer.pendingICE = nil
-		peer.audioBuf = nil
-		peer.prebuffer = nil
-		peer.speechActive = false
-		peer.voicedMs = 0
-		peer.silenceMs = 0
-		peer.backgroundEnergies = nil
-		peer.speechThreshold = 0
-		peer.speechThresholdUpdatedAt = time.Time{}
-		peer.lastVADStatusSentAt = time.Time{}
 		peer.connected = false
 		peer.mu.Unlock()
 	}
 	s.peers = nil
-	s.activeSpeakerID = ""
+}
+
+func (s *stage) emitPeerOutputSink(peerID string, writer types.RTCPeerOutputWriter, opusChannels int, connected bool) {
+	s.emit(types.Event{
+		Kind: types.EventRTCPeerOutputSink,
+		Payload: types.RTCPeerOutputSink{
+			PeerID:       peerID,
+			Writer:       writer,
+			OpusChannels: opusChannels,
+			Connected:    connected,
+		},
+	})
 }

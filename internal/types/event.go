@@ -3,6 +3,9 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/pion/webrtc/v4/pkg/media"
 )
 
 // EventKind represents the type of payload in an Event.
@@ -23,6 +26,9 @@ const (
 	EventTimelineItem
 	EventPlayableSpeech
 	EventScheduledItem
+	EventRTCPeerAudioFrame
+	EventRTCSpeechAudio
+	EventRTCPeerOutputSink
 )
 
 // Event is the common data structure passed between stages.
@@ -61,9 +67,52 @@ func (k EventKind) String() string {
 		return "EventPlayableSpeech"
 	case EventScheduledItem:
 		return "EventScheduledItem"
+	case EventRTCPeerAudioFrame:
+		return "EventRTCPeerAudioFrame"
+	case EventRTCSpeechAudio:
+		return "EventRTCSpeechAudio"
+	case EventRTCPeerOutputSink:
+		return "EventRTCPeerOutputSink"
 	default:
 		return fmt.Sprintf("EventKind(%d)", int(k))
 	}
+}
+
+const (
+	RTCSpeechAudioStart = "start"
+	RTCSpeechAudioFrame = "audio"
+	RTCSpeechAudioEnd   = "end"
+)
+
+type RTCPeerAudioFrame struct {
+	PeerID     string
+	Samples    []int16
+	PCM        []byte
+	SampleRate int
+	Channels   int
+	DurationMs int
+	CapturedAt time.Time
+}
+
+type RTCSpeechAudio struct {
+	PeerID     string
+	Type       string
+	PCM        []byte
+	Prebuffer  []byte
+	SampleRate int
+	Channels   int
+	CapturedAt time.Time
+}
+
+type RTCPeerOutputWriter interface {
+	WriteSample(sample media.Sample) error
+}
+
+type RTCPeerOutputSink struct {
+	PeerID       string
+	Writer       RTCPeerOutputWriter
+	OpusChannels int
+	Connected    bool
 }
 
 // ToolRequest は関数呼び出しが必要なときに発行されます。

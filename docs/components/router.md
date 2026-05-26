@@ -4,8 +4,8 @@
 
 - **解決する課題**: `router` は、スケジューリング済みの会話応答 item を、後続コンポーネントが処理できるイベントへ分配する。具体的には、TTS 済み音声はリアルタイム音声出力と会話履歴保存要求へ、ツール呼び出しはツール実行要求へ変換する。
 - **ターゲットユーザー**: コード上で明示されていないため不明。実装上は、スマートスピーカーの会話パイプライン内で、アシスタント応答の再生・保存・ツール実行をつなぐ開発者向けコンポーネントとして読める。
-- **価値定義**: `scheduler` が順序制御した `EventScheduledItem` を、`rtc`、`conversationcommitter`、`toolcaller` などの責務別コンポーネントへ渡せる形に変換し、会話応答の「再生」「履歴化」「ツール実行」を分離する。
-- **根拠となる実装**: `internal/components/router/stage.go`、関連するイベント型は `internal/types/event.go`、`internal/types/timeline_item.go`、`internal/types/types.go`、`internal/types/conversation_record.go` に定義されている。前段の `scheduler` と後段の利用先は `internal/components/scheduler/stage.go`、`internal/components/rtc/rtc.go`、`internal/components/conversationcommitter/stage.go`、`internal/components/toolcaller/toolcaller.go` で確認できる。
+- **価値定義**: `scheduler` が順序制御した `EventScheduledItem` を、`rtcout`、`conversationcommitter`、`toolcaller` などの責務別コンポーネントへ渡せる形に変換し、会話応答の「再生」「履歴化」「ツール実行」を分離する。
+- **根拠となる実装**: `internal/components/router/stage.go`、関連するイベント型は `internal/types/event.go`、`internal/types/timeline_item.go`、`internal/types/types.go`、`internal/types/conversation_record.go` に定義されている。前段の `scheduler` と後段の利用先は `internal/components/scheduler/stage.go`、`internal/components/rtcout/output.go`、`internal/components/conversationcommitter/stage.go`、`internal/components/toolcaller/toolcaller.go` で確認できる。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -37,7 +37,7 @@
   - `types.PlayableSpeech` から生成される。
   - payload は `types.OutputAudio`。
   - `Role` は常に `types.RoleAgent`。
-  - `rtc` コンポーネントは `EventRealtimeAudio` を受け取り、payload が `types.OutputAudio` の場合に TTS 音声を処理する。
+  - `rtcout` コンポーネントは `EventRealtimeAudio` を受け取り、payload が `types.OutputAudio` の場合に TTS 音声を処理する。
 
 - **出力イベント: `EventConversationCommitRequest`**
   - `types.PlayableSpeech` から生成される。
@@ -64,18 +64,18 @@
 3. payload 型を判定する: `route` は payload が `types.PlayableSpeech` の場合、音声出力用イベントと会話保存用イベントを順番に emit する。
 4. 音声出力イベントを生成する: `EventRealtimeAudio` の payload として `types.OutputAudio{Role: agent, Audio, Text, GenerationID}` を出力する。
 5. 会話保存イベントを生成する: `EventConversationCommitRequest` の payload として `types.ConversationCommitRequest{Role: agent, Text, GenerationID, Source: "llm"}` を出力する。
-6. 後段が処理する: `rtc` は `EventRealtimeAudio` を処理し、`conversationcommitter` は `EventConversationCommitRequest` を処理する。具体的な接続構成はこのファイル群だけでは断定できないが、`internal/components/pipeline/conversation_pipeline_test.go` では `scheduler -> generationfilter -> router` の順に接続され、音声、commit、tool の順序が検証されている。
+6. 後段が処理する: `rtcout` は `EventRealtimeAudio` を処理し、`conversationcommitter` は `EventConversationCommitRequest` を処理する。具体的な接続構成はこのファイル群だけでは断定できないが、`internal/components/pipeline/conversation_pipeline_test.go` では `scheduler -> generationfilter -> router` の順に接続され、音声、commit、tool の順序が検証されている。
 
 ```mermaid
 sequenceDiagram
     participant Scheduler as scheduler
     participant Router as router
-    participant RTC as rtc
+    participant RTCOut as rtcout
     participant Committer as conversationcommitter
 
     Scheduler->>Router: EventScheduledItem(Payload: PlayableSpeech)
     Router->>Router: Payload type switch
-    Router->>RTC: EventRealtimeAudio(OutputAudio)
+    Router->>RTCOut: EventRealtimeAudio(OutputAudio)
     Router->>Committer: EventConversationCommitRequest(ConversationCommitRequest)
 ```
 
