@@ -29,14 +29,17 @@ else
   if [ "$trigger_actor_type" = "Bot" ] || [ "$trigger_actor" = "github-actions[bot]" ]; then
     skip_reason="bot_comment"
   else
-    pr_json="$(gh pr view "$pr_number" --json number,url,title,headRefName,headRefOid,body,labels)"
+    pr_json="$(gh pr view "$pr_number" --json number,url,title,state,headRefName,headRefOid,body,labels)"
+    pr_state="$(printf '%s' "$pr_json" | jq -r '.state')"
     pr_url="$(printf '%s' "$pr_json" | jq -r '.url')"
     branch_name="$(printf '%s' "$pr_json" | jq -r '.headRefName')"
     head_sha="$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
     pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
     pr_labels="$(printf '%s' "$pr_json" | jq -r '.labels[].name // empty')"
 
-    if ! printf '%s\n' "$pr_labels" | grep -Fxq "$ai_label_name"; then
+    if [ "$pr_state" != "OPEN" ]; then
+      skip_reason="closed_pr"
+    elif ! printf '%s\n' "$pr_labels" | grep -Fxq "$ai_label_name"; then
       skip_reason="missing_ai_label"
     else
       request_body="$comment_body"
