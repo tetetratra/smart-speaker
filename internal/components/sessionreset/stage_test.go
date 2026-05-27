@@ -58,6 +58,38 @@ func TestStageResetsAfterIdleTimeout(t *testing.T) {
 	})
 }
 
+func TestStageEmitsSessionResetEvent(t *testing.T) {
+	requestedAt := time.Date(2026, 5, 27, 12, 0, 0, 123, time.UTC)
+	st := NewStage(Config{
+		IdleTimeout: 20 * time.Millisecond,
+		Now: func() time.Time {
+			return requestedAt
+		},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+
+	st.Upstream <- userCommitEvent("current", 1)
+
+	select {
+	case evt := <-st.Downstream:
+		if evt.Kind != types.EventSessionReset {
+			t.Fatalf("event kind = %s, want %s", evt.Kind, types.EventSessionReset)
+		}
+		reset, ok := evt.Payload.(types.SessionResetEvent)
+		if !ok {
+			t.Fatalf("payload type = %T, want types.SessionResetEvent", evt.Payload)
+		}
+		if !reset.RequestedAt.Equal(requestedAt) {
+			t.Fatalf("requested_at = %s, want %s", reset.RequestedAt, requestedAt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session reset event was not emitted")
+	}
+}
+
 func TestStageExtendsTimerOnUserActivity(t *testing.T) {
 	history := conversationhistory.NewStore()
 	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1})

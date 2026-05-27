@@ -26,6 +26,11 @@ type SpeechEvent struct {
 	CapturedAt time.Time
 }
 
+// SessionResetEvent は会話セッションのリセット発火を表します。
+type SessionResetEvent struct {
+	RequestedAt time.Time
+}
+
 // RTCVADStatus はサーバー側VADの現在音量としきい値を表します。
 type RTCVADStatus struct {
 	InputLevel int
