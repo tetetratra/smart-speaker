@@ -22,6 +22,7 @@ const (
 	EventTTSEnd
 	EventRTCSignal
 	EventConversationCommitRequest
+	EventSessionReset
 	EventLLMRequest
 	EventTimelineItem
 	EventPlayableSpeech
@@ -59,6 +60,8 @@ func (k EventKind) String() string {
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:
 		return "EventConversationCommitRequest"
+	case EventSessionReset:
+		return "EventSessionReset"
 	case EventLLMRequest:
 		return "EventLLMRequest"
 	case EventTimelineItem:

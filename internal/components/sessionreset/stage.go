@@ -108,7 +108,12 @@ func (s *stage) consume(ctx context.Context) {
 		case <-timerC:
 			timer = nil
 			timerC = nil
-			s.fireReset(ctx)
+			reset := s.fireReset(ctx)
+			select {
+			case s.downstream <- types.Event{Kind: types.EventSessionReset, Payload: reset}:
+			case <-ctx.Done():
+				return
+			}
 		case evt, ok := <-s.upstream:
 			if !ok {
 				return
@@ -128,7 +133,7 @@ func (s *stage) isUserCommitRequest(evt types.Event) bool {
 	return ok && req.Role == types.RoleUser
 }
 
-func (s *stage) fireReset(ctx context.Context) {
+func (s *stage) fireReset(ctx context.Context) types.SessionResetEvent {
 	requestedAt := s.now()
 	formatted := requestedAt.Format(time.RFC3339Nano)
 	log.Printf("sessionreset: reset requested_at=%s", formatted)
@@ -147,6 +152,7 @@ func (s *stage) fireReset(ctx context.Context) {
 		next := s.generation.Next()
 		log.Printf("sessionreset: generation advanced requested_at=%s generation=%d", formatted, next)
 	}
+	return types.SessionResetEvent{RequestedAt: requestedAt}
 }
 
 func (s *stage) close() error {

@@ -129,13 +129,21 @@ func (c *chatWS) consume(ctx context.Context) {
 }
 
 func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
+	msg, targetID, ok := messageForEvent(evt)
+	if !ok {
+		return
+	}
+	c.writeMessage(ctx, msg, targetID)
+}
+
+func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	msg := map[string]any{}
 	targetID := ""
 	switch evt.Kind {
 	case types.EventRealtimeOutput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "message",
@@ -150,7 +158,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventRTCSignal:
 		sig, ok := evt.Payload.(types.RTCSignal)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		targetID = sig.ClientID
 		msg = map[string]any{
@@ -161,7 +169,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventSpeechEnd:
 		speech, ok := evt.Payload.(types.SpeechEvent)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "speech_end",
@@ -171,7 +179,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventRTCVADStatus:
 		status, ok := evt.Payload.(types.RTCVADStatus)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "rtc_vad_status",
@@ -182,17 +190,25 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventWhiteboardUpdate:
 		update, ok := evt.Payload.(types.WhiteboardUpdate)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":    "whiteboard_update",
 			"content": update.Content,
 		}
+	case types.EventSessionReset:
+		reset, ok := evt.Payload.(types.SessionResetEvent)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":         "session_reset",
+			"requested_at": reset.RequestedAt.Format(time.RFC3339Nano),
+		}
 	default:
-		return
+		return nil, "", false
 	}
-
-	c.writeMessage(ctx, msg, targetID)
+	return msg, targetID, true
 }
 
 func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) {

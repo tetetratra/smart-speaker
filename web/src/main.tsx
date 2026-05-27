@@ -480,6 +480,7 @@ type LiveViewProps = {
   speechThreshold: number
   lastAssistantMessage: string
   lastUserMessage: string
+  isConversationBubbleHidden: boolean
   boardEntries: BoardEntry[]
   toolToasts: ToolToast[]
   playbackVolumeLevel: PlaybackVolumeLevel
@@ -504,6 +505,7 @@ function App() {
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
+  const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
@@ -641,6 +643,7 @@ function App() {
           if (raw.source === 'server-stt' && role === 'user') {
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
+            setIsConversationBubbleHidden(false)
           }
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
@@ -656,6 +659,10 @@ function App() {
         case 'speech_end': {
           setSpeechDetectStatus('待機中')
           setSttStatus('最終結果待ち')
+          break
+        }
+        case 'session_reset': {
+          setIsConversationBubbleHidden(true)
           break
         }
         case 'rtc_vad_status': {
@@ -887,8 +894,9 @@ function App() {
           if (report.type !== 'outbound-rtp') return
           const mediaType = (report as RTCOutboundRtpStreamStats).kind || (report as RTCOutboundRtpStreamStats & { mediaType?: string }).mediaType
           if (mediaType !== 'audio') return
-          if (typeof (report as RTCOutboundRtpStreamStats).bytesSent !== 'number') return
-          currentBytesSent = (report as RTCOutboundRtpStreamStats).bytesSent
+          const bytesSent = (report as RTCOutboundRtpStreamStats).bytesSent
+          if (typeof bytesSent !== 'number') return
+          currentBytesSent = bytesSent
         })
         if (currentBytesSent === null) {
           setAudioSendStatus('確認中')
@@ -1004,6 +1012,7 @@ function App() {
           speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
+          isConversationBubbleHidden={isConversationBubbleHidden}
           boardEntries={boardEntries}
           toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
@@ -1154,6 +1163,7 @@ function LiveView(props: LiveViewProps) {
     speechThreshold,
     lastAssistantMessage,
     lastUserMessage,
+    isConversationBubbleHidden,
     boardEntries,
     toolToasts,
     playbackVolumeLevel,
@@ -1206,7 +1216,7 @@ function LiveView(props: LiveViewProps) {
               )}
             </div>
             <div className="live-bubble">
-              {lastAssistantMessage && (
+              {lastAssistantMessage && !isConversationBubbleHidden && (
                 <div className="live-bubble-content">
                   {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
                   <div className="live-bubble-agent">{lastAssistantMessage}</div>

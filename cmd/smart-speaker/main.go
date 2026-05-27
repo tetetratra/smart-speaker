@@ -363,6 +363,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, sttNode, utteranceNode, types.EventHumanUtterance)
 	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
+	connectKinds(g, sessionResetNode, chatNode, types.EventSessionReset)
 	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
 	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
 	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
