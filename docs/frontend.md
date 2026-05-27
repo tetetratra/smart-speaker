@@ -94,6 +94,10 @@ sequenceDiagram
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard の末尾に追記する。
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。
+- `session_reset`
+  - 通常画面の直近 user / agent 発話の吹き出しを非表示にする。
+  - メッセージ一覧自体は消さない。
+  - 次に `source: "server-stt"` かつ `role: "user"` の `message` を受け取ると、吹き出しを表示に戻す。
 - tool call / tool result
   - 通常の会話UIには表示しない。
   - 通常画面では右側のキャラクターエリア上部にトースト表示する。
@@ -159,6 +163,7 @@ sequenceDiagram
   - `toolToasts`
   - `lastUserMessage`
   - `lastAssistantMessage`
+  - `isConversationBubbleHidden`
   - `playbackVolumeLevel`
 
 ### 4.4 URL と表示モード
@@ -175,6 +180,7 @@ sequenceDiagram
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
 - whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
+- session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
 - tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
 - 手動切断と異常切断で再接続ポリシーが異なる。

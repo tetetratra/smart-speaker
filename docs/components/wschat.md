@@ -2,9 +2,9 @@
 
 ## 1. ビジネスコンテキスト
 
-- **解決する課題**: ブラウザUIとサーバー内の graph pipeline の間で、チャット表示、WebRTC signaling、発話状態、ホワイトボード更新を単一の JSON WebSocket 境界でやり取りする。
+- **解決する課題**: ブラウザUIとサーバー内の graph pipeline の間で、チャット表示、WebRTC signaling、発話状態、セッションリセット、ホワイトボード更新を単一の JSON WebSocket 境界でやり取りする。
 - **ターゲットユーザー**: 実コードから確認できる直接の利用者は `web/src/main.tsx` のブラウザUI利用者。利用者の業務属性や利用シーンは `internal/components/wschat/` の実装だけからは不明。
-- **提供価値**: UIは `/ws/chat` に接続するだけで、会話メッセージ表示、RTC接続確立、VAD状態表示、ホワイトボード表示更新を受け取れる。サーバー側の各 component は `types.Event` を流すだけで、ブラウザ向け JSON 形式を意識しなくてよい。
+- **提供価値**: UIは `/ws/chat` に接続するだけで、会話メッセージ表示、RTC接続確立、VAD状態表示、セッションリセット通知、ホワイトボード表示更新を受け取れる。サーバー側の各 component は `types.Event` を流すだけで、ブラウザ向け JSON 形式を意識しなくてよい。
 - **責務の境界**: `wschat` は HTTP WebSocket endpoint とイベント変換を担当する。LLM生成、STT、TTS、RTC media処理、whiteboard content生成は担当しない。
 - **参照元**: `internal/components/wschat/wschat.go`, `internal/types/types.go`, `internal/types/event.go`, `web/src/ws.ts`, `web/src/main.tsx`, `internal/components/rtcpeer/signaling.go`, `internal/tools/functions/whiteboard/tool.go`。
 
@@ -29,11 +29,11 @@
   - `type` が `webrtc.` prefix の場合だけ `types.EventRTCSignal` に変換して `downstream` へ送る。
   - `webrtc.` prefix 以外の message は現在の実装では何も処理されない。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate` だけをブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
-  - `web/src/main.tsx` は `message`, `speech_end`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
+  - `web/src/main.tsx` は `message`, `speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
   - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
@@ -48,6 +48,10 @@
   - `internal/tools/functions/whiteboard/tool.go` の `set_whiteboard` tool は `EventWhiteboardUpdate` を emit する。
   - `wschat` は `types.WhiteboardUpdate.Content` を `type: "whiteboard_update", content: ...` に変換する。
   - UIは `content` が空でなければ `boardEntries` の末尾へ追記する。通常画面ではentry間に罫線を表示し、追記時にスクロール位置を末尾へ移動する。
+- **Session reset関連events**
+  - `sessionreset` は idle timeout による reset 実行後に `EventSessionReset` を emit する。
+  - `wschat` は `types.SessionResetEvent.RequestedAt` を `type: "session_reset", requested_at: ...` に変換する。
+  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、次の `source == "server-stt"` かつ user の `message` 受信時に再表示する。
 
 ## 3. 主要なデータフロー
 
@@ -124,6 +128,27 @@ sequenceDiagram
     UI->>UI: inputLevel / speechThreshold更新
 ```
 
+### シナリオ: セッションリセットがUIの吹き出し表示に反映される
+
+1. idle timeout 到達: `sessionreset` が hook、会話履歴 reset、世代id前進を実行する。
+2. reset event発行: `sessionreset` が `EventSessionReset{RequestedAt}` を `wschat` へ流す。
+3. JSON変換: `wschat.handleEvent` が `session_reset` JSON に変換する。
+4. UI反映: UIは通常画面の直近会話吹き出しを非表示にする。
+5. 会話再開: 次の `source == "server-stt"` かつ user の `message` 受信時に、UIは吹き出しを再表示する。
+
+```mermaid
+sequenceDiagram
+    participant SR as sessionreset
+    participant WS as wschat
+    participant UI as Browser UI
+
+    SR->>WS: EventSessionReset{RequestedAt}
+    WS->>UI: {"type":"session_reset","requested_at":"..."}
+    UI->>UI: 直近会話吹き出しを非表示
+    WS->>UI: {"type":"message","role":"user","source":"server-stt",...}
+    UI->>UI: 直近会話吹き出しを再表示
+```
+
 ### シナリオ: whiteboard tool の更新がUIに表示される
 
 1. tool実行: `set_whiteboard` tool が `content` をtrimし、空でなければ `EventWhiteboardUpdate` を emitする。
@@ -195,6 +220,8 @@ sequenceDiagram
   - 例: `{ "type": "rtc_vad_status", "input_level": 123, "threshold": 456, "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `whiteboard_update`: ホワイトボード表示内容をUIへ通知する。
   - 例: `{ "type": "whiteboard_update", "content": "..." }`
+- `session_reset`: セッションリセット発火をUIへ通知する。
+  - 例: `{ "type": "session_reset", "requested_at": "2026-05-27T12:00:00.000000123Z" }`
 
 ### イベント変換仕様
 
@@ -205,6 +232,7 @@ sequenceDiagram
 | `EventSpeechEnd` | `types.SpeechEvent` | `speech_end` | 全接続 |
 | `EventRTCVADStatus` | `types.RTCVADStatus` | `rtc_vad_status` | 全接続 |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |
+| `EventSessionReset` | `types.SessionResetEvent` | `session_reset` | 全接続 |
 
 ### エラー・終了時の挙動
 

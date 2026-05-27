@@ -54,6 +54,7 @@ flowchart TB
   GF3 -.->|"最新世代idを読む"| GSTORE
   SR -.->|"idle timeout後に履歴を空にする"| HSTORE
   SR -.->|"idle timeout後に世代idを前進させる"| GSTORE
+  SR -->|"EventSessionReset<br/>reset発火をUIへ通知する"| WS
 
   COMMIT -->|"EventRealtimeOutput<br/>user/agent表示をUIへ送る"| WS
   COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
@@ -82,7 +83,7 @@ flowchart TB
 - `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、UI向け状態通知を担当する。
 - `stt` は Google Speech-to-Text v2 の streaming recognition と final transcript 出力を担当する。
 - `rtcout` は agent 音声を WebRTC の下り audio track へ書き込む。
-- `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させる。
+- `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させ、reset発火をUIへ通知する。
 - `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
 - `llm` は会話履歴Storeの snapshot を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
@@ -118,7 +119,8 @@ LLM request は必ず保存済みの履歴 snapshot から作る。
 
 リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進める。
 hook が error を返してもログに残して後続 hook とリセット処理を継続する。
-graph 上に reset 用 event は流さず、`sessionreset` の downstream は会話 pipeline へ接続しない。
+その後、`sessionreset` は `EventSessionReset` を `wschat` へ流し、`wschat` が WebSocket の `session_reset` message としてブラウザUIへ配信する。
+UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、次の `server-stt` 由来 user message で再表示する。
 
 ## 参照元
 
