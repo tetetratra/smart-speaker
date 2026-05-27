@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 const currentVersion = 1
@@ -44,15 +46,83 @@ func (s *Store) Snapshot() []Record {
 }
 
 func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
-	return Record{}, UpsertResult{}, fmt.Errorf("memory upsert is not implemented")
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return Record{}, UpsertResult{}, ErrEmptyContent
+	}
+	tags := normalizeTags(input.Tags)
+	embedding := cloneFloat64s(input.Embedding)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	if idx, result, ok := s.findDuplicateLocked(DuplicateInput{
+		Content:       content,
+		Tags:          tags,
+		Embedding:     embedding,
+		MinSimilarity: input.DuplicateMinSimilarity,
+	}); ok {
+		updated := s.records[idx]
+		updated.Content = content
+		updated.Tags = tags
+		updated.Embedding = embedding
+		updated.UpdatedAt = now
+		s.records[idx] = updated
+		if err := s.saveLocked(); err != nil {
+			return Record{}, UpsertResult{}, err
+		}
+		result.Created = false
+		return cloneRecord(updated), result, nil
+	}
+
+	record := Record{
+		ID:        newRecordID(now, len(s.records)+1),
+		Content:   content,
+		Tags:      tags,
+		Embedding: embedding,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	s.records = append(s.records, record)
+	if err := s.saveLocked(); err != nil {
+		return Record{}, UpsertResult{}, err
+	}
+	return cloneRecord(record), UpsertResult{Created: true}, nil
 }
 
 func (s *Store) FindDuplicate(input DuplicateInput) (Record, bool) {
-	return Record{}, false
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	idx, _, ok := s.findDuplicateLocked(normalizeDuplicateInput(input))
+	if !ok {
+		return Record{}, false
+	}
+	return cloneRecord(s.records[idx]), true
 }
 
 func (s *Store) Search(query []float64, opts SearchOptions) []SearchResult {
-	return nil
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	results := make([]SearchResult, 0, len(s.records))
+	for _, record := range s.records {
+		similarity, ok := cosineSimilarity(query, record.Embedding)
+		if !ok || similarity < opts.MinSimilarity {
+			continue
+		}
+		results = append(results, SearchResult{
+			Record:     cloneRecord(record),
+			Similarity: similarity,
+		})
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+	if opts.Limit > 0 && len(results) > opts.Limit {
+		results = results[:opts.Limit]
+	}
+	return results
 }
 
 func (s *Store) Reset() error {
@@ -60,6 +130,31 @@ func (s *Store) Reset() error {
 	defer s.mu.Unlock()
 	s.records = nil
 	return s.saveLocked()
+}
+
+func (s *Store) findDuplicateLocked(input DuplicateInput) (int, UpsertResult, bool) {
+	normalized := normalizeDuplicateInput(input)
+	for i, record := range s.records {
+		if strings.EqualFold(strings.TrimSpace(record.Content), normalized.Content) {
+			return i, UpsertResult{DuplicateReason: "content"}, true
+		}
+	}
+	if len(normalized.Tags) > 0 {
+		for i, record := range s.records {
+			if tagsEqual(normalizeTags(record.Tags), normalized.Tags) {
+				return i, UpsertResult{DuplicateReason: "tags"}, true
+			}
+		}
+	}
+	if normalized.MinSimilarity > 0 {
+		for i, record := range s.records {
+			similarity, ok := cosineSimilarity(normalized.Embedding, record.Embedding)
+			if ok && similarity >= normalized.MinSimilarity {
+				return i, UpsertResult{DuplicateReason: "embedding", Similarity: similarity}, true
+			}
+		}
+	}
+	return 0, UpsertResult{}, false
 }
 
 func (s *Store) saveLocked() error {
@@ -123,6 +218,13 @@ func cloneRecords(records []Record) []Record {
 	return cloned
 }
 
+func normalizeDuplicateInput(input DuplicateInput) DuplicateInput {
+	input.Content = strings.TrimSpace(input.Content)
+	input.Tags = normalizeTags(input.Tags)
+	input.Embedding = cloneFloat64s(input.Embedding)
+	return input
+}
+
 func normalizeTags(tags []string) []string {
 	seen := map[string]struct{}{}
 	normalized := make([]string, 0, len(tags))
@@ -138,5 +240,24 @@ func normalizeTags(tags []string) []string {
 		seen[key] = struct{}{}
 		normalized = append(normalized, value)
 	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return strings.ToLower(normalized[i]) < strings.ToLower(normalized[j])
+	})
 	return normalized
+}
+
+func tagsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func newRecordID(now time.Time, seq int) string {
+	return fmt.Sprintf("%d-%d", now.UnixNano(), seq)
 }
