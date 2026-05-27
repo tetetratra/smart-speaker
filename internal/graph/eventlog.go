@@ -14,8 +14,10 @@ type EventDetailFormatter func(types.Event) string
 
 func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 	return map[types.EventKind]struct{}{
-		types.EventRTCVADStatus:  {},
-		types.EventRealtimeAudio: {},
+		types.EventRTCVADStatus:      {},
+		types.EventRealtimeAudio:     {},
+		types.EventRTCPeerAudioFrame: {},
+		types.EventRTCSpeechAudio:    {},
 	}
 }
 
