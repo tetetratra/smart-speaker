@@ -118,9 +118,9 @@ flowchart LR
 
 - `CONVERSATION_IDLE_TIMEOUT_SECONDS`
   - 秒数で指定する。
-  - 未設定時は 600 秒。
+  - 未設定時は 300 秒。
   - `0` は idle reset 無効。
-  - 不正値または負値は 600 秒として扱う。
+  - 不正値または負値は 300 秒として扱う。
 
 ### 注意点
 

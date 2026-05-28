@@ -135,7 +135,7 @@ LLM が `{"items":[]}` を返した場合は timeline event が発行されな�
 ## セッションリセット
 
 `CONVERSATION_IDLE_TIMEOUT_SECONDS` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
-未設定時は 600 秒、`0` は無効化、不正値や負値は既定値として扱う。
+未設定時は 300 秒、`0` は無効化、不正値や負値は既定値として扱う。
 
 リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進め、agent status を `idle` に更新する。
 hook が error を返してもログに残して後続 hook とリセット処理を継続する。
