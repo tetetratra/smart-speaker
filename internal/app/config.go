@@ -120,7 +120,7 @@ func LoadConfig(promptPath string) Config {
 }
 
 func conversationIdleTimeoutFromEnv(raw string) time.Duration {
-	const defaultConversationIdleTimeout = 10 * time.Minute
+	const defaultConversationIdleTimeout = 5 * time.Minute
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return defaultConversationIdleTimeout
