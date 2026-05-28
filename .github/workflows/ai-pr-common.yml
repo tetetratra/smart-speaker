@@ -26,7 +26,11 @@ on:
         required: false
         type: string
     secrets:
+      AI_CLI_TOOL:
+        required: false
       CODEX_AUTH_JSON_B64:
+        required: false
+      CURSOR_API_KEY:
         required: false
       STATE_ENCRYPTION_PASSPHRASE:
         required: false
@@ -51,27 +55,75 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.target_ref }}
 
-      - name: Codex 認証を復元する
+      - name: 実行する AI CLI を決定する
+        id: cli
+        shell: bash
+        env:
+          AI_CLI_TOOL: ${{ secrets.AI_CLI_TOOL }}
+        run: |
+          selected="$(printf '%s' "${AI_CLI_TOOL:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          case "$selected" in
+            ""|codex)
+              tool="codex"
+              display_name="Codex"
+              ;;
+            cursor-cli)
+              tool="cursor-cli"
+              display_name="Cursor CLI"
+              ;;
+            *)
+              echo "warning: unsupported AI_CLI_TOOL '$selected'. Fallback to codex."
+              tool="codex"
+              display_name="Codex"
+              ;;
+          esac
+          echo "tool=$tool" >> "$GITHUB_OUTPUT"
+          echo "display_name=$display_name" >> "$GITHUB_OUTPUT"
+          echo "Selected AI CLI: $tool"
+
+      - name: 認証情報を復元する
         id: auth
         shell: bash
         env:
+          AI_CLI_TOOL: ${{ steps.cli.outputs.tool }}
           CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          if [ -z "${CODEX_AUTH_JSON_B64:-}" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p "$CODEX_HOME"
-          chmod 700 "$CODEX_HOME"
-          printf '%s' "$CODEX_AUTH_JSON_B64" | base64 --decode > "$CODEX_HOME/auth.json"
-          chmod 600 "$CODEX_HOME/auth.json"
-          echo "available=true" >> "$GITHUB_OUTPUT"
+          available="false"
+          case "${AI_CLI_TOOL}" in
+            codex)
+              if [ -n "${CODEX_AUTH_JSON_B64:-}" ]; then
+                mkdir -p "$CODEX_HOME"
+                chmod 700 "$CODEX_HOME"
+                printf '%s' "$CODEX_AUTH_JSON_B64" | base64 --decode > "$CODEX_HOME/auth.json"
+                chmod 600 "$CODEX_HOME/auth.json"
+                available="true"
+              fi
+              ;;
+            cursor-cli)
+              if [ -n "${CURSOR_API_KEY:-}" ]; then
+                available="true"
+              fi
+              ;;
+            *)
+              available="false"
+              ;;
+          esac
+          echo "available=$available" >> "$GITHUB_OUTPUT"
 
       - name: 認証未設定を通知する
         if: steps.auth.outputs.available != 'true'
         shell: bash
+        env:
+          AI_CLI_TOOL: ${{ steps.cli.outputs.tool }}
+          AI_CLI_NAME: ${{ steps.cli.outputs.display_name }}
         run: |
-          gh pr comment "${{ inputs.pr_number }}" --body "Codex 認証情報が未設定です。trusted machine で Codex にログインし、\`CODEX_AUTH_JSON_B64\` を設定してください。"
+          if [ "$AI_CLI_TOOL" = "cursor-cli" ]; then
+            body="Cursor CLI の認証情報が未設定です。GitHub Secret \`CURSOR_API_KEY\` を設定してください。"
+          else
+            body="Codex 認証情報が未設定です。trusted machine で Codex にログインし、\`CODEX_AUTH_JSON_B64\` を設定してください。"
+          fi
+          gh pr comment "${{ inputs.pr_number }}" --body "$body"
 
       - name: Git ユーザーを設定する
         if: steps.auth.outputs.available == 'true'
@@ -106,8 +158,10 @@ jobs:
           cache-to: type=gha,mode=max,scope=codex-runner
 
       - name: Codex を実行する
-        id: codex
-        if: steps.auth.outputs.available == 'true'
+        id: run_codex
+        if: >-
+          steps.auth.outputs.available == 'true' &&
+          steps.cli.outputs.tool == 'codex'
         continue-on-error: true
         shell: bash
         env:
@@ -137,6 +191,40 @@ jobs:
               bash /workspace/.github/scripts/ai_pr/common/run_codex.sh
             '
 
+      - name: Cursor CLI を実行する
+        id: run_cursor
+        if: >-
+          steps.auth.outputs.available == 'true' &&
+          steps.cli.outputs.tool == 'cursor-cli'
+        continue-on-error: true
+        shell: bash
+        env:
+          CONTEXT_SHA: ${{ inputs.context_sha }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          INSTRUCTION_BODY: ${{ inputs.instruction_body }}
+        run: |
+          mkdir -p "${STATE_ROOT}/run"
+          printf '%s' "$INSTRUCTION_BODY" > "${STATE_ROOT}/run/instruction.txt"
+          docker run --rm \
+            -e CURSOR_API_KEY="${CURSOR_API_KEY}" \
+            -e GH_TOKEN="${GH_TOKEN}" \
+            -e GITHUB_TOKEN="${GH_TOKEN}" \
+            -e HEAD_SHA="${CONTEXT_SHA}" \
+            -e INSTRUCTION_FILE=/state/run/instruction.txt \
+            -e PR_BRANCH="${{ inputs.target_ref }}" \
+            -e PR_NUMBER="${{ inputs.pr_number }}" \
+            -e PR_URL="${{ inputs.pr_url }}" \
+            -e REPO="${REPO}" \
+            -e RUN_MODE="${{ inputs.run_mode }}" \
+            -e STATE_ROOT=/state \
+            -e TRIGGER_ACTOR="${{ inputs.trigger_actor }}" \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${STATE_ROOT}:/state" \
+            "codex-runner:${GITHUB_RUN_ID}" \
+            bash -lc '
+              bash /workspace/.github/scripts/ai_pr/common/run_cursor_cli.sh
+            '
+
       - name: 状態 Artifact を暗号化する
         if: always() && steps.auth.outputs.available == 'true'
         shell: bash
@@ -164,13 +252,31 @@ jobs:
           overwrite: true
 
       - name: 失敗時のフォールバックコメントを投稿する
-        if: steps.auth.outputs.available == 'true' && steps.codex.outcome == 'failure'
+        if: >-
+          steps.auth.outputs.available == 'true' && (
+            (steps.cli.outputs.tool == 'codex' && steps.run_codex.outcome == 'failure') ||
+            (steps.cli.outputs.tool == 'cursor-cli' && steps.run_cursor.outcome == 'failure')
+          )
         shell: bash
+        env:
+          AI_CLI_TOOL: ${{ steps.cli.outputs.tool }}
+          AI_CLI_NAME: ${{ steps.cli.outputs.display_name }}
         run: |
           cat > "$RUNNER_TEMP/ai-run-failure-comment.md" <<'EOF'
           AI 実行に失敗しました。
 
-          - 認証切れの可能性がある場合は、trusted machine で `codex login` をやり直して `CODEX_AUTH_JSON_B64` を再設定してください。
+          - 認証切れの可能性がある場合は、選択中の CLI に対応した認証 Secret を再設定してください。
           - それ以外の場合は、この workflow run のログを確認してください。
           EOF
+          if [ "$AI_CLI_TOOL" = "codex" ]; then
+            cat >> "$RUNNER_TEMP/ai-run-failure-comment.md" <<'EOF'
+
+          - Codex を使う場合は、trusted machine で `codex login` をやり直して `CODEX_AUTH_JSON_B64` を再設定してください。
+          EOF
+          else
+            cat >> "$RUNNER_TEMP/ai-run-failure-comment.md" <<'EOF'
+
+          - Cursor CLI を使う場合は、`CURSOR_API_KEY` を確認してください。
+          EOF
+          fi
           gh pr comment "${{ inputs.pr_number }}" --body-file "$RUNNER_TEMP/ai-run-failure-comment.md"
