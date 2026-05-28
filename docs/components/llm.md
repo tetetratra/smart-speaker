@@ -7,7 +7,7 @@
 * **提供価値**: OpenAI Responses API の出力を Structured Outputs の JSON schema で `speech` / `wait` / `tool` の timeline object に制約し、Go 側でも検証してから `TimelineItem` に変換する。
 * **安全性の考え方**: 契約違反の LLM 応答は最大10回 retry し、それでも失敗した場合はログを出して応答を捨てる。壊れた timeline を下流へ流さないことを優先する。
 * **無応答の考え方**: ユーザー発話に対して応答しない方が自然な場合は、LLM が `{"items":[]}` を出力できる。空 timeline は有効な応答として扱われ、下流 event は発行されない。
-* **tool 連携の考え方**: OpenAI function calling は使わない。通常起動では local tool registry 由来の schema を LLM の Structured Outputs schema と system prompt に渡し、LLM は JSON timeline の末尾 item として tool 呼び出しを表現する。
+* **tool 連携の考え方**: OpenAI function calling は使わない。通常起動では local tool registry 由来の schema を LLM の Structured Outputs schema と system prompt に渡し、LLM は JSON timeline の `items` 配列内に tool item を出す。1 応答に複数件出せ、get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -34,7 +34,7 @@
   - retry 時は契約違反理由と raw preview を追記した system prompt で再実行する。
 - **JSON timeline parser**
   - response body から取り出した output text 全体を `parseTimelineJSON` で `types.TimelineItem` に変換する。
-  - 未知の `type`、必須値不足、負の wait 秒数、tool 後続 item はエラーにする。
+  - 未知の `type`、必須値不足、負の wait 秒数はエラーにする。
 - **`conversationhistory.Store`**
   - LLM に渡す会話履歴の正本。
   - `Snapshot()` は record を clone して返すため、LLM 側は履歴を直接変更しない。

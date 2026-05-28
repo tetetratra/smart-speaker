@@ -5,7 +5,7 @@
 - **解決する課題**: LLM が生成した `tool` item を、会話生成パイプライン内で local tool 実行へ橋渡しする。
 - **提供価値**: tool 実行結果を会話履歴へ戻し、必要に応じて LLM の次の推論へつなげる。UI 副作用を持つ tool は、tool result とは別に graph event として下流へ通知できる。
 - **責務の境界**: `toolcaller` は tool の実行と tool result 保存要求 event の発行を担う。tool request の生成は `scheduler` / `router`、結果の履歴保存と LLM 再投入は `conversationcommitter` の責務。
-- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` を `toolcaller.NewStage(toolHandlers)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
+- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` と `registry.ToolModes()` を `toolcaller.NewStage(toolHandlers, toolModes)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
 - **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`、`internal/types/event.go`、`internal/types/conversation_record.go`。
 
 ## 2. 論理構造・機能俯瞰
@@ -135,7 +135,7 @@ sequenceDiagram
     - wschat/
       - wschat.go: `EventWhiteboardUpdate` を websocket の `whiteboard_update` message に変換する。
   - tools/
-    - interfaces.go: `Handler`、`ContextAware`、`EventEmitterAware`、`DefinitionProvider` を定義する。
+    - interfaces.go: `Handler`、`ContextAware`、`EventEmitterAware`、`DefinitionProvider` を定義する。`DefinitionWithMode` と `ModeFromDefinition` で tool 定義へ `x_tool_mode: "read" | "write"` を付与・参照する。
     - registry/
       - registry.go: tool definitions と handler map を構築する。通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` 経由で `llm` と `toolcaller` に接続される。
     - functions/
@@ -143,7 +143,7 @@ sequenceDiagram
         - tool.go: `EventEmitterAware` の確認済み実装。`set_whiteboard` 実行時に `EventWhiteboardUpdate` を emit する。
 - cmd/
   - smart-speaker/
-    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers)` に registry 由来の handler map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> conversationcommitter` は `EventConversationCommitRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
+    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers, toolModes)` に registry 由来の handler map と tool mode map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> conversationcommitter` は `EventConversationCommitRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
 
 ### Event 設計
 

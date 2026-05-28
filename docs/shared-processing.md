@@ -38,3 +38,4 @@
 
 OpenAI function calling 用の event と payload は削除済みです。
 tool 呼び出しは LLM が Structured Outputs の JSON timeline 内の `tool` item として出力し、scheduler / router を通って `toolcaller` へ到達します。
+1 応答に複数の tool item を出せます。各 tool 定義の `x_tool_mode` が `write` の場合、成功結果は `toolcaller` が会話履歴へ commit せず LLM への再投入も行いません。read 系 tool の成功結果と write 系 tool のエラー結果だけが `EventConversationCommitRequest` として `conversationcommitter` へ渡ります。
