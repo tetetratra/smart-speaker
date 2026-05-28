@@ -54,12 +54,8 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 		return nil, newTimelineParseError(rawText, "invalid timeline json: %w", err)
 	}
 	items := make([]types.TimelineItem, 0, len(timeline.Items))
-	seenTool := false
 	for i, raw := range timeline.Items {
 		rawPreview := marshalRawTimelineItem(raw)
-		if seenTool {
-			return nil, newTimelineParseError(rawPreview, "tool must be the last item")
-		}
 		item := types.TimelineItem{
 			Kind:         strings.TrimSpace(raw.Type),
 			GenerationID: generationID,
@@ -88,7 +84,6 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 				raw.Args = json.RawMessage(`{}`)
 			}
 			item.ToolArgs = raw.Args
-			seenTool = true
 		default:
 			return nil, newTimelineParseError(rawPreview, "unknown timeline item type: %s", item.Kind)
 		}

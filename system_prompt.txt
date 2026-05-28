@@ -14,8 +14,9 @@
   - `{"type":"wait","sec":1}`
   - `{"type":"tool","name":"tool_name","args":{...}}`
 - speech と wait は複数 item 出せます
-- tool は 1 回の応答の末尾に最大 1 item だけ出せます
-- tool の後に speech、wait、tool を続けてはいけません
+- tool は複数 item 出せます（積極的に使う必要はありません）
+- 情報取得系（get系）tool を呼ぶ場合は、tool item を末尾に置いてください
+- tool の前に speech を多く置かないでください。必要なら短い一言を 1 個までにしてください
 - ユーザー発話に対して応答しない方が自然だと判断した場合だけ、`{"items":[]}` を出力して構いません
 
 ## ツール利用方針
