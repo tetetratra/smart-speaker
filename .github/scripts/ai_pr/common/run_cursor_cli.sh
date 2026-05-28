@@ -59,5 +59,5 @@ if ! command -v agent >/dev/null 2>&1; then
 fi
 
 prompt="$(cat "$prompt_file")"
-agent -p --force --model auto --output-format text --workspace /workspace "$prompt" | tee "$events_file"
+agent -p --force --model "composer-2.5" --output-format text --workspace /workspace "$prompt" | tee "$events_file"
 cp "$events_file" "$final_file"
