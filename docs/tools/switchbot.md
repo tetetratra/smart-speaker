@@ -1,16 +1,16 @@
 # SwitchBot tools
 
 ## 概要
-この文書は、SwitchBot tool 群のうち `switchbot_execute_scene` と `hub2_get_environment` の現行実装ベースの概要をまとめたものです。個別デバイス操作ではなく、シーン実行と Hub 2 の環境取得を LLM へ公開する構成です。
+この文書は、SwitchBot tool 群のうち `switchbot_execute_scene` と Hub 2 環境取得ツール群の現行実装ベースの概要をまとめたものです。個別デバイス操作ではなく、シーン実行と Hub 2 の環境取得を LLM へ公開する構成です。
 
 ## 前提設定
 ### 共通
 - SwitchBot Open API を利用できる `token` と `secret` が必要です。
 - 通常起動では `cmd/smart-speaker/main.go` が `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を確認し、どちらかが空の場合は SwitchBot tool 群を登録せずに起動を継続します。
 - `registry.New` は `Config.SwitchBotClient` が未指定で、かつ `SwitchBotToken` / `SwitchBotSecret` がどちらも空でない場合に `SwitchBotDeviceMap` から `switchbot.Client` を生成します。
-- `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` 未設定時は `switchbot_execute_scene` と `hub2_get_environment` は LLM に提示されず、handler も登録されません。
+- `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` 未設定時は `switchbot_execute_scene` と Hub 2 環境取得ツール群は LLM に提示されず、handler も登録されません。
 
-### `hub2_get_environment`
+### Hub 2 環境取得ツール群
 - 登録には有効な `switchbot.Client` が必要です。
 - 実行には `hub2` というエイリアスが `SwitchBotDeviceMap` に含まれている必要があります。通常起動では token/secret が揃っていれば tool は登録され、`hub2` alias 未設定は実行時エラーとして返ります。
 - `SwitchBotDeviceMap` は JSON オブジェクト文字列です。キーはエイリアス、値は device ID です。
@@ -26,16 +26,19 @@
 ### `switchbot_execute_scene`
 - 登録には有効な `switchbot.Client` が必要です。
 - 通常起動では起動時に SwitchBot API から scene 一覧を取得し、その結果が `Config.SwitchBotScenes` として渡されます。
-- scene 一覧取得に失敗した場合、`switchbot_execute_scene` だけが登録されません。`hub2_get_environment` は token/secret が揃っていれば登録されます。
+- scene 一覧取得に失敗した場合、`switchbot_execute_scene` だけが登録されません。Hub 2 環境取得ツール群は token/secret が揃っていれば登録されます。
 - 起動時に取得した `Config.SwitchBotScenes` が 1 件以上必要です。
 - scene 名と scene ID のどちらかが空の項目は登録対象から除外されます。
 - `Config.SwitchBotScenes` が空、または有効な scene が 0 件の場合は tool 自体が登録されません。
 
 ## できること
-### `hub2_get_environment`
-- Hub 2 の温度、湿度、照度を取得します。
-- 引数は取りません。
+### Hub 2 環境取得ツール群
+- `hub2_get_temperature`: Hub 2 の温度のみを取得します。
+- `hub2_get_humidity`: Hub 2 の湿度のみを取得します。
+- `hub2_get_light_level`: Hub 2 の照度のみを取得します。
+- 各 tool の引数は取りません。
 - 対象デバイスは `hub2` エイリアス固定です。
+- ユーザーが聞いていない値は tool result に含まれないため、LLM の応答が他の環境値に引っ張られにくくなります。
 
 ### `switchbot_execute_scene`
 - SwitchBot に登録済みの scene を 1 件実行します。
@@ -43,11 +46,23 @@
 - 利用可能な scene 名は tool definition の description に列挙されます。
 
 ## tool 定義
-### `hub2_get_environment`
-- name: `hub2_get_environment`
+### `hub2_get_temperature`
+- name: `hub2_get_temperature`
 - `x_tool_mode`: `read`
 - parameters: 空の object
-- description: `Hub2の温度・湿度・照度を取得します。`
+- description: `Hub2の温度を取得します。`
+
+### `hub2_get_humidity`
+- name: `hub2_get_humidity`
+- `x_tool_mode`: `read`
+- parameters: 空の object
+- description: `Hub2の湿度を取得します。`
+
+### `hub2_get_light_level`
+- name: `hub2_get_light_level`
+- `x_tool_mode`: `read`
+- parameters: 空の object
+- description: `Hub2の照度を取得します。`
 
 ### `switchbot_execute_scene`
 - name: `switchbot_execute_scene`
@@ -71,19 +86,35 @@
 - description: 利用可能な scene 名を埋め込んだ文字列です。
 
 ## 返り値と副作用
-### `hub2_get_environment`
-返り値は次の形式です。
+### Hub 2 環境取得ツール群
+各 tool は単一フィールドのみを返します。
+
+`hub2_get_temperature`:
 
 ```json
 {
-  "temperature": "26.1",
-  "humidity": "55",
+  "temperature": "26.1"
+}
+```
+
+`hub2_get_humidity`:
+
+```json
+{
+  "humidity": "55"
+}
+```
+
+`hub2_get_light_level`:
+
+```json
+{
   "light_level": "12"
 }
 ```
 
 - 値は `string` として返ります。
-- `temperature` / `humidity` / `light_level` の取得に失敗した場合は `"取得不可"` を返します。
+- 取得に失敗した場合は `"取得不可"` を返します。
 - 副作用はありません。
 - read 系 tool のため、成功結果は会話履歴へ保存され LLM へ再投入されます。
 - 内部では `GET /v1.1/devices/{deviceId}/status` を呼び出します。
@@ -107,7 +138,7 @@
 - 内部では `POST /v1.1/scenes/{sceneId}/execute` を呼び出します。
 
 ## エラーと制約
-### `hub2_get_environment`
+### Hub 2 環境取得ツール群
 - client 未設定時は `SwitchBot が設定されていません` を返します。
 - `hub2` エイリアスが device map に存在しない場合は `未定義のデバイス名です: hub2` を返します。
 - SwitchBot API の HTTP エラーや業務エラーは、そのままエラーとして返します。
@@ -120,7 +151,7 @@
 
 ## 不明
 - scene 実行後に実世界で何が起きるかは、SwitchBot アプリ側に登録された各 scene の内容に依存します。この文書の参照範囲からは判別できないため不明です。
-- `hub2_get_environment` の照度 `lightLevel` の単位や値域は、このコードベースの参照範囲からは不明です。
+- `hub2_get_light_level` の照度 `lightLevel` の単位や値域は、このコードベースの参照範囲からは不明です。
 
 ## 参照元
 - [internal/tools/functions/switchbot/scene.go](/internal/tools/functions/switchbot/scene.go)

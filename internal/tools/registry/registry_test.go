@@ -16,8 +16,13 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 	if _, ok := reg.DefinitionByName("switchbot_execute_scene"); !ok {
 		t.Fatal("switchbot_execute_scene should be registered")
 	}
-	if _, ok := reg.DefinitionByName("hub2_get_environment"); !ok {
-		t.Fatal("hub2_get_environment should be registered")
+	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
+		if _, ok := reg.DefinitionByName(name); !ok {
+			t.Fatalf("%s should be registered", name)
+		}
+	}
+	if _, ok := reg.DefinitionByName("hub2_get_environment"); ok {
+		t.Fatal("hub2_get_environment should not be registered")
 	}
 	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
 		t.Fatal("set_whiteboard should be registered")
@@ -37,7 +42,9 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 		}
 	}
 	assertToolMode(t, reg, "switchbot_execute_scene", "write")
-	assertToolMode(t, reg, "hub2_get_environment", "read")
+	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
+		assertToolMode(t, reg, name, "read")
+	}
 	assertToolMode(t, reg, "set_whiteboard", "write")
 	assertToolMode(t, reg, "google_calendar_list", "read")
 	assertToolMode(t, reg, "google_calendar_create", "write")
@@ -51,15 +58,20 @@ func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
 	if _, ok := reg.DefinitionByName("switchbot_execute_scene"); ok {
 		t.Fatal("switchbot_execute_scene should not be registered")
 	}
-	if _, ok := reg.DefinitionByName("hub2_get_environment"); !ok {
-		t.Fatal("hub2_get_environment should be registered")
+	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
+		if _, ok := reg.DefinitionByName(name); !ok {
+			t.Fatalf("%s should be registered", name)
+		}
+	}
+	if _, ok := reg.DefinitionByName("hub2_get_environment"); ok {
+		t.Fatal("hub2_get_environment should not be registered")
 	}
 }
 
 func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
 	reg := New(Config{})
 
-	for _, name := range []string{"switchbot_execute_scene", "hub2_get_environment"} {
+	for _, name := range []string{"switchbot_execute_scene", "hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
 		if _, ok := reg.DefinitionByName(name); ok {
 			t.Fatalf("%s should not be registered", name)
 		}

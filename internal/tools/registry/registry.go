@@ -42,7 +42,7 @@ func New(cfg Config) *Registry {
 	if switchBotClient == nil && strings.TrimSpace(cfg.SwitchBotToken) != "" && strings.TrimSpace(cfg.SwitchBotSecret) != "" {
 		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	}
-	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
+	hub2Tools := switchbot.NewHub2ToolsWithClient(switchBotClient)
 	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
 	calendarClient := cfg.CalendarClient
 	if calendarClient == nil {
@@ -62,8 +62,12 @@ func New(cfg Config) *Registry {
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
 	}
-	if hub2Tool != nil {
-		toolEntries = append([]entry{{def: hub2Tool.Definition(), handler: hub2Tool}}, toolEntries...)
+	if len(hub2Tools) > 0 {
+		hub2Entries := make([]entry, 0, len(hub2Tools))
+		for _, hub2Tool := range hub2Tools {
+			hub2Entries = append(hub2Entries, entry{def: hub2Tool.Definition(), handler: hub2Tool})
+		}
+		toolEntries = append(hub2Entries, toolEntries...)
 	}
 	if sceneTool != nil {
 		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
