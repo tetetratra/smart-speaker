@@ -57,10 +57,28 @@ http://localhost:8081/oauth/google/start
 4. デフォルト設定では `data/google_oauth_token.json` は `/app/data/google_oauth_token.json` として永続化される
 
 ## AI PR 自動化
-GitHub Actions で `AI主導開発` ラベル付き issue の起票時、または issue への `AI主導開発` ラベル付与時に通常 PR を作り、`AI主導開発` ラベル付きの PR に対する通常コメントで Codex を起動する簡易自動化を入れています。
+GitHub Actions で `AI主導開発` ラベル付き issue の起票時、または issue への `AI主導開発` ラベル付与時に通常 PR を作り、`AI主導開発` ラベル付きの PR に対する通常コメントで AI CLI を起動する簡易自動化を入れています。
 初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
-### Codex 認証の更新
+### 実行する AI CLI の切り替え
+`AI_CLI_TOOL` Variable で使用する CLI を切り替えます。
+
+- `codex`（デフォルト）
+- `cursor-cli`
+
+`AI_CLI_TOOL` が未設定、または不正な値の場合は `codex` にフォールバックします。
+
+```sh
+gh variable set AI_CLI_TOOL --body "cursor-cli"
+```
+
+`codex` に戻す場合:
+
+```sh
+gh variable set AI_CLI_TOOL --body "codex"
+```
+
+### Codex 認証の更新（`AI_CLI_TOOL=codex`）
 CI では `CODEX_AUTH_JSON_B64` を GitHub Secret として使います。認証が切れたら、trusted machine で `codex login` をやり直してから Secret を更新してください。
 
 ```sh
@@ -68,6 +86,15 @@ base64 < "${CODEX_HOME:-$HOME/.codex}/auth.json" | tr -d '\n' | gh secret set CO
 ```
 
 `CODEX_AUTH_JSON_B64` が未設定の場合、AI 実行時に認証未設定のコメントが返ります。
+
+### Cursor CLI 認証の更新（`AI_CLI_TOOL=cursor-cli`）
+Cursor CLI 実行時は `CURSOR_API_KEY` Secret を使います。
+
+```sh
+gh secret set CURSOR_API_KEY --body "<your-cursor-api-key>"
+```
+
+`CURSOR_API_KEY` が未設定の場合、AI 実行時に認証未設定のコメントが返ります。
 
 ### Git サブモジュールの管理
 このリポジトリでは Codex 用スキルを `external/skills` サブモジュールから利用します。
