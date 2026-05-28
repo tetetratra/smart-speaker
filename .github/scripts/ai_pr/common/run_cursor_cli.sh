@@ -29,6 +29,7 @@ fi
 mkdir -p "$STATE_ROOT/run" "$STATE_ROOT/result"
 
 git config --global --add safe.directory /workspace || true
+export PATH="$HOME/.local/bin:/root/.local/bin:/home/node/.local/bin:$PATH"
 
 run_mode="${RUN_MODE:-normal}"
 context_sha="${HEAD_SHA:-$(git -C /workspace rev-parse HEAD)}"
