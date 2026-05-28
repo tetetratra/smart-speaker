@@ -6,7 +6,20 @@
 
 ## LLM 出力契約
 
-ホワイトボード追記は、JSON timeline の **root 任意フィールド** `set_whiteboard` で行います。`items` 配列内の tool としては出しません。
+ホワイトボード追記は、JSON timeline の **root 追加フィールド** `set_whiteboard` で行います。`items` 配列内の tool としては出しません。
+
+更新しない場合の例:
+
+```json
+{
+  "set_whiteboard": null,
+  "items": [
+    { "type": "speech", "text": "..." }
+  ]
+}
+```
+
+更新する場合の例:
 
 ```json
 {
@@ -20,14 +33,15 @@
 | 観点 | 内容 |
 |------|------|
 | フィールド位置 | root object（`items` と同階層） |
-| 必須 | いいえ（省略可） |
-| 形状 | `{ "content": "..." }`（非空文字列。前後空白は trim 後に検証） |
+| JSON schema 上の必須 | はい（`required` に含まれる。OpenAI strict schema の制約） |
+| 更新の有無 | 更新しない場合は `null`、更新する場合は `{ "content": "..." }` |
+| 形状（更新時） | `{ "content": "..." }`（非空文字列。前後空白は trim 後に検証） |
 | `items` 内 tool | **禁止**（パーサがエラーにする） |
-| Structured Outputs schema | root に `set_whiteboard` プロパティを定義。`items` の tool `anyOf` には含めない |
+| Structured Outputs schema | root に `set_whiteboard`（`type: ["object","null"]`）を定義。`items` の tool `anyOf` には含めない |
 
 ### パース時の統合
 
-`internal/components/llm/contract.go` の `parseTimelineJSON` は、`set_whiteboard` フィールドがある場合、検証後に `items` の **先頭** へ `TimelineKindTool`（`tool_name=set_whiteboard`）を挿入し、全 item の `SequenceID` を `1` から振り直します。
+`internal/components/llm/contract.go` の `parseTimelineJSON` は、`set_whiteboard` が非 `null` の object の場合、検証後に `items` の **先頭** へ `TimelineKindTool`（`tool_name=set_whiteboard`）を挿入し、全 item の `SequenceID` を `1` から振り直します。`null` は無視します。
 
 - 下流（scheduler / toolcaller / whiteboard handler）は、従来どおり tool として処理します。
 - #158 対応により、先頭 tool は他 item より先に実行され、ホワイトボード反映を早めます。
