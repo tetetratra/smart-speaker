@@ -53,6 +53,27 @@ EOF
 
 AI_AGENT_NAME="Cursor CLI エージェント" bash /workspace/.github/scripts/ai_pr/common/build_prompt.sh "$prompt_file"
 
+git -C /workspace submodule update --init external/skills
+
+skills_src="/workspace/external/skills/skills"
+skills_dest="/workspace/.cursor/skills"
+if [ -d "$skills_src" ]; then
+  rm -rf "$skills_dest"
+  mkdir -p "$skills_dest"
+
+  shopt -s nullglob
+  for skill_dir in "$skills_src"/*; do
+    [ -d "$skill_dir" ] || continue
+
+    skill_name="$(basename "$skill_dir")"
+    if [ "${#skill_name}" -eq 1 ]; then
+      continue
+    fi
+
+    cp -R "$skill_dir" "$skills_dest/"
+  done
+fi
+
 if ! command -v agent >/dev/null 2>&1; then
   echo "agent command not found in PATH" >&2
   exit 1
