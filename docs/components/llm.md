@@ -7,7 +7,7 @@
 * **提供価値**: OpenAI Responses API の出力を Structured Outputs の JSON schema で `speech` / `wait` / `tool` の timeline object に制約し、Go 側でも検証してから `TimelineItem` に変換する。
 * **安全性の考え方**: 契約違反の LLM 応答は最大10回 retry し、それでも失敗した場合はログを出して応答を捨てる。壊れた timeline を下流へ流さないことを優先する。
 * **無応答の考え方**: ユーザー発話に対して応答しない方が自然な場合は、LLM が `{"items":[]}` を出力できる。空 timeline は有効な応答として扱われ、下流 event は発行されない。
-* **tool 連携の考え方**: OpenAI function calling は使わない。通常起動では local tool registry 由来の schema を LLM の Structured Outputs schema と system prompt に渡し、LLM は JSON timeline の `items` 配列内に tool item を出す。1 応答に複数件出せ、get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
+* **tool 連携の考え方**: OpenAI function calling は使わない。通常起動では local tool registry 由来の schema（`DefinitionsForLLM()`、`set_whiteboard` を除く）を LLM の Structured Outputs schema と system prompt に渡し、LLM は JSON timeline の `items` 配列内に tool item を出す。ホワイトボード追記だけは root の任意フィールド `set_whiteboard` で出し、パース時に `items` 先頭へ tool item として統合する。1 応答に複数件出せ、get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -23,9 +23,10 @@
   - 非streamの最終response JSONから `output[].content[].text` を取り出し、JSON object 文字列として返す。
   - OpenAI function calling 用の `tools`、`tool_choice`、`function_call_output` は送信しない。
 - **Structured Outputs schema**
-  - `schema.go` が `{"items":[...]}` を root とする JSON schema を生成する。
+  - `schema.go` が `{"items":[...]}` を必須とし、任意の `set_whiteboard` を持つ JSON schema を生成する。
   - `speech` / `wait` は固定 schema として定義する。
-  - `tool` は登録済み local tool ごとに `name` と `args` schema を固定した variant として追加する。
+  - `tool` は登録済み local tool ごとに `name` と `args` schema を固定した variant として追加する（`set_whiteboard` は `items` の tool anyOf から除外）。
+  - `set_whiteboard` は root プロパティとして `{ "content": string }` を定義する。
   - OpenAI の strict schema に合わせ、object は `additionalProperties: false` にし、optional 引数は required nullable として扱う。
 - **system prompt builder**
   - `cfg.Instructions`、JSON timeline 契約文、任意の `cfg.ToolSchemas` を結合して system prompt を作る。
@@ -57,7 +58,7 @@
 2. 履歴 snapshot の取得: `llm.stage` は `history.Snapshot()` が1件以上あれば、それを `conversationhistory.ToChatMessages` で `[]types.ChatMessage` に変換する。
 3. Responses API 呼び出し: `Client.CreateResponse` が system prompt と chat messages を `input` 配列にして、Responses API を `text.format: json_schema` で呼び出す。
 4. response body の読解: 非streamの最終response JSONから `output[].content[].text` を取り出す。
-5. timeline 変換: `parseTimelineJSON` が `{"items":[...]}` を `TimelineItem` に変換し、各 item に `GenerationID` と `SequenceID` を付与する。
+5. timeline 変換: `parseTimelineJSON` が `{"items":[...]}`（任意で `set_whiteboard` 付き）を `TimelineItem` に変換する。`set_whiteboard` がある場合は先頭へ tool item を挿入し、各 item に `GenerationID` と `SequenceID` を付与する。
 6. 下流への発行: `llm.stage` が `EventTimelineItem` を順番に下流へ送る。
 7. 再生と保存: `speech` は `tts` で `PlayableSpeech` になり、`scheduler` と `router` を経て `EventRealtimeAudio` と agent の `ConversationCommitRequest` になる。
 
@@ -202,13 +203,14 @@ sequenceDiagram
 
 ### JSON timeline契約
 
-- root は `{"items":[...]}` の JSON object である。
+- root は `{"items":[...]}` を必須とする JSON object である。任意で `"set_whiteboard":{"content":"..."}` を付けられる。
+- `set_whiteboard`: root の任意フィールド。`content` は trim 後に空であってはいけない。存在する場合、パース後は `items` 先頭の `tool` item（`name=set_whiteboard`）になる。`items` 内に `set_whiteboard` tool を出すことは禁止。
 - `speech`: `{"type":"speech","text":"..."}`。`text` は trim 後に空であってはいけない。
 - `wait`: `{"type":"wait","sec":0.5}`。`sec` は必須で、0以上でなければならない。
-- `tool`: `{"type":"tool","name":"tool_name","args":{...}}`。`name` は trim 後に空であってはいけない。`args` がない場合は `{}` として扱う。
+- `tool`: `{"type":"tool","name":"tool_name","args":{...}}`（`set_whiteboard` 以外）。`name` は trim 後に空であってはいけない。`args` がない場合は `{}` として扱う。
 - ユーザー発話に対して応答しないべき場合だけ、空の `items` を持つ `{"items":[]}` を有効な timeline として扱う。この場合、下流へ `EventTimelineItem` は発行されない。
 - `tool` は1応答内に複数件出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限とする。
-- 各 item の `SequenceID` は `items` 配列 index を基に `1`、`2`、`3` ... の文字列として付与される。
+- 各 item の `SequenceID` は、パース・先頭挿入後の配列順に `1`、`2`、`3` ... の文字列として付与される。
 
 ### OpenAI Responses API 呼び出し
 
@@ -233,7 +235,8 @@ sequenceDiagram
         "additionalProperties": false,
         "required": ["items"],
         "properties": {
-          "items": {"type": "array", "items": {"anyOf": []}}
+          "items": {"type": "array", "items": {"anyOf": []}},
+          "set_whiteboard": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"], "additionalProperties": false}
         }
       }
     }
@@ -249,9 +252,9 @@ sequenceDiagram
 
 ### tool形式と履歴への戻し方
 
-- LLM component は OpenAI function calling を使わず、tool call を JSON timeline の `tool` item として扱う。
-- `prompt_tools.go` の system prompt も「OpenAI function calling は使わず、tool 呼び出しも `items` 配列内の tool item として表現」と明記している。
-- 通常起動では `buildToolRegistry` が返す `registry.Definitions()` が `ToolSchemas` に渡され、Structured Outputs schema と `利用可能なlocal tool schema:` の両方に反映される。ただし JSON marshal に失敗した場合は prompt 用 schema 部分は追加されない。
+- LLM component は OpenAI function calling を使わず、tool call を JSON timeline の `tool` item として扱う（`set_whiteboard` のみ root 追加フィールド経由）。
+- `prompt_tools.go` の system prompt も「OpenAI function calling は使わず、tool 呼び出しは `items` 内の tool item として表現（`set_whiteboard` は除く）」と明記している。
+- 通常起動では `buildToolRegistry` が返す `registry.DefinitionsForLLM()` が `ToolSchemas` に渡され、Structured Outputs schema と `利用可能なlocal tool schema:` の両方に反映される（`set_whiteboard` は LLM 向け定義から除外）。handler は `registry.Handlers()` に `set_whiteboard` を含む。JSON marshal に失敗した場合は prompt 用 schema 部分は追加されない。
 - `web_search` は OpenAI 設定がある通常起動で registry に登録される。LLM は `{"type":"tool","name":"web_search","args":{"query":"..."}}` の形で local tool として呼び出し、handler 内部だけが Responses API hosted `web_search` を別 request で利用する。
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
 - 各 tool 定義には `x_tool_mode: "read" | "write"` を持つ。write 系 tool の成功結果は `toolcaller` が commit せず、read 系 tool の成功結果と write 系 tool のエラー結果だけが履歴へ入る。
