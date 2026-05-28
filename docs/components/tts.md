@@ -102,7 +102,7 @@ sequenceDiagram
 
 ### シナリオ: `tool` item が音声の後に実行されるまで
 
-1. **LLM が tool を末尾に発行する**: `llm` の timeline 契約では `tool` は1応答の末尾に最大1件だけ許可される。
+1. **LLM が tool item を発行する**: `llm` の timeline 契約では1応答内に複数の tool item を出せる。get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
 2. **tts が透過する**: `tts` は `tool` item を音声化せず、元の `EventTimelineItem` のまま下流へ送る。
 3. **scheduler が ToolRequest に変換する**: `scheduler` は `TimelineKindTool` を受け取ると `types.ToolRequest` を作り、`EventScheduledItem` として出力する。
 4. **router が toolcaller へ渡す**: `router` は `ToolRequest` を `EventToolRequest` として出力する。

@@ -195,7 +195,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.committer != nil {
 		stages.committer.Name = "conversationcommitter"
 	}
-	toolSchemas, toolHandlers := buildToolRegistry(cfg)
+	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
 	stages.llm, err = llm.NewStage(llm.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
@@ -225,7 +225,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	stages.scheduler.Name = "scheduler"
 	stages.router = router.NewStage(router.Config{})
 	stages.router.Name = "router"
-	stages.tool = toolcaller.NewStage(toolHandlers)
+	stages.tool = toolcaller.NewStage(toolHandlers, toolModes)
 	if stages.tool != nil {
 		stages.tool.Name = "toolcaller"
 	}
@@ -280,7 +280,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler) {
+func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[string]string) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -293,7 +293,7 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler) {
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.Definitions(), reg.Handlers()
+	return reg.Definitions(), reg.Handlers(), reg.ToolModes()
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {

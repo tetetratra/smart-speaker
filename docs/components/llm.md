@@ -118,12 +118,12 @@ sequenceDiagram
 
 ### シナリオ: tool item が出力され、結果が再度 LLM に渡るまで
 
-1. LLM の tool 表現: LLM は `{"type":"tool","name":"...","args":{...}}` を `items` 配列の末尾 item として出す。tool は1応答につき最大1件で、後続 item は禁止される。
+1. LLM の tool 表現: LLM は `{"type":"tool","name":"...","args":{...}}` を `items` 配列内に出す。1応答に複数件出せる。get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
 2. `TimelineItem` 化: `parseTimelineJSON` は `name` を `ToolName`、`args` を `ToolArgs` に入れる。`args` が空の場合は `{}` を設定する。
 3. scheduler 変換: `scheduler` は tool item を `types.ToolRequest` に変換し、`ToolCallID` と `SequenceID` に timeline の `SequenceID` を入れる。
 4. router 振り分け: `router` は `ToolRequest` を `tool_call` として履歴保存した後、`EventToolRequest` として `toolcaller` へ送る。
-5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行し、結果を `ToolResultRecord` として `EventConversationCommitRequest` で `conversationcommitter` へ渡す。handler がない場合は `{"error":"unknown function: <name>"}` を結果にする。
-6. 履歴への保存: `conversationcommitter` は tool result を role `tool_result` の record として保存する。
+5. tool 実行結果 commit: `toolcaller` は handler を名前で探して実行する。read 系 tool の成功結果、write 系 tool のエラー結果、unknown tool / handler error は `ToolResultRecord` として `EventConversationCommitRequest` で `conversationcommitter` へ渡す。write 系 tool の成功結果は commit しない。
+6. 履歴への保存: `conversationcommitter` は commit された tool result を role `tool_result` の record として保存する。
 7. LLM への再投入: tool result 保存後、`conversationcommitter` は role `tool_result` の `EventLLMRequest` を発行する。`llm.messages` は履歴がある場合 request の `Role` / `Text` ではなく履歴 snapshot 全体を使う。
 
 ```mermaid
@@ -207,7 +207,7 @@ sequenceDiagram
 - `wait`: `{"type":"wait","sec":0.5}`。`sec` は必須で、0以上でなければならない。
 - `tool`: `{"type":"tool","name":"tool_name","args":{...}}`。`name` は trim 後に空であってはいけない。`args` がない場合は `{}` として扱う。
 - ユーザー発話に対して応答しないべき場合だけ、空の `items` を持つ `{"items":[]}` を有効な timeline として扱う。この場合、下流へ `EventTimelineItem` は発行されない。
-- `tool` は末尾に最大1件だけ許可される。`tool` の後に `speech` / `wait` / `tool` が続くと `tool must be the last item` で契約違反になる。
+- `tool` は1応答内に複数件出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限とする。
 - 各 item の `SequenceID` は `items` 配列 index を基に `1`、`2`、`3` ... の文字列として付与される。
 
 ### OpenAI Responses API 呼び出し
@@ -254,6 +254,7 @@ sequenceDiagram
 - 通常起動では `buildToolRegistry` が返す `registry.Definitions()` が `ToolSchemas` に渡され、Structured Outputs schema と `利用可能なlocal tool schema:` の両方に反映される。ただし JSON marshal に失敗した場合は prompt 用 schema 部分は追加されない。
 - `web_search` は OpenAI 設定がある通常起動で registry に登録される。LLM は `{"type":"tool","name":"web_search","args":{"query":"..."}}` の形で local tool として呼び出し、handler 内部だけが Responses API hosted `web_search` を別 request で利用する。
 - `web_search` の引数は `query` のみで、tool result は `{"result":"..."}` のみを返す。追加引数や citation/source などの補助情報は LLM 側の混乱を避けるため公開しない。
+- 各 tool 定義には `x_tool_mode: "read" | "write"` を持つ。write 系 tool の成功結果は `toolcaller` が commit せず、read 系 tool の成功結果と write 系 tool のエラー結果だけが履歴へ入る。
 - `conversationhistory.ToChatMessages` は `user` / `agent` / `tool_call` / `tool_result` の正規 role を保持した `types.ChatMessage` を返す。content は `{"type":"message",...}`、`{"type":"tool_call",...}`、`{"type":"tool_result",...}` の JSON 文字列になる。
 - `responses_client` は HTTP payload 作成直前で Responses API が受け付ける transport role に包む。履歴 message の外側 `input[].role` は `user`、意味上の role は content 内の JSON に残す。
 - 履歴 metadata の `current_generation_id` と `stale` は、`conversationhistory.NewRecord` が現在世代と tool result の世代を比較して設定する。

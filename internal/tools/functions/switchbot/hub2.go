@@ -81,16 +81,16 @@ func (t *Hub2Tool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *Hub2Tool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        hub2ToolName,
-		"description": "Hub2の温度・湿度・照度を取得します。",
+		"description": "Hub2の温度・湿度・照度を取得します。ユーザーから聞かれていないフィールドの情報は伝える必要はありません",
 		"parameters": map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
 			"additionalProperties": false,
 		},
-	}
+	}, tools.ToolModeRead)
 }
 
 var _ tools.Handler = (*Hub2Tool)(nil)

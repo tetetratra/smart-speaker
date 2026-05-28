@@ -45,11 +45,13 @@
 ## tool 定義
 ### `hub2_get_environment`
 - name: `hub2_get_environment`
+- `x_tool_mode`: `read`
 - parameters: 空の object
 - description: `Hub2の温度・湿度・照度を取得します。`
 
 ### `switchbot_execute_scene`
 - name: `switchbot_execute_scene`
+- `x_tool_mode`: `write`
 - parameters:
 
 ```json
@@ -83,6 +85,7 @@
 - 値は `string` として返ります。
 - `temperature` / `humidity` / `light_level` の取得に失敗した場合は `"取得不可"` を返します。
 - 副作用はありません。
+- read 系 tool のため、成功結果は会話履歴へ保存され LLM へ再投入されます。
 - 内部では `GET /v1.1/devices/{deviceId}/status` を呼び出します。
 
 ### `switchbot_execute_scene`
@@ -100,6 +103,7 @@
 
 - `body` の詳細構造は SwitchBot API 応答に依存します。
 - 副作用として、対象 scene が実行されます。
+- write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われません。エラー時のみ tool result が LLM へ返ります。
 - 内部では `POST /v1.1/scenes/{sceneId}/execute` を呼び出します。
 
 ## エラーと制約

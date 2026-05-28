@@ -73,7 +73,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *Tool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        toolName,
 		"description": toolDescription,
@@ -88,7 +88,7 @@ func (t *Tool) Definition() map[string]any {
 			"required":             []string{"query"},
 			"additionalProperties": false,
 		},
-	}
+	}, tools.ToolModeRead)
 }
 
 func (t *Tool) ctxOrBackground() context.Context {

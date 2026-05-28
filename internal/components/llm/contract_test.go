@@ -26,17 +26,32 @@ func TestParseTimelineJSONAcceptsSpeechWaitAndTrailingTool(t *testing.T) {
 	}
 }
 
-func TestParseTimelineJSONRejectsItemAfterTool(t *testing.T) {
-	_, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"get_temp","args":{}},{"type":"speech","text":"結果です"}]}`, 1)
-	if err == nil {
-		t.Fatal("err = nil, want error")
+func TestParseTimelineJSONAcceptsMultipleTools(t *testing.T) {
+	items, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}},{"type":"tool","name":"web_search","args":{"query":"天気"}}]}`, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var parseErr *timelineParseError
-	if !errors.As(err, &parseErr) {
-		t.Fatalf("err = %T, want timelineParseError", err)
+	if len(items) != 2 {
+		t.Fatalf("len = %d, want 2", len(items))
 	}
-	if parseErr.RawPreview() == "" {
-		t.Fatal("RawPreview is empty")
+	if items[0].Kind != types.TimelineKindTool || items[0].ToolName != "set_whiteboard" {
+		t.Fatalf("first tool = %+v", items[0])
+	}
+	if items[1].Kind != types.TimelineKindTool || items[1].ToolName != "web_search" {
+		t.Fatalf("second tool = %+v", items[1])
+	}
+}
+
+func TestParseTimelineJSONAcceptsToolBeforeSpeech(t *testing.T) {
+	items, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}},{"type":"speech","text":"更新したよ"}]}`, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len = %d, want 2", len(items))
+	}
+	if items[0].Kind != types.TimelineKindTool || items[1].Kind != types.TimelineKindSpeech {
+		t.Fatalf("items = %+v", items)
 	}
 }
 

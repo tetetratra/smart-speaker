@@ -20,17 +20,22 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools map[string]tools.Handler
+	tools     map[string]tools.Handler
+	toolModes map[string]string
 }
 
-func NewStage(handlers map[string]tools.Handler) *graph.Stage {
+func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
+	}
+	if toolModes == nil {
+		toolModes = map[string]string{}
 	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
+		toolModes:  toolModes,
 	}
 	return &graph.Stage{
 		Upstream:   s.upstream,
@@ -88,6 +93,9 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	go func() {
 		defer s.taskGroup.Done()
 		result := s.executeTool(req)
+		if s.shouldSuppressToolResult(result) {
+			return
+		}
 		s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
 			Role:         types.RoleToolResult,
 			GenerationID: result.GenerationID,
@@ -95,6 +103,20 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 			ToolResult:   &result,
 		}})
 	}()
+}
+
+func (s *toolCaller) shouldSuppressToolResult(result types.ToolResultRecord) bool {
+	if s.toolModes[result.Name] != tools.ToolModeWrite {
+		return false
+	}
+	var out map[string]any
+	if err := json.Unmarshal(result.Output, &out); err != nil {
+		return false
+	}
+	if _, ok := out["error"]; ok {
+		return false
+	}
+	return true
 }
 
 func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResultRecord {
