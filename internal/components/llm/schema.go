@@ -1,5 +1,7 @@
 package llm
 
+const setWhiteboardToolName = "set_whiteboard"
+
 func timelineTextFormat(toolSchemas []any) map[string]any {
 	return map[string]any{
 		"format": map[string]any{
@@ -11,9 +13,22 @@ func timelineTextFormat(toolSchemas []any) map[string]any {
 	}
 }
 
+func setWhiteboardFieldSchema() map[string]any {
+	return strictObject(map[string]any{
+		"content": map[string]any{
+			"type": "string",
+		},
+	})
+}
+
 func timelineSchema(toolSchemas []any) map[string]any {
 	itemSchemas := []any{speechItemSchema(), waitItemSchema()}
 	for _, toolSchema := range toolSchemas {
+		if def, ok := toolSchema.(map[string]any); ok {
+			if name, ok := def["name"].(string); ok && name == setWhiteboardToolName {
+				continue
+			}
+		}
 		if schema := toolItemSchema(toolSchema); schema != nil {
 			itemSchemas = append(itemSchemas, schema)
 		}
@@ -27,6 +42,7 @@ func timelineSchema(toolSchemas []any) map[string]any {
 					"anyOf": itemSchemas,
 				},
 			},
+			"set_whiteboard": setWhiteboardFieldSchema(),
 		},
 		"required":             []string{"items"},
 		"additionalProperties": false,

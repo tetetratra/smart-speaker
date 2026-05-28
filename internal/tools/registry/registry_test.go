@@ -127,6 +127,26 @@ func TestRegistryOmitsWebSearchToolWithoutOpenAIConfig(t *testing.T) {
 	}
 }
 
+func TestRegistryDefinitionsForLLMOmitsSetWhiteboard(t *testing.T) {
+	reg := New(Config{})
+
+	for _, def := range reg.DefinitionsForLLM() {
+		m, ok := def.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, ok := m["name"].(string); ok && name == "set_whiteboard" {
+			t.Fatal("DefinitionsForLLM should not include set_whiteboard")
+		}
+	}
+	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
+		t.Fatal("set_whiteboard should remain in Definitions")
+	}
+	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
+		t.Fatal("set_whiteboard handler should remain registered")
+	}
+}
+
 func TestRegistryOmitsSetVolumeTool(t *testing.T) {
 	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
 	reg := New(Config{SwitchBotClient: client})

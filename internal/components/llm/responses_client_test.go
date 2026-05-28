@@ -40,13 +40,13 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 		text: timelineTextFormat([]any{
 			map[string]any{
 				"type": "function",
-				"name": "set_whiteboard",
+				"name": "web_search",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"content": map[string]any{"type": "string"},
+						"query": map[string]any{"type": "string"},
 					},
-					"required":             []string{"content"},
+					"required":             []string{"query"},
 					"additionalProperties": false,
 				},
 			},
@@ -87,10 +87,13 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(format["schema"])
 	schemaText := string(encoded)
-	for _, want := range []string{`"items"`, `"speech"`, `"wait"`, `"tool"`, `"set_whiteboard"`} {
+	for _, want := range []string{`"items"`, `"speech"`, `"wait"`, `"tool"`, `"set_whiteboard"`, `"web_search"`} {
 		if !strings.Contains(schemaText, want) {
 			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
 		}
+	}
+	if strings.Count(schemaText, `"set_whiteboard"`) != 1 {
+		t.Fatalf("schema should contain set_whiteboard once at root, got: %s", schemaText)
 	}
 }
 

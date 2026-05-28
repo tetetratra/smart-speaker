@@ -34,11 +34,12 @@ func appendRetryInstruction(prompt string, err error, rawPreview string) string 
 		`直前の応答はJSON timeline契約違反でした。
 
 次の応答では、通常の文章を絶対に出力しないでください。
-出力してよいのは、{"items":[...]} 形式のJSON objectだけです。
+出力してよいのは、{"items":[...]} 形式のJSON objectだけです。必要なら root に任意の "set_whiteboard":{"content":"..."} を付けられます。set_whiteboard は items 内の tool として出さないでください。
 Markdown、説明文、前置き、謝罪文、コードブロック、箇条書き、JSON配列、NDJSONは出力禁止です。
 
 正しい出力例:
 {"items":[{"type":"speech","text":"うん、聞いてるよ"},{"type":"wait","sec":1},{"type":"speech","text":"続けて、ね"}]}
+{"set_whiteboard":{"content":"予定: 10:00 会議"},"items":[{"type":"speech","text":"確認したよ"}]}
 
 悪い出力例:
 うん続けて、聞いてるよ`,

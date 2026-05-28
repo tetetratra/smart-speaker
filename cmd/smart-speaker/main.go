@@ -293,7 +293,7 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[str
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.Definitions(), reg.Handlers(), reg.ToolModes()
+	return reg.DefinitionsForLLM(), reg.Handlers(), reg.ToolModes()
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
