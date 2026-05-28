@@ -112,6 +112,13 @@ LLM request は必ず保存済みの履歴 snapshot から作る。
 古い世代の tool result は実行済みの事実として保存し、`stale` metadata を付ける。
 `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()` を呼び、次の user 発話で古い会話文脈を LLM に渡さない。
 
+メモリは `internal/states/memory` が保持する。
+メモリStoreは、メモリ本文、関連タグ、embedding、作成更新時刻を JSON file に永続化する。
+検索用文字列は保存せず、必要な場面で `Content` と `Tags` から組み立てる。
+`memory.Store.Upsert()` は content 完全一致、タグ集合一致、embedding の cosine similarity による近似一致で既存メモリを更新し、該当がなければ新規作成する。
+`memory.Store.Search()` は query embedding と保存済み embedding の cosine similarity を計算し、閾値、最大件数、類似度降順 sort を適用して返す。
+現時点では Store の土台だけがあり、session reset hook、LLM context 注入、embedding 生成呼び出し、production graph への接続は後続の変更対象である。
+
 ## セッションリセット
 
 `CONVERSATION_IDLE_TIMEOUT_SECONDS` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
@@ -130,6 +137,9 @@ UIは `session_reset` を受けると通常画面の直近会話吹き出しを�
 - `internal/types/timeline_item.go`
 - `internal/states/generation/store.go`
 - `internal/states/conversationhistory/store.go`
+- `internal/states/memory/record.go`
+- `internal/states/memory/store.go`
+- `internal/states/memory/similarity.go`
 - `internal/components/utterancebuffer/stage.go`
 - `internal/components/sessionreset/stage.go`
 - `internal/components/conversationcommitter/stage.go`
