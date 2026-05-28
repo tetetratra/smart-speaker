@@ -28,6 +28,8 @@ fi
 
 mkdir -p "$STATE_ROOT/run" "$STATE_ROOT/result"
 
+git config --global --add safe.directory /workspace || true
+
 run_mode="${RUN_MODE:-normal}"
 context_sha="${HEAD_SHA:-$(git -C /workspace rev-parse HEAD)}"
 prompt_file="$STATE_ROOT/run/prompt.txt"
