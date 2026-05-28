@@ -132,3 +132,22 @@ func (r *Registry) Handlers() map[string]tools.Handler {
 	}
 	return handlers
 }
+
+// ToolModes はtoolcaller向けのname->read/write modeマップを返します。
+func (r *Registry) ToolModes() map[string]string {
+	modes := map[string]string{}
+	if r == nil {
+		return modes
+	}
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		name, ok := e.def["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		modes[name] = tools.ModeFromDefinition(e.def)
+	}
+	return modes
+}
