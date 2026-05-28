@@ -201,6 +201,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		History:      historyStore,
+		AgentStatus:  agentStatusStore,
 		ToolSchemas:  toolSchemas,
 	})
 	if err != nil {
