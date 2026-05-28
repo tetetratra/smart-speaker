@@ -40,6 +40,11 @@
   - `Next()` で世代を進め、`IsCurrent(id)` で最新世代かどうかを判定する。
   - pipeline 統合テストでは `store.Next()` により current generation を `1` にした上で、`GenerationID: 1` の event を流している。
 
+- **production graph 上の補足**
+  - production 実行本体は `cmd/smart-speaker/main.go` で組み立てられる。
+  - LLM 出力直後の経路は `llm -> sessionactivate -> generationfilter-llm -> tts` で、`sessionactivate` が speech 通過時に `agentstatus.Store` を `active` に戻す。
+  - この package の統合テストは `scheduler -> generationfilter -> router` の順序保証に絞っており、`sessionactivate` は直接テスト対象に含めていない。
+
 ## 3. 主要なデータフロー
 
 ### シナリオ: TTS 済み発話が tool 実行より先に処理される
@@ -134,5 +139,4 @@ sequenceDiagram
 
 ### 現時点で不明な点
 
-- production 実行時に `scheduler`、`generationfilter`、`router` をどの構成単位が接続するかは、`internal/components/pipeline/` 内の実コードからは確認できない。
 - `internal/components/pipeline/` が将来的に production pipeline 構築責務を持つ予定かどうかは、現時点の実コードからは不明。

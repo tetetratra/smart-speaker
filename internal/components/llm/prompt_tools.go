@@ -15,9 +15,9 @@ func buildSystemPrompt(base string, toolSchemas []any) string {
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
-func appendIdleFollowupInstruction(prompt string, gap string) string {
-	instruction := strings.TrimSpace(`前回のユーザー発話から` + gap + `経ってからのユーザー発話です。
-短い発話、意味不明な発話、感嘆、独り言のように見える場合は、スマートスピーカーへの依頼ではない可能性を考慮してください。
+func appendIdleFollowupInstruction(prompt string) string {
+	instruction := strings.TrimSpace(`現在のユーザー発話は、長期間無音だった後のユーザー発話です。
+短い発話、意味不明な発話、感嘆、独り言のように見える場合は、あなたへの依頼ではない可能性が高いため、応答しないでください。
 応答しない方が自然だと判断した場合は、speechやtoolを出さず {"items":[]} だけを出力してください。`)
 	if strings.TrimSpace(prompt) == "" {
 		return instruction

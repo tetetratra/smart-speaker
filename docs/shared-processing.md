@@ -16,20 +16,23 @@
 - `EventToolRequest`: router から toolcaller へ渡す tool 実行要求。
 - `EventRealtimeOutput`: UI 表示用の user / agent message。
 - `EventRealtimeAudio`: rtcout 再生用の agent 音声。
+- `EventSessionReset`: idle timeout によるセッション reset 通知。
 
 ## 共有Store
 
 - `internal/states/generation` は最新世代idを保持する。
 - `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
+- `internal/states/agentstatus` は LLM がひとりごと候補判定で参照する `idle` / `active` 状態を保持する。
 - Store は graph node ではなく、必要な component へ依存注入する。
-- `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()` と `generation.Store.Next()` を呼び、履歴クリアと古い世代の抑止を同時に行う。
+- `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()`、`generation.Store.Next()`、`agentstatus.Store.SetIdle()` を呼び、履歴クリア、古い世代の抑止、ひとりごと候補判定の再有効化を同時に行う。
+- `sessionactivate` は `speech` timeline item 通過時に `agentstatus.Store.SetActive()` を呼び、LLM 応答が始まったセッションを active に戻す。
 
 ## セッションリセット
 
 - `sessionreset` は `utterancebuffer` から出る user の `EventConversationCommitRequest` を横付けで監視する。
-- `CONVERSATION_IDLE_TIMEOUT_SECONDS` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させる。
+- `CONVERSATION_IDLE_TIMEOUT_SECONDS` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させ、agent status を `idle` にする。
 - `CONVERSATION_IDLE_TIMEOUT_SECONDS=0` の場合、idle reset は無効になる。
-- reset 用の graph event は発行しない。
+- reset 用の graph event として `EventSessionReset` を発行し、`wschat` が UI へ `session_reset` を通知する。
 
 ## function calling
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	Model        string
 	Instructions string
 	History      historyReader
+	AgentStatus  agentStatusReader
 	ToolSchemas  []any
 	Client       responseClient
 }
@@ -28,6 +30,10 @@ type responseClient interface {
 
 type historyReader interface {
 	Snapshot() []types.ConversationRecord
+}
+
+type agentStatusReader interface {
+	Status() agentstatus.Status
 }
 
 type Client struct {
