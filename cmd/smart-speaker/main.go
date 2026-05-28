@@ -23,6 +23,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcvad"
 	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
+	"github.com/tetetratra/smart-speaker/internal/components/sessionactivate"
 	"github.com/tetetratra/smart-speaker/internal/components/sessionreset"
 	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
@@ -31,6 +32,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/tools"
@@ -116,6 +118,7 @@ type appStages struct {
 	sessionReset *graph.Stage
 	committer    *graph.Stage
 	llm          *graph.Stage
+	sessionAct   *graph.Stage
 	filterLLM    *graph.Stage
 	tts          *graph.Stage
 	filterTTS    *graph.Stage
@@ -136,6 +139,7 @@ func (s appStages) all() []*graph.Stage {
 		s.sessionReset,
 		s.committer,
 		s.llm,
+		s.sessionAct,
 		s.filterLLM,
 		s.tts,
 		s.filterTTS,
@@ -155,6 +159,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
+	agentStatusStore := agentstatus.NewStore()
 
 	var err error
 	stages.tts, err = tts.NewStage(tts.Config{
@@ -178,6 +183,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		History:     historyStore,
 		Generation:  generationStore,
+		AgentStatus: agentStatusStore,
 	})
 	if stages.sessionReset != nil {
 		stages.sessionReset.Name = "sessionreset"
@@ -206,6 +212,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.llm != nil {
 		stages.llm.Name = "llm"
 	}
+	stages.sessionAct = sessionactivate.NewStage(sessionactivate.Config{AgentStatus: agentStatusStore})
+	stages.sessionAct.Name = "sessionactivate"
 	stages.filterLLM = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterLLM.Name = "generationfilter-llm"
 	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
@@ -346,6 +354,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	sessionResetNode := add(stages.sessionReset)
 	committerNode := add(stages.committer)
 	llmNode := add(stages.llm)
+	sessionActNode := add(stages.sessionAct)
 	filterLLMNode := add(stages.filterLLM)
 	ttsNode := add(stages.tts)
 	filterTTSNode := add(stages.filterTTS)
@@ -366,7 +375,8 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, sessionResetNode, chatNode, types.EventSessionReset)
 	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
 	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
-	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
+	connectKinds(g, llmNode, sessionActNode, types.EventTimelineItem)
+	connectKinds(g, sessionActNode, filterLLMNode, types.EventTimelineItem)
 	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem)
 	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech)
 	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech)
