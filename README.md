@@ -61,7 +61,7 @@ GitHub Actions で `AI主導開発` ラベル付き issue の起票時、また�
 初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
 ### 実行する AI CLI の切り替え
-`AI_CLI_TOOL` Secret で使用する CLI を切り替えます。
+`AI_CLI_TOOL` Variable で使用する CLI を切り替えます。
 
 - `codex`（デフォルト）
 - `cursor-cli`
@@ -69,13 +69,13 @@ GitHub Actions で `AI主導開発` ラベル付き issue の起票時、また�
 `AI_CLI_TOOL` が未設定、または不正な値の場合は `codex` にフォールバックします。
 
 ```sh
-gh secret set AI_CLI_TOOL --body "cursor-cli"
+gh variable set AI_CLI_TOOL --body "cursor-cli"
 ```
 
 `codex` に戻す場合:
 
 ```sh
-gh secret set AI_CLI_TOOL --body "codex"
+gh variable set AI_CLI_TOOL --body "codex"
 ```
 
 ### Codex 認証の更新（`AI_CLI_TOOL=codex`）
