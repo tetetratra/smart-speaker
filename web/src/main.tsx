@@ -510,7 +510,7 @@ function App() {
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
-  const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(false)
+  const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
@@ -1220,14 +1220,14 @@ function LiveView(props: LiveViewProps) {
                 ))
               )}
             </div>
-            <div className="live-bubble">
-              {lastAssistantMessage && !isConversationBubbleHidden && (
+            {lastAssistantMessage && !isConversationBubbleHidden && (
+              <div className="live-bubble">
                 <div className="live-bubble-content">
                   {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
                   <div className="live-bubble-agent">{lastAssistantMessage}</div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
           <div className="live-right">
             <div className="live-controls-row">
