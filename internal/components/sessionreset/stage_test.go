@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -23,6 +24,8 @@ func TestStageResetsAfterIdleTimeout(t *testing.T) {
 	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1})
 	generationStore := generation.NewStore()
 	generationStore.Next()
+	statusStore := agentstatus.NewStore()
+	statusStore.SetActive()
 
 	var mu sync.Mutex
 	var calls int
@@ -42,6 +45,7 @@ func TestStageResetsAfterIdleTimeout(t *testing.T) {
 		IdleTimeout: 20 * time.Millisecond,
 		History:     history,
 		Generation:  generationStore,
+		AgentStatus: statusStore,
 		Hooks:       []Hook{hook},
 	})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,7 +58,7 @@ func TestStageResetsAfterIdleTimeout(t *testing.T) {
 	waitUntil(t, time.Second, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return calls == 1 && len(history.Snapshot()) == 0 && generationStore.Current() == 2
+		return calls == 1 && len(history.Snapshot()) == 0 && generationStore.Current() == 2 && statusStore.Status() == agentstatus.StatusIdle
 	})
 }
 
@@ -224,6 +228,25 @@ func TestStageIgnoresNonUserCommitRequest(t *testing.T) {
 	if got := generationStore.Current(); got != 1 {
 		t.Fatalf("generation = %d, want 1", got)
 	}
+}
+
+func TestStageSetsAgentStatusIdleOnReset(t *testing.T) {
+	statusStore := agentstatus.NewStore()
+	statusStore.SetActive()
+	st := NewStage(Config{
+		IdleTimeout: 20 * time.Millisecond,
+		AgentStatus: statusStore,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+
+	st.Upstream <- userCommitEvent("current", 1)
+
+	waitUntil(t, time.Second, func() bool {
+		return statusStore.Status() == agentstatus.StatusIdle
+	})
 }
 
 func userCommitEvent(text string, generationID types.GenerationID) types.Event {
