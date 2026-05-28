@@ -79,7 +79,7 @@ flowchart TB
 
   TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
   ToolRuntime -.->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
-  TOOL -->|"EventConversationCommitRequest<br/>tool結果の保存を要求する"| COMMIT
+  TOOL -->|"EventConversationCommitRequest<br/>read成功/writeエラー結果の保存を要求する"| COMMIT
 ```
 
 ## 主要な責務

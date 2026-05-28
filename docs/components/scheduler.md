@@ -183,8 +183,8 @@ flowchart TD
 
 ### speech / tool の順序制御
 
-- LLM の契約上、tool は 1 回の LLM 応答の末尾に最大 1 件だけ許可される。これは `internal/components/llm/contract.go` の `parseTimelineJSON` が `seenTool` 後の item をエラーにすることで担保している。
-- scheduler は tool が末尾かどうかを再検証しない。入力済み timeline item を、世代別 queue の順序に従って処理する。
+- LLM の契約上、1 回の LLM 応答に複数の tool item を出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限と案内する。
+- scheduler は tool の配置や件数を再検証しない。入力済み timeline item を、世代別 queue の順序に従って処理する。
 - `internal/components/pipeline/conversation_pipeline_test.go` では、`PlayableSpeech` の後に tool item を投入した場合、router の出力が `EventRealtimeAudio`、`EventConversationCommitRequest`、`EventToolRequest` の順になることを確認している。
 
 ### 制約・不明点
