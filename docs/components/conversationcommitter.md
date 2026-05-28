@@ -108,7 +108,7 @@ sequenceDiagram
 ### シナリオ: tool 実行結果が履歴へ保存され、LLM request が発行される
 
 1. `toolcaller` が `types.ToolRequest` を実行し、`types.ToolResultRecord` を作る。
-2. `toolcaller` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として downstream に送る。`Text` はこの時点では設定しない。
+2. read 系 tool の成功結果、write 系 tool のエラー結果について、`toolcaller` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として downstream に送る。write 系 tool の成功結果は送らない。
 3. graph は `toolcaller -> conversationcommitter` の edge でその event を転送する。
 4. `conversationcommitter.stage.consume` が event kind と payload 型を検証し、`committer.Commit` に渡す。
 5. `conversationhistory.NewRecord` が `ToolResult.Output` を `record.Text` にし、`Role` を `tool_result`、`Source` を tool 名、`GenerationID` を tool result の世代にする。

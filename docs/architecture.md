@@ -97,16 +97,19 @@ flowchart TB
 - `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
-- `toolcaller` は local tool を実行し、結果を `EventConversationCommitRequest` として会話コミッターへ戻す。
+- `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
 
 ## Tool 呼び出し
 
 OpenAI Responses API の function calling は使わない。
 LLM には `{"items":[{"type":"tool","name":"...","args":{...}}]}` 形式の JSON timeline を出力させる。
-tool は1回の LLM 応答の末尾に最大1件だけ許可し、tool の後に `speech` / `wait` / `tool` が続いた場合は契約違反として LLM component が最大10回 retry する。
-10回失敗した場合はログに出して、その応答は捨てる。
+1回の LLM 応答に複数の tool item を出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限とする。
 
-`web_search` もこの local tool 経路で扱う。LLM は `web_search` を JSON timeline の `tool` item として呼び出し、`toolcaller` が local handler を実行する。handler 内部では OpenAI Responses API の hosted `web_search` を別 request で使うが、会話 pipeline 上は通常の local tool result と同じく `conversationcommitter` へ戻る。引数は `query` のみ、戻り値は `result` のみとする。
+各 tool 定義には `x_tool_mode: "read" | "write"` メタデータを持つ。
+write 系 tool の成功結果は `toolcaller` が会話履歴へ commit せず、LLM への再投入も行わない。
+read 系 tool の成功結果と、write 系 tool のエラー結果は従来どおり `conversationcommitter` 経由で履歴保存し LLM へ再投入する。
+
+`web_search` もこの local tool 経路で扱う。LLM は `web_search` を JSON timeline の `tool` item として呼び出し、`toolcaller` が local handler を実行する。handler 内部では OpenAI Responses API の hosted `web_search` を別 request で使うが、会話 pipeline 上は read 系 local tool と同じく成功結果を `conversationcommitter` へ戻す。引数は `query` のみ、戻り値は `result` のみとする。
 
 ## 世代と履歴
 

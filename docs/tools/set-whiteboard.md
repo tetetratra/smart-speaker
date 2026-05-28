@@ -37,7 +37,7 @@
 - 正規化後の `content` が空文字なら `content is required` エラーを返します。
 
 ## 出力
-成功時の返り値は次の形式です。
+成功時の handler 返り値は次の形式です。
 
 ```json
 {
@@ -48,6 +48,9 @@
 
 - `content` には、正規化後の文字列がそのまま入ります。
 - `updated` は常に `true` です。
+- tool 定義の `x_tool_mode` は `write` です。
+- 成功時の tool result は `toolcaller` が会話履歴へ commit せず、LLM への再投入も行いません。画面反映は `EventWhiteboardUpdate` 経路で行われます。
+- エラー時は従来どおり tool result が LLM へ返ります。
 
 ## EventWhiteboardUpdate
 - `set_whiteboard` は、返り値とは別に内部 event を発火します。

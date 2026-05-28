@@ -58,14 +58,14 @@ OpenAI function calling は使いません。
 - tool result の形を単純に保ち、後続の LLM が追加フィールドに引っ張られないようにします。
 
 ## 内部処理
-1. LLM が JSON timeline の末尾 item として `web_search` を出力します。
+1. LLM が JSON timeline の tool item として `web_search` を出力します。
 2. scheduler / router が `ToolRequest` として `toolcaller` に渡します。
 3. `internal/tools/functions/websearch.Tool` が `query` を検証します。
 4. handler 専用 client が OpenAI Responses API `POST /v1/responses` を呼び出します。
 5. request body には `tools: [{"type":"web_search"}]` を指定します。
 6. response の `output_text` を優先して読み、空の場合は `output[].content[].text` の `output_text` を fallback として読みます。
 7. 抽出した本文を `{"result":"..."}` として `toolcaller` に返します。
-8. `toolcaller` が JSON 化して `ToolResultRecord.Output` に入れ、`EventConversationCommitRequest` として `conversationcommitter` に送り、会話履歴に保存します。
+8. read 系 tool のため、`toolcaller` が JSON 化して `ToolResultRecord.Output` に入れ、`EventConversationCommitRequest` として `conversationcommitter` に送り、会話履歴に保存します。
 
 Responses API request の概形:
 
