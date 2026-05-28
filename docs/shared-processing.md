@@ -17,6 +17,8 @@
 - `EventRealtimeOutput`: UI 表示用の user / agent message。
 - `EventRealtimeAudio`: rtcout 再生用の agent 音声。
 - `EventSessionReset`: idle timeout によるセッション reset 通知。
+- `EventAgentTimelineEnd`: LLM が当該 generation の timeline item をすべて発行し終えた印。
+- `EventAgentSpeechPlaybackEnd`: scheduler が当該 generation の timeline（speech 再生待ち・wait・tool）を完了した印。`wschat` が `agent_speech_end` として UI へ通知する。
 
 ## 共有Store
 

@@ -29,11 +29,11 @@
   - `type` が `webrtc.` prefix の場合だけ `types.EventRTCSignal` に変換して `downstream` へ送る。
   - `webrtc.` prefix 以外の message は現在の実装では何も処理されない。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset` をブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
-  - `web/src/main.tsx` は `message`, `speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
+  - `web/src/main.tsx` は `message`, `speech_end`, `agent_speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
   - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
@@ -222,6 +222,8 @@ sequenceDiagram
   - 例: `{ "type": "whiteboard_update", "content": "..." }`
 - `session_reset`: セッションリセット発火をUIへ通知する。
   - 例: `{ "type": "session_reset", "requested_at": "2026-05-27T12:00:00.000000123Z" }`
+- `agent_speech_end`: 当該 generation の AI タイムライン（speech 再生待ち・wait・tool）が scheduler で完了したことを UI へ通知する。
+  - 例: `{ "type": "agent_speech_end", "generation_id": 3, "completed_at": "2026-05-28T16:00:00.000000000+09:00" }`
 
 ### イベント変換仕様
 
@@ -233,6 +235,7 @@ sequenceDiagram
 | `EventRTCVADStatus` | `types.RTCVADStatus` | `rtc_vad_status` | 全接続 |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |
 | `EventSessionReset` | `types.SessionResetEvent` | `session_reset` | 全接続 |
+| `EventAgentSpeechPlaybackEnd` | `types.AgentSpeechPlaybackEnd` | `agent_speech_end` | 全接続 |
 
 ### エラー・終了時の挙動
 

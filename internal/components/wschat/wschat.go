@@ -205,6 +205,16 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"type":         "session_reset",
 			"requested_at": reset.RequestedAt.Format(time.RFC3339Nano),
 		}
+	case types.EventAgentSpeechPlaybackEnd:
+		end, ok := evt.Payload.(types.AgentSpeechPlaybackEnd)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":          "agent_speech_end",
+			"generation_id": uint64(end.GenerationID),
+			"completed_at":  end.CompletedAt.Format(time.RFC3339Nano),
+		}
 	default:
 		return nil, "", false
 	}

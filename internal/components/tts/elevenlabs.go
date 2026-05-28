@@ -80,6 +80,10 @@ func (t *streamTTS) run(ctx context.Context) {
 			if !ok {
 				return
 			}
+			if evt.Kind == types.EventAgentTimelineEnd {
+				t.emit(ctx, evt)
+				continue
+			}
 			if evt.Kind != types.EventTimelineItem {
 				continue
 			}

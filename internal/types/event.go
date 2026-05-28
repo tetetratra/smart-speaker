@@ -27,6 +27,8 @@ const (
 	EventTimelineItem
 	EventPlayableSpeech
 	EventScheduledItem
+	EventAgentTimelineEnd
+	EventAgentSpeechPlaybackEnd
 	EventRTCPeerAudioFrame
 	EventRTCSpeechAudio
 	EventRTCPeerOutputSink
@@ -70,6 +72,10 @@ func (k EventKind) String() string {
 		return "EventPlayableSpeech"
 	case EventScheduledItem:
 		return "EventScheduledItem"
+	case EventAgentTimelineEnd:
+		return "EventAgentTimelineEnd"
+	case EventAgentSpeechPlaybackEnd:
+		return "EventAgentSpeechPlaybackEnd"
 	case EventRTCPeerAudioFrame:
 		return "EventRTCPeerAudioFrame"
 	case EventRTCSpeechAudio:

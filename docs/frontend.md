@@ -89,6 +89,16 @@ sequenceDiagram
   - `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の場合は、STT 状態を `完了` に戻す。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
+- `agent_speech_end`
+  - `isAiSpeaking` を `false` にする（AI ターンのタイムライン処理完了）。
+- `message`（agent）
+  - 非空 `text` 受信時に `isAiSpeaking` を `true` にする。
+- `message`（user、STT 確定）
+  - `isAiSpeaking` を `false` にする（既存の STT 状態更新に加えて）。
+- WebSocket 切断・手動 `disconnect`・`session_reset`
+  - `isAiSpeaking` を `false` にする。
+- 通常画面の `.live-bubble`
+  - `isAiSpeaking === true` のとき `live-bubble-ai-speaking` クラスでネオン風ボーダーを表示する。
 - `rtc_vad_status`
   - 入力音量としきい値を更新する。
 - `whiteboard_update`
