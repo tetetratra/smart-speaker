@@ -30,7 +30,7 @@
 - **system prompt builder**
   - `cfg.Instructions`、JSON timeline 契約文、任意の `cfg.ToolSchemas` を結合して system prompt を作る。
   - 各 API 呼び出し直前に `現在日時` と `現在時刻` を追記する。
-  - 現在のユーザー発話が直前のユーザー発話から10分以上空いている場合は、ひとりごと・感嘆・意味不明な短文の可能性と `{"items":[]}` による無応答を追加で指示する。
+  - `agentStatus` が `idle` で、かつ現在発話が明示依頼・疑問文ではない場合は、ひとりごと・感嘆・意味不明な短文の可能性と `{"items":[]}` による無応答を追加で指示する。
   - retry 時は契約違反理由と raw preview を追記した system prompt で再実行する。
 - **JSON timeline parser**
   - response body から取り出した output text 全体を `parseTimelineJSON` で `types.TimelineItem` に変換する。
@@ -41,6 +41,9 @@
 - **`generation.Store` / `generationfilter`**
   - LLM が付与した `GenerationID` は下流の `generationfilter` で最新世代か判定される。
   - 古い世代の `TimelineItem` は LLM の外側で落とされる。
+- **`agentstatus.Store` / `sessionactivate`**
+  - `agentstatus.Store` は `idle` / `active` を保持し、LLM は request ごとに read して追記指示の適用可否を判定する。
+  - `sessionactivate` は `llm` と `generationfilter` の間で `speech` item 通過時に `agentstatus` を `active` に更新する。
 - **下流 component**
   - `tts` は `speech` item を音声化し、`wait` / `tool` item は順序維持のためそのまま流す。
   - `scheduler` は speech の再生時間、wait 秒数、tool 呼び出し順を同じ generation 内で制御する。
@@ -80,30 +83,32 @@ sequenceDiagram
   Router->>Committer: agent ConversationCommitRequest
 ```
 
-### シナリオ: 長い無音後のひとりごと候補を無応答にする
+### シナリオ: idle 状態のひとりごと候補を無応答にする
 
-1. `conversationcommitter` が user record を保存し、`EventLLMRequest` を発行する。user record には `CreatedAt` が入る。
-2. `llm.stage` は履歴 snapshot から現在の user record を `RequestID` 優先で特定し、その直前の user record との `CreatedAt` 差分を計算する。
-3. 差分が10分未満、現在または直前の `CreatedAt` がない、または現在発話を特定できない場合は、通常の system prompt のまま Responses API を呼び出す。
-4. 差分が10分以上の場合は、前回ユーザー発話からの経過時間、短い発話・意味不明な発話・感嘆・独り言の可能性、応答しない場合の `{"items":[]}` 出力を system prompt に追加する。
-5. LLM が `{"items":[]}` を返した場合、`parseTimelineJSON` は空 slice を正常結果として返す。
+1. `sessionreset` が idle timeout で `agentstatus` を `idle` に更新する。
+2. `conversationcommitter` が user record を保存し、`EventLLMRequest` を発行する。
+3. `llm.stage` は request ごとに `agentstatus` を参照し、`idle` かつ現在発話が明示依頼・疑問文でない場合にのみ無応答候補向け追記を system prompt に追加する。
+4. LLM が `{"items":[]}` を返した場合、`parseTimelineJSON` は空 slice を正常結果として返す。
+5. `llm.stage` は `llm: no response generation=... request_id=... reason=... text=...` をログ出力する。
 6. `llm.stage` は発行対象の `EventTimelineItem` がないため、下流へ何も流さず処理を終える。
 
 ```mermaid
 sequenceDiagram
+  participant SessionReset as sessionreset
+  participant AgentStatus as agentstatus.Store
   participant Committer as conversationcommitter
-  participant History as conversationhistory.Store
   participant LLM as llm.stage
   participant OpenAI as OpenAI Responses API
   participant Down as downstream
 
-  Committer->>History: Append(current user record with CreatedAt)
+  SessionReset->>AgentStatus: SetIdle()
   Committer->>LLM: EventLLMRequest(RequestID=current)
-  LLM->>History: Snapshot()
-  LLM->>LLM: 直前user発話とのgapを計算
-  LLM->>OpenAI: 10分以上ならidle後発話向け指示を追加して呼び出し
+  LLM->>AgentStatus: Status()
+  LLM->>LLM: idle && 非明示依頼なら追記を適用
+  LLM->>OpenAI: idle候補向け指示つきで呼び出し
   OpenAI-->>LLM: {"items":[]}
   LLM->>LLM: 空timelineを有効な応答として扱う
+  LLM->>LLM: no response reason をログ出力
   Note over LLM,Down: EventTimelineItemは発行しない
 ```
 
@@ -156,8 +161,8 @@ sequenceDiagram
         - `consume`: upstream から `EventLLMRequest` を読み、request ごとに `handleRequest` を goroutine で実行する。
         - `handleRequest`: `requestTimeline` の結果を `EventTimelineItem` として順番に下流へ送る。
         - `requestTimeline`: Responses API 呼び出し、`parseTimelineJSON`、最大10回 retry を行う。
-        - `idleGapBefore`: 現在 user 発話と直前 user 発話の時刻差が10分以上か判定する。
-        - `idleGapBeforeRequest`: 履歴 snapshot と `LLMRequest` から現在発話を特定し、直前 user 発話との時刻差を返す。
+        - `isIdle`: `agentstatus` を参照し、request 時点の状態が `idle` か判定する。
+        - `isMonologueCandidate`: 明示依頼・疑問文を除外した独り言候補判定を行う。
         - `messages`: 履歴 snapshot があれば履歴全体を chat messages にする。履歴がない場合だけ request の role/text から1 message を作る。
         - `close`: cancel を呼び、upstream channel を閉じる。
       - `contract.go`: JSON timeline 契約を `TimelineItem` へ変換する。
@@ -169,7 +174,7 @@ sequenceDiagram
       - `prompt_tools.go`: system prompt に JSON timeline 契約と tool schema を埋め込む。
         - `buildSystemPrompt`: base instruction、JSON timeline 契約、tool schemas JSON を結合する。
         - `timelineJSONInstruction`: LLM に要求する JSON object 形式を返す。
-        - `appendIdleFollowupInstruction`: 10分以上空いた後のユーザー発話に、ひとりごと候補なら `{"items":[]}` を返せることを追加指示する。
+        - `appendIdleFollowupInstruction`: 「長期間無音だった」静的文言で、ひとりごと候補なら `{"items":[]}` を返せることを追加指示する。
         - `appendRetryInstruction`: retry 用の契約違反理由と raw preview を prompt に追記する。
       - `responses_client.go`: OpenAI Responses API との HTTP 通信と非stream response body の読み取りを担当する。
         - `NewClient`: API key と model を検証し、endpoint `https://api.openai.com/v1/responses` を持つ client を作る。
@@ -263,7 +268,9 @@ sequenceDiagram
 - 実装: `internal/components/toolcaller/toolcaller.go`
 - 実装: `internal/components/scheduler/stage.go`
 - 実装: `internal/components/router/stage.go`
+- 実装: `internal/components/sessionactivate/stage.go`
 - 実装: `cmd/smart-speaker/main.go`
+- 実装: `internal/states/agentstatus/store.go`
 - OpenAI 公式: [Responses API reference](https://platform.openai.com/docs/api-reference/responses)
 - OpenAI 公式: [Structured model outputs](https://platform.openai.com/docs/guides/structured-outputs)
 - OpenAI 公式: [Text generation with the Responses API](https://platform.openai.com/docs/guides/text?api-mode=responses)
