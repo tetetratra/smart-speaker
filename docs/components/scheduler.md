@@ -64,6 +64,8 @@
 ```mermaid
 sequenceDiagram
     participant LLM as llm
+    participant SA as sessionactivate
+    participant GF0 as generationfilter-llm
     participant TTS as tts
     participant GF1 as generationfilter-tts
     participant S as scheduler
@@ -73,7 +75,9 @@ sequenceDiagram
     participant RTCOut as rtcout
     participant CC as conversationcommitter
 
-    LLM->>TTS: EventTimelineItem(speech, GenerationID)
+    LLM->>SA: EventTimelineItem(speech, GenerationID)
+    SA->>GF0: EventTimelineItem(speech, GenerationID)
+    GF0->>TTS: EventTimelineItem(speech, GenerationID)
     TTS->>GF1: EventPlayableSpeech(PlayableSpeech)
     GF1->>S: EventPlayableSpeech(PlayableSpeech)
     S->>GF2: EventScheduledItem(PlayableSpeech)
@@ -81,7 +85,9 @@ sequenceDiagram
     GF2->>R: EventScheduledItem(PlayableSpeech)
     R->>RTCOut: EventRealtimeAudio
     R->>CC: EventConversationCommitRequest(RoleAgent)
-    LLM->>TTS: EventTimelineItem(tool, GenerationID)
+    LLM->>SA: EventTimelineItem(tool, GenerationID)
+    SA->>GF0: EventTimelineItem(tool, GenerationID)
+    GF0->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)
     GF1->>S: EventTimelineItem(tool, GenerationID)
     S->>GF2: EventScheduledItem(ToolRequest)

@@ -43,7 +43,7 @@
   - 古い世代の `TimelineItem` は LLM の外側で落とされる。
 - **`agentstatus.Store` / `sessionactivate`**
   - `agentstatus.Store` は `idle` / `active` を保持し、LLM は request ごとに read して追記指示の適用可否を判定する。
-  - `sessionactivate` は `llm` と `generationfilter` の間で `speech` item 通過時に `agentstatus` を `active` に更新する。
+  - `sessionactivate` は `llm` と `generationfilter-llm` の間で `speech` item 通過時に `agentstatus` を `active` に更新する。
 - **下流 component**
   - `tts` は `speech` item を音声化し、`wait` / `tool` item は順序維持のためそのまま流す。
   - `scheduler` は speech の再生時間、wait 秒数、tool 呼び出し順を同じ generation 内で制御する。
@@ -67,6 +67,8 @@ sequenceDiagram
   participant History as conversationhistory.Store
   participant LLM as llm.stage
   participant OpenAI as OpenAI Responses API
+  participant SA as sessionactivate
+  participant GF as generationfilter-llm
   participant TTS as tts
   participant Scheduler as scheduler
   participant Router as router
@@ -77,7 +79,9 @@ sequenceDiagram
   LLM->>OpenAI: POST /v1/responses text.format=json_schema
   OpenAI-->>LLM: response JSON
   LLM->>LLM: JSON object -> TimelineItem
-  LLM->>TTS: EventTimelineItem(speech/wait/tool)
+  LLM->>SA: EventTimelineItem(speech/wait/tool)
+  SA->>GF: EventTimelineItem(speech/wait/tool)
+  GF->>TTS: EventTimelineItem(speech/wait/tool)
   TTS->>Scheduler: EventPlayableSpeech or EventTimelineItem
   Scheduler->>Router: EventScheduledItem
   Router->>Committer: agent ConversationCommitRequest

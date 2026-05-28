@@ -173,7 +173,8 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 ### ログ・障害
 - `error`、`fatal`、`panic` が継続して出ない。
 - 接続、文字起こし、TTS、ツール実行の失敗箇所をログから切り分けられる。
-- idle reset を確認する場合、`sessionreset: reset requested_at=...` と `sessionreset: generation advanced ...` のログが出る。
+- idle reset を確認する場合、`sessionreset: reset requested_at=...`、`sessionreset: generation advanced ...`、`sessionreset: agent status set ... status=idle` のログが出る。
+- 無応答判定を確認する場合、`llm: no response generation=... request_id=... reason=idle_monologue_candidate text=...` のログが出る。
 
 ## 6. 将来の自動テスト観点
 - 起動確認:

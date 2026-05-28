@@ -45,7 +45,7 @@
 ### シナリオ: `speech` item が音声化され、再生可能な event になるまで
 
 1. **LLM が timeline item を発行する**: `llm` は Structured Outputs の JSON timeline を検証し、`types.TimelineItem{Kind: "speech"}` として `EventTimelineItem` を出力する。
-2. **generationfilter を通過する**: 最新世代の `EventTimelineItem` だけが `tts` に届く。
+2. **sessionactivate と generationfilter を通過する**: `sessionactivate` が `speech` 通過時に `agentstatus.Store` を `active` に更新し、その後に最新世代の `EventTimelineItem` だけが `tts` に届く。
 3. **tts が speech を判定する**: `tts` は event kind が `EventTimelineItem` で、payload が `types.TimelineItem` であり、`Kind` が `speech` であることを確認する。
 4. **ElevenLabs を呼び出す**: `tts` は `POST https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream?output_format=pcm_24000` を呼ぶ。リクエスト body は `text`、`model_id`、`language_code: "ja"`、必要に応じて `voice_settings` を含む。
 5. **音声 duration を算出する**: レスポンス body の raw PCM byte 数を `24000 sample/sec * 2 bytes/sample * 1 channel` で割った実音声秒数に、再生後の間を作るための 0.5 秒を加算する。
@@ -56,6 +56,7 @@
 ```mermaid
 sequenceDiagram
   participant LLM as llm
+  participant SA as sessionactivate
   participant GF1 as generationfilter
   participant TTS as tts
   participant EL as ElevenLabs API
@@ -65,7 +66,8 @@ sequenceDiagram
   participant RTCOut as rtcout
   participant COMMIT as conversationcommitter
 
-  LLM->>GF1: EventTimelineItem(TimelineItem speech)
+  LLM->>SA: EventTimelineItem(TimelineItem speech)
+  SA->>GF1: EventTimelineItem(TimelineItem speech)
   GF1->>TTS: EventTimelineItem(TimelineItem speech)
   TTS->>EL: POST /v1/text-to-speech/{voice}/stream?output_format=pcm_24000
   EL-->>TTS: raw PCM bytes
@@ -86,10 +88,14 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant LLM as llm
+  participant SA as sessionactivate
+  participant GF as generationfilter
   participant TTS as tts
   participant SCH as scheduler
 
-  LLM->>TTS: EventTimelineItem(TimelineItem wait)
+  LLM->>SA: EventTimelineItem(TimelineItem wait)
+  SA->>GF: EventTimelineItem(TimelineItem wait)
+  GF->>TTS: EventTimelineItem(TimelineItem wait)
   TTS->>SCH: EventTimelineItem(TimelineItem wait)
   SCH-->>SCH: Sec 秒だけ待機
 ```
@@ -105,12 +111,16 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant LLM as llm
+  participant SA as sessionactivate
+  participant GF as generationfilter
   participant TTS as tts
   participant SCH as scheduler
   participant R as router
   participant TOOL as toolcaller
 
-  LLM->>TTS: EventTimelineItem(TimelineItem tool)
+  LLM->>SA: EventTimelineItem(TimelineItem tool)
+  SA->>GF: EventTimelineItem(TimelineItem tool)
+  GF->>TTS: EventTimelineItem(TimelineItem tool)
   TTS->>SCH: EventTimelineItem(TimelineItem tool)
   SCH->>R: EventScheduledItem(ToolRequest)
   R->>TOOL: EventToolRequest
