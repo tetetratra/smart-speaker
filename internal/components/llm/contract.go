@@ -17,7 +17,8 @@ type rawTimelineItem struct {
 }
 
 type rawTimeline struct {
-	Items []rawTimelineItem `json:"items"`
+	Items         []rawTimelineItem `json:"items"`
+	SetWhiteboard json.RawMessage   `json:"set_whiteboard,omitempty"`
 }
 
 type timelineParseError struct {
@@ -54,12 +55,11 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 		return nil, newTimelineParseError(rawText, "invalid timeline json: %w", err)
 	}
 	items := make([]types.TimelineItem, 0, len(timeline.Items))
-	for i, raw := range timeline.Items {
+	for _, raw := range timeline.Items {
 		rawPreview := marshalRawTimelineItem(raw)
 		item := types.TimelineItem{
 			Kind:         strings.TrimSpace(raw.Type),
 			GenerationID: generationID,
-			SequenceID:   fmt.Sprintf("%d", i+1),
 		}
 		switch item.Kind {
 		case types.TimelineKindSpeech:
@@ -80,6 +80,9 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 			if item.ToolName == "" {
 				return nil, newTimelineParseError(rawPreview, "tool name is required")
 			}
+			if item.ToolName == setWhiteboardToolName {
+				return nil, newTimelineParseError(rawPreview, "set_whiteboard must not appear in items")
+			}
 			if len(raw.Args) == 0 {
 				raw.Args = json.RawMessage(`{}`)
 			}
@@ -89,7 +92,44 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 		}
 		items = append(items, item)
 	}
+	if hasSetWhiteboardField(timeline.SetWhiteboard) {
+		var err error
+		items, err = prependSetWhiteboardTool(items, timeline.SetWhiteboard, generationID)
+		if err != nil {
+			return nil, newTimelineParseError(rawText, "%s", err.Error())
+		}
+	}
+	for i := range items {
+		items[i].SequenceID = fmt.Sprintf("%d", i+1)
+	}
 	return items, nil
+}
+
+func hasSetWhiteboardField(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
+}
+
+func prependSetWhiteboardTool(items []types.TimelineItem, raw json.RawMessage, generationID types.GenerationID) ([]types.TimelineItem, error) {
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("invalid set_whiteboard field: %w", err)
+	}
+	content := strings.TrimSpace(payload.Content)
+	content = strings.ReplaceAll(content, `\n`, "\n")
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("set_whiteboard content is required")
+	}
+	toolItem := types.TimelineItem{
+		Kind:         types.TimelineKindTool,
+		ToolName:     setWhiteboardToolName,
+		ToolArgs:     raw,
+		GenerationID: generationID,
+	}
+	return append([]types.TimelineItem{toolItem}, items...), nil
 }
 
 func marshalRawTimelineItem(item rawTimelineItem) string {

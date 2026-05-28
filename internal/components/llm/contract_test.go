@@ -26,32 +26,78 @@ func TestParseTimelineJSONAcceptsSpeechWaitAndTrailingTool(t *testing.T) {
 	}
 }
 
-func TestParseTimelineJSONAcceptsMultipleTools(t *testing.T) {
-	items, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}},{"type":"tool","name":"web_search","args":{"query":"天気"}}]}`, 1)
+func TestParseTimelineJSONPrependsSetWhiteboardFromRootField(t *testing.T) {
+	items, err := parseTimelineJSON(`{"set_whiteboard":{"content":"予定: 10:00 会議"},"items":[{"type":"speech","text":"確認したよ"}]}`, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(items) != 2 {
 		t.Fatalf("len = %d, want 2", len(items))
 	}
-	if items[0].Kind != types.TimelineKindTool || items[0].ToolName != "set_whiteboard" {
-		t.Fatalf("first tool = %+v", items[0])
+	if items[0].SequenceID != "1" || items[1].SequenceID != "2" {
+		t.Fatalf("sequence ids = %+v", items)
 	}
-	if items[1].Kind != types.TimelineKindTool || items[1].ToolName != "web_search" {
-		t.Fatalf("second tool = %+v", items[1])
+	if items[0].Kind != types.TimelineKindTool || items[0].ToolName != "set_whiteboard" {
+		t.Fatalf("first item = %+v", items[0])
+	}
+	if string(items[0].ToolArgs) != `{"content":"予定: 10:00 会議"}` {
+		t.Fatalf("ToolArgs = %s", items[0].ToolArgs)
+	}
+	if items[1].Kind != types.TimelineKindSpeech {
+		t.Fatalf("second item = %+v", items[1])
 	}
 }
 
-func TestParseTimelineJSONAcceptsToolBeforeSpeech(t *testing.T) {
-	items, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}},{"type":"speech","text":"更新したよ"}]}`, 1)
+func TestParseTimelineJSONAcceptsSetWhiteboardFieldOnly(t *testing.T) {
+	items, err := parseTimelineJSON(`{"set_whiteboard":{"content":"メモ"},"items":[]}`, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len = %d, want 1", len(items))
+	}
+	if items[0].ToolName != "set_whiteboard" || items[0].SequenceID != "1" {
+		t.Fatalf("item = %+v", items[0])
+	}
+}
+
+func TestParseTimelineJSONRejectsSetWhiteboardInItems(t *testing.T) {
+	cases := []string{
+		`{"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}}]}`,
+		`{"set_whiteboard":{"content":"メモ"},"items":[{"type":"tool","name":"set_whiteboard","args":{"content":"メモ"}}]}`,
+	}
+	for _, raw := range cases {
+		if _, err := parseTimelineJSON(raw, 1); err == nil {
+			t.Fatalf("parseTimelineJSON(%s) err = nil, want error", raw)
+		}
+	}
+}
+
+func TestParseTimelineJSONRejectsEmptySetWhiteboardContent(t *testing.T) {
+	cases := []string{
+		`{"set_whiteboard":{"content":""},"items":[]}`,
+		`{"set_whiteboard":{"content":"   "},"items":[]}`,
+	}
+	for _, raw := range cases {
+		if _, err := parseTimelineJSON(raw, 1); err == nil {
+			t.Fatalf("parseTimelineJSON(%s) err = nil, want error", raw)
+		}
+	}
+}
+
+func TestParseTimelineJSONAcceptsMultipleTools(t *testing.T) {
+	items, err := parseTimelineJSON(`{"items":[{"type":"tool","name":"web_search","args":{"query":"天気"}},{"type":"speech","text":"調べるね"}]}`, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(items) != 2 {
 		t.Fatalf("len = %d, want 2", len(items))
 	}
-	if items[0].Kind != types.TimelineKindTool || items[1].Kind != types.TimelineKindSpeech {
-		t.Fatalf("items = %+v", items)
+	if items[0].Kind != types.TimelineKindTool || items[0].ToolName != "web_search" {
+		t.Fatalf("first tool = %+v", items[0])
+	}
+	if items[1].Kind != types.TimelineKindSpeech {
+		t.Fatalf("second item = %+v", items[1])
 	}
 }
 
@@ -102,5 +148,15 @@ func TestParseTimelineJSONAcceptsEmptyTimeline(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("len = %d, want 0", len(items))
+	}
+}
+
+func TestParseTimelineJSONIgnoresNullSetWhiteboard(t *testing.T) {
+	items, err := parseTimelineJSON(`{"set_whiteboard":null,"items":[{"type":"speech","text":"了解"}]}`, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Kind != types.TimelineKindSpeech {
+		t.Fatalf("items = %+v", items)
 	}
 }
