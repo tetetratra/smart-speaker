@@ -36,6 +36,12 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 			t.Fatalf("%s should not be registered", name)
 		}
 	}
+	assertToolMode(t, reg, "switchbot_execute_scene", "write")
+	assertToolMode(t, reg, "hub2_get_environment", "read")
+	assertToolMode(t, reg, "set_whiteboard", "write")
+	assertToolMode(t, reg, "google_calendar_list", "read")
+	assertToolMode(t, reg, "google_calendar_create", "write")
+	assertToolMode(t, reg, "google_calendar_update", "write")
 }
 
 func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
@@ -95,6 +101,7 @@ func TestRegistryRegistersWebSearchToolWithOpenAIConfig(t *testing.T) {
 	if _, ok := reg.Handlers()["web_search"]; !ok {
 		t.Fatal("web_search handler should be registered")
 	}
+	assertToolMode(t, reg, "web_search", "read")
 }
 
 func TestRegistryOmitsWebSearchToolWithoutOpenAIConfig(t *testing.T) {
@@ -129,5 +136,20 @@ func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
 	}
 	if _, ok := reg.Handlers()["schedule_timer"]; ok {
 		t.Fatal("schedule_timer handler should not be registered")
+	}
+}
+
+func assertToolMode(t *testing.T, reg *Registry, name, want string) {
+	t.Helper()
+	modes := reg.ToolModes()
+	if modes[name] != want {
+		t.Fatalf("ToolModes()[%q] = %q, want %q", name, modes[name], want)
+	}
+	def, ok := reg.DefinitionByName(name)
+	if !ok {
+		t.Fatalf("%s should be registered", name)
+	}
+	if def["x_tool_mode"] != want {
+		t.Fatalf("DefinitionByName(%q)[x_tool_mode] = %v, want %q", name, def["x_tool_mode"], want)
 	}
 }
