@@ -362,6 +362,16 @@ const liveRootStyle = `
     border-top: 1px solid var(--live-line);
     transform: rotate(45deg);
   }
+  .live-bubble-ai-speaking {
+    border-color: var(--live-toggle-on);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--live-toggle-on) 35%, transparent),
+      0 0 12px color-mix(in srgb, var(--live-toggle-on) 45%, transparent);
+  }
+  .live-bubble-ai-speaking::after {
+    border-right-color: var(--live-toggle-on);
+    border-top-color: var(--live-toggle-on);
+  }
   .live-board {
     background: var(--live-panel-soft);
     border: 2px solid var(--live-line-strong);
@@ -485,6 +495,7 @@ type LiveViewProps = {
   speechThreshold: number
   lastAssistantMessage: string
   lastUserMessage: string
+  isAiSpeaking: boolean
   isConversationBubbleHidden: boolean
   boardEntries: BoardEntry[]
   toolToasts: ToolToast[]
@@ -511,6 +522,7 @@ function App() {
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
   const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
@@ -645,7 +657,11 @@ function App() {
           if (role === 'tool_call' || role === 'tool_result') {
             showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
           }
+          if (role === 'agent') {
+            setIsAiSpeaking(true)
+          }
           if (isSTTUserMessage(raw, role)) {
+            setIsAiSpeaking(false)
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
             setIsConversationBubbleHidden(false)
@@ -666,7 +682,12 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
+        case 'agent_speech_end': {
+          setIsAiSpeaking(false)
+          break
+        }
         case 'session_reset': {
+          setIsAiSpeaking(false)
           setIsConversationBubbleHidden(true)
           break
         }
@@ -824,6 +845,7 @@ function App() {
       }, () => {
         stopRTC()
         setConnected(false)
+        setIsAiSpeaking(false)
         if (wsChatRef.current === wsChat) {
           wsChatRef.current = null
         }
@@ -871,6 +893,7 @@ function App() {
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
+    setIsAiSpeaking(false)
   }, [clearReconnectTimer, stopRTC])
 
   useEffect(() => {
@@ -1017,6 +1040,7 @@ function App() {
           speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
+          isAiSpeaking={isAiSpeaking}
           isConversationBubbleHidden={isConversationBubbleHidden}
           boardEntries={boardEntries}
           toolToasts={toolToasts}
@@ -1168,6 +1192,7 @@ function LiveView(props: LiveViewProps) {
     speechThreshold,
     lastAssistantMessage,
     lastUserMessage,
+    isAiSpeaking,
     isConversationBubbleHidden,
     boardEntries,
     toolToasts,
@@ -1221,7 +1246,7 @@ function LiveView(props: LiveViewProps) {
               )}
             </div>
             {lastAssistantMessage && !isConversationBubbleHidden && (
-              <div className="live-bubble">
+              <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
                 <div className="live-bubble-content">
                   {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
                   <div className="live-bubble-agent">{lastAssistantMessage}</div>
