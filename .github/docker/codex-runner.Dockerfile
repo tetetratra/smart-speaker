@@ -55,6 +55,6 @@ RUN npm install -g @openai/codex
 
 RUN curl https://cursor.com/install -fsS | bash
 
-ENV PATH="/root/.cursor/bin:${PATH}"
+ENV PATH="/root/.local/bin:/home/node/.local/bin:/root/.cursor/bin:${PATH}"
 
 WORKDIR /workspace
