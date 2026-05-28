@@ -31,6 +31,17 @@ type SessionResetEvent struct {
 	RequestedAt time.Time
 }
 
+// AgentTimelineEnd は LLM が当該 generation の timeline item をすべて発行し終えたことを表します。
+type AgentTimelineEnd struct {
+	GenerationID GenerationID
+}
+
+// AgentSpeechPlaybackEnd は scheduler が当該 generation の timeline 処理を完了したことを表します。
+type AgentSpeechPlaybackEnd struct {
+	GenerationID GenerationID
+	CompletedAt  time.Time
+}
+
 // RTCVADStatus はサーバー側VADの現在音量としきい値を表します。
 type RTCVADStatus struct {
 	InputLevel int

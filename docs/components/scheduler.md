@@ -13,8 +13,8 @@
 
 - **scheduler stage**
   - `graph.Stage` として `Upstream` / `Downstream` channel、`Run`、`CloseFn` を提供する。
-  - 入力は実装上、payload が `types.PlayableSpeech` または `types.TimelineItem` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
-  - 出力は `EventScheduledItem` で、payload は `types.PlayableSpeech` または `types.ToolRequest` になる。
+  - 入力は実装上、payload が `types.PlayableSpeech`、`types.TimelineItem`、または `types.AgentTimelineEnd` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
+  - 出力は `EventScheduledItem`（payload は `types.PlayableSpeech` または `types.ToolRequest`）と、queue 内の最後の `AgentTimelineEnd` 処理後に発行する `EventAgentSpeechPlaybackEnd` である。
   - production の graph では `tts -> generationfilter-tts -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
 
 - **世代別 worker**
@@ -45,6 +45,8 @@
   - `EventScheduledItem`: scheduler が実行タイミングに到達した item として発行する event。
   - `EventToolRequest`: router が `EventScheduledItem` payload の `ToolRequest` を受けて発行する event。
   - `EventRealtimeAudio` / `EventConversationCommitRequest`: router が `PlayableSpeech` を受け、音声再生と agent 履歴保存用に発行する event。
+  - `EventAgentTimelineEnd`: LLM が timeline item をすべて発行したあとに 1 回発行する終端印。scheduler は同一世代 queue の最後に処理し、先行する speech / wait / tool が完了したあと `EventAgentSpeechPlaybackEnd` を下流へ出す。
+  - `EventAgentSpeechPlaybackEnd`: `generationfilter-scheduler` を通過したものだけ `wschat` へ接続され、UI の `isAiSpeaking` を `false` にする。
 
 ## 3. 主要なデータフロー
 

@@ -86,6 +86,10 @@ func eventGenerationID(evt types.Event) (types.GenerationID, bool) {
 		return payload.GenerationID, true
 	case types.ConversationCommitRequest:
 		return payload.GenerationID, true
+	case types.AgentTimelineEnd:
+		return payload.GenerationID, true
+	case types.AgentSpeechPlaybackEnd:
+		return payload.GenerationID, true
 	default:
 		return 0, false
 	}

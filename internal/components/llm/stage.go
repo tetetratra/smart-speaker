@@ -96,6 +96,16 @@ func (s *stage) handleRequest(ctx context.Context, req types.LLMRequest) {
 		case s.downstream <- types.Event{Kind: types.EventTimelineItem, Payload: item}:
 		}
 	}
+	select {
+	case <-ctx.Done():
+		return
+	case s.downstream <- types.Event{
+		Kind: types.EventAgentTimelineEnd,
+		Payload: types.AgentTimelineEnd{
+			GenerationID: req.GenerationID,
+		},
+	}:
+	}
 }
 
 func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]types.TimelineItem, error) {

@@ -94,6 +94,14 @@ func (s *stage) runGeneration(ctx context.Context, id types.GenerationID, ch <-c
 
 func (s *stage) handle(ctx context.Context, evt types.Event) {
 	switch payload := evt.Payload.(type) {
+	case types.AgentTimelineEnd:
+		s.emit(ctx, types.Event{
+			Kind: types.EventAgentSpeechPlaybackEnd,
+			Payload: types.AgentSpeechPlaybackEnd{
+				GenerationID: payload.GenerationID,
+				CompletedAt:  time.Now(),
+			},
+		})
 	case types.PlayableSpeech:
 		s.emit(ctx, types.Event{Kind: types.EventScheduledItem, Payload: payload})
 		s.wait(ctx, payload.DurationSeconds)
@@ -137,6 +145,8 @@ func generationID(evt types.Event) (types.GenerationID, bool) {
 	case types.PlayableSpeech:
 		return payload.GenerationID, true
 	case types.TimelineItem:
+		return payload.GenerationID, true
+	case types.AgentTimelineEnd:
 		return payload.GenerationID, true
 	default:
 		return 0, false
