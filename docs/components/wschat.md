@@ -43,7 +43,7 @@
 - **Realtime output**
   - `types.OutputLine` を `type: "message"` の JSON に変換する。
   - `role`, `text`, `response_id`, `final` を常に含め、`source` は空でない場合だけ含める。
-  - UIは `role` に応じて user / agent / system message として表示する。`source == "server-stt"` かつ user message の場合は STT状態を完了、発話検知状態を待機中にする。
+  - UIは `role` に応じて user / agent / system message として表示する。user message かつ `source == "stt"` または `source == "server-stt"` の場合は STT状態を完了、発話検知状態を待機中にする。
 - **Whiteboard関連events**
   - `internal/tools/functions/whiteboard/tool.go` の `set_whiteboard` tool は `EventWhiteboardUpdate` を emit する。
   - `wschat` は `types.WhiteboardUpdate.Content` を `type: "whiteboard_update", content: ...` に変換する。
@@ -51,7 +51,7 @@
 - **Session reset関連events**
   - `sessionreset` は idle timeout による reset 実行後に `EventSessionReset` を emit する。
   - `wschat` は `types.SessionResetEvent.RequestedAt` を `type: "session_reset", requested_at: ...` に変換する。
-  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、次の `source == "server-stt"` かつ user の `message` 受信時に再表示する。
+  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に再表示する。
 
 ## 3. 主要なデータフロー
 
@@ -134,7 +134,7 @@ sequenceDiagram
 2. reset event発行: `sessionreset` が `EventSessionReset{RequestedAt}` を `wschat` へ流す。
 3. JSON変換: `wschat.handleEvent` が `session_reset` JSON に変換する。
 4. UI反映: UIは通常画面の直近会話吹き出しを非表示にする。
-5. 会話再開: 次の `source == "server-stt"` かつ user の `message` 受信時に、UIは吹き出しを再表示する。
+5. 会話再開: 次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に、UIは吹き出しを再表示する。
 
 ```mermaid
 sequenceDiagram
@@ -145,7 +145,7 @@ sequenceDiagram
     SR->>WS: EventSessionReset{RequestedAt}
     WS->>UI: {"type":"session_reset","requested_at":"..."}
     UI->>UI: 直近会話吹き出しを非表示
-    WS->>UI: {"type":"message","role":"user","source":"server-stt",...}
+    WS->>UI: {"type":"message","role":"user","source":"stt",...}
     UI->>UI: 直近会話吹き出しを再表示
 ```
 

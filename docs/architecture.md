@@ -120,7 +120,7 @@ LLM request は必ず保存済みの履歴 snapshot から作る。
 リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進める。
 hook が error を返してもログに残して後続 hook とリセット処理を継続する。
 その後、`sessionreset` は `EventSessionReset` を `wschat` へ流し、`wschat` が WebSocket の `session_reset` message としてブラウザUIへ配信する。
-UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、次の `server-stt` 由来 user message で再表示する。
+UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、次の `stt` または `server-stt` 由来 user message で再表示する。
 
 ## 参照元
 

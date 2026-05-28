@@ -86,7 +86,7 @@ sequenceDiagram
 ### 3.2 接続中のイベント反映
 - `message`
   - `user` / `agent` / `system` をメッセージ一覧へ追加する。
-  - `source: "server-stt"` かつ `role: "user"` の場合は、STT 状態を `完了` に戻す。
+  - `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の場合は、STT 状態を `完了` に戻す。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
 - `rtc_vad_status`
@@ -97,7 +97,7 @@ sequenceDiagram
 - `session_reset`
   - 通常画面の直近 user / agent 発話の吹き出しを非表示にする。
   - メッセージ一覧自体は消さない。
-  - 次に `source: "server-stt"` かつ `role: "user"` の `message` を受け取ると、吹き出しを表示に戻す。
+  - 次に `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の `message` を受け取ると、吹き出しを表示に戻す。
 - tool call / tool result
   - 通常の会話UIには表示しない。
   - 通常画面では右側のキャラクターエリア上部にトースト表示する。

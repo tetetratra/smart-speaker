@@ -471,6 +471,11 @@ function getPipelineStateOptions(label: string): string[] {
   }
 }
 
+function isSTTUserMessage(raw: any, role: ChatMessage['type']): boolean {
+  if (role !== 'user') return false
+  return raw.source === 'stt' || raw.source === 'server-stt'
+}
+
 type LiveViewProps = {
   connected: boolean
   connecting: boolean
@@ -640,7 +645,7 @@ function App() {
           if (role === 'tool_call' || role === 'tool_result') {
             showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
           }
-          if (raw.source === 'server-stt' && role === 'user') {
+          if (isSTTUserMessage(raw, role)) {
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
             setIsConversationBubbleHidden(false)
