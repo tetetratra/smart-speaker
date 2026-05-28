@@ -92,8 +92,12 @@ func TestCreateResponseSendsStructuredOutputSchema(t *testing.T) {
 			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
 		}
 	}
-	if strings.Count(schemaText, `"set_whiteboard"`) != 1 {
-		t.Fatalf("schema should contain set_whiteboard once at root, got: %s", schemaText)
+	if strings.Contains(schemaText, `"name":"set_whiteboard"`) {
+		t.Fatalf("schema should not include set_whiteboard as items tool, got: %s", schemaText)
+	}
+	if !strings.Contains(schemaText, `"required":["items","set_whiteboard"]`) &&
+		!strings.Contains(schemaText, `"required":["set_whiteboard","items"]`) {
+		t.Fatalf("schema should require items and set_whiteboard, got: %s", schemaText)
 	}
 }
 

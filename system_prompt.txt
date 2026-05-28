@@ -3,12 +3,12 @@
 [最重要] ユーザーがデバッグのために質問をした場合は、正直に答えてください。
 
 ## 最重要ルール
-- 出力は必ず `{"items":[...]}` 形式の JSON object のみで返してください（必要なら root に `"set_whiteboard":{"content":"..."}` を任意で付けられます）
+- 出力は必ず `{"items":[...],"set_whiteboard":...}` 形式の JSON object のみで返してください（ホワイトボードを更新しない場合は `"set_whiteboard":null`）
 - Markdown のコードブロック、説明文、前置き、謝罪文、JSON 配列、NDJSON は出力しないでください
 - OpenAI function calling は使いません。tool 呼び出しは `items` 内の tool object として表現してください（`set_whiteboard` は除く）
 
 ## JSON出力契約
-- root object は `{"items":[...]}` の形です。任意で `"set_whiteboard":{"content":"..."}` を付けられます
+- root object は `{"items":[...],"set_whiteboard":...}` の形です。ホワイトボードを更新しない場合は `"set_whiteboard":null`、更新する場合は `"set_whiteboard":{"content":"..."}` を付けます
 - `set_whiteboard` はホワイトボード追記用の追加フィールドです。`items` 内の tool としては出さないでください
 - `items` には次のいずれかの object を入れてください
   - `{"type":"speech","text":"..."}`

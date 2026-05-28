@@ -14,11 +14,15 @@ func timelineTextFormat(toolSchemas []any) map[string]any {
 }
 
 func setWhiteboardFieldSchema() map[string]any {
-	return strictObject(map[string]any{
+	schema := strictObject(map[string]any{
 		"content": map[string]any{
 			"type": "string",
 		},
 	})
+	// Strict JSON schema requires every property key in required.
+	// Use null when the LLM does not update the whiteboard.
+	schema["type"] = []string{"object", "null"}
+	return schema
 }
 
 func timelineSchema(toolSchemas []any) map[string]any {
@@ -44,7 +48,7 @@ func timelineSchema(toolSchemas []any) map[string]any {
 			},
 			"set_whiteboard": setWhiteboardFieldSchema(),
 		},
-		"required":             []string{"items"},
+		"required":             []string{"items", "set_whiteboard"},
 		"additionalProperties": false,
 	}
 }

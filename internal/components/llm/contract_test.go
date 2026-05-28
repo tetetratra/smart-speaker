@@ -150,3 +150,13 @@ func TestParseTimelineJSONAcceptsEmptyTimeline(t *testing.T) {
 		t.Fatalf("len = %d, want 0", len(items))
 	}
 }
+
+func TestParseTimelineJSONIgnoresNullSetWhiteboard(t *testing.T) {
+	items, err := parseTimelineJSON(`{"set_whiteboard":null,"items":[{"type":"speech","text":"了解"}]}`, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Kind != types.TimelineKindSpeech {
+		t.Fatalf("items = %+v", items)
+	}
+}
