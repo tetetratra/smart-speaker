@@ -19,7 +19,7 @@
   - `RTC_ICE_HOST_IPS`
   - `WEB_DIST_DIR`
   - `WS_ADDR`
-  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 600 秒、`0` で idle reset 無効）
+  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 300 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
 
 ### 音声入力・Google Speech 関連
