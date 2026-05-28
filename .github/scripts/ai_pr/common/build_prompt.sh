@@ -8,6 +8,7 @@ fi
 
 prompt_file="$1"
 run_mode="${RUN_MODE:-normal}"
+git config --global --add safe.directory /workspace || true
 context_sha="${HEAD_SHA:-$(git -C /workspace rev-parse HEAD)}"
 agent_name="${AI_AGENT_NAME:-AI エージェント}"
 
