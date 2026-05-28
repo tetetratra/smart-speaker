@@ -129,7 +129,7 @@ func (t *listTool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *listTool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        listToolName,
 		"description": "Googleカレンダーの予定一覧を取得します。date か time_min/time_max を指定してください。取得した情報は基本的に画面のボードにも記載してください",
@@ -158,7 +158,7 @@ func (t *listTool) Definition() map[string]any {
 				},
 			},
 		},
-	}
+	}, tools.ToolModeRead)
 }
 
 type createTool struct {
@@ -215,7 +215,7 @@ func (t *createTool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *createTool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        createToolName,
 		"description": "Googleカレンダーに予定を追加します。start_time/end_time は RFC3339 か YYYY-MM-DD。",
@@ -249,7 +249,7 @@ func (t *createTool) Definition() map[string]any {
 			},
 			"required": []string{"summary", "start_time", "end_time"},
 		},
-	}
+	}, tools.ToolModeWrite)
 }
 
 type updateTool struct {
@@ -340,7 +340,7 @@ func (t *updateTool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *updateTool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        updateToolName,
 		"description": "Googleカレンダーの予定を更新または削除します。",
@@ -382,7 +382,7 @@ func (t *updateTool) Definition() map[string]any {
 			},
 			"required": []string{"event_id"},
 		},
-	}
+	}, tools.ToolModeWrite)
 }
 
 func renderEventTime(t calendarapi.EventTime) map[string]any {

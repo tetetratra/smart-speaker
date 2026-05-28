@@ -68,7 +68,7 @@ func (t *SceneTool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *SceneTool) Definition() map[string]any {
-	return map[string]any{
+	return tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        sceneToolName,
 		"description": fmt.Sprintf("SwitchBotに登録済みのシーンを実行します。scene_name は次のいずれかを完全一致で指定します: %s", strings.Join(t.sceneNames, ", ")),
@@ -83,7 +83,7 @@ func (t *SceneTool) Definition() map[string]any {
 			"required":             []string{"scene_name"},
 			"additionalProperties": false,
 		},
-	}
+	}, tools.ToolModeWrite)
 }
 
 var _ tools.Handler = (*SceneTool)(nil)
