@@ -355,6 +355,12 @@ const liveRootStyle = `
   .live-toggle-switch.on::after {
     left: 18px;
   }
+  .live-bubble-slot {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .live-bubble {
     background: var(--live-panel-raised);
     border: 1px solid var(--live-line);
@@ -363,12 +369,15 @@ const liveRootStyle = `
     font-size: 24px;
     line-height: 1.3;
     position: relative;
-    min-height: 120px;
     box-shadow: 0 1px 2px var(--live-shadow);
     text-align: center;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    min-width: 0;
+    overflow: visible;
   }
   .live-bubble-content {
     display: flex;
@@ -376,6 +385,11 @@ const liveRootStyle = `
     align-items: center;
     gap: 10px;
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .live-bubble-user {
     color: var(--live-muted);
@@ -450,10 +464,6 @@ const liveRootStyle = `
     min-width: 0;
     min-height: 0;
   }
-  .live-bubble-slot {
-    min-width: 0;
-    min-height: 0;
-  }
   @media (orientation: portrait) {
     .live-main {
       grid-template-columns: 1fr;
@@ -475,26 +485,12 @@ const liveRootStyle = `
     }
     .live-bubble-slot {
       grid-row: 4;
-      display: flex;
-      min-height: 0;
     }
-    .live-bubble-slot .live-bubble {
-      flex: 1;
-      min-height: 0;
-      min-width: 0;
+    .live-bubble {
       width: 100%;
       font-size: clamp(14px, 4vw, 20px);
-      flex-direction: column;
-      align-items: stretch;
-      overflow: visible;
     }
-    .live-bubble-slot .live-bubble-content {
-      flex: 1;
-      min-height: 0;
-      width: 100%;
-      overflow: auto;
-    }
-    .live-bubble-slot .live-bubble-user {
+    .live-bubble-user {
       font-size: clamp(12px, 3.2vw, 16px);
     }
     .live-bubble::after {
