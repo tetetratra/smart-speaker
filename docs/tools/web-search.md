@@ -62,7 +62,7 @@ OpenAI function calling は使いません。
 2. scheduler / router が `ToolRequest` として `toolcaller` に渡します。
 3. `internal/tools/functions/websearch.Tool` が `query` を検証します。
 4. handler 専用 client が OpenAI Responses API `POST /v1/responses` を呼び出します。
-5. request body には `tools: [{"type":"web_search"}]` を指定します。
+5. request body には `instructions`（検索専用。逆質問や会話調の前置きを抑止）、`input`（`検索依頼:` 付きの query）、`tools: [{"type":"web_search"}]` を指定します。
 6. response の `output_text` を優先して読み、空の場合は `output[].content[].text` の `output_text` を fallback として読みます。
 7. 抽出した本文を `{"result":"..."}` として `toolcaller` に返します。
 8. read 系 tool のため、`toolcaller` が JSON 化して `ToolResultRecord.Output` に入れ、`EventConversationCommitRequest` として `conversationcommitter` に送り、会話履歴に保存します。
@@ -72,7 +72,8 @@ Responses API request の概形:
 ```json
 {
   "model": "<OPENAI_RESPONSES_MODEL>",
-  "input": "<query>",
+  "instructions": "<検索バックエンド向け指示（逆質問禁止など）>",
+  "input": "検索依頼:\n<query>",
   "tools": [
     {"type": "web_search"}
   ],

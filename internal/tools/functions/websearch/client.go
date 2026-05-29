@@ -10,6 +10,21 @@ import (
 	"strings"
 )
 
+// searchInstructions は hosted web_search 用 Responses API への指示文。
+// 会話用LLMへ返す本文なので、確認質問や丁寧な前置きは避ける。
+const searchInstructions = `あなたは音声アシスタント向けのWeb検索バックエンドです。ユーザーと会話する相手ではありません。
+
+- 素早く簡潔に回答を提示すること
+- 基本的に逆質問・確認質問・選択肢の提示をしない（例:「調べていいですか？」「何時の天気ですか？」など）
+- 条件が足りないときは、検索結果とクエリから妥当な前提で補って答える
+  - 時刻がなければ「今日」「現在」など一般的な解釈
+  - 場所がなければクエリに含まれる地名、なければ日本を前提にしてよい
+- 検索で得られた事実を簡潔な日本語でまとめる（箇条書き可）
+- 挨拶・前置き・免責の長文は不要。本文のみ
+- ユーザーへの呼びかけ（「教えてください」など）はしない
+- 情報が不確かなときは、分かった範囲を短く書き、確認を求めない
+`
+
 type ClientConfig struct {
 	APIKey     string
 	Model      string
@@ -54,8 +69,9 @@ func (c *Client) Search(ctx context.Context, query string) (string, error) {
 	}
 
 	payload := map[string]any{
-		"model": c.model,
-		"input": query,
+		"model":        c.model,
+		"instructions": searchInstructions,
+		"input":        "検索依頼:\n" + query,
 		"tools": []map[string]any{
 			{"type": "web_search"},
 		},
