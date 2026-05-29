@@ -109,7 +109,7 @@ const liveRootStyle = `
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: auto auto auto 1fr;
+    grid-template-rows: auto 1fr auto;
     gap: 8px;
   }
   .live-controls-row {
@@ -409,6 +409,94 @@ const liveRootStyle = `
     place-items: center;
     font-size: 11px;
     min-height: 0;
+  }
+  .live-controls-panel {
+    display: grid;
+    grid-template-rows: auto auto auto;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .live-character-area {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .live-bubble-slot {
+    min-width: 0;
+    min-height: 0;
+  }
+  @media (orientation: portrait) {
+    .live-main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .live-left,
+    .live-right {
+      display: contents;
+    }
+    .live-controls-panel {
+      grid-row: 1;
+    }
+    .live-board {
+      grid-row: 2;
+    }
+    .live-character-area {
+      grid-row: 3;
+      grid-template-rows: 1fr;
+    }
+    .live-bubble-slot {
+      grid-row: 4;
+      display: flex;
+      min-height: 0;
+    }
+    .live-bubble-slot .live-bubble {
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      width: 100%;
+      font-size: clamp(14px, 4vw, 20px);
+      flex-direction: column;
+      align-items: stretch;
+      overflow: visible;
+    }
+    .live-bubble-slot .live-bubble-content {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      overflow: auto;
+    }
+    .live-bubble-slot .live-bubble-user {
+      font-size: clamp(12px, 3.2vw, 16px);
+    }
+    .live-character-area .live-mini {
+      display: none;
+    }
+    .live-volume-control {
+      min-height: 0;
+    }
+    .live-bubble::after {
+      right: auto;
+      bottom: auto;
+      left: 50%;
+      top: -6px;
+      width: 11px;
+      height: 11px;
+      border-right: none;
+      border-bottom: none;
+      border-left: 1px solid var(--live-line);
+      border-top: 1px solid var(--live-line);
+      transform: translateX(-50%) rotate(45deg);
+    }
+    .live-bubble-ai-speaking::after {
+      border-right-color: transparent;
+      border-bottom-color: transparent;
+      border-left-color: var(--live-toggle-on);
+      border-top-color: var(--live-toggle-on);
+    }
   }
 `
 
@@ -1245,63 +1333,69 @@ function LiveView(props: LiveViewProps) {
                 ))
               )}
             </div>
-            {lastAssistantMessage && !isConversationBubbleHidden && (
-              <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
-                <div className="live-bubble-content">
-                  {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
-                  <div className="live-bubble-agent">{lastAssistantMessage}</div>
+            <div className="live-bubble-slot">
+              {lastAssistantMessage && !isConversationBubbleHidden && (
+                <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
+                  <div className="live-bubble-content">
+                    {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
+                    <div className="live-bubble-agent">{lastAssistantMessage}</div>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           <div className="live-right">
-            <div className="live-controls-row">
-              <div className="live-audio-stats" aria-label="VAD状態">
-                <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
-                <div className="live-audio-stat">しきい値 <strong>{speechThreshold}</strong></div>
+            <div className="live-controls-panel">
+              <div className="live-controls-row">
+                <div className="live-audio-stats" aria-label="VAD状態">
+                  <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
+                  <div className="live-audio-stat">しきい値 <strong>{speechThreshold}</strong></div>
+                </div>
+                <div className="live-controls-actions">
+                  <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                    <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                    接続
+                  </button>
+                  <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+                </div>
               </div>
-              <div className="live-controls-actions">
-                <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
-                  <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
-                  接続
-                </button>
-                <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+              <div className="live-status-grid">
+                <div className="live-status-card">
+                  <div className="live-status-label">接続</div>
+                  <div className="live-status-value">{connectionStatus}</div>
+                </div>
+                <div className="live-status-card">
+                  <div className="live-status-label">マイク</div>
+                  <div className="live-status-value">{speechDetectStatus}</div>
+                </div>
+                <div className="live-status-card">
+                  <div className="live-status-label">認識</div>
+                  <div className="live-status-value">{sttStatus}</div>
+                </div>
               </div>
+              <input
+                className="live-volume-slider"
+                type="range"
+                min={0}
+                max={playbackVolumeLevels.length - 1}
+                step={1}
+                value={playbackVolumeIndex}
+                aria-label="再生音量"
+                onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+              />
             </div>
-            <div className="live-status-grid">
-              <div className="live-status-card">
-                <div className="live-status-label">接続</div>
-                <div className="live-status-value">{connectionStatus}</div>
+            <div className="live-character-area">
+              <div className="live-volume-control" aria-label="キャラクターエリア">
+                <div className="live-tool-toast-stack">
+                  {toolToasts.map((toast) => (
+                    <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
+                      <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="live-status-card">
-                <div className="live-status-label">マイク</div>
-                <div className="live-status-value">{speechDetectStatus}</div>
-              </div>
-              <div className="live-status-card">
-                <div className="live-status-label">認識</div>
-                <div className="live-status-value">{sttStatus}</div>
-              </div>
+              <div className="live-mini"></div>
             </div>
-            <input
-              className="live-volume-slider"
-              type="range"
-              min={0}
-              max={playbackVolumeLevels.length - 1}
-              step={1}
-              value={playbackVolumeIndex}
-              aria-label="再生音量"
-              onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-            />
-            <div className="live-volume-control" aria-label="キャラクターエリア">
-              <div className="live-tool-toast-stack">
-                {toolToasts.map((toast) => (
-                  <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
-                    <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="live-mini"></div>
           </div>
         </div>
       </div>
