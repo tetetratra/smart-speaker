@@ -133,7 +133,8 @@ const liveRootStyle = `
     padding: 8px 10px 7px;
     position: relative;
     overflow: hidden;
-    min-height: 88px;
+    min-height: 0;
+    flex: 1;
   }
   .live-tool-toast-stack {
     position: absolute;
@@ -202,9 +203,43 @@ const liveRootStyle = `
   }
   .live-volume-slider {
     width: 100%;
-    accent-color: var(--live-toggle-on);
-    cursor: pointer;
+    height: 10px;
     margin: 0;
+    cursor: pointer;
+    accent-color: var(--live-toggle-on);
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+  .live-volume-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--live-toggle-bg);
+  }
+  .live-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border: 1px solid var(--live-line);
+    border-radius: 50%;
+    background: var(--live-toggle-knob);
+    box-shadow: 0 1px 2px var(--live-shadow);
+  }
+  .live-volume-slider::-moz-range-track {
+    height: 4px;
+    border: none;
+    border-radius: 999px;
+    background: var(--live-toggle-bg);
+  }
+  .live-volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--live-line);
+    border-radius: 50%;
+    background: var(--live-toggle-knob);
+    box-shadow: 0 1px 2px var(--live-shadow);
   }
   .live-audio-stats {
     display: flex;
@@ -229,6 +264,10 @@ const liveRootStyle = `
   .live-audio-stat strong {
     color: var(--live-text);
     font-weight: 700;
+    display: inline-block;
+    min-width: 5ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .live-status-grid {
     display: grid;
@@ -398,18 +437,6 @@ const liveRootStyle = `
     border-top: 1px solid var(--live-line);
     margin: 10px 0;
   }
-  .live-mini {
-    width: 100%;
-    height: 100%;
-    border-radius: 14px;
-    border: 1px dashed var(--live-line);
-    background: var(--live-panel-soft);
-    color: var(--live-muted);
-    display: grid;
-    place-items: center;
-    font-size: 11px;
-    min-height: 0;
-  }
   .live-controls-panel {
     display: grid;
     grid-template-rows: auto auto auto;
@@ -418,9 +445,8 @@ const liveRootStyle = `
     min-height: 0;
   }
   .live-character-area {
-    display: grid;
-    grid-template-rows: 1fr auto;
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
@@ -446,7 +472,6 @@ const liveRootStyle = `
     }
     .live-character-area {
       grid-row: 3;
-      grid-template-rows: 1fr;
     }
     .live-bubble-slot {
       grid-row: 4;
@@ -471,12 +496,6 @@ const liveRootStyle = `
     }
     .live-bubble-slot .live-bubble-user {
       font-size: clamp(12px, 3.2vw, 16px);
-    }
-    .live-character-area .live-mini {
-      display: none;
-    }
-    .live-volume-control {
-      min-height: 0;
     }
     .live-bubble::after {
       right: auto;
@@ -1349,7 +1368,7 @@ function LiveView(props: LiveViewProps) {
               <div className="live-controls-row">
                 <div className="live-audio-stats" aria-label="VAD状態">
                   <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
-                  <div className="live-audio-stat">しきい値 <strong>{speechThreshold}</strong></div>
+                  <div className="live-audio-stat">閾値 <strong>{speechThreshold}</strong></div>
                 </div>
                 <div className="live-controls-actions">
                   <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
@@ -1394,7 +1413,6 @@ function LiveView(props: LiveViewProps) {
                   ))}
                 </div>
               </div>
-              <div className="live-mini"></div>
             </div>
           </div>
         </div>
