@@ -1335,10 +1335,7 @@ function LiveView(props: LiveViewProps) {
         <div className="live-main">
           <div className="live-left">
             <div className="live-board" ref={boardRef}>
-              {boardEntries.length === 0 ? (
-                <div className="live-board-empty">ホワイトボード</div>
-              ) : (
-                boardEntries.map((entry, index) => (
+              {boardEntries.map((entry, index) => (
                   <React.Fragment key={entry.id}>
                     {index > 0 && <hr className="live-board-separator" />}
                     <div className="live-board-entry">
@@ -1346,7 +1343,7 @@ function LiveView(props: LiveViewProps) {
                     </div>
                   </React.Fragment>
                 ))
-              )}
+              }
             </div>
             <div className="live-bubble-slot">
               {lastAssistantMessage && !isConversationBubbleHidden && (
