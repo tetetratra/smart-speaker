@@ -12,9 +12,9 @@ const (
 	toolName = "web_search"
 
 	toolDescription = `Web検索が必要な最新情報・外部情報を調べます。
-検索したい内容をqueryに簡潔に書いてください。
+検索したい内容をqueryに自然言語で書いてください。
 `
-	queryDescription = `検索したい内容。`
+	queryDescription = `検索の依頼文言（例：今日の◯◯関連のニュースを教えて）`
 )
 
 type SearchClient interface {
