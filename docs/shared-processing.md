@@ -25,6 +25,7 @@
 - `internal/states/generation` は最新世代idを保持する。
 - `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
 - `internal/states/agentstatus` は LLM がひとりごと候補判定で参照する `idle` / `active` 状態を保持する。
+- `internal/states/playbackspeed` はエージェント発話の再生速度倍率（`1` / `1.5` / `2` / `3`）を保持する。`wschat` が WebSocket 経由で更新し、`playbackspeed` stage が event 処理時に読み取る。永続化は行わない。
 - Store は graph node ではなく、必要な component へ依存注入する。
 - `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()`、`generation.Store.Next()`、`agentstatus.Store.SetIdle()` を呼び、履歴クリア、古い世代の抑止、ひとりごと候補判定の再有効化を同時に行う。
 - `sessionactivate` は `speech` timeline item 通過時に `agentstatus.Store.SetActive()` を呼び、LLM 応答が始まったセッションを active に戻す。
