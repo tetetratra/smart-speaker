@@ -41,7 +41,7 @@ OpenAI function calling は使いません。
 呼び出し例:
 
 ```json
-{"type":"tool","name":"web_search","args":{"query":"OpenAI Responses API web_search 最新仕様"}}
+{"type":"tool","name":"web_search","args":{"query":"OpenAI Responses API の web_search 機能の最新仕様を教えて"}}
 ```
 
 ## 出力

@@ -160,7 +160,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{
 		ToolCallID:   "call-1",
 		Name:         "web_search",
-		Arguments:    json.RawMessage(`{"query":"天気"}`),
+		Arguments:    json.RawMessage(`{"query":"今日の天気を教えて"}`),
 		GenerationID: 1,
 	}}
 

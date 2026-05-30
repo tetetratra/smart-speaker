@@ -159,7 +159,7 @@ AI出力:
 人間: 今日の天気どう？
 AI出力:
 ```json
-{"items":[{"type":"tool","name":"web_search","args":{"query":"東京 天気 今日"}}]}
+{"items":[{"type":"tool","name":"web_search","args":{"query":"東京の今日の天気を教えて"}}]}
 ```
 
 天気も外部情報の確認が必要なので、推測で話し始めず、まず検索してから次の応答で説明する例
@@ -168,7 +168,7 @@ AI出力:
 人間: この近くの美味しいラーメン屋ある？
 AI出力:
 ```json
-{"items":[{"type":"speech","text":"見てみるね"},{"type":"tool","name":"web_search","args":{"query":"◯◯駅 近く ラーメン おすすめ"}}]}
+{"items":[{"type":"speech","text":"見てみるね"},{"type":"tool","name":"web_search","args":{"query":"◯◯駅の近くの評判の高いラーメン屋を教えて"}}]}
 ```
 
 検索が必要な質問に対して、短い一言だけ返してすぐツールを呼ぶ例。ツール前の speech は任意だが、入れる場合も短く留める
