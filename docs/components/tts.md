@@ -61,6 +61,7 @@ sequenceDiagram
   participant TTS as tts
   participant EL as ElevenLabs API
   participant GF2 as generationfilter
+  participant PBS as playbackspeed
   participant SCH as scheduler
   participant R as router
   participant RTCOut as rtcout
@@ -72,7 +73,8 @@ sequenceDiagram
   TTS->>EL: POST /v1/text-to-speech/{voice}/stream?output_format=pcm_24000
   EL-->>TTS: raw PCM bytes
   TTS->>GF2: EventPlayableSpeech(PlayableSpeech)
-  GF2->>SCH: EventPlayableSpeech(PlayableSpeech)
+  GF2->>PBS: EventPlayableSpeech(PlayableSpeech)
+  PBS->>SCH: EventPlayableSpeech(PlayableSpeech)
   SCH->>R: EventScheduledItem(PlayableSpeech)
   SCH-->>SCH: DurationSeconds だけ待機
   R->>RTCOut: EventRealtimeAudio
@@ -220,7 +222,7 @@ sequenceDiagram
 ### 接続設計
 
 - 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID`、`ELEVENLABS_MODEL_ID` 由来の設定が渡される。
-- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> scheduler` の順。
+- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> playbackspeed -> scheduler` の順。
 - `tts` の出力として graph が下流へ接続する event kind は `EventTimelineItem` と `EventPlayableSpeech`。
 
 ### 不明点
