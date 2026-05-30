@@ -25,9 +25,11 @@
   - 接続追加、削除、単一接続取得、全接続 snapshot、全接続 close を担当する。
   - 接続IDは `ws-1`, `ws-2` のように `chatWS.nextConnID` から採番される。
 - **WebSocket 入力**
-  - ブラウザからの JSON は `type`, `sdp`, `candidate` だけを読み取る。
-  - `type` が `webrtc.` prefix の場合だけ `types.EventRTCSignal` に変換して `downstream` へ送る。
-  - `webrtc.` prefix 以外の message は現在の実装では何も処理されない。
+  - ブラウザからの JSON は `type`, `sdp`, `candidate`, `speed` を読み取る。
+  - `type` が `webrtc.` prefix の場合は `types.EventRTCSignal` に変換して `downstream` へ送る。
+  - `type` が `playback_speed.set` の場合は `playback speed Store` を更新する（graph 外）。
+- **再生速度の初回同期**
+  - 接続登録直後、当該 `connID` 向けに `{ "type": "playback_speed.state", "speed": number }` を 1 通 push する。
 - **WebSocket 出力**
   - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。

@@ -36,6 +36,16 @@ const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: 
 }
 const playbackVolumeLevels: PlaybackVolumeLevel[] = ['quiet', 'low', 'normal', 'boost']
 const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'low'
+
+type PlaybackSpeedPreset = 1 | 1.5 | 2 | 3
+
+const playbackSpeedLevels: PlaybackSpeedPreset[] = [1, 1.5, 2, 3]
+const defaultPlaybackSpeed: PlaybackSpeedPreset = 1
+
+function normalizePlaybackSpeed(value: unknown): PlaybackSpeedPreset {
+  if (typeof value !== 'number') return defaultPlaybackSpeed
+  return playbackSpeedLevels.find((level) => Math.abs(level - value) < 1e-9) ?? defaultPlaybackSpeed
+}
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
@@ -240,6 +250,24 @@ const liveRootStyle = `
     border-radius: 50%;
     background: var(--live-toggle-knob);
     box-shadow: 0 1px 2px var(--live-shadow);
+  }
+  .live-playback-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .live-playback-slider-label {
+    flex-shrink: 0;
+    width: 52px;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--live-muted);
+    white-space: nowrap;
+  }
+  .live-playback-slider-row .live-volume-slider {
+    flex: 1;
+    min-width: 0;
   }
   .live-audio-stats {
     display: flex;
@@ -604,6 +632,8 @@ type LiveViewProps = {
   toolToasts: ToolToast[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
+  playbackSpeed: PlaybackSpeedPreset
+  onPlaybackSpeedChange: (speed: PlaybackSpeedPreset) => void
   connect: () => Promise<void>
   disconnect: () => void
   goAdmin: () => void
@@ -620,6 +650,7 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeedPreset>(defaultPlaybackSpeed)
   const [inputLevel, setInputLevel] = useState(0)
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
@@ -708,6 +739,17 @@ function App() {
     playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
   }, [selectedPlaybackVolume.gain])
 
+  const sendPlaybackSpeed = useCallback((speed: PlaybackSpeedPreset) => {
+    const ws = wsChatRef.current
+    if (!ws || !connected) return
+    ws.send({ type: 'playback_speed.set', speed })
+  }, [connected])
+
+  const handlePlaybackSpeedChange = useCallback((speed: PlaybackSpeedPreset) => {
+    setPlaybackSpeed(speed)
+    sendPlaybackSpeed(speed)
+  }, [sendPlaybackSpeed])
+
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
     if (!peer) return
@@ -792,6 +834,10 @@ function App() {
         case 'session_reset': {
           setIsAiSpeaking(false)
           setIsConversationBubbleHidden(true)
+          break
+        }
+        case 'playback_speed.state': {
+          setPlaybackSpeed(normalizePlaybackSpeed(raw.speed))
           break
         }
         case 'rtc_vad_status': {
@@ -1149,6 +1195,8 @@ function App() {
           toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={handlePlaybackSpeedChange}
           connect={connect}
           disconnect={disconnect}
           goAdmin={() => setMode('admin')}
@@ -1301,6 +1349,8 @@ function LiveView(props: LiveViewProps) {
     toolToasts,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
+    playbackSpeed,
+    onPlaybackSpeedChange,
     connect,
     disconnect,
     goAdmin,
@@ -1328,6 +1378,7 @@ function LiveView(props: LiveViewProps) {
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
+  const playbackSpeedIndex = playbackSpeedLevels.indexOf(playbackSpeed)
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1385,16 +1436,33 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <input
-                className="live-volume-slider"
-                type="range"
-                min={0}
-                max={playbackVolumeLevels.length - 1}
-                step={1}
-                value={playbackVolumeIndex}
-                aria-label="再生音量"
-                onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-              />
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">再生音量</span>
+                <input
+                  className="live-volume-slider"
+                  type="range"
+                  min={0}
+                  max={playbackVolumeLevels.length - 1}
+                  step={1}
+                  value={playbackVolumeIndex}
+                  aria-label="再生音量"
+                  onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+                />
+              </div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">再生速度</span>
+                <input
+                  className="live-volume-slider"
+                  type="range"
+                  min={0}
+                  max={playbackSpeedLevels.length - 1}
+                  step={1}
+                  value={playbackSpeedIndex}
+                  aria-label="再生速度"
+                  disabled={!connected}
+                  onChange={(event) => onPlaybackSpeedChange(playbackSpeedLevels[Number(event.currentTarget.value)])}
+                />
+              </div>
             </div>
             <div className="live-character-area">
               <div className="live-volume-control" aria-label="キャラクターエリア">
