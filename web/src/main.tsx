@@ -39,12 +39,6 @@ const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'low'
 
 type PlaybackSpeedPreset = 1 | 1.5 | 2 | 3
 
-const playbackSpeedPresets: Record<PlaybackSpeedPreset, { label: string; speed: PlaybackSpeedPreset }> = {
-  1: { label: '1x', speed: 1 },
-  1.5: { label: '1.5x', speed: 1.5 },
-  2: { label: '2x', speed: 2 },
-  3: { label: '3x', speed: 3 },
-}
 const playbackSpeedLevels: PlaybackSpeedPreset[] = [1, 1.5, 2, 3]
 const defaultPlaybackSpeed: PlaybackSpeedPreset = 1
 
@@ -256,6 +250,24 @@ const liveRootStyle = `
     border-radius: 50%;
     background: var(--live-toggle-knob);
     box-shadow: 0 1px 2px var(--live-shadow);
+  }
+  .live-playback-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .live-playback-slider-label {
+    flex-shrink: 0;
+    width: 52px;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--live-muted);
+    white-space: nowrap;
+  }
+  .live-playback-slider-row .live-volume-slider {
+    flex: 1;
+    min-width: 0;
   }
   .live-audio-stats {
     display: flex;
@@ -1367,7 +1379,6 @@ function LiveView(props: LiveViewProps) {
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
   const playbackSpeedIndex = playbackSpeedLevels.indexOf(playbackSpeed)
-  const selectedPlaybackSpeed = playbackSpeedPresets[playbackSpeed]
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1425,28 +1436,33 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <input
-                className="live-volume-slider"
-                type="range"
-                min={0}
-                max={playbackVolumeLevels.length - 1}
-                step={1}
-                value={playbackVolumeIndex}
-                aria-label="再生音量"
-                onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-              />
-              <input
-                className="live-volume-slider"
-                type="range"
-                min={0}
-                max={playbackSpeedLevels.length - 1}
-                step={1}
-                value={playbackSpeedIndex}
-                aria-label="再生速度"
-                disabled={!connected}
-                onChange={(event) => onPlaybackSpeedChange(playbackSpeedLevels[Number(event.currentTarget.value)])}
-              />
-              <div className="live-audio-stat">速度 <strong>{selectedPlaybackSpeed.label}</strong></div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">再生音量</span>
+                <input
+                  className="live-volume-slider"
+                  type="range"
+                  min={0}
+                  max={playbackVolumeLevels.length - 1}
+                  step={1}
+                  value={playbackVolumeIndex}
+                  aria-label="再生音量"
+                  onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+                />
+              </div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">再生速度</span>
+                <input
+                  className="live-volume-slider"
+                  type="range"
+                  min={0}
+                  max={playbackSpeedLevels.length - 1}
+                  step={1}
+                  value={playbackSpeedIndex}
+                  aria-label="再生速度"
+                  disabled={!connected}
+                  onChange={(event) => onPlaybackSpeedChange(playbackSpeedLevels[Number(event.currentTarget.value)])}
+                />
+              </div>
             </div>
             <div className="live-character-area">
               <div className="live-volume-control" aria-label="キャラクターエリア">
