@@ -195,7 +195,7 @@ sequenceDiagram
 - session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
 - tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
-- 再生速度はサーバー側 pipeline（`playbackspeed` stage）で PCM と待機時間を加工する。UI は接続時に `playback_speed.state` を受け取り、変更時に `playback_speed.set` を送る。
+- 再生速度はサーバー側で ElevenLabs の `voice_settings.speed` と scheduler の wait 秒数に反映される。UI は接続時に `playback_speed.state` を受け取り、変更時に `playback_speed.set` を送る。
 - 手動切断と異常切断で再接続ポリシーが異なる。
 
 ## 6. 不明点
