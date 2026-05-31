@@ -18,7 +18,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/conversationcommitter"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
-	"github.com/tetetratra/smart-speaker/internal/components/playbackspeed"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
@@ -126,7 +125,6 @@ type appStages struct {
 	filterLLM    *graph.Stage
 	tts          *graph.Stage
 	filterTTS    *graph.Stage
-	playbackspeed *graph.Stage
 	scheduler    *graph.Stage
 	filterSched  *graph.Stage
 	router       *graph.Stage
@@ -148,7 +146,6 @@ func (s appStages) all() []*graph.Stage {
 		s.filterLLM,
 		s.tts,
 		s.filterTTS,
-		s.playbackspeed,
 		s.scheduler,
 		s.filterSched,
 		s.router,
@@ -169,9 +166,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 
 	var err error
 	stages.tts, err = tts.NewStage(tts.Config{
-		APIKey: cfg.ElevenLabs.APIKey,
-		Voice:  cfg.ElevenLabs.VoiceID,
-		Model:  cfg.ElevenLabs.Model,
+		APIKey:     cfg.ElevenLabs.APIKey,
+		Voice:      cfg.ElevenLabs.VoiceID,
+		Model:      cfg.ElevenLabs.Model,
+		SpeedStore: playbackSpeedStore,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
@@ -225,13 +223,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	stages.filterLLM.Name = "generationfilter-llm"
 	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterTTS.Name = "generationfilter-tts"
-	stages.playbackspeed = playbackspeed.NewStage(playbackspeed.Config{Store: playbackSpeedStore})
-	if stages.playbackspeed != nil {
-		stages.playbackspeed.Name = "playbackspeed"
-	}
 	stages.filterSched = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterSched.Name = "generationfilter-scheduler"
-	stages.scheduler = scheduler.NewStage(scheduler.Config{})
+	stages.scheduler = scheduler.NewStage(scheduler.Config{SpeedStore: playbackSpeedStore})
 	stages.scheduler.Name = "scheduler"
 	stages.router = router.NewStage(router.Config{})
 	stages.router.Name = "router"
@@ -369,7 +363,6 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	filterLLMNode := add(stages.filterLLM)
 	ttsNode := add(stages.tts)
 	filterTTSNode := add(stages.filterTTS)
-	playbackspeedNode := add(stages.playbackspeed)
 	schedulerNode := add(stages.scheduler)
 	filterSchedNode := add(stages.filterSched)
 	routerNode := add(stages.router)
@@ -391,8 +384,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, sessionActNode, filterLLMNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, filterTTSNode, playbackspeedNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, playbackspeedNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
+	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
 	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem, types.EventAgentSpeechPlaybackEnd)
 	connectKinds(g, filterSchedNode, chatNode, types.EventAgentSpeechPlaybackEnd)
 	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
