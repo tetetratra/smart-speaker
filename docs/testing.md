@@ -129,7 +129,7 @@ go run ./cmd/local-verify-response
 - `USER_TEXT=...` が出る。
 - `ASSISTANT_TEXT=...` が出る。
 - `AUDIO_BYTES_BASE64=...` が出る。
-- graph log で `llm -> generationfilter-llm -> tts -> generationfilter-tts -> scheduler -> generationfilter-scheduler -> router -> conversationcommitter` の流れが確認できる。
+- graph log で `llm -> generationfilter -> tts -> scheduler -> router -> conversationcommitter` の流れが確認できる。
 
 任意の入力文で確認したい場合は `LOCAL_VERIFY_TEXT` を指定します。
 

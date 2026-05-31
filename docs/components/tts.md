@@ -85,8 +85,7 @@ sequenceDiagram
 
 1. **LLM が wait を発行する**: `llm` は `{"type":"wait","sec":...}` を `TimelineItem{Kind: "wait", Sec: ...}` として出力する。
 2. **tts が透過する**: `tts` は `Kind` が `speech` ではないため、元の `EventTimelineItem` をそのまま下流へ送る。
-3. **generationfilter-tts を通過する**: `generationfilter-tts` は最新世代の `EventTimelineItem` だけを `scheduler` へ通す。
-4. **scheduler が待機する**: `scheduler` は `TimelineKindWait` を受け取ると、`Sec / SpeedStore.Speed()` 秒だけ待つ。`wait` 自体は `EventScheduledItem` としては出力しない。
+3. **scheduler が待機する**: `scheduler` は `TimelineKindWait` を受け取ると `Sec` 秒だけ待ち、`wait` 自体は `EventScheduledItem` としては出力しない。
 
 ```mermaid
 sequenceDiagram
@@ -94,25 +93,22 @@ sequenceDiagram
   participant SA as sessionactivate
   participant GF as generationfilter
   participant TTS as tts
-  participant GF2 as generationfilter-tts
   participant SCH as scheduler
 
   LLM->>SA: EventTimelineItem(TimelineItem wait)
   SA->>GF: EventTimelineItem(TimelineItem wait)
   GF->>TTS: EventTimelineItem(TimelineItem wait)
-  TTS->>GF2: EventTimelineItem(TimelineItem wait)
-  GF2->>SCH: EventTimelineItem(TimelineItem wait)
-  SCH-->>SCH: Sec / speed 秒だけ待機
+  TTS->>SCH: EventTimelineItem(TimelineItem wait)
+  SCH-->>SCH: Sec 秒だけ待機
 ```
 
 ### シナリオ: `tool` item が音声の後に実行されるまで
 
 1. **LLM が tool item を発行する**: `llm` の timeline 契約では1応答内に複数の tool item を出せる。get 系 tool は末尾配置、tool 前の speech は最小限と system prompt で案内する。
 2. **tts が透過する**: `tts` は `tool` item を音声化せず、元の `EventTimelineItem` のまま下流へ送る。
-3. **generationfilter-tts を通過する**: `generationfilter-tts` は最新世代の `EventTimelineItem` だけを `scheduler` へ通す。
-4. **scheduler が ToolRequest に変換する**: `scheduler` は `TimelineKindTool` を受け取ると `types.ToolRequest` を作り、`EventScheduledItem` として出力する。
-5. **router が toolcaller へ渡す**: `router` は `ToolRequest` を `EventToolRequest` として出力する。
-6. **順序が保たれる**: 直前に `speech` がある場合、`scheduler` はその `DurationSeconds` だけ待ってから後続の `tool` を処理する。
+3. **scheduler が ToolRequest に変換する**: `scheduler` は `TimelineKindTool` を受け取ると `types.ToolRequest` を作り、`EventScheduledItem` として出力する。
+4. **router が toolcaller へ渡す**: `router` は `ToolRequest` を `EventToolRequest` として出力する。
+5. **順序が保たれる**: 直前に `speech` がある場合、`scheduler` はその `DurationSeconds` だけ待ってから後続の `tool` を処理する。
 
 ```mermaid
 sequenceDiagram
@@ -120,7 +116,6 @@ sequenceDiagram
   participant SA as sessionactivate
   participant GF as generationfilter
   participant TTS as tts
-  participant GF2 as generationfilter-tts
   participant SCH as scheduler
   participant R as router
   participant TOOL as toolcaller
@@ -128,8 +123,7 @@ sequenceDiagram
   LLM->>SA: EventTimelineItem(TimelineItem tool)
   SA->>GF: EventTimelineItem(TimelineItem tool)
   GF->>TTS: EventTimelineItem(TimelineItem tool)
-  TTS->>GF2: EventTimelineItem(TimelineItem tool)
-  GF2->>SCH: EventTimelineItem(TimelineItem tool)
+  TTS->>SCH: EventTimelineItem(TimelineItem tool)
   SCH->>R: EventScheduledItem(ToolRequest)
   R->>TOOL: EventToolRequest
 ```
@@ -232,7 +226,7 @@ sequenceDiagram
 
 - 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID`、`ELEVENLABS_MODEL_ID` 由来の設定が渡される。
 - 本番起動時は `playbackspeed.Store` も `Config.SpeedStore` として渡される。
-- graph 接続は `llm -> generationfilter-llm -> tts -> generationfilter-tts -> scheduler` の順。
+- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> scheduler` の順。
 - `tts` の出力として graph が下流へ接続する event kind は `EventTimelineItem` と `EventPlayableSpeech`。
 
 ### 不明点
