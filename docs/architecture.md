@@ -22,10 +22,9 @@ flowchart TB
   LLM["llm<br/>履歴を読んでResponses APIからJSON timelineを作る"]
   SA["sessionactivate<br/>speech通過時にagent statusをactiveへ戻す"]
   GF1["generationfilter<br/>LLM出力の世代を検査する"]
-  TTS["tts<br/>speechを音声化し、wait/toolは順序維持で通す"]
+  TTS["tts<br/>speechを速度倍率込みで音声化し、wait/toolは順序維持で通す"]
   GF2["generationfilter<br/>TTS出力の世代を検査する"]
-  PBS["playbackspeed<br/>発話PCMとwait秒数を速度倍率で加工する"]
-  SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火する"]
+  SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火し、wait秒数を速度倍率で調整する"]
   PSTORE[("playback speed Store<br/>1/1.5/2/3倍を保持する")]
   GF3["generationfilter<br/>scheduler出力の世代を検査する"]
   ROUTER["router<br/>再生、agent保存、tool実行へ振り分ける"]
@@ -58,7 +57,8 @@ flowchart TB
   GF2 -.->|"最新世代idを読む"| GSTORE
   GF3 -.->|"最新世代idを読む"| GSTORE
   WS -.->|"playback_speed.setで更新する"| PSTORE
-  PBS -.->|"都度倍率を読む"| PSTORE
+  TTS -.->|"voice_settings.speed用に倍率を読む"| PSTORE
+  SCH -.->|"wait秒数調整用に倍率を読む"| PSTORE
   SR -.->|"idle timeout後に履歴を空にする"| HSTORE
   SR -.->|"idle timeout後に世代idを前進させる"| GSTORE
   SR -.->|"idle timeout後にidleへ更新する"| ASTORE
@@ -72,8 +72,7 @@ flowchart TB
   SA -->|"EventTimelineItem<br/>payloadは変更せず通過させる"| GF1
   GF1 -->|"EventTimelineItem<br/>最新世代だけを通す"| TTS
   TTS -->|"EventPlayableSpeech / EventTimelineItem<br/>音声化済みspeechとwait/toolを流す"| GF2
-  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>最新世代だけを通す"| PBS
-  PBS -->|"加工済みspeech/wait<br/>DurationSecondsとPCMを倍率に合わせる"| SCH
+  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>最新世代だけを通す"| SCH
   SCH -->|"EventScheduledItem<br/>再生時間やwait秒数に従って発火する"| GF3
   GF3 -->|"EventScheduledItem<br/>最新世代だけを通す"| ROUTER
 
@@ -99,9 +98,8 @@ flowchart TB
 - `llm` は会話履歴Storeの snapshot と agent status を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
-- `playbackspeed` は共有 Store の倍率に従い、`PlayableSpeech` の PCM・`DurationSeconds` と `wait` の `Sec` を加工する。
-- `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。
-- `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
+- `tts` は `speech` item を ElevenLabs で音声化する。共有 Store の倍率を `voice_settings.speed` に合成し、`wait` / `tool` item は順序維持のためそのまま通す。
+- `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や Store 倍率で調整した wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
 - `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
 

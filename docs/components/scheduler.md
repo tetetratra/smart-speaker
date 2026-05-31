@@ -15,7 +15,7 @@
   - `graph.Stage` として `Upstream` / `Downstream` channel、`Run`、`CloseFn` を提供する。
   - 入力は実装上、payload が `types.PlayableSpeech`、`types.TimelineItem`、または `types.AgentTimelineEnd` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
   - 出力は `EventScheduledItem`（payload は `types.PlayableSpeech` または `types.ToolRequest`）と、queue 内の最後の `AgentTimelineEnd` 処理後に発行する `EventAgentSpeechPlaybackEnd` である。
-  - production の graph では `tts -> generationfilter-tts -> playbackspeed -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
+  - production の graph では `tts -> generationfilter-tts -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
 
 - **世代別 worker**
   - `workers map[types.GenerationID]chan types.Event` により、`GenerationID` ごとに専用 queue と goroutine を持つ。
@@ -29,7 +29,7 @@
   - `PlayableSpeech` は TTS が `TimelineKindSpeech` を音声化した結果で、`Audio` と `DurationSeconds` を持つ。
 
 - **wait 制御**
-  - `types.TimelineItem{Kind: TimelineKindWait}` を受けると、`Sec` 秒だけ待つ。
+  - `types.TimelineItem{Kind: TimelineKindWait}` を受けると、`Sec / SpeedStore.Speed()` 秒だけ待つ。Store 未指定または 1 倍速の場合は `Sec` 秒のまま。
   - wait item 自体は下流へ出力しない。
   - `Sec <= 0` の場合、`wait` は何もせず即時に戻る。
 
@@ -54,7 +54,7 @@
 
 1. LLM が `speech` / `tool` などの JSON timeline を生成し、`llm` が `EventTimelineItem` を順番に発行する。
 2. `tts` は `TimelineKindSpeech` を音声化し、`types.PlayableSpeech` を `EventPlayableSpeech` として発行する。`wait` / `tool` は `EventTimelineItem` のまま通す。
-3. `generationfilter-tts` は現在世代の `EventPlayableSpeech` / `EventTimelineItem` だけを `playbackspeed` へ通す。`playbackspeed` は Store の倍率に応じて `PlayableSpeech` の PCM・`DurationSeconds` と `wait` の `Sec` を加工してから scheduler へ渡す。
+3. `generationfilter-tts` は現在世代の `EventPlayableSpeech` / `EventTimelineItem` だけを scheduler へ通す。
 4. scheduler は payload の `GenerationID` を取り出し、該当世代の worker channel へ enqueue する。worker が未作成なら新規 channel と goroutine を作る。
 5. worker は `PlayableSpeech` を受け、`EventScheduledItem(Payload: PlayableSpeech)` を発行する。
 6. scheduler は `PlayableSpeech.DurationSeconds` 秒だけ待つ。この間、同じ世代の次 item は処理されない。
@@ -70,7 +70,6 @@ sequenceDiagram
     participant GF0 as generationfilter-llm
     participant TTS as tts
     participant GF1 as generationfilter-tts
-    participant PBS as playbackspeed
     participant S as scheduler
     participant GF2 as generationfilter-scheduler
     participant R as router
@@ -82,8 +81,7 @@ sequenceDiagram
     SA->>GF0: EventTimelineItem(speech, GenerationID)
     GF0->>TTS: EventTimelineItem(speech, GenerationID)
     TTS->>GF1: EventPlayableSpeech(PlayableSpeech)
-    GF1->>PBS: EventPlayableSpeech(PlayableSpeech)
-    PBS->>S: EventPlayableSpeech(PlayableSpeech)
+    GF1->>S: EventPlayableSpeech(PlayableSpeech)
     S->>GF2: EventScheduledItem(PlayableSpeech)
     S->>S: wait(DurationSeconds)
     GF2->>R: EventScheduledItem(PlayableSpeech)
@@ -93,8 +91,7 @@ sequenceDiagram
     SA->>GF0: EventTimelineItem(tool, GenerationID)
     GF0->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)
-    GF1->>PBS: EventTimelineItem(tool, GenerationID)
-    PBS->>S: EventTimelineItem(tool, GenerationID)
+    GF1->>S: EventTimelineItem(tool, GenerationID)
     S->>GF2: EventScheduledItem(ToolRequest)
     GF2->>R: EventScheduledItem(ToolRequest)
     R->>TC: EventToolRequest
@@ -105,7 +102,7 @@ sequenceDiagram
 1. scheduler は `EventPlayableSpeech` を受け、同じ `GenerationID` の worker queue に入れる。
 2. 続けて `EventTimelineItem(TimelineKindWait)` と `EventTimelineItem(TimelineKindTool)` を同じ worker queue に入れる。
 3. worker は speech を `EventScheduledItem` として出力し、`DurationSeconds` 分待つ。
-4. worker は wait item を処理し、`Sec` 分待つ。wait item は下流へ出さない。
+4. worker は wait item を処理し、`Sec / SpeedStore.Speed()` 分待つ。wait item は下流へ出さない。
 5. worker は tool item を `ToolRequest` に変換し、`EventScheduledItem` として出力する。
 6. `internal/components/scheduler/stage_test.go` は、この順序で speech が先、tool が後に出ることを検証している。
 
@@ -116,7 +113,7 @@ flowchart TD
     C["EventTimelineItem<br/>tool"] --> Q
     Q --> D["emit EventScheduledItem<br/>PlayableSpeech"]
     D --> E["wait DurationSeconds"]
-    E --> F["wait Sec"]
+    E --> F["wait Sec / speed"]
     F --> G["emit EventScheduledItem<br/>ToolRequest"]
 ```
 
@@ -134,6 +131,8 @@ flowchart TD
         - `enqueue`: `GenerationID` ごとの worker channel を作成または取得し、その channel へ event を送る。
         - `runGeneration`: 世代別 channel から event を順番に読み、`handle` に渡す。
         - `handle`: `PlayableSpeech`、`TimelineKindWait`、`TimelineKindTool` を処理する。raw の `TimelineKindSpeech` は明示的には扱わない。
+        - `adjustWaitSeconds`: wait item の `Sec` を再生速度 Store の倍率で割る。speech の `DurationSeconds` には適用しない。
+        - `playbackSpeed`: Store 未指定時は 1 倍として扱い、指定時は現在の `Store.Speed()` を読む。
         - `wait`: 秒数が正の場合だけ `time.NewTimer` で待機する。context cancel 時は待機を中断する。
         - `emit`: `downstream` へ event を送る。context cancel 時は送信しない。
         - `generationID`: `PlayableSpeech` と `TimelineItem` から `GenerationID` を抽出する。それ以外の payload は処理対象外にする。
@@ -141,6 +140,8 @@ flowchart TD
         - `close`: cancel を呼び、`upstream` を close する。`sync.Once` により多重 close を避ける。
       - `stage_test.go`: speech、wait、tool が同一世代で順序通りに scheduled item へ変換されることを検証する。
         - `TestStageSchedulesSpeechWaitAndToolInOrder`: speech を先に scheduled item として受け取り、wait 後に tool request が scheduled item として出ることを確認する。
+        - `TestStageAdjustsTimelineWaitByPlaybackSpeed`: wait item の待機が Store 倍率で短縮されることを確認する。
+        - `TestStageDoesNotAdjustSpeechDurationByPlaybackSpeed`: speech の `DurationSeconds` は Store 倍率で再短縮されないことを確認する。
         - `expectScheduled`: `EventScheduledItem` を待ち受け、想定外の kind または timeout をテスト失敗にする。
   - types/
     - `event.go`: scheduler が受け取る `EventTimelineItem` / `EventPlayableSpeech` と、発行する `EventScheduledItem`、後段で使われる `ToolRequest` を定義する。
@@ -166,7 +167,7 @@ flowchart TD
 - **入力: `EventTimelineItem` with `TimelineKindWait`**
   - 想定 payload: `types.TimelineItem`
   - 主なフィールド: `GenerationID`, `SequenceID`, `Sec`
-  - 処理: `Sec` 秒待つ。出力 event はない。
+  - 処理: `Sec / SpeedStore.Speed()` 秒待つ。出力 event はない。
 
 - **入力: `EventTimelineItem` with `TimelineKindTool`**
   - 想定 payload: `types.TimelineItem`
@@ -181,7 +182,7 @@ flowchart TD
 
 - scheduler は `GenerationID` ごとに worker channel を分けるため、同一世代では speech、wait、tool が channel 投入順に処理される。
 - speech の wait は「scheduled item を出した後」に行われる。そのため下流は音声再生を開始でき、scheduler は同一世代の次 item を `DurationSeconds` 分遅らせる。
-- wait item の wait は「出力なし」で行われる。これは timeline 上の無音区間として機能する。
+- wait item の wait は「出力なし」で行われる。これは timeline 上の無音区間として機能し、再生速度 Store の倍率に応じて短縮される。
 - context が cancel されると、`wait` は timer 完了を待たずに戻る。
 - `upstream` close または context cancel で `consume` は `closeWorkers` を呼び、全 worker channel を close する。
 - worker channel は `closeWorkers` 以外で削除されないため、長時間稼働時の世代 worker の掃除方針は実コードからは確認できない。
@@ -194,7 +195,7 @@ flowchart TD
 
 ### 制約・不明点
 
-- scheduler は `Config` を持つが、現在の実装では設定項目はない。
+- scheduler の `Config.SpeedStore` は任意である。未指定の場合、wait item は 1 倍速として扱われる。
 - scheduler は event kind ではなく payload 型で `GenerationID` を抽出する。production graph では `ConnectKinds` により `EventTimelineItem` と `EventPlayableSpeech` だけが scheduler へ接続される。
 - `TimelineKindSpeech` の `TimelineItem` が scheduler に直接届いた場合の処理は実装されていない。通常経路では TTS が speech item を `PlayableSpeech` に変換する。
 - 世代間の処理順序、worker のライフサイクル上の掃除、遅延中に新世代が来た場合の scheduler 内キャンセルは、scheduler 単体では実装されていない。古い世代の抑止は前後の `generationfilter` が担う。

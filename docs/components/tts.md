@@ -6,6 +6,7 @@
 * **提供価値**: LLM の応答をテキスト表示ではなく音声としてユーザーへ届けつつ、`wait` や `tool` を含む timeline の順序を後段の `scheduler` へ渡せる。
 * **会話体験上の責務**: `speech` の音声化に加えて、音声の推定再生時間を `DurationSeconds` として付与する。後段の `scheduler` はこの値を使い、次の item へ進むタイミングを制御する。
 * **外部依存**: 音声合成は ElevenLabs API に依存する。API key と voice id は必須で、未設定の場合は stage 初期化時にエラーになる。
+* **再生速度**: `tts` は `playbackspeed.Store` の倍率を ElevenLabs の `voice_settings.speed` に合成する。サーバー側で PCM を時間圧縮する処理は持たない。
 * **対象外**: `tts` は `tool` を実行しない。`wait` の待機もしない。音声再生、会話履歴保存、tool 実行への振り分けも後段の責務である。
 
 ## 2. 論理構造・機能俯瞰
@@ -16,6 +17,7 @@
   - ElevenLabs 用の `streamTTS` を `graph.Stage` として構築する。
   - `Config.APIKey` と `Config.Voice` が空の場合はエラーを返す。
   - `Config.Model` が空の場合は `eleven_v3` を使う。
+  - `Config.SpeedStore` が指定された場合、Store の倍率を `voice_settings.speed` に掛け合わせる。
 
 - **`streamTTS`**
   - `EventTimelineItem` だけを処理対象にする。
@@ -47,7 +49,7 @@
 1. **LLM が timeline item を発行する**: `llm` は Structured Outputs の JSON timeline を検証し、`types.TimelineItem{Kind: "speech"}` として `EventTimelineItem` を出力する。
 2. **sessionactivate と generationfilter を通過する**: `sessionactivate` が `speech` 通過時に `agentstatus.Store` を `active` に更新し、その後に最新世代の `EventTimelineItem` だけが `tts` に届く。
 3. **tts が speech を判定する**: `tts` は event kind が `EventTimelineItem` で、payload が `types.TimelineItem` であり、`Kind` が `speech` であることを確認する。
-4. **ElevenLabs を呼び出す**: `tts` は `POST https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream?output_format=pcm_24000` を呼ぶ。リクエスト body は `text`、`model_id`、`language_code: "ja"`、必要に応じて `voice_settings` を含む。
+4. **ElevenLabs を呼び出す**: `tts` は `POST https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream?output_format=pcm_24000` を呼ぶ。リクエスト body は `text`、`model_id`、`language_code: "ja"`、必要に応じて `voice_settings` を含む。`voice_settings.speed` は既定値または設定値に Store の倍率を掛けた値になる。
 5. **音声 duration を算出する**: レスポンス body の raw PCM byte 数を `24000 sample/sec * 2 bytes/sample * 1 channel` で割った実音声秒数に、再生後の間を作るための 0.5 秒を加算する。
 6. **PlayableSpeech を出力する**: raw PCM を base64 encode し、`GenerationID`、`SequenceID`、`Text`、`DurationSeconds`、`OriginalTimeline` とともに `EventPlayableSpeech` として下流へ送る。
 7. **後段が再生順序を制御する**: `scheduler` は `EventPlayableSpeech` を `EventScheduledItem` として出力し、その後 `DurationSeconds` だけ待つ。
@@ -61,7 +63,6 @@ sequenceDiagram
   participant TTS as tts
   participant EL as ElevenLabs API
   participant GF2 as generationfilter
-  participant PBS as playbackspeed
   participant SCH as scheduler
   participant R as router
   participant RTCOut as rtcout
@@ -73,8 +74,7 @@ sequenceDiagram
   TTS->>EL: POST /v1/text-to-speech/{voice}/stream?output_format=pcm_24000
   EL-->>TTS: raw PCM bytes
   TTS->>GF2: EventPlayableSpeech(PlayableSpeech)
-  GF2->>PBS: EventPlayableSpeech(PlayableSpeech)
-  PBS->>SCH: EventPlayableSpeech(PlayableSpeech)
+  GF2->>SCH: EventPlayableSpeech(PlayableSpeech)
   SCH->>R: EventScheduledItem(PlayableSpeech)
   SCH-->>SCH: DurationSeconds だけ待機
   R->>RTCOut: EventRealtimeAudio
@@ -142,13 +142,16 @@ sequenceDiagram
         - `(*streamTTS).handleSpeech`: `synthesize` の結果から `types.PlayableSpeech` を組み立て、`EventPlayableSpeech` を出力する。
         - `(*streamTTS).synthesize`: ElevenLabs API を呼び、raw PCM を base64 化し、byte 数から duration を算出する。
         - `(*streamTTS).close`: upstream channel を一度だけ close する。
-        - `(*streamTTS).buildVoiceSettings`: voice settings のデフォルト値と設定値を合成し、API payload 用の map を作る。
+        - `(*streamTTS).buildVoiceSettings`: voice settings のデフォルト値・設定値・再生速度 Store の倍率を合成し、API payload 用の map を作る。
+        - `(*streamTTS).playbackSpeed`: Store 未指定時は 1 倍として扱い、指定時は現在の `Store.Speed()` を読む。
         - `ttsDurationSeconds`: PCM byte 数から秒数を算出し、0.5 秒の再生後 padding を加算する。0 byte 以下は 0 秒。
         - `normalizeStability`: `eleven_v3` 系 model の stability を `0`、`0.5`、`1` のいずれかへ丸める。
-      - elevenlabs_test.go: duration 算出と `eleven_v3` の stability 丸めを検証する。
+      - elevenlabs_test.go: duration 算出、`eleven_v3` の stability 丸め、再生速度 Store の合成を検証する。
         - `TestTTSDurationSeconds`: 24000Hz、16bit、mono の1秒分 byte 数が 1.5 秒になることを検証する。
         - `TestTTSDurationSecondsReturnsZeroForEmptyAudio`: 0 byte の音声は padding を加算せず 0 秒になることを検証する。
         - `TestNormalizeStabilityForV3`: `eleven_v3` で `0.6` が `0.5` に丸められることを検証する。
+        - `TestBuildVoiceSettingsAppliesPlaybackSpeedStore`: Store が 2 倍速の場合、既定 `speed: 1.2` と合成されることを検証する。
+        - `TestBuildVoiceSettingsCombinesConfiguredSpeedWithPlaybackSpeed`: 明示した `VoiceSettings.Speed` と Store 倍率が合成されることを検証する。
 
 - internal/
   - types/
@@ -167,7 +170,7 @@ sequenceDiagram
   - components/
     - scheduler/
       - stage.go: `PlayableSpeech` と `TimelineItem` を世代ごとに順序処理する。
-        - `handle`: `PlayableSpeech` を `EventScheduledItem` として出力して `DurationSeconds` 待つ。`wait` は `Sec` 秒待つ。`tool` は `ToolRequest` に変換する。
+        - `handle`: `PlayableSpeech` を `EventScheduledItem` として出力して `DurationSeconds` 待つ。`wait` は Store 倍率で調整した秒数だけ待つ。`tool` は `ToolRequest` に変換する。
         - `wait`: 秒数が正の場合だけ timer で待つ。
 
 - internal/
@@ -198,7 +201,7 @@ sequenceDiagram
 - デフォルト値は `stability: 1.0`、`similarity_boost: 0.8`、`speed: 1.2`、`use_speaker_boost: true`。
 - `Config.VoiceSettings` が指定されている場合、ゼロ値ではないフィールドだけデフォルトを上書きする。
 - `Style` は 0 でない場合だけ `voice_settings.style` に含める。
-- `Speed` は 0 でない場合だけ `voice_settings.speed` に含める。
+- `Speed` は 0 でない場合だけ `voice_settings.speed` に含める。最終値は `Speed`（未指定時は既定 1.2）に `SpeedStore.Speed()` を掛けた値である。
 - `UseSpeakerBoost` は nil でない場合だけ設定値を使う。デフォルトでは true が入る。
 - `model_id` が `eleven_v3` で始まる場合、`stability` は `0`、`0.5`、`1` の三値に正規化される。閾値は `0.25` 未満が `0`、`0.75` 未満が `0.5`、それ以上が `1`。
 
@@ -222,7 +225,8 @@ sequenceDiagram
 ### 接続設計
 
 - 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID`、`ELEVENLABS_MODEL_ID` 由来の設定が渡される。
-- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> playbackspeed -> scheduler` の順。
+- 本番起動時は `playbackspeed.Store` も `Config.SpeedStore` として渡される。
+- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> scheduler` の順。
 - `tts` の出力として graph が下流へ接続する event kind は `EventTimelineItem` と `EventPlayableSpeech`。
 
 ### 不明点

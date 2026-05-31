@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -28,6 +29,7 @@ type Config struct {
 	Voice         string
 	Model         string
 	VoiceSettings *VoiceSettings
+	SpeedStore    *pbspeed.Store
 }
 
 type VoiceSettings struct {
@@ -216,12 +218,23 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 		settings["style"] = vs.Style
 	}
 	if vs.Speed != 0 {
-		settings["speed"] = vs.Speed
+		settings["speed"] = vs.Speed * t.playbackSpeed()
 	}
 	if vs.UseSpeakerBoost != nil {
 		settings["use_speaker_boost"] = *vs.UseSpeakerBoost
 	}
 	return settings
+}
+
+func (t *streamTTS) playbackSpeed() float64 {
+	if t.cfg.SpeedStore == nil {
+		return 1
+	}
+	speed := t.cfg.SpeedStore.Speed()
+	if speed <= 0 {
+		return 1
+	}
+	return speed
 }
 
 func ttsDurationSeconds(bytes int64) float64 {
