@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -77,55 +76,6 @@ func TestStageEmitsPlaybackEndForEmptyTimeline(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting agent speech playback end")
-	}
-}
-
-func TestStageAdjustsTimelineWaitByPlaybackSpeed(t *testing.T) {
-	store := pbspeed.NewStore()
-	store.SetSpeed(2)
-	st := NewStage(Config{SpeedStore: store})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	st.Run(ctx)
-	defer st.Close()
-
-	st.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindWait, GenerationID: 1, Sec: 0.18}}
-	st.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindTool, GenerationID: 1, SequenceID: "2", ToolName: "get_temp"}}
-
-	select {
-	case evt := <-st.Downstream:
-		req, ok := evt.Payload.(types.ToolRequest)
-		if evt.Kind != types.EventScheduledItem || !ok || req.Name != "get_temp" {
-			t.Fatalf("event = %#v", evt)
-		}
-	case <-time.After(150 * time.Millisecond):
-		t.Fatal("timeout waiting adjusted wait to complete")
-	}
-}
-
-func TestStageDoesNotAdjustSpeechDurationByPlaybackSpeed(t *testing.T) {
-	store := pbspeed.NewStore()
-	store.SetSpeed(3)
-	st := NewStage(Config{SpeedStore: store})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	st.Run(ctx)
-	defer st.Close()
-
-	st.Upstream <- types.Event{Kind: types.EventPlayableSpeech, Payload: types.PlayableSpeech{GenerationID: 1, Text: "確認するね", DurationSeconds: 0.12}}
-	st.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindTool, GenerationID: 1, SequenceID: "2", ToolName: "get_temp"}}
-
-	expectScheduled(t, st.Downstream)
-
-	select {
-	case evt := <-st.Downstream:
-		t.Fatalf("tool emitted before speech duration elapsed: %#v", evt)
-	case <-time.After(80 * time.Millisecond):
-	}
-
-	second := expectScheduled(t, st.Downstream)
-	if req, ok := second.Payload.(types.ToolRequest); !ok || req.Name != "get_temp" {
-		t.Fatalf("second payload = %#v", second.Payload)
 	}
 }
 

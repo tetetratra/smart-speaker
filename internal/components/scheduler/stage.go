@@ -6,20 +6,16 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-type Config struct {
-	SpeedStore *pbspeed.Store
-}
+type Config struct{}
 
 type stage struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	once       sync.Once
 	cancel     context.CancelFunc
-	speedStore *pbspeed.Store
 
 	mu      sync.Mutex
 	workers map[types.GenerationID]chan types.Event
@@ -29,7 +25,6 @@ func NewStage(cfg Config) *graph.Stage {
 	s := &stage{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		speedStore: cfg.SpeedStore,
 		workers:    map[types.GenerationID]chan types.Event{},
 	}
 	return &graph.Stage{
@@ -113,7 +108,7 @@ func (s *stage) handle(ctx context.Context, evt types.Event) {
 	case types.TimelineItem:
 		switch payload.Kind {
 		case types.TimelineKindWait:
-			s.wait(ctx, s.adjustWaitSeconds(payload.Sec))
+			s.wait(ctx, payload.Sec)
 		case types.TimelineKindTool:
 			s.emit(ctx, types.Event{Kind: types.EventScheduledItem, Payload: types.ToolRequest{
 				ToolCallID:   payload.SequenceID,
@@ -124,21 +119,6 @@ func (s *stage) handle(ctx context.Context, evt types.Event) {
 			}})
 		}
 	}
-}
-
-func (s *stage) adjustWaitSeconds(seconds float64) float64 {
-	speed := s.playbackSpeed()
-	if speed <= 0 || speed == 1 {
-		return seconds
-	}
-	return seconds / speed
-}
-
-func (s *stage) playbackSpeed() float64 {
-	if s.speedStore == nil {
-		return 1
-	}
-	return s.speedStore.Speed()
 }
 
 func (s *stage) wait(ctx context.Context, seconds float64) {
