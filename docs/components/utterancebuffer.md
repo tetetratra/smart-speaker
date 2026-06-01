@@ -2,7 +2,7 @@
 
 ## 1. ビジネスコンテキスト
 
-- **解決する課題**: STT から短い文字起こし断片が連続して届く場合に、それぞれを個別のユーザー発話として LLM に渡すと会話の単位が細かくなりすぎる。
+- **解決する課題**: STT の final transcript が短い文字起こし断片として連続して届く場合に、それぞれを個別のユーザー発話として LLM に渡すと会話の単位が細かくなりすぎる。
 - **利用者**: 音声入力を受け取る会話 pipeline と、その下流で user 発話を保存・推論する `conversationcommitter` / `llm`。
 - **提供価値**: 一定時間入力が途切れた時点で複数の文字起こし断片を 1 つの確定発話にまとめ、会話履歴と LLM request の単位を揃える。
 
@@ -10,7 +10,7 @@
 
 - **stage**
   - `internal/components/utterancebuffer/stage.go` で `graph.Stage` として実装されている。
-  - 入力は `types.EventHumanUtterance` のみを処理対象にする。
+  - 入力は `interimstopper` を通過した `types.EventHumanUtterance` のみを処理対象にする。
   - 出力は `types.EventConversationCommitRequest` で、`RoleUser`、結合済みテキスト、採番した `GenerationID`、`Source: "stt"` を持つ。
 - **buffer**
   - `internal/components/utterancebuffer/buffer.go` で文字列断片の追加・結合・リセットを担当する。
@@ -25,9 +25,9 @@
 
 ## 3. 主要なデータフロー
 
-### シナリオ: 断片的な STT 結果を 1 つの確定発話にまとめる
+### シナリオ: 断片的な STT final transcript を 1 つの確定発話にまとめる
 
-1. `stt` から `EventHumanUtterance` が届く。
+1. `stt` から `interimstopper` を経由して、final transcript の `EventHumanUtterance` が届く。
 2. `stage.consume` が payload を `types.OutputLine` として取り出し、空文字でなければ `buffer.append` に渡す。
 3. `buffer.append` は前後空白を除いたテキストを `parts` に追加する。
 4. 新しい断片が届くたびに timer を `Config.Delay` にリセットする。
@@ -38,13 +38,16 @@
 ```mermaid
 sequenceDiagram
     participant STT as stt
+    participant IS as interimstopper
     participant UB as utterancebuffer
     participant GEN as generation.Store
     participant CC as conversationcommitter
 
-    STT->>UB: EventHumanUtterance("えーっと")
+    STT->>IS: EventHumanUtterance("えーっと")
+    IS->>UB: EventHumanUtterance("えーっと")
     UB->>UB: buffer.append / timer reset
-    STT->>UB: EventHumanUtterance("明日の予定は")
+    STT->>IS: EventHumanUtterance("明日の予定は")
+    IS->>UB: EventHumanUtterance("明日の予定は")
     UB->>UB: buffer.append / timer reset
     UB->>UB: delay 経過で flush
     UB->>GEN: Next()
@@ -81,6 +84,7 @@ sequenceDiagram
 ### 入出力 event
 
 - **入力**: `types.EventHumanUtterance`
+  - `stt` が発行し、`interimstopper` が通過させた final transcript の event。
   - payload は `types.OutputLine` を想定する。
   - `OutputLine.Text` が空の場合は無視する。
 - **出力**: `types.EventConversationCommitRequest`
@@ -93,4 +97,4 @@ sequenceDiagram
 
 - `Config.Generation` が `nil` の場合、`utterancebuffer: generation store is nil` を log に出し、buffer を reset して event は出さない。
 - payload が `types.OutputLine` でない場合は無視する。
-- `EventHumanUtterance` 以外の event は無視する。
+- `EventHumanUtterance` 以外の event は無視する。`EventHumanInterimUtterance` は `interimstopper` で止まり、ここには流れない。

@@ -7,6 +7,7 @@
 
 ## 主要 event
 
+- `EventHumanInterimUtterance`: STT の未確定テキスト。AI出力停止の早期シグナルとして使い、履歴やLLM入力には流さない。
 - `EventHumanUtterance`: STT の確定テキスト。
 - `EventConversationCommitRequest`: user / agent / tool_call / tool_result の履歴保存要求。
 - `EventLLMRequest`: LLM component への推論要求。
@@ -22,7 +23,7 @@
 
 ## 共有Store
 
-- `internal/states/generation` は最新世代idを保持する。
+- `internal/states/generation` は最新世代idを保持する。interim transcript 到着時は `interimstopper` がAI出力停止用に世代を進め、確定 user 発話の flush 時は `utterancebuffer` が会話継続用に世代を進める。
 - `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
 - `internal/states/agentstatus` は LLM がひとりごと候補判定で参照する `idle` / `active` 状態を保持する。
 - `internal/states/playbackspeed` はエージェント発話の再生速度倍率（`1` / `1.5` / `2` / `3`）を保持する。`wschat` が WebSocket 経由で更新し、`playbackspeed` stage が event 処理時に読み取る。永続化は行わない。
