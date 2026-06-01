@@ -47,7 +47,7 @@ pr_url="$(gh pr create \
   --base "$DEFAULT_BRANCH" \
   --head "$branch_name" \
   --title "$issue_title" \
-  --body "")"
+  --body "Close #${issue_number}")"
 
 pr_number="$(gh pr view "$pr_url" --json number --jq '.number')"
 
