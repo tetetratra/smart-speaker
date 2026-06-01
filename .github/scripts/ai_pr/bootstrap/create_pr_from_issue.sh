@@ -20,6 +20,7 @@ fi
 issue_json="$(gh issue view "$INPUT_ISSUE_NUMBER" --json number,title,body,url,author)"
 issue_number="$(printf '%s' "$issue_json" | jq -r '.number')"
 issue_title="$(printf '%s' "$issue_json" | jq -r '.title')"
+issue_url="$(printf '%s' "$issue_json" | jq -r '.url')"
 issue_author_login="$(printf '%s' "$issue_json" | jq -r '.author.login // empty')"
 ai_label_name="AI主導開発"
 
@@ -39,7 +40,7 @@ git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 git switch -c "$branch_name"
-git commit --allow-empty -m "AIタスク開始: $issue_title"
+git commit --allow-empty -m "AIタスク開始: $issue_title" -m "$issue_url"
 git push --set-upstream origin "$branch_name"
 
 pr_url="$(gh pr create \
