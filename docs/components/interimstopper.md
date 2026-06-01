@@ -1,5 +1,10 @@
 # interimstopper component
 
+> [!CAUTION]
+> この component は STT が interim transcript（`isFinal=false`）を返すことを前提にしているが、現在の STT モデル `chirp_3`（`internal/components/stt/stage.go`）は、`InterimResults: true` を指定してもストリーミングで interim を返さず final transcript（`isFinal=true`）しか返さない（Chirp 3 の仕様）。
+> そのため `stt` は `EventHumanInterimUtterance` を発行せず、この component の早期停止（`generation.Store.Next()`）は実質的に発火しない。AI出力の停止は従来どおり final transcript 到達時のままになる。
+> interim による早期停止を実際に効かせるには、interim を返すモデルへ変更する必要がある。
+
 `interimstopper` は、STT の interim transcript をユーザー発話として保存せず、AI出力停止の早期シグナルとして扱う component。
 final transcript は従来どおり `utterancebuffer` へ渡す。
 
