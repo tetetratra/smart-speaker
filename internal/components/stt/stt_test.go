@@ -3,6 +3,7 @@ package stt
 import (
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,18 +121,64 @@ func TestHandleSpeechAudioEndSchedulesCloseSend(t *testing.T) {
 	}
 }
 
+func TestConsumeSpeechResponsesEmitsInterimAndFinalUtterances(t *testing.T) {
+	stream := &fakeSpeechStream{
+		recv: []*speechpb.StreamingRecognizeResponse{
+			speechResponse(false, " 明日 "),
+			speechResponse(true, " 明日の予定 "),
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := &stage{
+		ctx:        ctx,
+		downstream: make(chan types.Event, 2),
+	}
+
+	s.consumeSpeechResponses(stream)
+
+	interim := expectSTTEvent(t, s.downstream)
+	if interim.Kind != types.EventHumanInterimUtterance {
+		t.Fatalf("interim Kind = %s, want EventHumanInterimUtterance", interim.Kind)
+	}
+	interimLine := interim.Payload.(types.OutputLine)
+	if interimLine.Text != "明日" || interimLine.Final {
+		t.Fatalf("interim line = %#v, want trimmed non-final text", interimLine)
+	}
+
+	final := expectSTTEvent(t, s.downstream)
+	if final.Kind != types.EventHumanUtterance {
+		t.Fatalf("final Kind = %s, want EventHumanUtterance", final.Kind)
+	}
+	finalLine := final.Payload.(types.OutputLine)
+	if finalLine.Text != "明日の予定" || !finalLine.Final {
+		t.Fatalf("final line = %#v, want trimmed final text", finalLine)
+	}
+}
+
 type fakeSpeechStream struct {
+	mu     sync.Mutex
 	sent   []*speechpb.StreamingRecognizeRequest
+	recv   []*speechpb.StreamingRecognizeResponse
 	closed bool
 }
 
 func (f *fakeSpeechStream) Send(req *speechpb.StreamingRecognizeRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.sent = append(f.sent, req)
 	return nil
 }
 
 func (f *fakeSpeechStream) Recv() (*speechpb.StreamingRecognizeResponse, error) {
-	return nil, io.EOF
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.recv) == 0 {
+		return nil, io.EOF
+	}
+	resp := f.recv[0]
+	f.recv = f.recv[1:]
+	return resp, nil
 }
 
 func (f *fakeSpeechStream) Header() (metadata.MD, error) {
@@ -143,6 +190,8 @@ func (f *fakeSpeechStream) Trailer() metadata.MD {
 }
 
 func (f *fakeSpeechStream) CloseSend() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.closed = true
 	return nil
 }
@@ -168,4 +217,28 @@ func waitUntil(ok func() bool) bool {
 		time.Sleep(time.Millisecond)
 	}
 	return ok()
+}
+
+func speechResponse(final bool, text string) *speechpb.StreamingRecognizeResponse {
+	return &speechpb.StreamingRecognizeResponse{
+		Results: []*speechpb.StreamingRecognitionResult{
+			{
+				IsFinal: final,
+				Alternatives: []*speechpb.SpeechRecognitionAlternative{
+					{Transcript: text},
+				},
+			},
+		},
+	}
+}
+
+func expectSTTEvent(t *testing.T, ch <-chan types.Event) types.Event {
+	t.Helper()
+	select {
+	case evt := <-ch:
+		return evt
+	default:
+		t.Fatal("expected event")
+		return types.Event{}
+	}
 }

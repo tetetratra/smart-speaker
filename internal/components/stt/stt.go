@@ -73,6 +73,9 @@ func (s *stage) startSpeechStream(sampleRate int32, channels int32, prebuffer []
 		Recognizer: recognizerPath(projectID, s.cfg.SpeechRecognizer),
 		StreamingRequest: &speechpb.StreamingRecognizeRequest_StreamingConfig{
 			StreamingConfig: &speechpb.StreamingRecognitionConfig{
+				StreamingFeatures: &speechpb.StreamingRecognitionFeatures{
+					InterimResults: true,
+				},
 				Config: &speechpb.RecognitionConfig{
 					Model:      speechModel,
 					Adaptation: buildSpeechAdaptation(s.cfg.SpeechPhrases),
@@ -143,9 +146,6 @@ func (s *stage) consumeSpeechResponses(stream speechpb.Speech_StreamingRecognize
 			return
 		}
 		for _, result := range resp.Results {
-			if !result.IsFinal {
-				continue
-			}
 			if len(result.Alternatives) == 0 {
 				continue
 			}
@@ -153,7 +153,19 @@ func (s *stage) consumeSpeechResponses(stream speechpb.Speech_StreamingRecognize
 			if text == "" {
 				continue
 			}
-			s.emit(types.Event{Kind: types.EventHumanUtterance, Payload: types.OutputLine{Role: "user", Text: text, Source: "server-stt"}})
+			kind := types.EventHumanInterimUtterance
+			if result.IsFinal {
+				kind = types.EventHumanUtterance
+			}
+			s.emit(types.Event{
+				Kind: kind,
+				Payload: types.OutputLine{
+					Role:   "user",
+					Text:   text,
+					Final:  result.IsFinal,
+					Source: "server-stt",
+				},
+			})
 		}
 	}
 }
