@@ -4,8 +4,8 @@
 
 - **解決する課題**: 会話応答の生成後に、音声再生、会話履歴への保存、tool 実行を正しい順序で連携できることを確認する。
 - **対象範囲**: `internal/components/pipeline/` は、現時点では主に pipeline 統合テスト用 package であり、production 用の pipeline 実行本体は含まれていない。
-- **提供価値**: `scheduler`、`generationfilter`、`router` を実際の channel 接続に近い形で組み合わせ、発話が tool 実行より先に処理されるという会話体験上重要な順序保証を検証する。
-- **根拠**: 本ドキュメントは `internal/components/pipeline/conversation_pipeline_test.go`、`internal/components/scheduler/stage.go`、`internal/components/generationfilter/stage.go`、`internal/components/router/stage.go`、`internal/types/`、`internal/states/generation/store.go` の実コードに基づく。外部 URL は参照していない。
+- **提供価値**: `scheduler`、`generationfilter`、`router` を実際の channel 接続に近い形で組み合わせ、発話が tool 実行より先に処理されることや、interim transcript で古いAI出力を止められることを検証する。
+- **根拠**: 本ドキュメントは `internal/components/pipeline/conversation_pipeline_test.go`、`internal/components/interimstopper/stage.go`、`internal/components/utterancebuffer/stage.go`、`internal/components/scheduler/stage.go`、`internal/components/generationfilter/stage.go`、`internal/components/router/stage.go`、`internal/types/`、`internal/states/generation/store.go` の実コードに基づく。外部 URL は参照していない。
 
 ## 2. 論理構造・機能俯瞰
 
@@ -14,7 +14,17 @@
 - **pipeline package**
   - `internal/components/pipeline/conversation_pipeline_test.go` のみで構成される。
   - `TestSchedulerRouterKeepsSpeechBeforeTool` により、複数 component を接続したときの event 順序を検証する。
+  - `TestInterimStopsOldGenerationAndFinalCommitsUserUtterance` により、interim transcript で古いgenerationのscheduled itemが落ち、final transcript が従来どおりuser commitになることを検証する。
   - package 内に production 用の `NewStage`、runtime、設定構造体は定義されていない。
+
+- **interimstopper**
+  - `EventHumanInterimUtterance` を受け取ったら、同一発話中の初回だけ `generation.Store.Next()` を呼ぶ。
+  - interim event は下流へ流さず、final の `EventHumanUtterance` だけを通す。
+  - final を通すと停止済みフラグを解除し、次の発話のinterimで再度停止できるようにする。
+
+- **utterancebuffer**
+  - `EventHumanUtterance` を短時間bufferし、flush時に user の `EventConversationCommitRequest` を発行する。
+  - final transcript の commit 時に `generation.Store.Next()` を呼び、ユーザー発話用の新しいgenerationを採番する。
 
 - **scheduler**
   - `PlayableSpeech` と `TimelineItem` を受け取り、実行タイミングを調整した `EventScheduledItem` を下流へ流す。
@@ -44,6 +54,18 @@
   - production 実行本体は `cmd/smart-speaker/main.go` で組み立てられる。
   - LLM 出力直後の経路は `llm -> sessionactivate -> generationfilter-llm -> tts` で、`sessionactivate` が speech 通過時に `agentstatus.Store` を `active` に戻す。
   - この package の統合テストは `scheduler -> generationfilter -> router` の順序保証に絞っており、`sessionactivate` は直接テスト対象に含めていない。
+
+### シナリオ: interim transcript で古いAI出力を止める
+
+1. **テスト初期化**: `generation.NewStore()` で世代 Store を作り、`store.Next()` で current generation を `1` にする。
+2. **Stage 構築**: `interimstopper.NewStage`、`utterancebuffer.NewStage`、`generationfilter.NewStage` を生成し、それぞれ `Run(ctx)` で非同期処理を開始する。
+3. **Stage 接続**: `pump` goroutine により、`interimstopper.Downstream -> utterancebuffer.Upstream` を channel で接続する。
+4. **interim event 投入**: `interimstopper.Upstream` に `EventHumanInterimUtterance` を投入する。
+5. **generation 更新**: `interimstopper` が `generation.Store.Next()` を呼び、current generation が `2` になる。
+6. **旧generation event 投入**: `generationfilter.Upstream` に `GenerationID: 1` の `EventScheduledItem` を投入する。
+7. **generationfilter 処理**: event payload の generation が current ではないため、下流へ流さない。
+8. **final event 投入**: `interimstopper.Upstream` に `EventHumanUtterance` を投入する。
+9. **user commit**: `interimstopper` が final を `utterancebuffer` へ通し、`utterancebuffer` が user の `EventConversationCommitRequest` を発行する。
 
 ## 3. 主要なデータフロー
 

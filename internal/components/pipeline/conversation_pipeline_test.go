@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
+	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
+	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -53,6 +55,68 @@ func TestSchedulerRouterKeepsSpeechBeforeTool(t *testing.T) {
 	}
 }
 
+func TestInterimStopsOldGenerationAndFinalCommitsUserUtterance(t *testing.T) {
+	store := generation.NewStore()
+	store.Next()
+	stopper := interimstopper.NewStage(interimstopper.Config{Generation: store})
+	utterance := utterancebuffer.NewStage(utterancebuffer.Config{
+		Generation: store,
+		Delay:      time.Millisecond,
+	})
+	filter := generationfilter.NewStage(generationfilter.Config{Generation: store})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopper.Run(ctx)
+	utterance.Run(ctx)
+	filter.Run(ctx)
+	defer stopper.Close()
+	defer utterance.Close()
+	defer filter.Close()
+
+	go pump(ctx, stopper.Downstream, utterance.Upstream)
+
+	stopper.Upstream <- types.Event{
+		Kind: types.EventHumanInterimUtterance,
+		Payload: types.OutputLine{
+			Role:   "user",
+			Text:   "明日",
+			Final:  false,
+			Source: "server-stt",
+		},
+	}
+	if !waitForCurrentGeneration(store, 2) {
+		t.Fatalf("generation after interim = %d, want 2", store.Current())
+	}
+
+	filter.Upstream <- types.Event{
+		Kind:    types.EventScheduledItem,
+		Payload: types.TimelineItem{GenerationID: 1, Kind: types.TimelineKindSpeech, Text: "old"},
+	}
+	assertNoPipelineEvent(t, filter.Downstream)
+
+	stopper.Upstream <- types.Event{
+		Kind: types.EventHumanUtterance,
+		Payload: types.OutputLine{
+			Role:   "user",
+			Text:   "明日の予定",
+			Final:  true,
+			Source: "server-stt",
+		},
+	}
+	evt := expect(t, utterance.Downstream)
+	if evt.Kind != types.EventConversationCommitRequest {
+		t.Fatalf("Kind = %s, want EventConversationCommitRequest", evt.Kind)
+	}
+	req := evt.Payload.(types.ConversationCommitRequest)
+	if req.Text != "明日の予定" {
+		t.Fatalf("Text = %q, want 明日の予定", req.Text)
+	}
+	if req.GenerationID != 3 {
+		t.Fatalf("GenerationID = %d, want 3", req.GenerationID)
+	}
+}
+
 func pump(ctx context.Context, in <-chan types.Event, out chan<- types.Event) {
 	for {
 		select {
@@ -68,6 +132,26 @@ func pump(ctx context.Context, in <-chan types.Event, out chan<- types.Event) {
 			case out <- evt:
 			}
 		}
+	}
+}
+
+func waitForCurrentGeneration(store *generation.Store, want types.GenerationID) bool {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if store.Current() == want {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return store.Current() == want
+}
+
+func assertNoPipelineEvent(t *testing.T, ch <-chan types.Event) {
+	t.Helper()
+	select {
+	case evt := <-ch:
+		t.Fatalf("unexpected event: %#v", evt)
+	case <-time.After(20 * time.Millisecond):
 	}
 }
 
