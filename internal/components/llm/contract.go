@@ -21,6 +21,11 @@ type rawTimeline struct {
 	SetWhiteboard json.RawMessage   `json:"set_whiteboard,omitempty"`
 }
 
+const (
+	maxTimelineItems = 20
+	maxTimelineTools = 3
+)
+
 type timelineParseError struct {
 	err     error
 	rawLine string
@@ -53,6 +58,9 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 	var timeline rawTimeline
 	if err := json.Unmarshal([]byte(rawText), &timeline); err != nil {
 		return nil, newTimelineParseError(rawText, "invalid timeline json: %w", err)
+	}
+	if err := validateTimelineLimits(timeline.Items); err != nil {
+		return nil, newTimelineParseError(rawText, "%s", err.Error())
 	}
 	items := make([]types.TimelineItem, 0, len(timeline.Items))
 	for _, raw := range timeline.Items {
@@ -161,4 +169,20 @@ func marshalRawTimelineItem(item rawTimelineItem) string {
 		return fmt.Sprintf("%+v", item)
 	}
 	return string(data)
+}
+
+func validateTimelineLimits(items []rawTimelineItem) error {
+	if len(items) > maxTimelineItems {
+		return fmt.Errorf("items must be at most %d, got %d", maxTimelineItems, len(items))
+	}
+	toolCount := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.Type) == types.TimelineKindTool {
+			toolCount++
+		}
+	}
+	if toolCount > maxTimelineTools {
+		return fmt.Errorf("tool items must be at most %d, got %d", maxTimelineTools, toolCount)
+	}
+	return nil
 }
