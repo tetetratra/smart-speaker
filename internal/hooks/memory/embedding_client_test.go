@@ -29,7 +29,6 @@ func TestEmbeddingClientEmbedSendsTEIRequest(t *testing.T) {
 
 	client, err := NewEmbeddingClient(EmbeddingClientConfig{
 		BaseURL:    srv.URL + "/",
-		Model:      "test-model",
 		HTTPClient: srv.Client(),
 	})
 	if err != nil {
@@ -89,7 +88,6 @@ func TestEmbeddingClientEmbedSendsPromptName(t *testing.T) {
 func TestNewEmbeddingClientDoesNotConnect(t *testing.T) {
 	client, err := NewEmbeddingClient(EmbeddingClientConfig{
 		BaseURL: "http://127.0.0.1:1",
-		Model:   "test-model",
 	})
 	if err != nil {
 		t.Fatalf("NewEmbeddingClient() error = %v", err)
@@ -106,9 +104,6 @@ func TestNewEmbeddingClientUsesDefaults(t *testing.T) {
 	}
 	if client.baseURL != DefaultEmbeddingBaseURL {
 		t.Fatalf("baseURL = %q, want %q", client.baseURL, DefaultEmbeddingBaseURL)
-	}
-	if client.model != DefaultEmbeddingModel {
-		t.Fatalf("model = %q, want %q", client.model, DefaultEmbeddingModel)
 	}
 }
 

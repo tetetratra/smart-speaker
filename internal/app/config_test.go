@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	hookmemory "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 )
 
 func TestReadSTTPhrasesLoadsMainAndLocalFiles(t *testing.T) {
@@ -55,36 +53,5 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 				t.Fatalf("conversationIdleTimeoutFromEnv(%q) = %s, want %s", tt.raw, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestMemoryEmbeddingConfigFromEnvUsesDefaults(t *testing.T) {
-	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "")
-	t.Setenv("MEMORY_EMBEDDING_MODEL", "")
-	t.Setenv("MEMORY_EMBEDDING_PROMPT_NAME", "")
-
-	got := memoryEmbeddingConfigFromEnv()
-	want := MemoryEmbeddingConfig{
-		BaseURL: hookmemory.DefaultEmbeddingBaseURL,
-		Model:   hookmemory.DefaultEmbeddingModel,
-	}
-	if got != want {
-		t.Fatalf("memoryEmbeddingConfigFromEnv() = %#v, want %#v", got, want)
-	}
-}
-
-func TestMemoryEmbeddingConfigFromEnvOverridesValues(t *testing.T) {
-	t.Setenv("MEMORY_EMBEDDING_BASE_URL", " http://localhost:8080 ")
-	t.Setenv("MEMORY_EMBEDDING_MODEL", " custom-model ")
-	t.Setenv("MEMORY_EMBEDDING_PROMPT_NAME", " query ")
-
-	got := memoryEmbeddingConfigFromEnv()
-	want := MemoryEmbeddingConfig{
-		BaseURL:    "http://localhost:8080",
-		Model:      "custom-model",
-		PromptName: "query",
-	}
-	if got != want {
-		t.Fatalf("memoryEmbeddingConfigFromEnv() = %#v, want %#v", got, want)
 	}
 }

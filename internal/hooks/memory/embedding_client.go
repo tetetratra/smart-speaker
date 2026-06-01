@@ -18,14 +18,12 @@ const (
 
 type EmbeddingClientConfig struct {
 	BaseURL    string
-	Model      string
 	PromptName string
 	HTTPClient *http.Client
 }
 
 type EmbeddingClient struct {
 	baseURL    string
-	model      string
 	promptName string
 	client     *http.Client
 }
@@ -40,11 +38,6 @@ func NewEmbeddingClient(cfg EmbeddingClientConfig) (*EmbeddingClient, error) {
 		return nil, fmt.Errorf("memory embedding: base URL is invalid")
 	}
 
-	model := strings.TrimSpace(cfg.Model)
-	if model == "" {
-		model = DefaultEmbeddingModel
-	}
-
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -52,7 +45,6 @@ func NewEmbeddingClient(cfg EmbeddingClientConfig) (*EmbeddingClient, error) {
 
 	return &EmbeddingClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		model:      model,
 		promptName: strings.TrimSpace(cfg.PromptName),
 		client:     httpClient,
 	}, nil

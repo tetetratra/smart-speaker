@@ -28,6 +28,14 @@ go run ./cmd/smart-speaker
 ```
 デフォルトで `WS_ADDR=:8081` で `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ WebRTC で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
 
+## ローカル embedding server
+Docker Compose では Hugging Face Text Embeddings Inference の `embedding` service を同居させます。
+モデルは `intfloat/multilingual-e5-small`、Go 側の接続先は Compose 内部 DNS の `http://embedding:80` 固定です。
+
+Go 側の `internal/hooks/memory.EmbeddingClient` は OpenAI-compatible API ではなく、TEI ネイティブの `POST /embed` を使います。
+request は `{"inputs":"..."}`、response は `number[][]` として扱い、先頭行を `[]float64` に変換します。
+現時点ではメモリ候補生成や LLM context 注入には未接続で、後続のメモリ機能実装から利用する土台です。
+
 ## Google Calendar OAuth 認証
 Google Calendar を利用するには OAuth トークンが必要です。フロントの `Google認証` ボタン、または以下のURLで認証します。
 
@@ -129,6 +137,7 @@ docker compose up
 
 Docker で WebRTC を使う場合、`RTC_ICE_HOST_IPS` にホストの IP を指定してください。
 UDP のポート範囲は 50000-50100 を公開する必要があります。
+Compose 起動時には `embedding` service も起動し、モデル cache は named volume `embedding-model-cache` に保存されます。
 
 ### Docker（本番）
 本番は `runtime` ターゲットのイメージを使います。

@@ -30,9 +30,6 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL}
       GOOGLE_OAUTH_SCOPE: ${GOOGLE_OAUTH_SCOPE}
-      MEMORY_EMBEDDING_BASE_URL: ${MEMORY_EMBEDDING_BASE_URL:-http://embedding:80}
-      MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
-      MEMORY_EMBEDDING_PROMPT_NAME: ${MEMORY_EMBEDDING_PROMPT_NAME:-}
 
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
