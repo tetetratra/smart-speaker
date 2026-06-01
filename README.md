@@ -61,11 +61,33 @@ GitHub Actions で `AI主導開発` ラベル付き issue の起票時、また�
 初回の依頼文は issue 側の内容を PR コメントに転記し、やりとりの本文は PR コメント、補助メモや一時ファイルは GitHub Artifacts に保存します。
 
 ### 実行する AI CLI の切り替え
-`AI_CLI_TOOL` Variable で使用する CLI を切り替えます。
+使用する CLI は「ラベル」と「`AI_CLI_TOOL` Variable」で切り替えます。優先順位は次のとおりです。
 
-- `codex`（デフォルト）
-- `cursor-cli`
+- issue / PR に AI CLI ラベルが付いている場合は、そのラベルに従う
+- ラベルが無い場合は `AI_CLI_TOOL` Variable に従う
 
+利用できる AI CLI と対応するラベルは次のとおりです。
+
+| AI CLI | ラベル | `AI_CLI_TOOL` の値 |
+|---|---|---|
+| Codex（デフォルト） | `AI:codex` | `codex` |
+| Cursor CLI | `AI:cursor-cli` | `cursor-cli` |
+
+#### ラベルによる切り替え
+issue または PR に AI CLI ラベルを付けると、そのラベルが Variable より優先されます。
+
+- issue から PR を作成する際、issue に付いていた AI CLI ラベルは PR にも引き継がれます。
+- PR 上で AI が実行されるときは、その PR に付いている AI CLI ラベルを参照します。
+- `AI:cursor-cli` と `AI:codex` の両方が付いている場合は `AI:cursor-cli` を優先します。
+
+ラベルは issue に付ける前にリポジトリへ作成しておく必要があります（未作成のラベルは付与できないため）。初回のみ次のコマンドで作成します。
+
+```sh
+gh label create "AI:codex" --color "0E8A16" --description "AI CLI に Codex を使う"
+gh label create "AI:cursor-cli" --color "5319E7" --description "AI CLI に Cursor CLI を使う"
+```
+
+#### Variable による切り替え（ラベル無しのときのデフォルト）
 `AI_CLI_TOOL` が未設定、または不正な値の場合は `codex` にフォールバックします。
 
 ```sh

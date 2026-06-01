@@ -17,12 +17,14 @@ if [ -z "${DEFAULT_BRANCH:-}" ]; then
   exit 1
 fi
 
-issue_json="$(gh issue view "$INPUT_ISSUE_NUMBER" --json number,title,body,url,author)"
+issue_json="$(gh issue view "$INPUT_ISSUE_NUMBER" --json number,title,body,url,author,labels)"
 issue_number="$(printf '%s' "$issue_json" | jq -r '.number')"
 issue_title="$(printf '%s' "$issue_json" | jq -r '.title')"
 issue_url="$(printf '%s' "$issue_json" | jq -r '.url')"
 issue_author_login="$(printf '%s' "$issue_json" | jq -r '.author.login // empty')"
+issue_labels="$(printf '%s' "$issue_json" | jq -r '.labels[].name // empty')"
 ai_label_name="AI主導開発"
+ai_cli_labels="AI:codex AI:cursor-cli"
 
 slug="$(sanitize_slug "${INPUT_BRANCH_SLUG:-}")"
 if [ -z "$slug" ]; then
@@ -58,6 +60,14 @@ if ! gh label list --limit 1000 --json name --jq '.[].name' | grep -Fxq "$ai_lab
 fi
 
 gh pr edit "$pr_number" --add-label "$ai_label_name" >/dev/null
+
+for cli_label in $ai_cli_labels; do
+  if printf '%s\n' "$issue_labels" | grep -Fxq "$cli_label"; then
+    if ! gh pr edit "$pr_number" --add-label "$cli_label" >/dev/null; then
+      echo "warning: failed to add label: $cli_label" >&2
+    fi
+  fi
+done
 
 if [ -n "$issue_author_login" ] && [ "$issue_author_login" != "github-actions[bot]" ]; then
   if ! gh pr edit "$pr_number" --add-reviewer "$issue_author_login" >/dev/null; then
