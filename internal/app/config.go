@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	hookmemory "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 )
 
 // Config holds runtime settings.
@@ -18,6 +20,7 @@ type Config struct {
 	SystemPrompt            string
 	ConversationIdleTimeout time.Duration
 	AutoPromptMessage       string
+	MemoryEmbedding         MemoryEmbeddingConfig
 	ElevenLabs              ElevenLabsConfig
 	SwitchBot               SwitchBotConfig
 	GoogleCloudProject      string
@@ -28,6 +31,12 @@ type Config struct {
 	RTCIceHostIPs           []string
 	WSAddr                  string
 	WebDistDir              string
+}
+
+type MemoryEmbeddingConfig struct {
+	BaseURL    string
+	Model      string
+	PromptName string
 }
 
 type SwitchBotConfig struct {
@@ -66,6 +75,7 @@ func LoadConfig(promptPath string) Config {
 
 	conversationIdleTimeout := conversationIdleTimeoutFromEnv(os.Getenv("CONVERSATION_IDLE_TIMEOUT_SECONDS"))
 	message := strings.TrimSpace(os.Getenv("AUTO_PROMPT_MESSAGE"))
+	memoryEmbedding := memoryEmbeddingConfigFromEnv()
 
 	switchCfg := SwitchBotConfig{
 		Token:     os.Getenv("SWITCHBOT_TOKEN"),
@@ -106,6 +116,7 @@ func LoadConfig(promptPath string) Config {
 		SystemPrompt:            prompt,
 		ConversationIdleTimeout: conversationIdleTimeout,
 		AutoPromptMessage:       message,
+		MemoryEmbedding:         memoryEmbedding,
 		ElevenLabs:              elv,
 		SwitchBot:               switchCfg,
 		GoogleCloudProject:      googleProject,
@@ -116,6 +127,22 @@ func LoadConfig(promptPath string) Config {
 		RTCIceHostIPs:           rtcIceHostIPs,
 		WSAddr:                  wsAddr,
 		WebDistDir:              webDistDir,
+	}
+}
+
+func memoryEmbeddingConfigFromEnv() MemoryEmbeddingConfig {
+	baseURL := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_BASE_URL"))
+	if baseURL == "" {
+		baseURL = hookmemory.DefaultEmbeddingBaseURL
+	}
+	model := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_MODEL"))
+	if model == "" {
+		model = hookmemory.DefaultEmbeddingModel
+	}
+	return MemoryEmbeddingConfig{
+		BaseURL:    baseURL,
+		Model:      model,
+		PromptName: strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_PROMPT_NAME")),
 	}
 }
 

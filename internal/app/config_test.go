@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	hookmemory "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 )
 
 func TestReadSTTPhrasesLoadsMainAndLocalFiles(t *testing.T) {
@@ -40,11 +42,11 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 		raw  string
 		want time.Duration
 	}{
-		{name: "empty uses default", raw: "", want: 10 * time.Minute},
+		{name: "empty uses default", raw: "", want: 5 * time.Minute},
 		{name: "positive seconds", raw: "42", want: 42 * time.Second},
 		{name: "zero disables", raw: "0", want: 0},
-		{name: "invalid uses default", raw: "invalid", want: 10 * time.Minute},
-		{name: "negative uses default", raw: "-1", want: 10 * time.Minute},
+		{name: "invalid uses default", raw: "invalid", want: 5 * time.Minute},
+		{name: "negative uses default", raw: "-1", want: 5 * time.Minute},
 		{name: "trims spaces", raw: " 5 ", want: 5 * time.Second},
 	}
 	for _, tt := range tests {
@@ -53,5 +55,36 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 				t.Fatalf("conversationIdleTimeoutFromEnv(%q) = %s, want %s", tt.raw, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMemoryEmbeddingConfigFromEnvUsesDefaults(t *testing.T) {
+	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "")
+	t.Setenv("MEMORY_EMBEDDING_MODEL", "")
+	t.Setenv("MEMORY_EMBEDDING_PROMPT_NAME", "")
+
+	got := memoryEmbeddingConfigFromEnv()
+	want := MemoryEmbeddingConfig{
+		BaseURL: hookmemory.DefaultEmbeddingBaseURL,
+		Model:   hookmemory.DefaultEmbeddingModel,
+	}
+	if got != want {
+		t.Fatalf("memoryEmbeddingConfigFromEnv() = %#v, want %#v", got, want)
+	}
+}
+
+func TestMemoryEmbeddingConfigFromEnvOverridesValues(t *testing.T) {
+	t.Setenv("MEMORY_EMBEDDING_BASE_URL", " http://localhost:8080 ")
+	t.Setenv("MEMORY_EMBEDDING_MODEL", " custom-model ")
+	t.Setenv("MEMORY_EMBEDDING_PROMPT_NAME", " query ")
+
+	got := memoryEmbeddingConfigFromEnv()
+	want := MemoryEmbeddingConfig{
+		BaseURL:    "http://localhost:8080",
+		Model:      "custom-model",
+		PromptName: "query",
+	}
+	if got != want {
+		t.Fatalf("memoryEmbeddingConfigFromEnv() = %#v, want %#v", got, want)
 	}
 }
