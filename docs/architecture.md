@@ -17,7 +17,7 @@ flowchart TB
   STT["stt<br/>Google STT streamとinterim/final transcript出力を担当"]
   IS["interimstopper<br/>interimでAI出力停止用に世代を前進させる"]
   RTCOut["rtcout<br/>assistant音声をWebRTC下りtrackへ書き込む"]
-  UB["utterancebuffer<br/>STT結果を短時間バッファして1発話にまとめる"]
+  UB["utterancebuffer<br/>STT final transcriptを短時間バッファして1発話にまとめる"]
   SR["sessionreset<br/>user発話後の無音時間を監視して履歴と世代をリセットする"]
   COMMIT["conversationcommitter<br/>履歴保存後にUI表示やLLM要求へ振り分ける"]
   LLM["llm<br/>履歴を読んでResponses APIからJSON timelineを作る"]
