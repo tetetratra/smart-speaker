@@ -17,6 +17,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/conversationcommitter"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
+	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
 	"github.com/tetetratra/smart-speaker/internal/components/playbackspeed"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
@@ -113,24 +114,25 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat         *graph.Stage
-	rtcpeer      *graph.Stage
-	rtcvad       *graph.Stage
-	stt          *graph.Stage
-	rtcout       *graph.Stage
-	utterance    *graph.Stage
-	sessionReset *graph.Stage
-	committer    *graph.Stage
-	llm          *graph.Stage
-	sessionAct   *graph.Stage
-	filterLLM    *graph.Stage
-	tts          *graph.Stage
-	filterTTS    *graph.Stage
+	chat          *graph.Stage
+	rtcpeer       *graph.Stage
+	rtcvad        *graph.Stage
+	stt           *graph.Stage
+	interimStop   *graph.Stage
+	rtcout        *graph.Stage
+	utterance     *graph.Stage
+	sessionReset  *graph.Stage
+	committer     *graph.Stage
+	llm           *graph.Stage
+	sessionAct    *graph.Stage
+	filterLLM     *graph.Stage
+	tts           *graph.Stage
+	filterTTS     *graph.Stage
 	playbackspeed *graph.Stage
-	scheduler    *graph.Stage
-	filterSched  *graph.Stage
-	router       *graph.Stage
-	tool         *graph.Stage
+	scheduler     *graph.Stage
+	filterSched   *graph.Stage
+	router        *graph.Stage
+	tool          *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
@@ -139,6 +141,7 @@ func (s appStages) all() []*graph.Stage {
 		s.rtcpeer,
 		s.rtcvad,
 		s.stt,
+		s.interimStop,
 		s.rtcout,
 		s.utterance,
 		s.sessionReset,
@@ -185,6 +188,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	if stages.utterance != nil {
 		stages.utterance.Name = "utterancebuffer"
 	}
+	stages.interimStop = interimstopper.NewStage(interimstopper.Config{
+		Generation: generationStore,
+	})
+	stages.interimStop.Name = "interimstopper"
 	stages.sessionReset = sessionreset.NewStage(sessionreset.Config{
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		History:     historyStore,
@@ -360,6 +367,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	rtcpeerNode := add(stages.rtcpeer)
 	rtcvadNode := add(stages.rtcvad)
 	sttNode := add(stages.stt)
+	interimStopNode := add(stages.interimStop)
 	rtcoutNode := add(stages.rtcout)
 	utteranceNode := add(stages.utterance)
 	sessionResetNode := add(stages.sessionReset)
@@ -381,7 +389,8 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, rtcpeerNode, rtcoutNode, types.EventRTCPeerOutputSink)
 	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechEnd, types.EventRTCVADStatus)
 	connectKinds(g, rtcvadNode, sttNode, types.EventRTCSpeechAudio)
-	connectKinds(g, sttNode, utteranceNode, types.EventHumanUtterance)
+	connectKinds(g, sttNode, interimStopNode, types.EventHumanInterimUtterance, types.EventHumanUtterance)
+	connectKinds(g, interimStopNode, utteranceNode, types.EventHumanUtterance)
 	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
 	connectKinds(g, sessionResetNode, chatNode, types.EventSessionReset)
