@@ -3,6 +3,8 @@ services:
     build:
       context: .
       target: runtime
+    depends_on:
+      - embedding
     # コンテナが落ちたら自動で再起動する
     # Dockerデーモン再起動後も自動起動する
     # Ctrl+C や docker stop で手動停止した場合は再起動せずに停止する
@@ -28,3 +30,13 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URL: ${GOOGLE_REDIRECT_URL}
       GOOGLE_OAUTH_SCOPE: ${GOOGLE_OAUTH_SCOPE}
+
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    command: ["--model-id", "intfloat/multilingual-e5-small"]
+    restart: unless-stopped
+    volumes:
+      - embedding-model-cache:/data
+
+volumes:
+  embedding-model-cache:

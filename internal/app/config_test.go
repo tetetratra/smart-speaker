@@ -40,11 +40,11 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 		raw  string
 		want time.Duration
 	}{
-		{name: "empty uses default", raw: "", want: 10 * time.Minute},
+		{name: "empty uses default", raw: "", want: 5 * time.Minute},
 		{name: "positive seconds", raw: "42", want: 42 * time.Second},
 		{name: "zero disables", raw: "0", want: 0},
-		{name: "invalid uses default", raw: "invalid", want: 10 * time.Minute},
-		{name: "negative uses default", raw: "-1", want: 10 * time.Minute},
+		{name: "invalid uses default", raw: "invalid", want: 5 * time.Minute},
+		{name: "negative uses default", raw: "-1", want: 5 * time.Minute},
 		{name: "trims spaces", raw: " 5 ", want: 5 * time.Second},
 	}
 	for _, tt := range tests {
