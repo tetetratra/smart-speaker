@@ -182,6 +182,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          CODEX_MODEL: ${{ vars.CODEX_MODEL || 'gpt-5.5' }}
           CONTEXT_SHA: ${{ inputs.context_sha }}
           INSTRUCTION_BODY: ${{ inputs.instruction_body }}
         run: |
@@ -189,6 +190,7 @@ jobs:
           printf '%s' "$INSTRUCTION_BODY" > "${STATE_ROOT}/run/instruction.txt"
           docker run --rm \
             -e CODEX_HOME=/codex-home \
+            -e CODEX_MODEL="${CODEX_MODEL}" \
             -e GH_TOKEN="${GH_TOKEN}" \
             -e GITHUB_TOKEN="${GH_TOKEN}" \
             -e HEAD_SHA="${CONTEXT_SHA}" \
