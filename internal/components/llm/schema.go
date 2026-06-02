@@ -45,6 +45,7 @@ func timelineSchema(toolSchemas []any) map[string]any {
 				"items": map[string]any{
 					"anyOf": itemSchemas,
 				},
+				"maxItems": maxTimelineItems,
 			},
 			"set_whiteboard": setWhiteboardFieldSchema(),
 		},

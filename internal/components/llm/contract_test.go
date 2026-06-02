@@ -101,6 +101,47 @@ func TestParseTimelineJSONAcceptsMultipleTools(t *testing.T) {
 	}
 }
 
+func TestParseTimelineJSONRejectsTooManyItems(t *testing.T) {
+	raw := `{"items":[` +
+		`{"type":"speech","text":"1"},` +
+		`{"type":"speech","text":"2"},` +
+		`{"type":"speech","text":"3"},` +
+		`{"type":"speech","text":"4"},` +
+		`{"type":"speech","text":"5"},` +
+		`{"type":"speech","text":"6"},` +
+		`{"type":"speech","text":"7"},` +
+		`{"type":"speech","text":"8"},` +
+		`{"type":"speech","text":"9"},` +
+		`{"type":"speech","text":"10"},` +
+		`{"type":"speech","text":"11"},` +
+		`{"type":"speech","text":"12"},` +
+		`{"type":"speech","text":"13"},` +
+		`{"type":"speech","text":"14"},` +
+		`{"type":"speech","text":"15"},` +
+		`{"type":"speech","text":"16"},` +
+		`{"type":"speech","text":"17"},` +
+		`{"type":"speech","text":"18"},` +
+		`{"type":"speech","text":"19"},` +
+		`{"type":"speech","text":"20"},` +
+		`{"type":"speech","text":"21"}` +
+		`]}`
+	if _, err := parseTimelineJSON(raw, 1); err == nil {
+		t.Fatal("err = nil, want error")
+	}
+}
+
+func TestParseTimelineJSONRejectsTooManyToolItems(t *testing.T) {
+	raw := `{"items":[` +
+		`{"type":"tool","name":"tool_a","args":{}},` +
+		`{"type":"tool","name":"tool_b","args":{}},` +
+		`{"type":"tool","name":"tool_c","args":{}},` +
+		`{"type":"tool","name":"tool_d","args":{}}` +
+		`]}`
+	if _, err := parseTimelineJSON(raw, 1); err == nil {
+		t.Fatal("err = nil, want error")
+	}
+}
+
 func TestParseTimelineJSONRejectsInvalidItems(t *testing.T) {
 	cases := []string{
 		`{"items":[{"type":"speech","text":""}]}`,
