@@ -108,6 +108,15 @@ gh variable set AI_CLI_TOOL --body "cursor-cli"
 gh variable set AI_CLI_TOOL --body "codex"
 ```
 
+#### Codex のモデル指定
+Codex 実行時のモデルは `CODEX_MODEL` Variable で指定できます。未設定の場合は `gpt-5.5` を使います。
+
+```sh
+gh variable set CODEX_MODEL --body "gpt-5.5"
+```
+
+軽量な実行に寄せる場合は `gpt-5.4-mini` など、Codex で利用できるモデルを指定してください。利用できるモデルは OpenAI の Codex Models docs を確認してください。
+
 ### Codex 認証の更新（`AI_CLI_TOOL=codex`）
 CI では `CODEX_AUTH_JSON_B64` を GitHub Secret として使います。認証が切れたら、trusted machine で `codex login` をやり直してから Secret を更新してください。
 

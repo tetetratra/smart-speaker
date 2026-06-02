@@ -67,8 +67,11 @@ if [ -d "$skills_src" ]; then
   done
 fi
 
+codex_model="${CODEX_MODEL:-gpt-5.5}"
+
 cmd=(
   codex exec
+  --model "$codex_model"
   --dangerously-bypass-approvals-and-sandbox
   --ignore-user-config
   --json
