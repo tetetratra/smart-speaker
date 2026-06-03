@@ -12,6 +12,7 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -138,6 +139,39 @@ func TestStageDoesNotAddIdleFollowupInstructionWhenRequestIsExplicit(t *testing.
 	}
 	if strings.Contains(client.prompts[0], "長期間無音だった") {
 		t.Fatalf("prompt = %q, want no idle followup instruction", client.prompts[0])
+	}
+}
+
+func TestStageAddsTimerSnapshotToPrompt(t *testing.T) {
+	now := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
+	store := timerstate.NewStoreWithClock(func() time.Time { return now })
+	timer := store.Create(now.Add(time.Hour), "起こす")
+	client := &fakeClient{responses: []string{`{"items":[]}`}}
+	st := &stage{
+		client:       client,
+		timers:       store,
+		systemPrompt: buildSystemPrompt("base", nil),
+	}
+
+	_, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "req-1",
+		Role:         types.RoleUser,
+		Text:         "確認して",
+		GenerationID: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := client.prompts[0]
+	for _, want := range []string{
+		"現在の未到達タイマー一覧:",
+		timer.ID,
+		timer.At.Format(time.RFC3339),
+		"action=起こす",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt = %q, want it to contain %q", prompt, want)
+		}
 	}
 }
 
