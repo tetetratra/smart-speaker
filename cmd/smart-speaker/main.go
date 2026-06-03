@@ -38,8 +38,10 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
+	timerfunc "github.com/tetetratra/smart-speaker/internal/tools/functions/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -57,14 +59,15 @@ func main() {
 	ensureGoogleCalendarToken()
 
 	playbackSpeedStore := pbspeed.NewStore()
+	timerStore := timerstate.NewStore()
 
-	server, chatStage, err := buildHTTPServer(cfg, playbackSpeedStore)
+	server, chatStage, err := buildHTTPServer(cfg, playbackSpeedStore, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage, playbackSpeedStore)
+	stages, err := buildStages(cfg, chatStage, playbackSpeedStore, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -159,7 +162,7 @@ func (s appStages) all() []*graph.Stage {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbspeed.Store) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbspeed.Store, timerStore *timerstate.Store) (appStages, error) {
 	var stages appStages
 	if chatStage != nil {
 		chatStage.Name = "wschat"
@@ -208,13 +211,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	if stages.committer != nil {
 		stages.committer.Name = "conversationcommitter"
 	}
-	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
+	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, timerStore, generationStore)
 	stages.llm, err = llm.NewStage(llm.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		History:      historyStore,
 		AgentStatus:  agentStatusStore,
+		Timers:       timerStore,
 		ToolSchemas:  toolSchemas,
 	})
 	if err != nil {
@@ -297,18 +301,23 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[string]string) {
+func buildToolRegistry(cfg app.Config, timerStore *timerstate.Store, generationStore *generation.Store) ([]any, map[string]tools.Handler, map[string]string) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
 		scenes = loadSwitchBotScenes(switchBotClient)
 	}
+	timerTool := timerfunc.New(timerfunc.Config{
+		Store:      timerStore,
+		Generation: generationStore,
+	})
 
 	reg := registry.New(registry.Config{
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
+		TimerTool:       timerTool,
 	})
 	return reg.DefinitionsForLLM(), reg.Handlers(), reg.ToolModes()
 }
@@ -332,7 +341,7 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func buildHTTPServer(cfg app.Config, playbackSpeedStore *pbspeed.Store) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, playbackSpeedStore *pbspeed.Store, timerStore *timerstate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
@@ -340,7 +349,7 @@ func buildHTTPServer(cfg app.Config, playbackSpeedStore *pbspeed.Store) (*http.S
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	chat := wschat.NewStage(mux, wschat.Config{SpeedStore: playbackSpeedStore})
+	chat := wschat.NewStage(mux, wschat.Config{SpeedStore: playbackSpeedStore, TimerStore: timerStore})
 	return server, chat, nil
 }
 
@@ -409,7 +418,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
 	connectKinds(g, toolNode, committerNode, types.EventConversationCommitRequest)
-	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
+	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate, types.EventTimerState)
 }
 
 func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {

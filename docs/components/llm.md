@@ -218,6 +218,22 @@ sequenceDiagram
 - headers: `Content-Type: application/json`、`Authorization: Bearer <OPENAI_API_KEY>`
 - request body:
 
+### timer snapshot の追加コンテキスト
+
+`llm.stage` は `Config.Timers` が渡された場合、request ごとに未到達 timer の
+snapshot を system prompt へ追記します。会話履歴ではなく現在の Store snapshot を
+正とするため、登録・取消・期限到達後の timer 一覧を LLM が毎回参照できます。
+
+追記形式:
+
+```text
+現在の未到達タイマー一覧:
+- id=<timer-id> at=<RFC3339> action=<自然言語action>
+```
+
+timer がない場合は `- なし` を渡します。相対時刻の解釈は、既存の現在日時
+コンテキストとこの snapshot を合わせて LLM が行います。
+
 ```json
 {
   "model": "<OPENAI_RESPONSES_MODEL>",

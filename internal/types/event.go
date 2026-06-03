@@ -33,6 +33,7 @@ const (
 	EventRTCPeerAudioFrame
 	EventRTCSpeechAudio
 	EventRTCPeerOutputSink
+	EventTimerState
 )
 
 // Event is the common data structure passed between stages.
@@ -85,6 +86,8 @@ func (k EventKind) String() string {
 		return "EventRTCSpeechAudio"
 	case EventRTCPeerOutputSink:
 		return "EventRTCPeerOutputSink"
+	case EventTimerState:
+		return "EventTimerState"
 	default:
 		return fmt.Sprintf("EventKind(%d)", int(k))
 	}

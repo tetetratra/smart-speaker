@@ -61,6 +61,18 @@ type WhiteboardUpdate struct {
 	Content string
 }
 
+// TimerState is pushed to the admin UI whenever active timers change.
+type TimerState struct {
+	Timers []TimerStateItem
+}
+
+type TimerStateItem struct {
+	ID        string
+	At        time.Time
+	Action    string
+	CreatedAt time.Time
+}
+
 type RTCIceCandidate struct {
 	Candidate     string  `json:"candidate"`
 	SDPMid        *string `json:"sdpMid,omitempty"`
