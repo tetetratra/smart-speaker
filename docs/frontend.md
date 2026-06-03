@@ -172,6 +172,7 @@ sequenceDiagram
   - `messages`
   - `boardEntries`
   - `toolToasts`
+  - `timers`
   - `lastUserMessage`
   - `lastAssistantMessage`
   - `isConversationBubbleHidden`
@@ -187,6 +188,15 @@ sequenceDiagram
 - `manifest.webmanifest` を提供する。
 - `serviceWorker` を登録する。
 - 現行の service worker は lifecycle 制御のみで、offline cache は持たない。
+
+### 4.6 timer 一覧表示
+
+- WebSocket message `timer.state` を受け取り、未到達 timer の一覧を `timers` state
+  として保持する。
+- 管理画面では timer 件数、期限、自然言語 action、id を表示する。
+- 通常画面には timer 一覧を表示しない。
+- 画面上の取消操作は提供せず、取消は自然発話から timer tool の `operation=cancel`
+  を呼ぶ想定である。
 
 ## 5. 再設計時に崩すと挙動変更になる現行前提
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
