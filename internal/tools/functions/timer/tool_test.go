@@ -66,6 +66,44 @@ func TestToolRejectsPastTimer(t *testing.T) {
 	}
 }
 
+func TestToolDefinitionInstructsActionWithoutDelayCondition(t *testing.T) {
+	tool := New(Config{})
+	def := tool.Definition()
+	description, _ := def["description"].(string)
+	for _, want := range []string{
+		"actionには",
+		"時刻・遅延条件を含めず",
+		`action="エアコンをつける"`,
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("description = %q, want it to contain %q", description, want)
+		}
+	}
+
+	params, ok := def["parameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("parameters = %#v", def["parameters"])
+	}
+	props, ok := params["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("properties = %#v", params["properties"])
+	}
+	action, ok := props["action"].(map[string]any)
+	if !ok {
+		t.Fatalf("action property = %#v", props["action"])
+	}
+	actionDescription, _ := action["description"].(string)
+	for _, want := range []string{
+		"相対時刻や遅延条件は含めず",
+		"期限到達時点で実行する内容だけ",
+		"エアコンをつける",
+	} {
+		if !strings.Contains(actionDescription, want) {
+			t.Fatalf("action description = %q, want it to contain %q", actionDescription, want)
+		}
+	}
+}
+
 func TestToolMonitorEmitsDueTimerAsSystemCommit(t *testing.T) {
 	current := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
 	now := func() time.Time { return current }

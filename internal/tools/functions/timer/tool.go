@@ -139,6 +139,7 @@ func (t *Tool) Definition() map[string]any {
 		"name": toolName,
 		"description": `未来の時刻に扱う自然言語actionをメモリ上のタイマーとして登録またはキャンセルします。
 「20分後に起こして」「21時になったらエアコンをoffにして」のような依頼は、現在日時をもとに絶対時刻へ解釈し、operation=create、at=RFC3339、action=実行したい自然言語で登録してください。
+actionには「20分後に」「21時になったら」などの時刻・遅延条件を含めず、期限到達時点で実行する内容だけを入れてください。例: 「10分後にエアコンをつけて」は action="エアコンをつける"。
 期限到達時には保存したactionがAIへ通知されます。`,
 		"parameters": map[string]any{
 			"type": "object",
@@ -154,7 +155,7 @@ func (t *Tool) Definition() map[string]any {
 				},
 				"action": map[string]any{
 					"type":        "string",
-					"description": "create時に必須。期限到達時にAIへ渡す自然言語の実行内容。",
+					"description": "create時に必須。期限到達時にAIへ渡す自然言語の実行内容。相対時刻や遅延条件は含めず、期限到達時点で実行する内容だけを指定します。例: 「10分後にエアコンをつけて」は「エアコンをつける」。",
 				},
 				"id": map[string]any{
 					"type":        "string",
