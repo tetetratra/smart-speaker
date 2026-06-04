@@ -10,8 +10,10 @@ timer tool の詳しい仕様は [docs/tools/timer.md](docs/tools/timer.md) に�
 
 ## 環境変数
 - `OPENAI_API_KEY`（必須）
-- `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（テキスト→音声を ElevenLabs で生成するために必須）
+- `TTS_PROVIDER`（任意、デフォルト `elevenlabs`。`voicevox` も指定可能）
+- `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`（`TTS_PROVIDER=elevenlabs` の場合に必須）
 - `ELEVENLABS_MODEL_ID`（任意、デフォルト `eleven_v3`）
+- `VOICEVOX_ENDPOINT` / `VOICEVOX_SPEAKER_ID` / `VOICEVOX_SPEED_SCALE`（`TTS_PROVIDER=voicevox` の場合。詳細は [docs/services/voicevox.md](docs/services/voicevox.md)）
 - `RTC_ICE_HOST_IPS`（任意、Docker で WebRTC を使う場合にホストIPを指定。カンマ区切り）
 - `WEB_DIST_DIR`（任意、フロントの配信ディレクトリ。デフォルト `web/dist`）
 - `WS_ADDR`（任意、デフォルト `:8081`。ブラウザとサーバーの音声 WS 用）
@@ -27,7 +29,7 @@ timer tool の詳しい仕様は [docs/tools/timer.md](docs/tools/timer.md) に�
 ```sh
 go run ./cmd/smart-speaker
 ```
-デフォルトで `WS_ADDR=:8081` で `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、ElevenLabs TTS（stream-input）で音声生成→ WebRTC で返送します。`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合は起動時にエラーになります。
+デフォルトで `WS_ADDR=:8081` で `/ws/chat` を開きます。OpenAI からはテキストのみ受信し、選択中の TTS provider で音声生成→ WebRTC で返送します。`TTS_PROVIDER=elevenlabs` では `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` 未設定の場合に起動時エラーになります。`TTS_PROVIDER=voicevox` の Docker Compose 設定は [docs/services/voicevox.md](docs/services/voicevox.md) を参照してください。
 
 ## ローカル embedding server
 Docker Compose では Hugging Face Text Embeddings Inference の `embedding` service を同居させます。
