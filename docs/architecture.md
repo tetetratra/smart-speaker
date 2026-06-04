@@ -104,7 +104,7 @@ flowchart TB
 - `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
 - `playbackspeed` は共有 Store の倍率に従い、`PlayableSpeech` の PCM・`DurationSeconds` と `wait` の `Sec` を加工する。
-- `tts` は `speech` item を ElevenLabs で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。
+- `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `TTS_PROVIDER` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
 - `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
@@ -178,6 +178,10 @@ UIは `session_reset` を受けると通常画面の直近会話吹き出しを�
 - `internal/components/sessionactivate/stage.go`
 - `internal/components/generationfilter/stage.go`
 - `internal/components/tts/elevenlabs.go`
+- `internal/components/tts/provider.go`
+- `internal/components/tts/stage.go`
+- `internal/components/tts/voicevox.go`
+- `docs/services/voicevox.md`
 - `internal/components/scheduler/stage.go`
 - `internal/components/router/stage.go`
 - `internal/components/toolcaller/toolcaller.go`
