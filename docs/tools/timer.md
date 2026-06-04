@@ -1,9 +1,10 @@
-# timer（時間指定 action）
+# register_timer / cancel_timer（時間指定 action）
 
 ## 概要
 
-`timer` は、未来の時刻に扱う自然言語 action をプロセス内メモリへ登録する
-local tool です。「20分後に起こして」「21時になったらエアコンをoffにして」
+`register_timer` は、未来の時刻に扱う自然言語 action をプロセス内メモリへ登録する
+local tool です。登録済み timer の取消は `cancel_timer` tool で行います。
+「20分後に起こして」「21時になったらエアコンをoffにして」
 のような依頼を、比較可能な絶対時刻と自然言語 action の組として保持します。
 
 保存済みの任意 tool call を直接実行するものではありません。期限到達時には、
@@ -12,20 +13,23 @@ local tool です。「20分後に起こして」「21時になったらエア�
 
 ## 入力
 
-- tool 名: `timer`
+- 登録 tool 名: `register_timer`
+- 取消 tool 名: `cancel_timer`
 - mode: `write`
-- 必須引数: `operation`
-- `operation=create` の必須引数: `at`, `action`
-- `operation=cancel` の必須引数: `id`
+- `register_timer` の必須引数: `at`, `action`
+- `cancel_timer` の必須引数: `id`
 
 `at` は RFC3339 の絶対時刻です。相対指定の解釈は、LLM が system prompt の現在日時
 をもとに行います。
+
+`action` には、期限到達時点で実行する内容だけを保存します。「10分後にエアコンをつけて」
+のような依頼では、`10分後に` を `at` の解釈にだけ使い、`action` は
+`エアコンをつける` として登録します。
 
 登録例:
 
 ```json
 {
-  "operation": "create",
   "at": "2026-06-03T21:00:00+09:00",
   "action": "エアコンをoffにする"
 }
@@ -35,7 +39,6 @@ local tool です。「20分後に起こして」「21時になったらエア�
 
 ```json
 {
-  "operation": "cancel",
   "id": "timer-id"
 }
 ```
@@ -55,7 +58,7 @@ local tool です。「20分後に起こして」「21時になったらエア�
 
 ## 期限到達時の処理
 
-`timer` tool は `ContextAware` / `EventEmitterAware` として動作し、toolcaller から
+`register_timer` tool は `ContextAware` / `EventEmitterAware` として動作し、toolcaller から
 context と event emitter が注入されると軽量な ticker で期限到達を監視します。
 
 期限に到達した timer は Store から取り出され、次のような system commit として
@@ -103,7 +106,7 @@ timer の登録、取消、期限到達時には `EventTimerState` が発行さ�
 ```
 
 管理画面では未到達 timer の件数、期限、action、id を表示します。取消操作 UI は持たず、
-自然発話から `operation=cancel` を呼ぶ想定です。
+自然発話から `cancel_timer` を呼ぶ想定です。
 
 ## 制約
 

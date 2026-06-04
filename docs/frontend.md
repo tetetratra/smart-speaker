@@ -195,7 +195,7 @@ sequenceDiagram
   として保持する。
 - 管理画面では timer 件数、期限、自然言語 action、id を表示する。
 - 通常画面には timer 一覧を表示しない。
-- 画面上の取消操作は提供せず、取消は自然発話から timer tool の `operation=cancel`
+- 画面上の取消操作は提供せず、取消は自然発話から `cancel_timer` tool
   を呼ぶ想定である。
 
 ## 5. 再設計時に崩すと挙動変更になる現行前提
