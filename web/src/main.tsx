@@ -10,6 +10,7 @@ type ButtonTone = 'primary' | 'secondary'
 type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
+type TimerEntry = { id: string; at: string; action: string; createdAt?: string }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -45,6 +46,31 @@ const defaultPlaybackSpeed: PlaybackSpeedPreset = 1
 function normalizePlaybackSpeed(value: unknown): PlaybackSpeedPreset {
   if (typeof value !== 'number') return defaultPlaybackSpeed
   return playbackSpeedLevels.find((level) => Math.abs(level - value) < 1e-9) ?? defaultPlaybackSpeed
+}
+
+function normalizeTimerEntries(value: unknown): TimerEntry[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return []
+    const item = raw as Record<string, unknown>
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    const at = typeof item.at === 'string' ? item.at.trim() : ''
+    const action = typeof item.action === 'string' ? item.action.trim() : ''
+    const createdAt = typeof item.created_at === 'string' ? item.created_at.trim() : undefined
+    if (!id || !at || !action) return []
+    return [{ id, at, action, createdAt }]
+  })
+}
+
+function formatTimerAt(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 const liveRootStyle = `
   :root {
@@ -655,6 +681,7 @@ function App() {
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
+  const [timers, setTimers] = useState<TimerEntry[]>([])
   const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
@@ -851,6 +878,10 @@ function App() {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
           setBoardEntries((prev) => [...prev, { id: nextMessageId(), content }])
+          break
+        }
+        case 'timer.state': {
+          setTimers(normalizeTimerEntries(raw.timers))
           break
         }
         default:
@@ -1288,6 +1319,61 @@ function App() {
           {sttError && (
             <div style={{ color: '#dc2626' }}>
               <strong>文字起こしエラー:</strong> {sttError}
+            </div>
+          )}
+        </div>
+        <div
+          style={{
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            background: '#ffffff',
+            padding: 12,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <strong>タイマー</strong>
+            <span
+              style={{
+                border: '1px solid #dbeafe',
+                borderRadius: 9999,
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                padding: '2px 8px',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              {timers.length}件
+            </span>
+          </div>
+          {timers.length === 0 ? (
+            <div style={{ color: '#64748b', fontSize: 13 }}>未登録</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 6 }}>
+              {timers.map((timer) => (
+                <div
+                  key={timer.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '120px minmax(0, 1fr)',
+                    gap: 8,
+                    alignItems: 'start',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    background: '#f8fafc',
+                    padding: 8,
+                  }}
+                >
+                  <div style={{ color: '#0f172a', fontSize: 13, fontWeight: 700 }}>{formatTimerAt(timer.at)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: '#0f172a', fontSize: 13, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{timer.action}</div>
+                    <div style={{ color: '#64748b', fontSize: 11, marginTop: 2, overflowWrap: 'anywhere' }}>{timer.id}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -30,8 +30,11 @@
   - `type` が `playback_speed.set` の場合は `playback speed Store` を更新する（graph 外）。
 - **再生速度の初回同期**
   - 接続登録直後、当該 `connID` 向けに `{ "type": "playback_speed.state", "speed": number }` を 1 通 push する。
+- **timer一覧の初回同期**
+  - `TimerStore` が渡されている場合、接続登録直後に当該 `connID` 向けへ
+    `{ "type": "timer.state", "timers": [...] }` を 1 通 push する。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd` をブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd`, `EventTimerState` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
@@ -226,6 +229,9 @@ sequenceDiagram
   - 例: `{ "type": "session_reset", "requested_at": "2026-05-27T12:00:00.000000123Z" }`
 - `agent_speech_end`: 当該 generation の AI タイムライン（speech 再生待ち・wait・tool）が scheduler で完了したことを UI へ通知する。
   - 例: `{ "type": "agent_speech_end", "generation_id": 3, "completed_at": "2026-05-28T16:00:00.000000000+09:00" }`
+- `timer.state`: 未到達 timer 一覧を UI へ通知する。
+  - 例: `{ "type": "timer.state", "timers": [{ "id": "timer-id", "at": "2026-06-03T21:00:00+09:00", "action": "エアコンをoffにする", "created_at": "2026-06-03T10:00:00Z" }] }`
+  - 接続時と timer 登録・取消・期限到達時に配信され、管理画面の timer 一覧表示に使われる。
 
 ### イベント変換仕様
 
@@ -238,6 +244,7 @@ sequenceDiagram
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |
 | `EventSessionReset` | `types.SessionResetEvent` | `session_reset` | 全接続 |
 | `EventAgentSpeechPlaybackEnd` | `types.AgentSpeechPlaybackEnd` | `agent_speech_end` | 全接続 |
+| `EventTimerState` | `types.TimerState` | `timer.state` | 全接続 |
 
 ### エラー・終了時の挙動
 

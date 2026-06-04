@@ -55,7 +55,7 @@ func ToChatMessages(records []types.ConversationRecord) []types.ChatMessage {
 			continue
 		}
 		switch role {
-		case types.RoleUser, types.RoleAgent:
+		case types.RoleUser, types.RoleAgent, types.RoleSystem:
 			content = formatMessageContent(rec)
 		case types.RoleToolCall:
 			content = formatToolCallContent(rec)

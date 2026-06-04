@@ -7,6 +7,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
+	timerfunc "github.com/tetetratra/smart-speaker/internal/tools/functions/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
@@ -32,6 +33,7 @@ type Config struct {
 	OpenAIAPIKey       string
 	OpenAIModel        string
 	WebSearchClient    websearch.SearchClient
+	TimerTool          *timerfunc.Tool
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -52,9 +54,14 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
+	timerTool := cfg.TimerTool
+	if timerTool == nil {
+		timerTool = timerfunc.New(timerfunc.Config{})
+	}
 	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
+		{def: timerTool.Definition(), handler: timerTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},

@@ -1,6 +1,7 @@
 # Smart Speaker (Go) + WebSocket 音声 I/O
 
 補足の設計資料や学習用ドキュメントは `docs/` 配下で管理しています。
+timer tool の詳しい仕様は [docs/tools/timer.md](docs/tools/timer.md) にあります。
 
 ## 前提
 - Go 1.25 以降
