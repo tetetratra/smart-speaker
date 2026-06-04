@@ -3,27 +3,14 @@ package tts
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
-	"sync"
-
-	"github.com/tetetratra/smart-speaker/internal/graph"
-	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-const (
-	elevenlabsSampleRate     = 24000
-	elevenlabsBytesPerSample = 2
-	elevenlabsChannels       = 1
-	ttsPlaybackPaddingSec    = 0.5
-)
-
-type Config struct {
+type ElevenLabsConfig struct {
 	APIKey        string
 	Voice         string
 	Model         string
@@ -38,150 +25,76 @@ type VoiceSettings struct {
 	UseSpeakerBoost *bool
 }
 
-func NewStage(cfg Config) (*graph.Stage, error) {
+func newElevenLabsSynthesizerFromConfig(cfg ElevenLabsConfig) (*elevenLabsSynthesizer, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("elevenlabs: API key is required")
+		return nil, fmt.Errorf("tts: elevenlabs API key is required")
 	}
 	if cfg.Voice == "" {
-		return nil, fmt.Errorf("elevenlabs: voice id is required")
+		return nil, fmt.Errorf("tts: elevenlabs voice id is required")
 	}
 	if cfg.Model == "" {
 		cfg.Model = "eleven_v3"
 	}
-	t := &streamTTS{
-		cfg:        cfg,
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		client:     &http.Client{},
-	}
-	return &graph.Stage{
-		Upstream:   t.upstream,
-		Downstream: t.downstream,
-		Run:        t.run,
-		CloseFn:    t.close,
-	}, nil
+	return newElevenLabsSynthesizer(cfg), nil
 }
 
-type streamTTS struct {
-	cfg        Config
-	upstream   chan types.Event
-	downstream chan types.Event
-	client     *http.Client
-	once       sync.Once
+type elevenLabsSynthesizer struct {
+	cfg    ElevenLabsConfig
+	client *http.Client
 }
 
-func (t *streamTTS) run(ctx context.Context) {
-	defer close(t.downstream)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case evt, ok := <-t.upstream:
-			if !ok {
-				return
-			}
-			if evt.Kind == types.EventAgentTimelineEnd {
-				t.emit(ctx, evt)
-				continue
-			}
-			if evt.Kind != types.EventTimelineItem {
-				continue
-			}
-			item, ok := evt.Payload.(types.TimelineItem)
-			if !ok {
-				continue
-			}
-			if item.Kind != types.TimelineKindSpeech {
-				t.emit(ctx, evt)
-				continue
-			}
-			if strings.TrimSpace(item.Text) == "" {
-				continue
-			}
-			t.handleSpeech(ctx, item)
-		}
+func newElevenLabsSynthesizer(cfg ElevenLabsConfig) *elevenLabsSynthesizer {
+	return &elevenLabsSynthesizer{
+		cfg:    cfg,
+		client: &http.Client{},
 	}
 }
 
-func (t *streamTTS) emit(ctx context.Context, evt types.Event) {
-	select {
-	case <-ctx.Done():
-	case t.downstream <- evt:
-	}
+func (s *elevenLabsSynthesizer) Name() string {
+	return "elevenlabs"
 }
 
-func (t *streamTTS) handleSpeech(ctx context.Context, item types.TimelineItem) {
-	audio, duration, err := t.synthesize(ctx, item.Text)
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Printf("elevenlabs: synthesize error: %v", err)
-		}
-		return
-	}
-	playable := types.PlayableSpeech{
-		GenerationID:     item.GenerationID,
-		SequenceID:       item.SequenceID,
-		Text:             item.Text,
-		Audio:            audio,
-		DurationSeconds:  duration,
-		OriginalTimeline: item,
-	}
-	select {
-	case <-ctx.Done():
-	case t.downstream <- types.Event{Kind: types.EventPlayableSpeech, Payload: playable}:
-	}
-}
-
-func (t *streamTTS) synthesize(ctx context.Context, text string) (string, float64, error) {
+func (s *elevenLabsSynthesizer) SynthesizeSpeech(ctx context.Context, text string) (synthesizedSpeech, error) {
 	url := fmt.Sprintf(
 		"https://api.elevenlabs.io/v1/text-to-speech/%s/stream?output_format=pcm_24000",
-		t.cfg.Voice,
+		s.cfg.Voice,
 	)
 	payload := map[string]any{
 		"text":          text,
-		"model_id":      t.cfg.Model,
+		"model_id":      s.cfg.Model,
 		"language_code": "ja",
 	}
-	if vs := t.buildVoiceSettings(); vs != nil {
+	if vs := s.buildVoiceSettings(); vs != nil {
 		payload["voice_settings"] = vs
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", 0, err
+		return synthesizedSpeech{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", 0, err
+		return synthesizedSpeech{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("xi-api-key", t.cfg.APIKey)
+	req.Header.Set("xi-api-key", s.cfg.APIKey)
 
-	resp, err := t.client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", 0, err
+		return synthesizedSpeech{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(resp.Body)
-		return "", 0, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		return synthesizedSpeech{}, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", 0, err
+		return synthesizedSpeech{}, err
 	}
-	duration := ttsDurationSeconds(int64(len(raw)))
-	log.Printf("elevenlabs: tts duration=%.3fs bytes=%d", duration, len(raw))
-	return base64.StdEncoding.EncodeToString(raw), duration, nil
+	return synthesizedSpeech{PCM: raw}, nil
 }
 
-func (t *streamTTS) close() error {
-	t.once.Do(func() {
-		close(t.upstream)
-	})
-	return nil
-}
-
-func (t *streamTTS) buildVoiceSettings() map[string]any {
+func (s *elevenLabsSynthesizer) buildVoiceSettings() map[string]any {
 	defaultVS := VoiceSettings{
 		Stability:       1.0,
 		SimilarityBoost: 0.8,
@@ -190,26 +103,26 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 	}
 
 	vs := defaultVS
-	if t.cfg.VoiceSettings != nil {
-		if t.cfg.VoiceSettings.Stability != 0 {
-			vs.Stability = t.cfg.VoiceSettings.Stability
+	if s.cfg.VoiceSettings != nil {
+		if s.cfg.VoiceSettings.Stability != 0 {
+			vs.Stability = s.cfg.VoiceSettings.Stability
 		}
-		if t.cfg.VoiceSettings.SimilarityBoost != 0 {
-			vs.SimilarityBoost = t.cfg.VoiceSettings.SimilarityBoost
+		if s.cfg.VoiceSettings.SimilarityBoost != 0 {
+			vs.SimilarityBoost = s.cfg.VoiceSettings.SimilarityBoost
 		}
-		if t.cfg.VoiceSettings.Style != 0 {
-			vs.Style = t.cfg.VoiceSettings.Style
+		if s.cfg.VoiceSettings.Style != 0 {
+			vs.Style = s.cfg.VoiceSettings.Style
 		}
-		if t.cfg.VoiceSettings.Speed != 0 {
-			vs.Speed = t.cfg.VoiceSettings.Speed
+		if s.cfg.VoiceSettings.Speed != 0 {
+			vs.Speed = s.cfg.VoiceSettings.Speed
 		}
-		if t.cfg.VoiceSettings.UseSpeakerBoost != nil {
-			vs.UseSpeakerBoost = t.cfg.VoiceSettings.UseSpeakerBoost
+		if s.cfg.VoiceSettings.UseSpeakerBoost != nil {
+			vs.UseSpeakerBoost = s.cfg.VoiceSettings.UseSpeakerBoost
 		}
 	}
 
 	settings := map[string]any{
-		"stability":        normalizeStability(t.cfg.Model, vs.Stability),
+		"stability":        normalizeStability(s.cfg.Model, vs.Stability),
 		"similarity_boost": vs.SimilarityBoost,
 	}
 	if vs.Style != 0 {
@@ -222,14 +135,6 @@ func (t *streamTTS) buildVoiceSettings() map[string]any {
 		settings["use_speaker_boost"] = *vs.UseSpeakerBoost
 	}
 	return settings
-}
-
-func ttsDurationSeconds(bytes int64) float64 {
-	if bytes <= 0 {
-		return 0
-	}
-	denom := float64(elevenlabsSampleRate * elevenlabsBytesPerSample * elevenlabsChannels)
-	return float64(bytes)/denom + ttsPlaybackPaddingSec
 }
 
 func ptrBool(v bool) *bool {

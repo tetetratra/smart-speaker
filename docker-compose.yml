@@ -5,6 +5,7 @@ services:
       target: runtime
     depends_on:
       - embedding
+      - voicevox
     # コンテナが落ちたら自動で再起動する
     # Dockerデーモン再起動後も自動起動する
     # Ctrl+C や docker stop で手動停止した場合は再起動せずに停止する
@@ -17,9 +18,13 @@ services:
       - /var/lib/smart-speaker/data:/app/data
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TTS_PROVIDER: ${TTS_PROVIDER:-elevenlabs}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID}
       ELEVENLABS_MODEL_ID: ${ELEVENLABS_MODEL_ID}
+      VOICEVOX_ENDPOINT: ${VOICEVOX_ENDPOINT:-http://voicevox:50021}
+      VOICEVOX_SPEAKER_ID: ${VOICEVOX_SPEAKER_ID:-1}
+      VOICEVOX_SPEED_SCALE: ${VOICEVOX_SPEED_SCALE:-}
       RTC_ICE_HOST_IPS: ${RTC_ICE_HOST_IPS}
       SWITCHBOT_TOKEN: ${SWITCHBOT_TOKEN}
       SWITCHBOT_SECRET: ${SWITCHBOT_SECRET}
@@ -33,10 +38,16 @@ services:
 
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    platform: ${EMBEDDING_PLATFORM:-linux/amd64}
     command: ["--model-id", "intfloat/multilingual-e5-small"]
     restart: unless-stopped
     volumes:
       - embedding-model-cache:/data
+
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    platform: ${VOICEVOX_PLATFORM:-linux/amd64}
+    restart: unless-stopped
 
 volumes:
   embedding-model-cache:
