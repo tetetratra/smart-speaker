@@ -8,8 +8,17 @@ VOICEVOX は `tts` component から利用できるローカル TTS provider で�
 
 - service 名: `voicevox`
 - image: `voicevox/voicevox_engine:cpu-ubuntu20.04-latest`
+- platform: `${VOICEVOX_PLATFORM:-linux/amd64}`
 - 接続元: `server`
 - endpoint: `http://voicevox:50021`
+
+VOICEVOX Engine の CPU image は arm64 環境でそのまま pull できない場合があるため、Compose では既定で `linux/amd64` を指定しています。Linux amd64 ではネイティブに動作し、Apple Silicon Mac では Docker Desktop の amd64 emulation で動作します。
+
+arm64 対応 image へ切り替える場合や、別 platform を明示したい場合は次のように上書きします。
+
+```sh
+VOICEVOX_PLATFORM=linux/arm64 docker compose up
+```
 
 `server.depends_on` には `voicevox` を追加していますが、これは起動順の補助です。VOICEVOX Engine の readiness 保証や詳細なヘルスチェックは今回の実装範囲には含めていません。
 

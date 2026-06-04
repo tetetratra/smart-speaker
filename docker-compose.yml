@@ -38,6 +38,7 @@ services:
 
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    platform: ${EMBEDDING_PLATFORM:-linux/amd64}
     command: ["--model-id", "intfloat/multilingual-e5-small"]
     restart: unless-stopped
     volumes:
@@ -45,6 +46,7 @@ services:
 
   voicevox:
     image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    platform: ${VOICEVOX_PLATFORM:-linux/amd64}
     restart: unless-stopped
 
 volumes:
