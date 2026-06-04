@@ -3,7 +3,8 @@
 ## 概要
 
 `timer` は、未来の時刻に扱う自然言語 action をプロセス内メモリへ登録する
-local tool です。「20分後に起こして」「21時になったらエアコンをoffにして」
+local tool です。登録済み timer の取消は `cancel_timer` tool で行います。
+「20分後に起こして」「21時になったらエアコンをoffにして」
 のような依頼を、比較可能な絶対時刻と自然言語 action の組として保持します。
 
 保存済みの任意 tool call を直接実行するものではありません。期限到達時には、
@@ -12,11 +13,12 @@ local tool です。「20分後に起こして」「21時になったらエア�
 
 ## 入力
 
-- tool 名: `timer`
+- 登録 tool 名: `timer`
+- 取消 tool 名: `cancel_timer`
 - mode: `write`
-- 必須引数: `operation`
+- `timer` の必須引数: `operation`
 - `operation=create` の必須引数: `at`, `action`
-- `operation=cancel` の必須引数: `id`
+- `cancel_timer` の必須引数: `id`
 
 `at` は RFC3339 の絶対時刻です。相対指定の解釈は、LLM が system prompt の現在日時
 をもとに行います。
@@ -39,7 +41,6 @@ local tool です。「20分後に起こして」「21時になったらエア�
 
 ```json
 {
-  "operation": "cancel",
   "id": "timer-id"
 }
 ```
@@ -107,7 +108,7 @@ timer の登録、取消、期限到達時には `EventTimerState` が発行さ�
 ```
 
 管理画面では未到達 timer の件数、期限、action、id を表示します。取消操作 UI は持たず、
-自然発話から `operation=cancel` を呼ぶ想定です。
+自然発話から `cancel_timer` を呼ぶ想定です。
 
 ## 制約
 

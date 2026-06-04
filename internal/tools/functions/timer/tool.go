@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	toolName = "timer"
+	toolName       = "timer"
+	cancelToolName = "cancel_timer"
 
 	defaultTickInterval = time.Second
 )
@@ -88,6 +89,10 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	}
 }
 
+func (t *Tool) CancelTool() *CancelTool {
+	return &CancelTool{timer: t}
+}
+
 func (t *Tool) create(args map[string]any) (map[string]any, error) {
 	atRaw := strings.TrimSpace(asString(args["at"]))
 	if atRaw == "" {
@@ -137,7 +142,7 @@ func (t *Tool) Definition() map[string]any {
 	return tools.DefinitionWithMode(map[string]any{
 		"type": "function",
 		"name": toolName,
-		"description": `未来の時刻に扱う自然言語actionをメモリ上のタイマーとして登録またはキャンセルします。
+		"description": `未来の時刻に扱う自然言語actionをメモリ上のタイマーとして登録します。
 「20分後に起こして」「21時になったらエアコンをoffにして」のような依頼は、現在日時をもとに絶対時刻へ解釈し、operation=create、at=RFC3339、action=実行したい自然言語で登録してください。
 actionには「20分後に」「21時になったら」などの時刻・遅延条件を含めず、期限到達時点で実行する内容だけを入れてください。例: 「10分後にエアコンをつけて」は action="エアコンをつける"。
 期限到達時には保存したactionがAIへ通知されます。`,
@@ -146,8 +151,8 @@ actionには「20分後に」「21時になったら」などの時刻・遅延�
 			"properties": map[string]any{
 				"operation": map[string]any{
 					"type":        "string",
-					"enum":        []string{"create", "cancel"},
-					"description": "create はタイマー登録、cancel は既存タイマーの取消。",
+					"enum":        []string{"create"},
+					"description": "create はタイマー登録。",
 				},
 				"at": map[string]any{
 					"type":        "string",
@@ -157,12 +162,40 @@ actionには「20分後に」「21時になったら」などの時刻・遅延�
 					"type":        "string",
 					"description": "create時に必須。期限到達時にAIへ渡す自然言語の実行内容。相対時刻や遅延条件は含めず、期限到達時点で実行する内容だけを指定します。例: 「10分後にエアコンをつけて」は「エアコンをつける」。",
 				},
-				"id": map[string]any{
-					"type":        "string",
-					"description": "cancel時に必須。取り消すタイマーID。",
-				},
 			},
 			"required":             []string{"operation"},
+			"additionalProperties": false,
+		},
+	}, tools.ToolModeWrite)
+}
+
+type CancelTool struct {
+	timer *Tool
+}
+
+func (t *CancelTool) Name() string { return cancelToolName }
+
+func (t *CancelTool) Run(args map[string]any) (map[string]any, error) {
+	if t == nil || t.timer == nil {
+		return nil, fmt.Errorf("timer store is not configured")
+	}
+	return t.timer.cancel(args)
+}
+
+func (t *CancelTool) Definition() map[string]any {
+	return tools.DefinitionWithMode(map[string]any{
+		"type":        "function",
+		"name":        cancelToolName,
+		"description": "登録済みタイマーをID指定で取り消します。現在の未到達タイマー一覧に含まれるidを指定してください。",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{
+					"type":        "string",
+					"description": "取り消すタイマーID。現在の未到達タイマー一覧に含まれるidを指定します。",
+				},
+			},
+			"required":             []string{"id"},
 			"additionalProperties": false,
 		},
 	}, tools.ToolModeWrite)
@@ -252,3 +285,5 @@ var _ tools.Handler = (*Tool)(nil)
 var _ tools.ContextAware = (*Tool)(nil)
 var _ tools.EventEmitterAware = (*Tool)(nil)
 var _ tools.DefinitionProvider = (*Tool)(nil)
+var _ tools.Handler = (*CancelTool)(nil)
+var _ tools.DefinitionProvider = (*CancelTool)(nil)

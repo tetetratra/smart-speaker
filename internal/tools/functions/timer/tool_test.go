@@ -11,10 +11,11 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func TestToolCreateAndCancel(t *testing.T) {
+func TestToolCreateAndCancelTimerTool(t *testing.T) {
 	now := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
 	store := timerstate.NewStoreWithClock(func() time.Time { return now })
 	tool := New(Config{Store: store, Now: func() time.Time { return now }})
+	cancelTool := tool.CancelTool()
 
 	var events []types.Event
 	tool.SetEventEmitter(func(evt types.Event) { events = append(events, evt) })
@@ -37,10 +38,7 @@ func TestToolCreateAndCancel(t *testing.T) {
 		t.Fatalf("events = %#v, want timer state event", events)
 	}
 
-	cancelled, err := tool.Run(map[string]any{
-		"operation": "cancel",
-		"id":        id,
-	})
+	cancelled, err := cancelTool.Run(map[string]any{"id": id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +47,18 @@ func TestToolCreateAndCancel(t *testing.T) {
 	}
 	if got := len(store.Snapshot()); got != 0 {
 		t.Fatalf("Snapshot len after cancel = %d, want 0", got)
+	}
+}
+
+func TestCancelToolRejectsMissingOrUnknownID(t *testing.T) {
+	tool := New(Config{})
+	cancelTool := tool.CancelTool()
+
+	if _, err := cancelTool.Run(map[string]any{}); err == nil {
+		t.Fatal("Run returned nil error, want missing id error")
+	}
+	if _, err := cancelTool.Run(map[string]any{"id": "missing"}); err == nil {
+		t.Fatal("Run returned nil error, want unknown id error")
 	}
 }
 
@@ -88,6 +98,17 @@ func TestToolDefinitionInstructsActionWithoutDelayCondition(t *testing.T) {
 	if !ok {
 		t.Fatalf("properties = %#v", params["properties"])
 	}
+	operation, ok := props["operation"].(map[string]any)
+	if !ok {
+		t.Fatalf("operation property = %#v", props["operation"])
+	}
+	enum, ok := operation["enum"].([]string)
+	if !ok || len(enum) != 1 || enum[0] != "create" {
+		t.Fatalf("operation enum = %#v, want create only", operation["enum"])
+	}
+	if _, ok := props["id"]; ok {
+		t.Fatalf("timer definition should not expose id: %#v", props["id"])
+	}
 	action, ok := props["action"].(map[string]any)
 	if !ok {
 		t.Fatalf("action property = %#v", props["action"])
@@ -101,6 +122,30 @@ func TestToolDefinitionInstructsActionWithoutDelayCondition(t *testing.T) {
 		if !strings.Contains(actionDescription, want) {
 			t.Fatalf("action description = %q, want it to contain %q", actionDescription, want)
 		}
+	}
+}
+
+func TestCancelToolDefinitionRequiresID(t *testing.T) {
+	tool := New(Config{})
+	def := tool.CancelTool().Definition()
+	if def["name"] != cancelToolName {
+		t.Fatalf("name = %v, want %s", def["name"], cancelToolName)
+	}
+
+	params, ok := def["parameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("parameters = %#v", def["parameters"])
+	}
+	props, ok := params["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("properties = %#v", params["properties"])
+	}
+	if _, ok := props["id"]; !ok || len(props) != 1 {
+		t.Fatalf("properties = %#v, want id only", props)
+	}
+	required, ok := params["required"].([]string)
+	if !ok || len(required) != 1 || required[0] != "id" {
+		t.Fatalf("required = %#v, want id", params["required"])
 	}
 }
 

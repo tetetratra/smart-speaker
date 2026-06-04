@@ -58,10 +58,12 @@ func New(cfg Config) *Registry {
 	if timerTool == nil {
 		timerTool = timerfunc.New(timerfunc.Config{})
 	}
+	cancelTimerTool := timerTool.CancelTool()
 	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
 		{def: timerTool.Definition(), handler: timerTool},
+		{def: cancelTimerTool.Definition(), handler: cancelTimerTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
