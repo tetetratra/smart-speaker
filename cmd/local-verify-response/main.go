@@ -128,9 +128,17 @@ func buildPipeline(ctx context.Context, cfg app.Config) (*graph.Stage, <-chan ty
 	filterLLM := generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	filterLLM.Name = "generationfilter-llm"
 	ttsStage, err := tts.NewStage(tts.Config{
-		APIKey: cfg.ElevenLabs.APIKey,
-		Voice:  cfg.ElevenLabs.VoiceID,
-		Model:  cfg.ElevenLabs.Model,
+		Provider: cfg.TTSProvider,
+		ElevenLabs: tts.ElevenLabsConfig{
+			APIKey: cfg.ElevenLabs.APIKey,
+			Voice:  cfg.ElevenLabs.VoiceID,
+			Model:  cfg.ElevenLabs.Model,
+		},
+		Voicevox: tts.VoicevoxConfig{
+			Endpoint:   cfg.Voicevox.Endpoint,
+			SpeakerID:  cfg.Voicevox.SpeakerID,
+			SpeedScale: cfg.Voicevox.SpeedScale,
+		},
 	})
 	if err != nil {
 		log.Fatal(err)

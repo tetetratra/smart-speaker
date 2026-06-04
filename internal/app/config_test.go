@@ -55,3 +55,59 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfigReadsTTSProviderConfig(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("TTS_PROVIDER", "voicevox")
+	t.Setenv("VOICEVOX_ENDPOINT", "http://voicevox:50021")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "3")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "1.25")
+	t.Setenv("ELEVENLABS_API_KEY", "")
+	t.Setenv("ELEVENLABS_VOICE_ID", "")
+
+	cfg := LoadConfig("")
+	if cfg.TTSProvider != "voicevox" {
+		t.Fatalf("TTSProvider = %q, want voicevox", cfg.TTSProvider)
+	}
+	if cfg.Voicevox.Endpoint != "http://voicevox:50021" {
+		t.Fatalf("Voicevox.Endpoint = %q", cfg.Voicevox.Endpoint)
+	}
+	if cfg.Voicevox.SpeakerID != 3 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want 3", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale == nil || *cfg.Voicevox.SpeedScale != 1.25 {
+		t.Fatalf("Voicevox.SpeedScale = %v, want 1.25", cfg.Voicevox.SpeedScale)
+	}
+}
+
+func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("TTS_PROVIDER", "")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "")
+
+	cfg := LoadConfig("")
+	if cfg.TTSProvider != "elevenlabs" {
+		t.Fatalf("TTSProvider = %q, want elevenlabs", cfg.TTSProvider)
+	}
+	if cfg.Voicevox.SpeakerID != 1 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want 1", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale != nil {
+		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+	}
+}
+
+func TestLoadConfigHandlesInvalidVoicevoxNumbers(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "invalid")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "-1")
+
+	cfg := LoadConfig("")
+	if cfg.Voicevox.SpeakerID != 1 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want default 1", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale != nil {
+		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+	}
+}

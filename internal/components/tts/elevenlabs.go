@@ -8,11 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/tetetratra/smart-speaker/internal/graph"
 )
 
-type Config struct {
+type ElevenLabsConfig struct {
 	APIKey        string
 	Voice         string
 	Model         string
@@ -27,25 +25,25 @@ type VoiceSettings struct {
 	UseSpeakerBoost *bool
 }
 
-func NewStage(cfg Config) (*graph.Stage, error) {
+func newElevenLabsSynthesizerFromConfig(cfg ElevenLabsConfig) (*elevenLabsSynthesizer, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("elevenlabs: API key is required")
+		return nil, fmt.Errorf("tts: elevenlabs API key is required")
 	}
 	if cfg.Voice == "" {
-		return nil, fmt.Errorf("elevenlabs: voice id is required")
+		return nil, fmt.Errorf("tts: elevenlabs voice id is required")
 	}
 	if cfg.Model == "" {
 		cfg.Model = "eleven_v3"
 	}
-	return newStageWithSynthesizer(newElevenLabsSynthesizer(cfg))
+	return newElevenLabsSynthesizer(cfg), nil
 }
 
 type elevenLabsSynthesizer struct {
-	cfg    Config
+	cfg    ElevenLabsConfig
 	client *http.Client
 }
 
-func newElevenLabsSynthesizer(cfg Config) *elevenLabsSynthesizer {
+func newElevenLabsSynthesizer(cfg ElevenLabsConfig) *elevenLabsSynthesizer {
 	return &elevenLabsSynthesizer{
 		cfg:    cfg,
 		client: &http.Client{},
