@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	toolName       = "timer"
+	toolName       = "register_timer"
 	cancelToolName = "cancel_timer"
 
 	defaultTickInterval = time.Second
@@ -80,7 +80,7 @@ func (t *Tool) SetEventEmitter(emit func(types.Event)) {
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	operation := strings.TrimSpace(asString(args["operation"]))
 	switch operation {
-	case "create":
+	case "", "create":
 		return t.create(args)
 	case "cancel":
 		return t.cancel(args)
@@ -142,28 +142,23 @@ func (t *Tool) Definition() map[string]any {
 	return tools.DefinitionWithMode(map[string]any{
 		"type": "function",
 		"name": toolName,
-		"description": `未来の時刻に扱う自然言語actionをメモリ上のタイマーとして登録します。
-「20分後に起こして」「21時になったらエアコンをoffにして」のような依頼は、現在日時をもとに絶対時刻へ解釈し、operation=create、at=RFC3339、action=実行したい自然言語で登録してください。
+		"description": `ユーザーから「20分後に起こして」「21時になったらエアコンをoffにして」のような未来時刻の依頼を受けたとき、その依頼をメモリ上のタイマーとして登録します。
+現在日時をもとに期限到達時刻を絶対時刻へ解釈し、atにはRFC3339形式の時刻、actionには期限到達時に実行したい自然言語の内容を指定してください。
 actionには「20分後に」「21時になったら」などの時刻・遅延条件を含めず、期限到達時点で実行する内容だけを入れてください。例: 「10分後にエアコンをつけて」は action="エアコンをつける"。
 期限到達時には保存したactionがAIへ通知されます。`,
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"operation": map[string]any{
-					"type":        "string",
-					"enum":        []string{"create"},
-					"description": "create はタイマー登録。",
-				},
 				"at": map[string]any{
 					"type":        "string",
-					"description": "create時に必須。期限到達時刻をRFC3339で指定します。例: 2026-06-03T21:00:00+09:00",
+					"description": "期限到達時刻をRFC3339で指定します。例: 2026-06-03T21:00:00+09:00",
 				},
 				"action": map[string]any{
 					"type":        "string",
-					"description": "create時に必須。期限到達時にAIへ渡す自然言語の実行内容。相対時刻や遅延条件は含めず、期限到達時点で実行する内容だけを指定します。例: 「10分後にエアコンをつけて」は「エアコンをつける」。",
+					"description": "期限到達時にAIへ渡す自然言語の実行内容。相対時刻や遅延条件は含めず、期限到達時点で実行する内容だけを指定します。例: 「10分後にエアコンをつけて」は「エアコンをつける」。",
 				},
 			},
-			"required":             []string{"operation"},
+			"required":             []string{"at", "action"},
 			"additionalProperties": false,
 		},
 	}, tools.ToolModeWrite)

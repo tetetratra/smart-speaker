@@ -1,8 +1,8 @@
-# timer（時間指定 action）
+# register_timer / cancel_timer（時間指定 action）
 
 ## 概要
 
-`timer` は、未来の時刻に扱う自然言語 action をプロセス内メモリへ登録する
+`register_timer` は、未来の時刻に扱う自然言語 action をプロセス内メモリへ登録する
 local tool です。登録済み timer の取消は `cancel_timer` tool で行います。
 「20分後に起こして」「21時になったらエアコンをoffにして」
 のような依頼を、比較可能な絶対時刻と自然言語 action の組として保持します。
@@ -13,11 +13,10 @@ local tool です。登録済み timer の取消は `cancel_timer` tool で行�
 
 ## 入力
 
-- 登録 tool 名: `timer`
+- 登録 tool 名: `register_timer`
 - 取消 tool 名: `cancel_timer`
 - mode: `write`
-- `timer` の必須引数: `operation`
-- `operation=create` の必須引数: `at`, `action`
+- `register_timer` の必須引数: `at`, `action`
 - `cancel_timer` の必須引数: `id`
 
 `at` は RFC3339 の絶対時刻です。相対指定の解釈は、LLM が system prompt の現在日時
@@ -31,7 +30,6 @@ local tool です。登録済み timer の取消は `cancel_timer` tool で行�
 
 ```json
 {
-  "operation": "create",
   "at": "2026-06-03T21:00:00+09:00",
   "action": "エアコンをoffにする"
 }
@@ -60,7 +58,7 @@ local tool です。登録済み timer の取消は `cancel_timer` tool で行�
 
 ## 期限到達時の処理
 
-`timer` tool は `ContextAware` / `EventEmitterAware` として動作し、toolcaller から
+`register_timer` tool は `ContextAware` / `EventEmitterAware` として動作し、toolcaller から
 context と event emitter が注入されると軽量な ticker で期限到達を監視します。
 
 期限に到達した timer は Store から取り出され、次のような system commit として

@@ -20,9 +20,8 @@ func TestToolCreateAndCancelTimerTool(t *testing.T) {
 	var events []types.Event
 	tool.SetEventEmitter(func(evt types.Event) { events = append(events, evt) })
 	out, err := tool.Run(map[string]any{
-		"operation": "create",
-		"at":        now.Add(time.Hour).Format(time.RFC3339),
-		"action":    "起こす",
+		"at":     now.Add(time.Hour).Format(time.RFC3339),
+		"action": "起こす",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -67,9 +66,8 @@ func TestToolRejectsPastTimer(t *testing.T) {
 	tool := New(Config{Now: func() time.Time { return now }})
 
 	_, err := tool.Run(map[string]any{
-		"operation": "create",
-		"at":        now.Add(-time.Second).Format(time.RFC3339),
-		"action":    "起こす",
+		"at":     now.Add(-time.Second).Format(time.RFC3339),
+		"action": "起こす",
 	})
 	if err == nil {
 		t.Fatal("Run returned nil error, want past timer error")
@@ -79,8 +77,13 @@ func TestToolRejectsPastTimer(t *testing.T) {
 func TestToolDefinitionInstructsActionWithoutDelayCondition(t *testing.T) {
 	tool := New(Config{})
 	def := tool.Definition()
+	if def["name"] != toolName {
+		t.Fatalf("name = %v, want %s", def["name"], toolName)
+	}
 	description, _ := def["description"].(string)
 	for _, want := range []string{
+		"未来時刻の依頼",
+		"タイマーとして登録",
 		"actionには",
 		"時刻・遅延条件を含めず",
 		`action="エアコンをつける"`,
@@ -98,16 +101,15 @@ func TestToolDefinitionInstructsActionWithoutDelayCondition(t *testing.T) {
 	if !ok {
 		t.Fatalf("properties = %#v", params["properties"])
 	}
-	operation, ok := props["operation"].(map[string]any)
-	if !ok {
-		t.Fatalf("operation property = %#v", props["operation"])
-	}
-	enum, ok := operation["enum"].([]string)
-	if !ok || len(enum) != 1 || enum[0] != "create" {
-		t.Fatalf("operation enum = %#v, want create only", operation["enum"])
+	if _, ok := props["operation"]; ok {
+		t.Fatalf("register_timer definition should not expose operation: %#v", props["operation"])
 	}
 	if _, ok := props["id"]; ok {
-		t.Fatalf("timer definition should not expose id: %#v", props["id"])
+		t.Fatalf("register_timer definition should not expose id: %#v", props["id"])
+	}
+	required, ok := params["required"].([]string)
+	if !ok || len(required) != 2 || required[0] != "at" || required[1] != "action" {
+		t.Fatalf("required = %#v, want at and action", params["required"])
 	}
 	action, ok := props["action"].(map[string]any)
 	if !ok {
