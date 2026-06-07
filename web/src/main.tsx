@@ -23,6 +23,7 @@ const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
 const toolToastDurationMs = 5000
+const receivedVolumeMeterMax = 1000
 
 type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
@@ -43,6 +44,11 @@ const defaultPlaybackSpeed: PlaybackSpeedPreset = 1
 function normalizePlaybackSpeed(value: unknown): PlaybackSpeedPreset {
   if (typeof value !== 'number') return defaultPlaybackSpeed
   return playbackSpeedLevels.find((level) => Math.abs(level - value) < 1e-9) ?? defaultPlaybackSpeed
+}
+
+function meterPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(receivedVolumeMeterMax, value)) / receivedVolumeMeterMax * 100
 }
 
 const liveRootStyle = `
@@ -123,7 +129,7 @@ const liveRootStyle = `
   }
   .live-controls-row {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 6px;
     width: 100%;
     align-items: center;
@@ -268,33 +274,32 @@ const liveRootStyle = `
     flex: 1;
     min-width: 0;
   }
-  .live-audio-stats {
-    display: flex;
-    gap: 4px;
-    align-items: center;
+  .live-received-volume-meter {
+    position: relative;
+    flex: 1;
     min-width: 0;
-    flex-wrap: wrap;
-  }
-  .live-audio-stat {
-    border: 1px solid var(--live-line);
-    background: var(--live-panel-soft);
+    height: 4px;
     border-radius: 999px;
-    padding: 4px 8px;
-    font-size: 10px;
-    line-height: 1;
-    color: var(--live-muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
+    background: var(--live-toggle-bg);
+    overflow: visible;
   }
-  .live-audio-stat strong {
-    color: var(--live-text);
-    font-weight: 700;
-    display: inline-block;
-    min-width: 5ch;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .live-received-volume-fill {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    border-radius: inherit;
+    background: var(--live-toggle-on);
+    transition: width 90ms linear;
+  }
+  .live-received-volume-threshold {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--live-muted);
+    box-shadow: 0 0 0 1px var(--live-panel-soft);
+    transform: translateX(-1px);
   }
   .live-status-grid {
     display: grid;
@@ -1300,6 +1305,8 @@ function LiveView(props: LiveViewProps) {
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
   const playbackSpeedIndex = playbackSpeedLevels.indexOf(playbackSpeed)
+  const inputLevelPercent = meterPercent(inputLevel)
+  const speechThresholdPercent = meterPercent(speechThreshold)
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1331,10 +1338,6 @@ function LiveView(props: LiveViewProps) {
           <div className="live-right">
             <div className="live-controls-panel">
               <div className="live-controls-row">
-                <div className="live-audio-stats" aria-label="VAD状態">
-                  <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
-                  <div className="live-audio-stat">閾値 <strong>{speechThreshold}</strong></div>
-                </div>
                 <div className="live-controls-actions">
                   <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
                     <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
@@ -1355,6 +1358,13 @@ function LiveView(props: LiveViewProps) {
                 <div className="live-status-card">
                   <div className="live-status-label">認識</div>
                   <div className="live-status-value">{sttStatus}</div>
+                </div>
+              </div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">受信音量</span>
+                <div className="live-received-volume-meter" aria-label="受信音量">
+                  <div className="live-received-volume-fill" style={{ width: `${inputLevelPercent}%` }} />
+                  <div className="live-received-volume-threshold" style={{ left: `${speechThresholdPercent}%` }} />
                 </div>
               </div>
               <div className="live-playback-slider-row">
