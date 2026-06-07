@@ -1314,7 +1314,7 @@ function LiveView(props: LiveViewProps) {
                     <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                     接続
                   </button>
-                  <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+                  <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 </div>
               </div>
               <div className="live-status-grid">
