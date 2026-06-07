@@ -1555,7 +1555,7 @@ function LiveView(props: LiveViewProps) {
                 <div className="live-tool-toast-stack">
                   {toolToasts.map((toast) => (
                     <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
-                      <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
+                      <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'call' : 'result'}: {toast.toolName}</span>
                     </div>
                   ))}
                 </div>
