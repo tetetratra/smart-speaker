@@ -599,6 +599,10 @@ function formatServerEventLog(raw: unknown): string {
   }
 }
 
+function isScrolledToBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
+}
+
 type LiveViewProps = {
   connected: boolean
   connecting: boolean
@@ -642,6 +646,7 @@ function App() {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
   const adminLogRef = useRef<HTMLDivElement | null>(null)
+  const shouldFollowAdminLogRef = useRef(true)
   const remoteStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -666,9 +671,15 @@ function App() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
+  const updateAdminLogFollow = useCallback(() => {
+    const el = adminLogRef.current
+    shouldFollowAdminLogRef.current = !el || isScrolledToBottom(el)
+  }, [])
+
   const appendServerEventLog = useCallback((raw: unknown) => {
+    updateAdminLogFollow()
     setServerEventLogs((prev) => [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }])
-  }, [nextMessageId])
+  }, [nextMessageId, updateAdminLogFollow])
 
   const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
     const normalizedToolName = toolName.trim() || 'unknown_tool'
@@ -1089,7 +1100,7 @@ function App() {
 
   useEffect(() => {
     const el = adminLogRef.current
-    if (el) {
+    if (el && shouldFollowAdminLogRef.current) {
       el.scrollTop = el.scrollHeight
     }
   }, [serverEventLogs])
@@ -1138,6 +1149,16 @@ function App() {
     }
     return () => body.classList.remove('admin-mode')
   }, [uiMode])
+  useEffect(() => {
+    if (uiMode !== 'admin' || !shouldFollowAdminLogRef.current) return
+    const frame = window.requestAnimationFrame(() => {
+      const el = adminLogRef.current
+      if (el) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [uiMode])
   const setMode = useCallback((mode: 'admin' | 'app') => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
@@ -1182,7 +1203,9 @@ function App() {
           flexDirection: 'column',
           gap: 12,
           padding: 12,
-          minHeight: '100vh',
+          height: '100vh',
+          minHeight: 0,
+          overflow: 'hidden',
           boxSizing: 'border-box',
         }}
       >
@@ -1190,16 +1213,19 @@ function App() {
           style={{
             flex: '1 1 auto',
             minHeight: 0,
-            border: '1px solid #ddd',
-            borderRadius: 8,
-            padding: 12,
+            height: '100%',
+            border: '2px solid #e2e8f0',
+            borderRadius: 10,
+            padding: '10px 12px',
             overflow: 'auto',
             background: '#fafafa',
+            boxShadow: 'inset 0 0 0 1px #f0f0f0',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
             fontSize: 12,
             lineHeight: 1.5,
           }}
           ref={adminLogRef}
+          onScroll={updateAdminLogFollow}
         >
           {serverEventLogs.map((log) => (
             <div key={log.id} style={{ whiteSpace: 'pre', minWidth: 'max-content' }}>
