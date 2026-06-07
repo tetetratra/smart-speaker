@@ -5,12 +5,10 @@ import { createWS } from './ws'
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
 
-type StatusTone = 'idle' | 'active' | 'done' | 'error'
-type ButtonTone = 'primary' | 'secondary'
 type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
-type TimerEntry = { id: string; at: string; action: string; createdAt?: string }
+type ServerEventLog = { id: number; line: string }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -19,7 +17,6 @@ if (browserURL.port === '5173') {
 }
 const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
 const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
-const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const nightModeStartHour = 22
@@ -48,30 +45,6 @@ function normalizePlaybackSpeed(value: unknown): PlaybackSpeedPreset {
   return playbackSpeedLevels.find((level) => Math.abs(level - value) < 1e-9) ?? defaultPlaybackSpeed
 }
 
-function normalizeTimerEntries(value: unknown): TimerEntry[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((raw) => {
-    if (!raw || typeof raw !== 'object') return []
-    const item = raw as Record<string, unknown>
-    const id = typeof item.id === 'string' ? item.id.trim() : ''
-    const at = typeof item.at === 'string' ? item.at.trim() : ''
-    const action = typeof item.action === 'string' ? item.action.trim() : ''
-    const createdAt = typeof item.created_at === 'string' ? item.created_at.trim() : undefined
-    if (!id || !at || !action) return []
-    return [{ id, at, action, createdAt }]
-  })
-}
-
-function formatTimerAt(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('ja-JP', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
@@ -569,78 +542,61 @@ const liveRootStyle = `
   }
 `
 
-function getStatusTone(status: string): StatusTone {
-  if (status.includes('失敗') || status.includes('エラー')) return 'error'
-  if (status === '接続済み' || status === '完了') return 'done'
-  if (status === '接続中' || status === '送信中' || status === '検知中' || status === '認識中' || status === '最終結果待ち') {
-    return 'active'
-  }
-  return 'idle'
-}
-
-function getStatusBadgeStyle(tone: StatusTone): React.CSSProperties {
-  switch (tone) {
-    case 'active':
-      return { background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }
-    case 'done':
-      return { background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }
-    case 'error':
-      return { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5' }
-    default:
-      return { background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }
-  }
-}
-
-function getButtonStyle(tone: ButtonTone, disabled: boolean): React.CSSProperties {
-  const base: React.CSSProperties = {
-    borderRadius: 12,
-    padding: '10px 14px',
-    fontSize: 14,
-    fontWeight: 700,
-    border: '1px solid transparent',
-    transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.45 : 1,
-  }
-  if (tone === 'primary') {
-    return {
-      ...base,
-      background: '#0f172a',
-      color: '#f8fafc',
-      borderColor: '#0f172a',
-    }
-  }
-  return {
-    ...base,
-    background: '#ffffff',
-    color: '#334155',
-    borderColor: '#cbd5e1',
-  }
-}
-
 function isNightModeTime(date: Date): boolean {
   const hour = date.getHours()
   return hour >= nightModeStartHour || hour < nightModeEndHour
 }
 
-function getPipelineStateOptions(label: string): string[] {
-  switch (label) {
-    case 'WebRTC接続':
-      return ['停止中', '接続中', '接続済み', '切断', '失敗']
-    case 'マイクストリーム送信':
-      return ['停止中', '確認中', '待機中', '送信中', '確認失敗']
-    case 'サーバー発話検知':
-      return ['待機中', '検知中']
-    case 'Google文字起こし':
-      return ['停止中', '待機中', '認識中', '最終結果待ち', '完了', 'エラー']
-    default:
-      return []
-  }
-}
-
 function isSTTUserMessage(raw: any, role: ChatMessage['type']): boolean {
   if (role !== 'user') return false
   return raw.source === 'stt' || raw.source === 'server-stt'
+}
+
+function isBinaryLikeValue(value: unknown): boolean {
+  return value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob
+}
+
+function isBinaryLikeKey(key: string): boolean {
+  return /audio|pcm|sample|prebuffer|bytes|buffer|blob|binary|data/i.test(key)
+}
+
+function isBase64Like(value: string): boolean {
+  if (value.length < 256 || value.length % 4 !== 0) return false
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value)
+}
+
+function sanitizeEventValue(value: unknown, key = ''): unknown {
+  if (isBinaryLikeValue(value)) return '...'
+  if (typeof value === 'string') {
+    if (isBinaryLikeKey(key) || isBase64Like(value)) return '...'
+    return value
+  }
+  if (Array.isArray(value)) {
+    if (isBinaryLikeKey(key) && value.length > 0) return '...'
+    return value.map((item) => sanitizeEventValue(item))
+  }
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>
+    const result: Record<string, unknown> = {}
+    if (Object.prototype.hasOwnProperty.call(source, 'type')) {
+      result.type = sanitizeEventValue(source.type, 'type')
+    }
+    for (const [entryKey, entryValue] of Object.entries(source)) {
+      if (entryKey === 'type') continue
+      result[entryKey] = sanitizeEventValue(entryValue, entryKey)
+    }
+    return result
+  }
+  return value
+}
+
+function formatServerEventLog(raw: unknown): string {
+  const sanitized = sanitizeEventValue(raw)
+  try {
+    return JSON.stringify(sanitized)
+  } catch {
+    return JSON.stringify({ type: 'unserializable', value: '...' })
+  }
 }
 
 type LiveViewProps = {
@@ -681,11 +637,11 @@ function App() {
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
-  const [timers, setTimers] = useState<TimerEntry[]>([])
+  const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
-  const chatRef = useRef<HTMLDivElement | null>(null)
+  const adminLogRef = useRef<HTMLDivElement | null>(null)
   const remoteStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -709,6 +665,10 @@ function App() {
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
   }, [])
+
+  const appendServerEventLog = useCallback((raw: unknown) => {
+    setServerEventLogs((prev) => [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }])
+  }, [nextMessageId])
 
   const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
     const normalizedToolName = toolName.trim() || 'unknown_tool'
@@ -811,6 +771,7 @@ function App() {
 
   const handleChatMessage = useCallback(
     (raw: any) => {
+      appendServerEventLog(raw)
       if (!raw || typeof raw !== 'object') return
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
@@ -880,15 +841,11 @@ function App() {
           setBoardEntries((prev) => [...prev, { id: nextMessageId(), content }])
           break
         }
-        case 'timer.state': {
-          setTimers(normalizeTimerEntries(raw.timers))
-          break
-        }
         default:
           break
       }
     },
-    [appendMessage, handleRTCSignal, nextMessageId, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -1131,25 +1088,11 @@ function App() {
 
 
   useEffect(() => {
-    const el = chatRef.current
+    const el = adminLogRef.current
     if (el) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages])
-  const startGoogleAuth = useCallback(() => {
-    const url = `${serverHTTPBaseUrl}/oauth/google/start`
-    const opened = window.open(url, '_blank')
-    if (!opened) {
-      window.location.href = url
-    }
-  }, [])
-
-  const pipelineStatuses = [
-    { label: 'WebRTC接続', status: rtcStatus },
-    { label: 'マイクストリーム送信', status: audioSendStatus },
-    { label: 'サーバー発話検知', status: speechDetectStatus },
-    { label: 'Google文字起こし', status: sttStatus },
-  ]
+  }, [serverEventLogs])
   const lastAssistantMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const msg = messages[i]
@@ -1243,177 +1186,43 @@ function App() {
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={connect} disabled={connected || busy} style={getButtonStyle('primary', connected || busy)}>
-            接続
-          </button>
-          <button onClick={disconnect} disabled={!connected} style={getButtonStyle('secondary', !connected)}>
-            切断
-          </button>
-          <button onClick={startGoogleAuth} style={getButtonStyle('secondary', false)}>
-            Google認証
-          </button>
-          <button onClick={() => setMode('app')} style={getButtonStyle('secondary', false)}>
-            アプリ画面へ
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
-            {pipelineStatuses.map((item) => {
-              const tone = getStatusTone(item.status)
-              const options = getPipelineStateOptions(item.label)
-              return (
-                <div
-                  key={item.label}
-                  style={{
-                    borderRadius: 10,
-                    border: '1px solid #e2e8f0',
-                    background: '#ffffff',
-                    padding: 10,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#475569' }}>{item.label}</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {options.map((option) => {
-                      const isCurrent = option === item.status
-                      return (
-                        <span
-                          key={option}
-                          style={{
-                            ...(isCurrent
-                              ? getStatusBadgeStyle(tone)
-                              : {
-                                  background: '#f8fafc',
-                                  color: '#94a3b8',
-                                  border: '1px solid #e2e8f0',
-                                }),
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            borderRadius: 9999,
-                            padding: '4px 10px',
-                            fontSize: 12,
-                            fontWeight: isCurrent ? 700 : 500,
-                            opacity: isCurrent ? 1 : 0.55,
-                          }}
-                        >
-                          {option}
-                        </span>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {rtcError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>音声エラー:</strong> {rtcError}
-            </div>
-          )}
-          <div>
-            <strong>再生音量:</strong> {selectedPlaybackVolume.label} (gain {selectedPlaybackVolume.gain})
-          </div>
-          {sttError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>文字起こしエラー:</strong> {sttError}
-            </div>
-          )}
-        </div>
         <div
           style={{
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            background: '#ffffff',
-            padding: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <strong>タイマー</strong>
-            <span
-              style={{
-                border: '1px solid #dbeafe',
-                borderRadius: 9999,
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                padding: '2px 8px',
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              {timers.length}件
-            </span>
-          </div>
-          {timers.length === 0 ? (
-            <div style={{ color: '#64748b', fontSize: 13 }}>未登録</div>
-          ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {timers.map((timer) => (
-                <div
-                  key={timer.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '120px minmax(0, 1fr)',
-                    gap: 8,
-                    alignItems: 'start',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 6,
-                    background: '#f8fafc',
-                    padding: 8,
-                  }}
-                >
-                  <div style={{ color: '#0f172a', fontSize: 13, fontWeight: 700 }}>{formatTimerAt(timer.at)}</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: '#0f172a', fontSize: 13, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{timer.action}</div>
-                    <div style={{ color: '#64748b', fontSize: 11, marginTop: 2, overflowWrap: 'anywhere' }}>{timer.id}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div
-          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
             border: '1px solid #ddd',
             borderRadius: 8,
             padding: 12,
-            minHeight: 300,
-            maxHeight: 500,
-            overflowY: 'auto',
+            overflow: 'auto',
             background: '#fafafa',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+            fontSize: 12,
+            lineHeight: 1.5,
           }}
-          ref={chatRef}
+          ref={adminLogRef}
         >
-          {messages.map((m) => {
-            let color = '#16a34a'
-            let label = 'Agent'
-            if (m.type === 'user') {
-              color = '#2563eb'
-              label = 'User'
-            } else if (m.type === 'system') {
-              color = '#6b7280'
-              label = 'System'
-            } else if (m.type === 'tool_call') {
-              color = '#8b5cf6'
-              label = 'Tool call'
-            } else if (m.type === 'tool_result') {
-              color = '#ec4899'
-              label = 'Tool result'
-            }
-            const sourceLabel = m.source ? ` (${m.source})` : ''
-            return (
-              <div key={m.id} style={{ marginBottom: 8 }}>
-                <strong style={{ color }}>{label}{sourceLabel}</strong>
-                <div>{m.text}</div>
-              </div>
-            )
-          })}
+          {serverEventLogs.map((log) => (
+            <div key={log.id} style={{ whiteSpace: 'pre', minWidth: 'max-content' }}>
+              {log.line}
+            </div>
+          ))}
         </div>
+        <button
+          onClick={() => setMode('app')}
+          style={{
+            alignSelf: 'flex-start',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            color: '#334155',
+            padding: '10px 14px',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          app画面
+        </button>
       </div>
     </>
   )

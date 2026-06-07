@@ -12,11 +12,16 @@ export function createWS(url: string) {
           reject(ev)
         }
         socket.onmessage = (ev) => {
+          if (typeof ev.data !== 'string') {
+            onMessage({ type: 'binary_message', data: ev.data })
+            return
+          }
           try {
             const msg = JSON.parse(ev.data)
             onMessage(msg)
           } catch (e) {
             console.warn('ws parse error:', (e as any)?.message)
+            onMessage({ type: 'raw_message', data: ev.data })
           }
         }
         socket.onclose = () => {
