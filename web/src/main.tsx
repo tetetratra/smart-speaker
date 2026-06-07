@@ -278,25 +278,23 @@ const liveRootStyle = `
     position: relative;
     flex: 1;
     min-width: 0;
-    height: 14px;
-    border: 1px solid var(--live-line);
+    height: 4px;
     border-radius: 999px;
     background: var(--live-toggle-bg);
-    overflow: hidden;
-    box-shadow: inset 0 1px 2px var(--live-shadow);
+    overflow: visible;
   }
   .live-received-volume-fill {
     position: absolute;
     inset-block: 0;
     left: 0;
     border-radius: inherit;
-    background: linear-gradient(90deg, #22c55e, #facc15, #ef4444);
+    background: var(--live-toggle-on);
     transition: width 90ms linear;
   }
   .live-received-volume-threshold {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: -4px;
+    bottom: -4px;
     width: 2px;
     border-radius: 999px;
     background: var(--live-text);
