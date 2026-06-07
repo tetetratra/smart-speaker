@@ -293,11 +293,11 @@ const liveRootStyle = `
   }
   .live-received-volume-threshold {
     position: absolute;
-    top: -4px;
-    bottom: -4px;
+    top: -1px;
+    bottom: -1px;
     width: 2px;
     border-radius: 999px;
-    background: var(--live-text);
+    background: var(--live-muted);
     box-shadow: 0 0 0 1px var(--live-panel-soft);
     transform: translateX(-1px);
   }
