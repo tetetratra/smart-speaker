@@ -270,7 +270,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	if stages.rtcpeer != nil {
 		stages.rtcpeer.Name = "rtcpeer"
 	}
-	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{})
+	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{
+		Generation: generationStore,
+	})
 	if err != nil {
 		if stages.tts != nil {
 			stages.tts.Close()
@@ -404,7 +406,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, rtcpeerNode, chatNode, types.EventRTCSignal)
 	connectKinds(g, rtcpeerNode, rtcvadNode, types.EventRTCPeerAudioFrame)
 	connectKinds(g, rtcpeerNode, rtcoutNode, types.EventRTCPeerOutputSink)
-	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechEnd, types.EventRTCVADStatus)
+	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechStart, types.EventSpeechEnd, types.EventRTCVADStatus)
 	connectKinds(g, rtcvadNode, sttNode, types.EventRTCSpeechAudio)
 	connectKinds(g, sttNode, interimStopNode, types.EventHumanInterimUtterance, types.EventHumanUtterance)
 	connectKinds(g, interimStopNode, utteranceNode, types.EventHumanUtterance)
