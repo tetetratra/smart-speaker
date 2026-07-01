@@ -742,6 +742,14 @@ function App() {
     playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
   }, [selectedPlaybackVolume.gain])
 
+  const interruptRemoteAudioPlayback = useCallback(() => {
+    stopRemoteAudioGraph()
+    if (!remoteStreamRef.current) return
+    void connectRemoteStreamToAudioGraph().catch((err) => {
+      setRtcError(err instanceof Error ? err.message : 'RTC audio reconnect error')
+    })
+  }, [connectRemoteStreamToAudioGraph, stopRemoteAudioGraph])
+
   const sendPlaybackSpeed = useCallback((speed: PlaybackSpeedPreset) => {
     const ws = wsChatRef.current
     if (!ws || !connected) return
@@ -826,6 +834,13 @@ function App() {
           })
           break
         }
+        case 'speech_start': {
+          interruptRemoteAudioPlayback()
+          setIsAiSpeaking(false)
+          setSpeechDetectStatus('検出中')
+          setSttStatus('認識中')
+          break
+        }
         case 'speech_end': {
           setSpeechDetectStatus('待機中')
           setSttStatus('最終結果待ち')
@@ -861,7 +876,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
