@@ -93,7 +93,7 @@ func (s *stage) consume(ctx context.Context) {
 		}
 		text := buf.text()
 		buf.reset()
-		generationID := s.generation.Next()
+		generationID := s.generation.Current()
 		s.emit(ctx, types.Event{
 			Kind: types.EventConversationCommitRequest,
 			Payload: types.ConversationCommitRequest{
