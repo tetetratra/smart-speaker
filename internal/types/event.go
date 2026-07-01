@@ -14,6 +14,7 @@ type EventKind int
 const (
 	EventHumanUtterance EventKind = iota
 	EventHumanInterimUtterance
+	EventSpeechStart
 	EventSpeechEnd
 	EventRTCVADStatus
 	EventRealtimeOutput
@@ -48,6 +49,8 @@ func (k EventKind) String() string {
 		return "EventHumanUtterance"
 	case EventHumanInterimUtterance:
 		return "EventHumanInterimUtterance"
+	case EventSpeechStart:
+		return "EventSpeechStart"
 	case EventSpeechEnd:
 		return "EventSpeechEnd"
 	case EventRTCVADStatus:
