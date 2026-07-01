@@ -171,8 +171,6 @@ jobs:
           file: .github/docker/codex-runner.Dockerfile
           load: true
           tags: codex-runner:${{ github.run_id }}
-          cache-from: type=gha,scope=codex-runner
-          cache-to: type=gha,mode=max,scope=codex-runner
 
       - name: Codex を実行する
         id: run_codex
