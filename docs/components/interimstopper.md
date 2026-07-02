@@ -2,7 +2,8 @@
 
 > [!CAUTION]
 > この component は STT が interim transcript（`isFinal=false`）を返すことを前提にしているが、現在の STT モデル `chirp_3`（`internal/components/stt/stage.go`）は、`InterimResults: true` を指定してもストリーミングで interim を返さず final transcript（`isFinal=true`）しか返さない（Chirp 3 の仕様）。
-> そのため `stt` は `EventHumanInterimUtterance` を発行せず、この component の早期停止（`generation.Store.Next()`）は実質的に発火しない。AI出力の停止は従来どおり final transcript 到達時のままになる。
+> そのため `stt` は `EventHumanInterimUtterance` を発行せず、この component の早期停止（`generation.Store.Next()`）は実質的に発火しない。
+> 現在のAI出力停止は、`rtcvad` の speech start 判定時に generation が進むことで、final transcript 到達前に始まる。
 > interim による早期停止を実際に効かせるには、interim を返すモデルへ変更する必要がある。
 
 `interimstopper` は、STT の interim transcript をユーザー発話として保存せず、AI出力停止の早期シグナルとして扱う component。
@@ -38,7 +39,7 @@ flowchart LR
 3. `interimstopper` が `generation.Store.Next()` を呼び、現在進行中のAI出力を古いgenerationにする。
 4. 同じ発話内で追加のinterimが届いても、finalが届くまではgenerationを追加で進めない。
 5. final transcript が届いたら、`EventHumanUtterance` として `utterancebuffer` に渡す。
-6. `utterancebuffer` は従来どおりfinal transcriptをbufferし、flush時にユーザー発話用の新しいgenerationを採番する。
+6. `utterancebuffer` はfinal transcriptをbufferし、flush時に現在のgenerationをユーザー発話へ付与する。
 
 RTC出力済みバッファはこの component では破棄しない。
 現行のfinal時停止と同じく、generation更新後に後続へ流れてくる古いgenerationの出力を `generationfilter` で止める。

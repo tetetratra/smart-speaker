@@ -90,6 +90,10 @@ sequenceDiagram
   - `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の場合は、STT 状態を `完了` に戻す。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
+- `speech_start`
+  - remote stream の Web Audio graph を切断して再接続し、現在再生中の下り音声を中断する。
+  - `isAiSpeaking` を `false` にする。
+  - 発話検知を `検出中`、STT を `認識中` にする。
 - `agent_speech_end`
   - `isAiSpeaking` を `false` にする（AI ターンのタイムライン処理完了）。
 - `message`（agent）
@@ -155,6 +159,7 @@ sequenceDiagram
 - サーバーから来た remote stream を再生する。
 - 再生経路は `<audio>` 要素ではなく Web Audio API である。
 - `GainNode` で再生音量プリセットを反映する。
+- `speech_start` 受信時は WebRTC remote track 自体は止めず、Web Audio graph を一度閉じて同じ remote stream へ再接続することで、再生中の音声を破棄する。
 
 ### 4.3 UI 状態管理
 - 接続状態を保持する。
@@ -201,6 +206,7 @@ sequenceDiagram
 ## 5. 再設計時に崩すと挙動変更になる現行前提
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
+- VAD start は WebSocket の `speech_start` として届き、フロントはそのタイミングで再生中の remote 音声を中断する。
 - whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
 - session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
 - tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。

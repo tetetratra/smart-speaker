@@ -13,7 +13,7 @@ flowchart TB
 
   WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
   RTCPeer["rtcpeer<br/>WebRTC signaling、peer lifecycle、track境界を担当"]
-  RTCVAD["rtcvad<br/>上り音声のVAD、prebuffer、UI向け状態通知を担当"]
+  RTCVAD["rtcvad<br/>上り音声のVAD、prebuffer、世代更新、UI向け状態通知を担当"]
   STT["stt<br/>Google STT streamとinterim/final transcript出力を担当"]
   IS["interimstopper<br/>interimでAI出力停止用に世代を前進させる"]
   RTCOut["rtcout<br/>assistant音声をWebRTC下りtrackへ書き込む"]
@@ -43,14 +43,15 @@ flowchart TB
   WS -->|"EventRTCSignal<br/>offer/iceをrtcpeerへ渡す"| RTCPeer
   RTCPeer -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
   RTCPeer -->|"EventRTCPeerAudioFrame<br/>decode済みPCM frameを渡す"| RTCVAD
-  RTCVAD -->|"EventSpeechEnd<br/>発話終了をUIへ通知する"| WS
+  RTCVAD -->|"EventSpeechStart / EventSpeechEnd<br/>発話開始・終了をUIへ通知する"| WS
   RTCVAD -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
   RTCVAD -->|"EventRTCSpeechAudio<br/>発話開始、音声、終了を渡す"| STT
+  RTCVAD -.->|"speech startで世代idを進める"| GSTORE
   STT -->|"EventHumanInterimUtterance / EventHumanUtterance<br/>STT interim/final transcriptを流す"| IS
   IS -.->|"interim transcriptで世代idを進める"| GSTORE
   IS -->|"EventHumanUtterance<br/>final transcriptだけを流す"| UB
 
-  UB -.->|"新しい確定発話ごとに世代idを進める"| GSTORE
+  UB -.->|"現在世代idをuser発話に付与する"| GSTORE
   UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
   UB -->|"EventConversationCommitRequest<br/>user発話だけをactivityとして監視する"| SR
 
@@ -93,9 +94,9 @@ flowchart TB
 ## 主要な責務
 
 - `interimstopper` は STT 由来の interim transcript で世代idを前進させ、古いAI出力を既存の generationfilter で止める。interim は履歴やLLM入力へ流さない。
-- `utterancebuffer` は STT 由来の final transcript を短時間バッファし、1つの user 発話にまとめて世代idを進める。
+- `utterancebuffer` は STT 由来の final transcript を短時間バッファし、1つの user 発話にまとめて現在世代idを付与する。
 - `rtcpeer` は WebRTC signaling、peer lifecycle、remote track decode、下り音声 sink 通知を担当する。
-- `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、UI向け状態通知を担当する。
+- `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、speech start 時の世代更新、UI向け状態通知を担当する。
 - `stt` は Google Speech-to-Text v2 の streaming recognition と interim/final transcript 出力を担当する。
 - `rtcout` は agent 音声を WebRTC の下り audio track へ書き込む。
 - `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させ、agent status を idle に戻し、reset発火をUIへ通知する。
@@ -124,7 +125,9 @@ read 系 tool の成功結果と、write 系 tool のエラー結果は従来ど
 ## 世代と履歴
 
 世代idは `internal/states/generation` が保持する。
-interim transcript 到着時と新しい確定 user 発話ごとに世代idを単調増加させ、古い LLM chunk や古い scheduler item は generationfilter で落とす。
+speech start 判定時に世代idを単調増加させ、古い LLM chunk や古い scheduler item は generationfilter で落とす。
+STT interim transcript が届く構成では `interimstopper` も同一発話中の初回 interim で世代idを進める。
+確定 user 発話の commit は、その時点の現在世代idを使う。
 interim transcript による世代更新はAI出力停止専用であり、会話履歴やLLM入力には反映しない。
 また、長時間 user 発話がない場合は `sessionreset` が世代idをさらに前進させ、reset 前の古い event が後続へ反映されないようにする。
 
