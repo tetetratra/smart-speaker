@@ -15,7 +15,7 @@
   - `graph.Stage` として `Upstream` / `Downstream` channel、`Run`、`CloseFn` を提供する。
   - 入力は実装上、payload が `types.PlayableSpeech`、`types.TimelineItem`、または `types.AgentTimelineEnd` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
   - 出力は `EventScheduledItem`（payload は `types.PlayableSpeech` または `types.ToolRequest`）と、queue 内の最後の `AgentTimelineEnd` 処理後に発行する `EventAgentSpeechPlaybackEnd` である。
-  - production の graph では `tts -> generationfilter-tts -> playbackspeed -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
+  - production の graph では `tts -> generationfilter-tts -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
 
 - **世代別 worker**
   - `workers map[types.GenerationID]chan types.Event` により、`GenerationID` ごとに専用 queue と goroutine を持つ。
@@ -54,7 +54,7 @@
 
 1. LLM が `speech` / `tool` などの JSON timeline を生成し、`llm` が `EventTimelineItem` を順番に発行する。
 2. `tts` は `TimelineKindSpeech` を音声化し、`types.PlayableSpeech` を `EventPlayableSpeech` として発行する。`wait` / `tool` は `EventTimelineItem` のまま通す。
-3. `generationfilter-tts` は現在世代の `EventPlayableSpeech` / `EventTimelineItem` だけを `playbackspeed` へ通す。`playbackspeed` は Store の倍率に応じて `PlayableSpeech` の PCM・`DurationSeconds` と `wait` の `Sec` を加工してから scheduler へ渡す。
+3. `generationfilter-tts` は現在世代の `EventPlayableSpeech` / `EventTimelineItem` だけを scheduler へ通す。
 4. scheduler は payload の `GenerationID` を取り出し、該当世代の worker channel へ enqueue する。worker が未作成なら新規 channel と goroutine を作る。
 5. worker は `PlayableSpeech` を受け、`EventScheduledItem(Payload: PlayableSpeech)` を発行する。
 6. scheduler は `PlayableSpeech.DurationSeconds` 秒だけ待つ。この間、同じ世代の次 item は処理されない。
@@ -70,7 +70,6 @@ sequenceDiagram
     participant GF0 as generationfilter-llm
     participant TTS as tts
     participant GF1 as generationfilter-tts
-    participant PBS as playbackspeed
     participant S as scheduler
     participant GF2 as generationfilter-scheduler
     participant R as router
@@ -82,8 +81,7 @@ sequenceDiagram
     SA->>GF0: EventTimelineItem(speech, GenerationID)
     GF0->>TTS: EventTimelineItem(speech, GenerationID)
     TTS->>GF1: EventPlayableSpeech(PlayableSpeech)
-    GF1->>PBS: EventPlayableSpeech(PlayableSpeech)
-    PBS->>S: EventPlayableSpeech(PlayableSpeech)
+    GF1->>S: EventPlayableSpeech(PlayableSpeech)
     S->>GF2: EventScheduledItem(PlayableSpeech)
     S->>S: wait(DurationSeconds)
     GF2->>R: EventScheduledItem(PlayableSpeech)
@@ -93,8 +91,7 @@ sequenceDiagram
     SA->>GF0: EventTimelineItem(tool, GenerationID)
     GF0->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)
-    GF1->>PBS: EventTimelineItem(tool, GenerationID)
-    PBS->>S: EventTimelineItem(tool, GenerationID)
+    GF1->>S: EventTimelineItem(tool, GenerationID)
     S->>GF2: EventScheduledItem(ToolRequest)
     GF2->>R: EventScheduledItem(ToolRequest)
     R->>TC: EventToolRequest

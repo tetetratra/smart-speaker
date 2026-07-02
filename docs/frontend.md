@@ -32,7 +32,6 @@
 - whiteboard の内容を表示する。
 - 直近の user / agent 発話を表示する。
 - 再生音量をスライダーで切り替える。
-- 再生速度をスライダーで切り替える（サーバー側 store と WebSocket で同期）。
 - tool call / tool result を右側のキャラクターエリア上部に短時間のトーストとして表示する。
   - 通常の会話UIには追加しない。
   - 表示内容はツール名と call / result の区別に限定し、引数や結果本文は表示しない。
@@ -177,7 +176,6 @@ sequenceDiagram
   - `lastAssistantMessage`
   - `isConversationBubbleHidden`
   - `playbackVolumeLevel`
-  - `playbackSpeed`
 
 ### 4.4 URL と表示モード
 - URL から表示モードを決定する。
@@ -205,7 +203,6 @@ sequenceDiagram
 - session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
 - tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
-- 再生速度はサーバー側 pipeline（`playbackspeed` stage）で PCM と待機時間を加工する。UI は接続時に `playback_speed.state` を受け取り、変更時に `playback_speed.set` を送る。
 - 手動切断と異常切断で再接続ポリシーが異なる。
 
 ## 6. 不明点

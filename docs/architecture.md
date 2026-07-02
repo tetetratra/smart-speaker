@@ -25,9 +25,7 @@ flowchart TB
   GF1["generationfilter<br/>LLM出力の世代を検査する"]
   TTS["tts<br/>speechを音声化し、wait/toolは順序維持で通す"]
   GF2["generationfilter<br/>TTS出力の世代を検査する"]
-  PBS["playbackspeed<br/>発話PCMとwait秒数を速度倍率で加工する"]
   SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火する"]
-  PSTORE[("playback speed Store<br/>1/1.5/2/3倍を保持する")]
   GF3["generationfilter<br/>scheduler出力の世代を検査する"]
   ROUTER["router<br/>再生、agent保存、tool実行へ振り分ける"]
   TOOL["toolcaller<br/>local tool handlerを呼び出して結果を会話へ戻す"]
@@ -60,8 +58,6 @@ flowchart TB
   GF1 -.->|"最新世代idを読む"| GSTORE
   GF2 -.->|"最新世代idを読む"| GSTORE
   GF3 -.->|"最新世代idを読む"| GSTORE
-  WS -.->|"playback_speed.setで更新する"| PSTORE
-  PBS -.->|"都度倍率を読む"| PSTORE
   SR -.->|"idle timeout後に履歴を空にする"| HSTORE
   SR -.->|"idle timeout後に世代idを前進させる"| GSTORE
   SR -.->|"idle timeout後にidleへ更新する"| ASTORE
@@ -75,8 +71,7 @@ flowchart TB
   SA -->|"EventTimelineItem<br/>payloadは変更せず通過させる"| GF1
   GF1 -->|"EventTimelineItem<br/>最新世代だけを通す"| TTS
   TTS -->|"EventPlayableSpeech / EventTimelineItem<br/>音声化済みspeechとwait/toolを流す"| GF2
-  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>最新世代だけを通す"| PBS
-  PBS -->|"加工済みspeech/wait<br/>DurationSecondsとPCMを倍率に合わせる"| SCH
+  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>最新世代だけを通す"| SCH
   SCH -->|"EventScheduledItem<br/>再生時間やwait秒数に従って発火する"| GF3
   GF3 -->|"EventScheduledItem<br/>最新世代だけを通す"| ROUTER
 
@@ -103,7 +98,6 @@ flowchart TB
 - `llm` は会話履歴Storeの snapshot と agent status を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。
 - `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
-- `playbackspeed` は共有 Store の倍率に従い、`PlayableSpeech` の PCM・`DurationSeconds` と `wait` の `Sec` を加工する。
 - `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `TTS_PROVIDER` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
