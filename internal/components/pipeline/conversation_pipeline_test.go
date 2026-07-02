@@ -112,8 +112,8 @@ func TestInterimStopsOldGenerationAndFinalCommitsUserUtterance(t *testing.T) {
 	if req.Text != "明日の予定" {
 		t.Fatalf("Text = %q, want 明日の予定", req.Text)
 	}
-	if req.GenerationID != 3 {
-		t.Fatalf("GenerationID = %d, want 3", req.GenerationID)
+	if req.GenerationID != 2 {
+		t.Fatalf("GenerationID = %d, want 2", req.GenerationID)
 	}
 }
 

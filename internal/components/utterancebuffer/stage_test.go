@@ -11,6 +11,7 @@ import (
 
 func TestStageBuffersUtteranceAndAssignsGeneration(t *testing.T) {
 	store := generation.NewStore()
+	store.Next()
 	st := NewStage(Config{Delay: 10 * time.Millisecond, Generation: store})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

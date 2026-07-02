@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -23,12 +24,15 @@ const (
 	adaptiveVADMinThreshold             = 50
 )
 
-type Config struct{}
+type Config struct {
+	Generation *generation.Store
+}
 
 func NewStage(cfg Config) (*graph.Stage, error) {
 	s := &stage{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		generation: cfg.Generation,
 		peers:      map[string]*peerState{},
 	}
 	return &graph.Stage{
@@ -48,6 +52,7 @@ type stage struct {
 
 	mu              sync.Mutex
 	peers           map[string]*peerState
+	generation      *generation.Store
 	activeSpeakerID string
 	closed          bool
 }

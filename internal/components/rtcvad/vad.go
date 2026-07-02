@@ -99,6 +99,13 @@ func (s *stage) handleAudioFrame(frame types.RTCPeerAudioFrame) {
 
 	if shouldStart {
 		if s.activateSpeaker(peerID) {
+			if s.generation == nil {
+				log.Printf("rtcvad: generation store is nil")
+			} else {
+				id := s.generation.Next()
+				log.Printf("rtcvad: advanced generation on speech start generation=%d", id)
+			}
+			s.emit(types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: now}})
 			s.emit(types.Event{Kind: types.EventRTCSpeechAudio, Payload: types.RTCSpeechAudio{
 				PeerID:     peerID,
 				Type:       types.RTCSpeechAudioStart,

@@ -177,6 +177,16 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"sdp":       sig.SDP,
 			"candidate": sig.Candidate,
 		}
+	case types.EventSpeechStart:
+		speech, ok := evt.Payload.(types.SpeechEvent)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":        "speech_start",
+			"source":      speech.Source,
+			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
+		}
 	case types.EventSpeechEnd:
 		speech, ok := evt.Payload.(types.SpeechEvent)
 		if !ok {
