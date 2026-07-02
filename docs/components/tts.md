@@ -63,7 +63,6 @@ sequenceDiagram
   participant TTS as tts
   participant Provider as TTS provider
   participant GF2 as generationfilter
-  participant PBS as playbackspeed
   participant SCH as scheduler
   participant R as router
   participant RTCOut as rtcout
@@ -75,8 +74,7 @@ sequenceDiagram
   TTS->>Provider: synthesize speech
   Provider-->>TTS: raw PCM bytes
   TTS->>GF2: EventPlayableSpeech(PlayableSpeech)
-  GF2->>PBS: EventPlayableSpeech(PlayableSpeech)
-  PBS->>SCH: EventPlayableSpeech(PlayableSpeech)
+  GF2->>SCH: EventPlayableSpeech(PlayableSpeech)
   SCH->>R: EventScheduledItem(PlayableSpeech)
   SCH-->>SCH: DurationSeconds だけ待機
   R->>RTCOut: EventRealtimeAudio
@@ -242,7 +240,7 @@ sequenceDiagram
 
 - 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`TTS_PROVIDER`、ElevenLabs 設定、VOICEVOX 設定が渡される。
 - VOICEVOX service の起動と設定は [docs/services/voicevox.md](/docs/services/voicevox.md) を参照する。
-- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> playbackspeed -> scheduler` の順。
+- graph 接続は `llm -> generationfilter -> tts -> generationfilter -> scheduler` の順。
 - `tts` の出力として graph が下流へ接続する event kind は `EventTimelineItem` と `EventPlayableSpeech`。
 
 ### 不明点

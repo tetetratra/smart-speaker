@@ -14,13 +14,11 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
 	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
-	SpeedStore *pbspeed.Store
 	TimerStore *timerstate.Store
 }
 
@@ -33,7 +31,6 @@ func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		holder:     holder,
-		speedStore: cfg.SpeedStore,
 		timerStore: cfg.TimerStore,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
@@ -107,7 +104,6 @@ type chatWS struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	holder     *connHolder
-	speedStore *pbspeed.Store
 	timerStore *timerstate.Store
 	once       sync.Once
 	ctx        context.Context
@@ -264,16 +260,6 @@ func timerStateMessage(state types.TimerState) map[string]any {
 	}
 }
 
-func (c *chatWS) pushPlaybackSpeedState(ctx context.Context, connID string) {
-	if c.speedStore == nil {
-		return
-	}
-	c.writeMessage(ctx, map[string]any{
-		"type":  "playback_speed.state",
-		"speed": c.speedStore.Speed(),
-	}, connID)
-}
-
 func (c *chatWS) pushTimerState(ctx context.Context, connID string) {
 	if c.timerStore == nil {
 		return
@@ -320,7 +306,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 	if c.holder != nil {
 		c.holder.add(connID, conn)
 	}
-	c.pushPlaybackSpeedState(r.Context(), connID)
 	c.pushTimerState(r.Context(), connID)
 	defer func() {
 		if c.holder != nil {
@@ -339,17 +324,9 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			Type      string                 `json:"type"`
 			SDP       string                 `json:"sdp"`
 			Candidate *types.RTCIceCandidate `json:"candidate"`
-			Speed     float64                `json:"speed"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("wschat client message parse error: %v", err)
-			continue
-		}
-		if msg.Type == "playback_speed.set" {
-			if c.speedStore != nil {
-				c.speedStore.SetSpeed(msg.Speed)
-				log.Printf("wschat: playback speed set to %.1fx", c.speedStore.Speed())
-			}
 			continue
 		}
 		if strings.HasPrefix(msg.Type, "webrtc.") {

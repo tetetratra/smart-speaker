@@ -19,7 +19,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
-	"github.com/tetetratra/smart-speaker/internal/components/playbackspeed"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
@@ -37,7 +36,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
-	pbspeed "github.com/tetetratra/smart-speaker/internal/states/playbackspeed"
 	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
@@ -58,16 +56,15 @@ func main() {
 
 	ensureGoogleCalendarToken()
 
-	playbackSpeedStore := pbspeed.NewStore()
 	timerStore := timerstate.NewStore()
 
-	server, chatStage, err := buildHTTPServer(cfg, playbackSpeedStore, timerStore)
+	server, chatStage, err := buildHTTPServer(cfg, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage, playbackSpeedStore, timerStore)
+	stages, err := buildStages(cfg, chatStage, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -117,25 +114,24 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat          *graph.Stage
-	rtcpeer       *graph.Stage
-	rtcvad        *graph.Stage
-	stt           *graph.Stage
-	interimStop   *graph.Stage
-	rtcout        *graph.Stage
-	utterance     *graph.Stage
-	sessionReset  *graph.Stage
-	committer     *graph.Stage
-	llm           *graph.Stage
-	sessionAct    *graph.Stage
-	filterLLM     *graph.Stage
-	tts           *graph.Stage
-	filterTTS     *graph.Stage
-	playbackspeed *graph.Stage
-	scheduler     *graph.Stage
-	filterSched   *graph.Stage
-	router        *graph.Stage
-	tool          *graph.Stage
+	chat         *graph.Stage
+	rtcpeer      *graph.Stage
+	rtcvad       *graph.Stage
+	stt          *graph.Stage
+	interimStop  *graph.Stage
+	rtcout       *graph.Stage
+	utterance    *graph.Stage
+	sessionReset *graph.Stage
+	committer    *graph.Stage
+	llm          *graph.Stage
+	sessionAct   *graph.Stage
+	filterLLM    *graph.Stage
+	tts          *graph.Stage
+	filterTTS    *graph.Stage
+	scheduler    *graph.Stage
+	filterSched  *graph.Stage
+	router       *graph.Stage
+	tool         *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
@@ -154,7 +150,6 @@ func (s appStages) all() []*graph.Stage {
 		s.filterLLM,
 		s.tts,
 		s.filterTTS,
-		s.playbackspeed,
 		s.scheduler,
 		s.filterSched,
 		s.router,
@@ -162,7 +157,7 @@ func (s appStages) all() []*graph.Stage {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbspeed.Store, timerStore *timerstate.Store) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.Store) (appStages, error) {
 	var stages appStages
 	if chatStage != nil {
 		chatStage.Name = "wschat"
@@ -244,10 +239,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, playbackSpeedStore *pbs
 	stages.filterLLM.Name = "generationfilter-llm"
 	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterTTS.Name = "generationfilter-tts"
-	stages.playbackspeed = playbackspeed.NewStage(playbackspeed.Config{Store: playbackSpeedStore})
-	if stages.playbackspeed != nil {
-		stages.playbackspeed.Name = "playbackspeed"
-	}
 	stages.filterSched = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterSched.Name = "generationfilter-scheduler"
 	stages.scheduler = scheduler.NewStage(scheduler.Config{})
@@ -351,7 +342,7 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func buildHTTPServer(cfg app.Config, playbackSpeedStore *pbspeed.Store, timerStore *timerstate.Store) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, timerStore *timerstate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
@@ -359,7 +350,7 @@ func buildHTTPServer(cfg app.Config, playbackSpeedStore *pbspeed.Store, timerSto
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	chat := wschat.NewStage(mux, wschat.Config{SpeedStore: playbackSpeedStore, TimerStore: timerStore})
+	chat := wschat.NewStage(mux, wschat.Config{TimerStore: timerStore})
 	return server, chat, nil
 }
 
@@ -396,7 +387,6 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	filterLLMNode := add(stages.filterLLM)
 	ttsNode := add(stages.tts)
 	filterTTSNode := add(stages.filterTTS)
-	playbackspeedNode := add(stages.playbackspeed)
 	schedulerNode := add(stages.scheduler)
 	filterSchedNode := add(stages.filterSched)
 	routerNode := add(stages.router)
@@ -419,8 +409,7 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, sessionActNode, filterLLMNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, filterTTSNode, playbackspeedNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, playbackspeedNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
+	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
 	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem, types.EventAgentSpeechPlaybackEnd)
 	connectKinds(g, filterSchedNode, chatNode, types.EventAgentSpeechPlaybackEnd)
 	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
