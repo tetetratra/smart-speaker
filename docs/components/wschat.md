@@ -31,11 +31,11 @@
   - `TimerStore` が渡されている場合、接続登録直後に当該 `connID` 向けへ
     `{ "type": "timer.state", "timers": [...] }` を 1 通 push する。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd`, `EventTimerState` をブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechStart`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd`, `EventTimerState` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
-  - `web/src/main.tsx` は `message`, `speech_end`, `agent_speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
+  - `web/src/main.tsx` は `message`, `speech_start`, `speech_end`, `agent_speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
   - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
@@ -109,12 +109,14 @@ sequenceDiagram
     UI->>UI: appendMessage(...)
 ```
 
-### シナリオ: 発話終了とVAD状態がUI状態に反映される
+### シナリオ: 発話開始・発話終了とVAD状態がUI状態に反映される
 
-1. 発話終了: upstreamから `EventSpeechEnd` が来ると、`wschat` は `speech_end` JSON を全接続に送る。
-2. 発話終了UI: UIは `speechDetectStatus` を `待機中`、`sttStatus` を `最終結果待ち` にする。
-3. VAD状態: upstreamから `EventRTCVADStatus` が来ると、`wschat` は `rtc_vad_status` JSON を全接続に送る。
-4. VAD状態UI: UIは `input_level` と `threshold` を丸めて state に反映する。
+1. 発話開始: upstreamから `EventSpeechStart` が来ると、`wschat` は `speech_start` JSON を全接続に送る。
+2. 発話開始UI: UIは remote stream の Web Audio graph を切断・再接続し、再生中の下り音声を中断する。あわせて発話検知を `検出中`、STT を `認識中` にする。
+3. 発話終了: upstreamから `EventSpeechEnd` が来ると、`wschat` は `speech_end` JSON を全接続に送る。
+4. 発話終了UI: UIは `speechDetectStatus` を `待機中`、`sttStatus` を `最終結果待ち` にする。
+5. VAD状態: upstreamから `EventRTCVADStatus` が来ると、`wschat` は `rtc_vad_status` JSON を全接続に送る。
+6. VAD状態UI: UIは `input_level` と `threshold` を丸めて state に反映する。
 
 ```mermaid
 sequenceDiagram
@@ -122,6 +124,9 @@ sequenceDiagram
     participant WS as wschat
     participant UI as Browser UI
 
+    VAD->>WS: EventSpeechStart{Source, CapturedAt}
+    WS->>UI: {"type":"speech_start","source":"...","captured_at":"..."}
+    UI->>UI: remote音声中断 / speech/STT status更新
     VAD->>WS: EventSpeechEnd{Source, CapturedAt}
     WS->>UI: {"type":"speech_end","source":"...","captured_at":"..."}
     UI->>UI: speech/STT status更新
@@ -216,6 +221,8 @@ sequenceDiagram
   - 例: `{ "type": "webrtc.answer", "sdp": "...", "candidate": null }`
 - `webrtc.ice`: rtcpeer componentが生成したICE候補を、該当 `ClientID` のWebSocketに返す。
   - 例: `{ "type": "webrtc.ice", "sdp": "", "candidate": { "candidate": "...", "sdpMid": "0", "sdpMLineIndex": 0 } }`
+- `speech_start`: 発話開始をUIへ通知する。
+  - 例: `{ "type": "speech_start", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `speech_end`: 発話終了をUIへ通知する。
   - 例: `{ "type": "speech_end", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `rtc_vad_status`: サーバー側VADの入力レベルとしきい値をUIへ通知する。
@@ -236,6 +243,7 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `EventRealtimeOutput` | `types.OutputLine` | `message` | 全接続 |
 | `EventRTCSignal` | `types.RTCSignal` | `sig.Type` | `sig.ClientID` の接続のみ |
+| `EventSpeechStart` | `types.SpeechEvent` | `speech_start` | 全接続 |
 | `EventSpeechEnd` | `types.SpeechEvent` | `speech_end` | 全接続 |
 | `EventRTCVADStatus` | `types.RTCVADStatus` | `rtc_vad_status` | 全接続 |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |

@@ -18,7 +18,8 @@
   - 複数断片は半角スペース区切りで結合される。
 - **generation.Store**
   - `Config.Generation` として渡される共有 store。
-  - flush 時に `Next()` を呼び、新しい確定発話ごとに世代 id を進める。
+  - flush 時に `Current()` を読み、VAD start や interim stop で既に進められた現在世代を user commit に付与する。
+  - flush 自体では世代 id を追加で進めない。
 - **delay**
   - `Config.Delay` が 0 以下の場合は `500ms` が既定値になる。
   - 新しい `EventHumanUtterance` を受け取るたびに timer をリセットする。
@@ -32,7 +33,7 @@
 3. `buffer.append` は前後空白を除いたテキストを `parts` に追加する。
 4. 新しい断片が届くたびに timer を `Config.Delay` にリセットする。
 5. timer が発火すると `flush` が `buffer.text()` で断片を結合する。
-6. `generation.Store.Next()` で新しい `GenerationID` を採番する。
+6. `generation.Store.Current()` で現在の `GenerationID` を取得する。
 7. `EventConversationCommitRequest` を downstream へ送る。
 
 ```mermaid
@@ -50,7 +51,7 @@ sequenceDiagram
     IS->>UB: EventHumanUtterance("明日の予定は")
     UB->>UB: buffer.append / timer reset
     UB->>UB: delay 経過で flush
-    UB->>GEN: Next()
+    UB->>GEN: Current()
     GEN-->>UB: GenerationID
     UB->>CC: EventConversationCommitRequest(role=user, text, generation)
 ```
@@ -68,7 +69,7 @@ sequenceDiagram
 - `internal/`
   - `components/`
     - `utterancebuffer/`
-      - `stage.go`: `graph.Stage` としての入出力 channel、timer、flush、generation 採番を管理する。
+      - `stage.go`: `graph.Stage` としての入出力 channel、timer、flush、現在 generation 参照を管理する。
         - `NewStage`: `Config` から stage を構築し、`Delay` 未指定時は `500ms` を設定する。
         - `run`: parent context から cancel 可能な context を作り、`consume` を goroutine で起動する。
         - `consume`: upstream event を読み、`EventHumanUtterance` を buffer に積み、timer 発火または upstream close で flush する。
@@ -79,7 +80,7 @@ sequenceDiagram
         - `text`: `parts` を半角スペースで結合する。
         - `reset`: 保持中の断片を捨てる。
         - `empty`: 結合後の文字列が空かどうかを返す。
-      - `stage_test.go`: 2つの `EventHumanUtterance` が 1 つの `EventConversationCommitRequest` にまとまり、`GenerationID` が 1 になることを検証する。
+      - `stage_test.go`: 2つの `EventHumanUtterance` が 1 つの `EventConversationCommitRequest` にまとまり、現在の `GenerationID` が付与されることを検証する。
 
 ### 入出力 event
 
@@ -90,7 +91,7 @@ sequenceDiagram
 - **出力**: `types.EventConversationCommitRequest`
   - `Role`: `types.RoleUser`
   - `Text`: buffer に積まれた文字起こし断片の結合結果
-  - `GenerationID`: `generation.Store.Next()` の戻り値
+  - `GenerationID`: `generation.Store.Current()` の戻り値
   - `Source`: `"stt"`
 
 ### エラー・例外的挙動

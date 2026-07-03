@@ -14,7 +14,7 @@
 - **pipeline package**
   - `internal/components/pipeline/conversation_pipeline_test.go` のみで構成される。
   - `TestSchedulerRouterKeepsSpeechBeforeTool` により、複数 component を接続したときの event 順序を検証する。
-  - `TestInterimStopsOldGenerationAndFinalCommitsUserUtterance` により、interim transcript で古いgenerationのscheduled itemが落ち、final transcript が従来どおりuser commitになることを検証する。
+  - `TestInterimStopsOldGenerationAndFinalCommitsUserUtterance` により、interim transcript で古いgenerationのscheduled itemが落ち、final transcript が現在generationのuser commitになることを検証する。
   - package 内に production 用の `NewStage`、runtime、設定構造体は定義されていない。
 
 - **interimstopper**
@@ -24,7 +24,7 @@
 
 - **utterancebuffer**
   - `EventHumanUtterance` を短時間bufferし、flush時に user の `EventConversationCommitRequest` を発行する。
-  - final transcript の commit 時に `generation.Store.Next()` を呼び、ユーザー発話用の新しいgenerationを採番する。
+  - final transcript の commit 時には `generation.Store.Current()` を読み、VAD start や interim stop で既に進められた現在generationを付与する。
 
 - **scheduler**
   - `PlayableSpeech` と `TimelineItem` を受け取り、実行タイミングを調整した `EventScheduledItem` を下流へ流す。
@@ -65,7 +65,7 @@
 6. **旧generation event 投入**: `generationfilter.Upstream` に `GenerationID: 1` の `EventScheduledItem` を投入する。
 7. **generationfilter 処理**: event payload の generation が current ではないため、下流へ流さない。
 8. **final event 投入**: `interimstopper.Upstream` に `EventHumanUtterance` を投入する。
-9. **user commit**: `interimstopper` が final を `utterancebuffer` へ通し、`utterancebuffer` が user の `EventConversationCommitRequest` を発行する。
+9. **user commit**: `interimstopper` が final を `utterancebuffer` へ通し、`utterancebuffer` が現在generationの user `EventConversationCommitRequest` を発行する。
 
 ## 3. 主要なデータフロー
 
