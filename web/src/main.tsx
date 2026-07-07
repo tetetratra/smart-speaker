@@ -24,6 +24,7 @@ const nightModeEndHour = 6
 const minuteMs = 60 * 1000
 const toolToastDurationMs = 5000
 const receivedVolumeMeterMax = 1000
+const serverEventLogLimit = 1000
 
 type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
@@ -670,7 +671,10 @@ function App() {
 
   const appendServerEventLog = useCallback((raw: unknown) => {
     updateAdminLogFollow()
-    setServerEventLogs((prev) => [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }])
+    setServerEventLogs((prev) => {
+      const next = [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }]
+      return next.length > serverEventLogLimit ? next.slice(-serverEventLogLimit) : next
+    })
   }, [nextMessageId, updateAdminLogFollow])
 
   const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
