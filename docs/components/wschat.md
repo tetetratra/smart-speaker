@@ -64,7 +64,7 @@
 3. RTC開始: UIの `startRTC` が `RTCPeerConnection` を作り、マイク音声trackを追加する。
 4. offer送信: UIが `peer.createOffer()` と `setLocalDescription` の後、`{ "type": "webrtc.offer", "sdp": ... }` を WebSocket で送る。
 5. Event化: `wschat.handleWS` が JSON を parseし、`types.RTCSignal{Type, SDP, Candidate, ClientID}` を `EventRTCSignal` として `downstream` に送る。
-6. rtcpeer component処理: `rtc.handleSignal` が `webrtc.offer` を処理し、PeerConnectionを作成して answer を生成する。
+6. rtcpeer component処理: `rtcpeer.handleSignal` が `webrtc.offer` を処理し、PeerConnectionを作成して answer を生成する。
 7. answer返信: rtcpeer component が `EventRTCSignal{Type: "webrtc.answer", SDP, ClientID}` を emitし、`wschat.handleEvent` が該当 `ClientID` の接続にだけ JSON を返す。
 8. ICE交換: ブラウザとrtcpeer componentは `webrtc.ice` を同じ WebSocket message / `EventRTCSignal` 経路で交換する。
 

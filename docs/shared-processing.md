@@ -17,6 +17,9 @@
 - `EventToolRequest`: router から toolcaller へ渡す tool 実行要求。
 - `EventRealtimeOutput`: UI 表示用の user / agent message。
 - `EventRealtimeAudio`: rtcout 再生用の agent 音声。
+- `EventRTCPeerAudioFrame`: rtcpeer から rtcvad へ渡す decode 済み PCM frame。
+- `EventRTCSpeechAudio`: rtcvad から stt へ渡す発話開始、音声 frame、発話終了。
+- `EventRTCPeerOutputSink`: rtcpeer から rtcout へ通知する WebRTC 下り音声 sink。
 - `EventSessionReset`: idle timeout によるセッション reset 通知。
 - `EventAgentTimelineEnd`: LLM が当該 generation の timeline item をすべて発行し終えた印。
 - `EventAgentSpeechPlaybackEnd`: scheduler が当該 generation の timeline（speech 再生待ち・wait・tool）を完了した印。`wschat` が `agent_speech_end` として UI へ通知する。
