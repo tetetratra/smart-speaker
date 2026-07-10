@@ -49,6 +49,8 @@
 - メッセージログを表示する。
   - user / agent / system
   - tool call / tool result は通常の会話UIには表示しない。
+- サーバーイベントログを表示する。
+  - 表示・保持対象は最新1000件までで、それ以前のログはフロントエンド側の state から破棄する。
 
 ## 3. 接続開始と接続ライフサイクル
 
@@ -87,6 +89,10 @@ sequenceDiagram
 - `message`
   - `user` / `agent` / `system` をメッセージ一覧へ追加する。
   - `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の場合は、STT 状態を `完了` に戻す。
+- WebSocket で受信したサーバーイベント
+  - 管理画面のサーバーイベントログへ整形済みの1行ログとして追加する。
+  - 保持するログは最新1000件に制限する。
+  - 最下部追従中であれば、ログ追加後もスクロールを末尾へ移動する。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
 - `speech_start`
@@ -176,6 +182,7 @@ sequenceDiagram
   - `messages`
   - `boardEntries`
   - `toolToasts`
+  - `serverEventLogs`（管理画面のサーバーイベントログ、最新1000件まで）
   - `timers`
   - `lastUserMessage`
   - `lastAssistantMessage`
