@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -32,15 +34,26 @@ func (f *fakeClient) CreateResponse(ctx context.Context, messages []types.ChatMe
 	return f.responses[idx], nil
 }
 
-func TestStageAddsIdleFollowupInstructionAfterLongGap(t *testing.T) {
-	now := time.Now()
-	history := conversationhistory.NewStore()
-	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-11 * time.Minute)})
-	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
-	client := &fakeClient{responses: []string{`{"items":[]}`}}
-	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+type fakeAgentStatus struct {
+	status agentstatus.Status
+}
 
-	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+func (f fakeAgentStatus) Status() agentstatus.Status { return f.status }
+
+func TestStageAddsIdleFollowupInstructionWhenAgentIsIdle(t *testing.T) {
+	client := &fakeClient{responses: []string{`{"items":[]}`}}
+	st := &stage{
+		client:       client,
+		agentStatus:  fakeAgentStatus{status: agentstatus.StatusIdle},
+		systemPrompt: buildSystemPrompt("", nil),
+	}
+
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "current",
+		Role:         types.RoleUser,
+		Text:         "あー",
+		GenerationID: 2,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +65,7 @@ func TestStageAddsIdleFollowupInstructionAfterLongGap(t *testing.T) {
 	}
 	prompt := client.prompts[0]
 	for _, want := range []string{
-		"前回のユーザー発話から11分",
+		"長期間無音だった",
 		"独り言",
 		`{"items":[]}`,
 	} {
@@ -63,17 +76,22 @@ func TestStageAddsIdleFollowupInstructionAfterLongGap(t *testing.T) {
 }
 
 func TestStageKeepsIdleFollowupInstructionOnRetry(t *testing.T) {
-	now := time.Now()
-	history := conversationhistory.NewStore()
-	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-11 * time.Minute)})
-	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
 	client := &fakeClient{responses: []string{
 		`{"items":[{"type":"speech","text":""}]}`,
 		`{"items":[]}`,
 	}}
-	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+	st := &stage{
+		client:       client,
+		agentStatus:  fakeAgentStatus{status: agentstatus.StatusIdle},
+		systemPrompt: buildSystemPrompt("", nil),
+	}
 
-	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "current",
+		Role:         types.RoleUser,
+		Text:         "あー",
+		GenerationID: 2,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +103,7 @@ func TestStageKeepsIdleFollowupInstructionOnRetry(t *testing.T) {
 	}
 	for i, prompt := range client.prompts {
 		for _, want := range []string{
-			"前回のユーザー発話から11分",
+			"長期間無音だった",
 			"独り言",
 			`{"items":[]}`,
 		} {
@@ -99,23 +117,97 @@ func TestStageKeepsIdleFollowupInstructionOnRetry(t *testing.T) {
 	}
 }
 
-func TestStageDoesNotAddIdleFollowupInstructionWithinThreshold(t *testing.T) {
-	now := time.Now()
-	history := conversationhistory.NewStore()
-	history.Append(types.ConversationRecord{ID: "prev", Role: types.RoleUser, Text: "電気つけて", GenerationID: 1, CreatedAt: now.Add(-9 * time.Minute)})
-	history.Append(types.ConversationRecord{ID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2, CreatedAt: now})
+func TestStageDoesNotAddIdleFollowupInstructionWhenRequestIsExplicit(t *testing.T) {
 	client := &fakeClient{responses: []string{`{"items":[{"type":"speech","text":"どうしたの？"}]}`}}
-	st := &stage{history: history, client: client, systemPrompt: buildSystemPrompt("", nil)}
+	st := &stage{
+		client:       client,
+		agentStatus:  fakeAgentStatus{status: agentstatus.StatusIdle},
+		systemPrompt: buildSystemPrompt("", nil),
+	}
 
-	items, err := st.requestTimeline(context.Background(), types.LLMRequest{RequestID: "current", Role: types.RoleUser, Text: "わっ", GenerationID: 2})
+	items, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "current",
+		Role:         types.RoleUser,
+		Text:         "電気つけて",
+		GenerationID: 2,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
-	if strings.Contains(client.prompts[0], "前回のユーザー発話から") {
+	if strings.Contains(client.prompts[0], "長期間無音だった") {
 		t.Fatalf("prompt = %q, want no idle followup instruction", client.prompts[0])
+	}
+}
+
+func TestStageAddsTimerSnapshotToPrompt(t *testing.T) {
+	now := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
+	store := timerstate.NewStoreWithClock(func() time.Time { return now })
+	timer := store.Create(now.Add(time.Hour), "起こす")
+	client := &fakeClient{responses: []string{`{"items":[]}`}}
+	st := &stage{
+		client:       client,
+		timers:       store,
+		systemPrompt: buildSystemPrompt("base", nil),
+	}
+
+	_, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "req-1",
+		Role:         types.RoleUser,
+		Text:         "確認して",
+		GenerationID: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := client.prompts[0]
+	for _, want := range []string{
+		"現在の未到達タイマー一覧:",
+		timer.ID,
+		timer.At.Format(time.RFC3339),
+		"action=起こす",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt = %q, want it to contain %q", prompt, want)
+		}
+	}
+}
+
+func TestStageLogsNoResponseWithIdleReason(t *testing.T) {
+	var logs bytes.Buffer
+	prevOutput := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(prevOutput)
+
+	client := &fakeClient{responses: []string{`{"items":[]}`}}
+	st := &stage{
+		client:       client,
+		agentStatus:  fakeAgentStatus{status: agentstatus.StatusIdle},
+		systemPrompt: buildSystemPrompt("", nil),
+	}
+
+	_, err := st.requestTimeline(context.Background(), types.LLMRequest{
+		RequestID:    "req-1",
+		Role:         types.RoleUser,
+		Text:         "あー",
+		GenerationID: 7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := logs.String()
+	for _, want := range []string{
+		"llm: no response",
+		"generation=7",
+		"request_id=req-1",
+		"reason=idle_candidate",
+		`text="あー"`,
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("log = %q, want it to contain %q", logText, want)
+		}
 	}
 }
 

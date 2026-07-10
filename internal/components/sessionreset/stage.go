@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -16,6 +17,7 @@ type Config struct {
 	IdleTimeout time.Duration
 	History     *conversationhistory.Store
 	Generation  *generation.Store
+	AgentStatus *agentstatus.Store
 	Hooks       []Hook
 	Now         func() time.Time
 }
@@ -30,6 +32,7 @@ type stage struct {
 	idleTimeout time.Duration
 	history     *conversationhistory.Store
 	generation  *generation.Store
+	agentStatus *agentstatus.Store
 	hooks       []Hook
 	now         func() time.Time
 	once        sync.Once
@@ -48,6 +51,7 @@ func NewStage(cfg Config) *graph.Stage {
 		idleTimeout: cfg.IdleTimeout,
 		history:     cfg.History,
 		generation:  cfg.Generation,
+		agentStatus: cfg.AgentStatus,
 		hooks:       hooks,
 		now:         now,
 	}
@@ -108,7 +112,12 @@ func (s *stage) consume(ctx context.Context) {
 		case <-timerC:
 			timer = nil
 			timerC = nil
-			s.fireReset(ctx)
+			reset := s.fireReset(ctx)
+			select {
+			case s.downstream <- types.Event{Kind: types.EventSessionReset, Payload: reset}:
+			case <-ctx.Done():
+				return
+			}
 		case evt, ok := <-s.upstream:
 			if !ok {
 				return
@@ -128,7 +137,7 @@ func (s *stage) isUserCommitRequest(evt types.Event) bool {
 	return ok && req.Role == types.RoleUser
 }
 
-func (s *stage) fireReset(ctx context.Context) {
+func (s *stage) fireReset(ctx context.Context) types.SessionResetEvent {
 	requestedAt := s.now()
 	formatted := requestedAt.Format(time.RFC3339Nano)
 	log.Printf("sessionreset: reset requested_at=%s", formatted)
@@ -147,6 +156,11 @@ func (s *stage) fireReset(ctx context.Context) {
 		next := s.generation.Next()
 		log.Printf("sessionreset: generation advanced requested_at=%s generation=%d", formatted, next)
 	}
+	if s.agentStatus != nil {
+		s.agentStatus.SetIdle()
+		log.Printf("sessionreset: agent status set requested_at=%s status=idle", formatted)
+	}
+	return types.SessionResetEvent{RequestedAt: requestedAt}
 }
 
 func (s *stage) close() error {

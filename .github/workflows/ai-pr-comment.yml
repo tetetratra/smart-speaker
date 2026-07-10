@@ -47,6 +47,9 @@ jobs:
             not_pr_comment)
               echo "PR へのコメントではないためスキップします"
               ;;
+            closed_pr)
+              echo "close 済み PR へのコメントのためスキップします"
+              ;;
             missing_request)
               echo "PR に依頼内容が見つからないためスキップします"
               ;;

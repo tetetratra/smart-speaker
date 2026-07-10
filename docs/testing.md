@@ -12,14 +12,18 @@
   - Go `1.25` 以降
   - Node `20` 以降
   - `OPENAI_API_KEY`
-  - `ELEVENLABS_API_KEY`
-  - `ELEVENLABS_VOICE_ID`
+- TTS provider ごとの設定
+  - `TTS_PROVIDER=elevenlabs` または未指定の場合: `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`
+  - `TTS_PROVIDER=voicevox` の場合: 起動済みの VOICEVOX Engine と `VOICEVOX_ENDPOINT`
 - 任意の環境変数:
+  - `TTS_PROVIDER`（未指定時は `elevenlabs`）
   - `ELEVENLABS_MODEL_ID`
+  - `VOICEVOX_SPEAKER_ID`
+  - `VOICEVOX_SPEED_SCALE`
   - `RTC_ICE_HOST_IPS`
   - `WEB_DIST_DIR`
   - `WS_ADDR`
-  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 600 秒、`0` で idle reset 無効）
+  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 300 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
 
 ### 音声入力・Google Speech 関連
@@ -91,7 +95,7 @@ docker compose -f docker-compose.yml up --build
 
 確認ポイント:
 - `OPENAI_API_KEY` 未設定など、必須環境変数不足で起動失敗していない。
-- ElevenLabs の必須設定不足で起動失敗していない。
+- 選択中の TTS provider に必要な設定不足で起動失敗していない。
 
 ### 手順2: Web UI 接続確認
 1. 画面を開く。
@@ -136,8 +140,8 @@ go run ./cmd/local-verify-response
 LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go run ./cmd/local-verify-response
 ```
 
-この確認は OpenAI API と ElevenLabs API を実際に呼びます。
-そのため、`OPENAI_API_KEY`、`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID` が必要です。
+この確認は OpenAI API と選択中の TTS provider を実際に呼びます。
+そのため、`OPENAI_API_KEY` に加えて、ElevenLabs 利用時は `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`、VOICEVOX 利用時は起動済みの VOICEVOX Engine と `VOICEVOX_ENDPOINT` が必要です。
 
 ### 手順4: Google Calendar OAuth の確認
 1. Google Calendar を利用する場合は `http://localhost:8081/oauth/google/start` を開く、または画面上の Google 認証導線を使う。
@@ -160,7 +164,7 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 
 ### 応答
 - agent 応答テキストが返る。
-- ElevenLabs による音声再生が行われる。
+- 選択中の TTS provider による音声再生が行われる。
 
 ### ツール実行
 - `function call` と `function result` が UI またはログで追える。
@@ -173,7 +177,8 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 ### ログ・障害
 - `error`、`fatal`、`panic` が継続して出ない。
 - 接続、文字起こし、TTS、ツール実行の失敗箇所をログから切り分けられる。
-- idle reset を確認する場合、`sessionreset: reset requested_at=...` と `sessionreset: generation advanced ...` のログが出る。
+- idle reset を確認する場合、`sessionreset: reset requested_at=...`、`sessionreset: generation advanced ...`、`sessionreset: agent status set ... status=idle` のログが出る。
+- 無応答判定を確認する場合、`llm: no response generation=... request_id=... reason=idle_monologue_candidate text=...` のログが出る。
 
 ## 6. 将来の自動テスト観点
 - 起動確認:

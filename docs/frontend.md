@@ -49,6 +49,8 @@
 - メッセージログを表示する。
   - user / agent / system
   - tool call / tool result は通常の会話UIには表示しない。
+- サーバーイベントログを表示する。
+  - 表示・保持対象は最新1000件までで、それ以前のログはフロントエンド側の state から破棄する。
 
 ## 3. 接続開始と接続ライフサイクル
 
@@ -86,14 +88,36 @@ sequenceDiagram
 ### 3.2 接続中のイベント反映
 - `message`
   - `user` / `agent` / `system` をメッセージ一覧へ追加する。
-  - `source: "server-stt"` かつ `role: "user"` の場合は、STT 状態を `完了` に戻す。
+  - `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の場合は、STT 状態を `完了` に戻す。
+- WebSocket で受信したサーバーイベント
+  - 管理画面のサーバーイベントログへ整形済みの1行ログとして追加する。
+  - 保持するログは最新1000件に制限する。
+  - 最下部追従中であれば、ログ追加後もスクロールを末尾へ移動する。
 - `speech_end`
   - 発話検知を `待機中`、STT を `最終結果待ち` にする。
+- `speech_start`
+  - remote stream の Web Audio graph を切断して再接続し、現在再生中の下り音声を中断する。
+  - `isAiSpeaking` を `false` にする。
+  - 発話検知を `検出中`、STT を `認識中` にする。
+- `agent_speech_end`
+  - `isAiSpeaking` を `false` にする（AI ターンのタイムライン処理完了）。
+- `message`（agent）
+  - 非空 `text` 受信時に `isAiSpeaking` を `true` にする。
+- `message`（user、STT 確定）
+  - `isAiSpeaking` を `false` にする（既存の STT 状態更新に加えて）。
+- WebSocket 切断・手動 `disconnect`・`session_reset`
+  - `isAiSpeaking` を `false` にする。
+- 通常画面の `.live-bubble`
+  - `isAiSpeaking === true` のとき `live-bubble-ai-speaking` クラスでネオン風ボーダーを表示する。
 - `rtc_vad_status`
   - 入力音量としきい値を更新する。
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard の末尾に追記する。
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。
+- `session_reset`
+  - 通常画面の直近 user / agent 発話の吹き出しを非表示にする。
+  - メッセージ一覧自体は消さない。
+  - 次に `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の `message` を受け取ると、吹き出しを表示に戻す。
 - tool call / tool result
   - 通常の会話UIには表示しない。
   - 通常画面では右側のキャラクターエリア上部にトースト表示する。
@@ -140,6 +164,7 @@ sequenceDiagram
 - サーバーから来た remote stream を再生する。
 - 再生経路は `<audio>` 要素ではなく Web Audio API である。
 - `GainNode` で再生音量プリセットを反映する。
+- `speech_start` 受信時は WebRTC remote track 自体は止めず、Web Audio graph を一度閉じて同じ remote stream へ再接続することで、再生中の音声を破棄する。
 
 ### 4.3 UI 状態管理
 - 接続状態を保持する。
@@ -157,8 +182,11 @@ sequenceDiagram
   - `messages`
   - `boardEntries`
   - `toolToasts`
+  - `serverEventLogs`（管理画面のサーバーイベントログ、最新1000件まで）
+  - `timers`
   - `lastUserMessage`
   - `lastAssistantMessage`
+  - `isConversationBubbleHidden`
   - `playbackVolumeLevel`
 
 ### 4.4 URL と表示モード
@@ -171,10 +199,21 @@ sequenceDiagram
 - `serviceWorker` を登録する。
 - 現行の service worker は lifecycle 制御のみで、offline cache は持たない。
 
+### 4.6 timer 一覧表示
+
+- WebSocket message `timer.state` を受け取り、未到達 timer の一覧を `timers` state
+  として保持する。
+- 管理画面では timer 件数、期限、自然言語 action、id を表示する。
+- 通常画面には timer 一覧を表示しない。
+- 画面上の取消操作は提供せず、取消は自然発話から `cancel_timer` tool
+  を呼ぶ想定である。
+
 ## 5. 再設計時に崩すと挙動変更になる現行前提
 - 通常画面と管理画面は別アプリではなく、同一 state の別表示である。
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
+- VAD start は WebSocket の `speech_start` として届き、フロントはそのタイミングで再生中の remote 音声を中断する。
 - whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
+- session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
 - tool call / tool result は通常画面ではトースト表示、管理画面ではメッセージログとして観測できる。
 - 再生音量はブラウザ側の `GainNode` で制御している。
 - 手動切断と異常切断で再接続ポリシーが異なる。

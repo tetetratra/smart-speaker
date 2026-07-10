@@ -8,6 +8,7 @@ import (
 const (
 	RoleUser       = "user"
 	RoleAgent      = "agent"
+	RoleSystem     = "system"
 	RoleToolCall   = "tool_call"
 	RoleToolResult = "tool_result"
 )

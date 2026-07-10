@@ -26,6 +26,22 @@ type SpeechEvent struct {
 	CapturedAt time.Time
 }
 
+// SessionResetEvent は会話セッションのリセット発火を表します。
+type SessionResetEvent struct {
+	RequestedAt time.Time
+}
+
+// AgentTimelineEnd は LLM が当該 generation の timeline item をすべて発行し終えたことを表します。
+type AgentTimelineEnd struct {
+	GenerationID GenerationID
+}
+
+// AgentSpeechPlaybackEnd は scheduler が当該 generation の timeline 処理を完了したことを表します。
+type AgentSpeechPlaybackEnd struct {
+	GenerationID GenerationID
+	CompletedAt  time.Time
+}
+
 // RTCVADStatus はサーバー側VADの現在音量としきい値を表します。
 type RTCVADStatus struct {
 	InputLevel int
@@ -43,6 +59,18 @@ type TTSEvent struct {
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
 type WhiteboardUpdate struct {
 	Content string
+}
+
+// TimerState is pushed to the admin UI whenever active timers change.
+type TimerState struct {
+	Timers []TimerStateItem
+}
+
+type TimerStateItem struct {
+	ID        string
+	At        time.Time
+	Action    string
+	CreatedAt time.Time
 }
 
 type RTCIceCandidate struct {

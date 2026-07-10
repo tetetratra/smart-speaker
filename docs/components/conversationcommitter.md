@@ -5,7 +5,7 @@
 * **解決する課題**: ユーザー発話、agent 発話、tool 呼び出し、tool 実行結果を、LLM が次回推論で参照できる会話履歴へ一元的に保存する。
 * **提供価値**: 会話履歴への保存を先に行ってから、UI 表示用の `EventRealtimeOutput` や LLM 起動用の `EventLLMRequest` を発行するため、下流の LLM component は `conversationhistory.Store.Snapshot()` から正本の履歴を読める。
 * **対象データ**: `types.ConversationCommitRequest` を入力とし、`types.ConversationRecord` として `conversationhistory.Store` に保存する。tool 実行結果も `types.ToolResultRecord` を含む `EventConversationCommitRequest` として受け取る。
-* **世代管理の位置づけ**: `generation.Store.Current()` を参照し、tool result が現在世代と一致するかを `stale` metadata として記録する。ユーザー発話の新規世代採番は `utterancebuffer` 側の `generation.Store.Next()` が行う。
+* **世代管理の位置づけ**: `generation.Store.Current()` を参照し、tool result が現在世代と一致するかを `stale` metadata として記録する。ユーザー発話の世代は VAD start などで前進した現在世代を `utterancebuffer` が付与する。
 * **不明点**: 永続DBへの保存、会話履歴の上限、古い tool result を LLM に再投入するかどうかの業務判断は、この component の実装からは確認できない。
 
 根拠: `internal/components/conversationcommitter/`, `internal/states/conversationhistory/`, `internal/states/generation/`, `internal/types/conversation_record.go`, `internal/types/event.go`
@@ -49,8 +49,8 @@
 ### シナリオ: ユーザー発話が履歴へ保存され、LLM request が発行される
 
 1. `utterancebuffer` が `EventHumanUtterance` の text を buffer に蓄積する。
-2. timer 発火または upstream close 時、`generation.Store.Next()` で新しい `GenerationID` を採番する。
-3. `utterancebuffer` が `EventConversationCommitRequest` を発行する。payload は `Role: "user"`, `Text: 発話テキスト`, `GenerationID: 採番値`, `Source: "stt"`。
+2. timer 発火または upstream close 時、`generation.Store.Current()` で現在の `GenerationID` を取得する。
+3. `utterancebuffer` が `EventConversationCommitRequest` を発行する。payload は `Role: "user"`, `Text: 発話テキスト`, `GenerationID: 現在世代`, `Source: "stt"`。
 4. `conversationcommitter.stage.consume` が event kind と payload 型を検証し、`committer.Commit` に渡す。
 5. `committer.Commit` が `generation.Store.Current()` を読み、`conversationhistory.NewRecord` で `ConversationRecord` を作る。
 6. `record.Text` が空でなければ `conversationhistory.Store.Append(record)` で保存する。
@@ -65,7 +65,7 @@ sequenceDiagram
     participant Hist as conversationhistory.Store
     participant Down as downstream
 
-    UB->>Gen: Next()
+    UB->>Gen: Current()
     Gen-->>UB: GenerationID
     UB->>CC: EventConversationCommitRequest(RoleUser, Text, GenerationID, Source=stt)
     CC->>Gen: Current()
@@ -108,7 +108,7 @@ sequenceDiagram
 ### シナリオ: tool 実行結果が履歴へ保存され、LLM request が発行される
 
 1. `toolcaller` が `types.ToolRequest` を実行し、`types.ToolResultRecord` を作る。
-2. `toolcaller` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として downstream に送る。`Text` はこの時点では設定しない。
+2. read 系 tool の成功結果、write 系 tool のエラー結果について、`toolcaller` は `ToolResult` を含む `ConversationCommitRequest` を `EventConversationCommitRequest` として downstream に送る。write 系 tool の成功結果は送らない。
 3. graph は `toolcaller -> conversationcommitter` の edge でその event を転送する。
 4. `conversationcommitter.stage.consume` が event kind と payload 型を検証し、`committer.Commit` に渡す。
 5. `conversationhistory.NewRecord` が `ToolResult.Output` を `record.Text` にし、`Role` を `tool_result`、`Source` を tool 名、`GenerationID` を tool result の世代にする。

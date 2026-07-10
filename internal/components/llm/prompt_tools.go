@@ -15,9 +15,9 @@ func buildSystemPrompt(base string, toolSchemas []any) string {
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
-func appendIdleFollowupInstruction(prompt string, gap string) string {
-	instruction := strings.TrimSpace(`前回のユーザー発話から` + gap + `経ってからのユーザー発話です。
-短い発話、意味不明な発話、感嘆、独り言のように見える場合は、スマートスピーカーへの依頼ではない可能性を考慮してください。
+func appendIdleFollowupInstruction(prompt string) string {
+	instruction := strings.TrimSpace(`現在のユーザー発話は、長期間無音だった後のユーザー発話です。
+短い発話、意味不明な発話、感嘆、独り言のように見える場合は、あなたへの依頼ではない可能性が高いため、応答しないでください。
 応答しない方が自然だと判断した場合は、speechやtoolを出さず {"items":[]} だけを出力してください。`)
 	if strings.TrimSpace(prompt) == "" {
 		return instruction
@@ -34,11 +34,12 @@ func appendRetryInstruction(prompt string, err error, rawPreview string) string 
 		`直前の応答はJSON timeline契約違反でした。
 
 次の応答では、通常の文章を絶対に出力しないでください。
-出力してよいのは、{"items":[...]} 形式のJSON objectだけです。
+出力してよいのは、{"items":[...],"set_whiteboard":...} 形式のJSON objectだけです。ホワイトボードを更新しない場合は "set_whiteboard":null、更新する場合は "set_whiteboard":{"content":"..."} を付けます。set_whiteboard は items 内の tool として出さないでください。
 Markdown、説明文、前置き、謝罪文、コードブロック、箇条書き、JSON配列、NDJSONは出力禁止です。
 
 正しい出力例:
 {"items":[{"type":"speech","text":"うん、聞いてるよ"},{"type":"wait","sec":1},{"type":"speech","text":"続けて、ね"}]}
+{"set_whiteboard":{"content":"予定: 10:00 会議"},"items":[{"type":"speech","text":"確認したよ"}]}
 
 悪い出力例:
 うん続けて、聞いてるよ`,

@@ -40,11 +40,11 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 		raw  string
 		want time.Duration
 	}{
-		{name: "empty uses default", raw: "", want: 10 * time.Minute},
+		{name: "empty uses default", raw: "", want: 5 * time.Minute},
 		{name: "positive seconds", raw: "42", want: 42 * time.Second},
 		{name: "zero disables", raw: "0", want: 0},
-		{name: "invalid uses default", raw: "invalid", want: 10 * time.Minute},
-		{name: "negative uses default", raw: "-1", want: 10 * time.Minute},
+		{name: "invalid uses default", raw: "invalid", want: 5 * time.Minute},
+		{name: "negative uses default", raw: "-1", want: 5 * time.Minute},
 		{name: "trims spaces", raw: " 5 ", want: 5 * time.Second},
 	}
 	for _, tt := range tests {
@@ -53,5 +53,61 @@ func TestConversationIdleTimeoutFromEnv(t *testing.T) {
 				t.Fatalf("conversationIdleTimeoutFromEnv(%q) = %s, want %s", tt.raw, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadConfigReadsTTSProviderConfig(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("TTS_PROVIDER", "voicevox")
+	t.Setenv("VOICEVOX_ENDPOINT", "http://voicevox:50021")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "3")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "1.25")
+	t.Setenv("ELEVENLABS_API_KEY", "")
+	t.Setenv("ELEVENLABS_VOICE_ID", "")
+
+	cfg := LoadConfig("")
+	if cfg.TTSProvider != "voicevox" {
+		t.Fatalf("TTSProvider = %q, want voicevox", cfg.TTSProvider)
+	}
+	if cfg.Voicevox.Endpoint != "http://voicevox:50021" {
+		t.Fatalf("Voicevox.Endpoint = %q", cfg.Voicevox.Endpoint)
+	}
+	if cfg.Voicevox.SpeakerID != 3 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want 3", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale == nil || *cfg.Voicevox.SpeedScale != 1.25 {
+		t.Fatalf("Voicevox.SpeedScale = %v, want 1.25", cfg.Voicevox.SpeedScale)
+	}
+}
+
+func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("TTS_PROVIDER", "")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "")
+
+	cfg := LoadConfig("")
+	if cfg.TTSProvider != "elevenlabs" {
+		t.Fatalf("TTSProvider = %q, want elevenlabs", cfg.TTSProvider)
+	}
+	if cfg.Voicevox.SpeakerID != 1 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want 1", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale != nil {
+		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+	}
+}
+
+func TestLoadConfigHandlesInvalidVoicevoxNumbers(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("VOICEVOX_SPEAKER_ID", "invalid")
+	t.Setenv("VOICEVOX_SPEED_SCALE", "-1")
+
+	cfg := LoadConfig("")
+	if cfg.Voicevox.SpeakerID != 1 {
+		t.Fatalf("Voicevox.SpeakerID = %d, want default 1", cfg.Voicevox.SpeakerID)
+	}
+	if cfg.Voicevox.SpeedScale != nil {
+		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
 	}
 }

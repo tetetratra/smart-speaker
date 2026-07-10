@@ -29,6 +29,56 @@ func TestStageSchedulesSpeechWaitAndToolInOrder(t *testing.T) {
 	}
 }
 
+func TestStageEmitsPlaybackEndAfterTimelineEnd(t *testing.T) {
+	st := NewStage(Config{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+
+	st.Upstream <- types.Event{Kind: types.EventPlayableSpeech, Payload: types.PlayableSpeech{GenerationID: 1, Text: "確認するね", DurationSeconds: 0.01}}
+	st.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindWait, GenerationID: 1, Sec: 0.01}}
+	st.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd, Payload: types.AgentTimelineEnd{GenerationID: 1}}
+
+	expectScheduled(t, st.Downstream)
+
+	select {
+	case evt := <-st.Downstream:
+		if evt.Kind != types.EventAgentSpeechPlaybackEnd {
+			t.Fatalf("Kind = %s, want EventAgentSpeechPlaybackEnd", evt.Kind)
+		}
+		end := evt.Payload.(types.AgentSpeechPlaybackEnd)
+		if end.GenerationID != 1 {
+			t.Fatalf("GenerationID = %d, want 1", end.GenerationID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting agent speech playback end")
+	}
+}
+
+func TestStageEmitsPlaybackEndForEmptyTimeline(t *testing.T) {
+	st := NewStage(Config{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+
+	st.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd, Payload: types.AgentTimelineEnd{GenerationID: 3}}
+
+	select {
+	case evt := <-st.Downstream:
+		if evt.Kind != types.EventAgentSpeechPlaybackEnd {
+			t.Fatalf("Kind = %s, want EventAgentSpeechPlaybackEnd", evt.Kind)
+		}
+		end := evt.Payload.(types.AgentSpeechPlaybackEnd)
+		if end.GenerationID != 3 {
+			t.Fatalf("GenerationID = %d, want 3", end.GenerationID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting agent speech playback end")
+	}
+}
+
 func expectScheduled(t *testing.T, ch <-chan types.Event) types.Event {
 	t.Helper()
 	select {

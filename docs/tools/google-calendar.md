@@ -11,7 +11,7 @@
 - `google_calendar_update`
   - `action=update`
   - `action=delete`
-- 通常起動では local tool registry 経由で `google_calendar_list` / `google_calendar_create` / `google_calendar_update` の定義が LLM に渡り、handler が `toolcaller` に登録される。
+- 通常起動では local tool registry 経由で `google_calendar_list`（`x_tool_mode: read`）/ `google_calendar_create`（`x_tool_mode: write`）/ `google_calendar_update`（`x_tool_mode: write`）の定義が LLM に渡り、handler が `toolcaller` に登録される。
 - 会話文脈注入は旧 `conversation` component 削除により現在未接続
 - `internal/googlecalendar/*` の共通 client
 - `internal/oauth/googlecalendar/*` の認証前提
@@ -173,20 +173,20 @@
 4. tool が引数を解釈し、`ListEventsRequest` を組み立てる。
 5. 共通 client が access token を取得する。
 6. 共通 client が Google Calendar API の `events` 一覧取得を呼ぶ。
-7. 結果を tool 出力形式へ整形し、tool result として会話履歴へ保存する。
+7. 結果を tool 出力形式へ整形し、read 系 tool のため tool result として会話履歴へ保存する。
 
 ### シナリオ: 予定を作成する
 1. tool caller が `google_calendar_create` を実行する。
 2. tool が日時文字列を `EventTime` に変換する。
 3. 共通 client が `CreateEvent` を実行する。
 4. 成功時、共通 client が一覧 cache を全破棄する。
-5. 作成結果を tool 出力として返す。
+5. write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われない。エラー時のみ tool result が LLM へ返る。
 
 ### シナリオ: 予定を更新または削除する
 1. tool caller が `google_calendar_update` を実行する。
 2. `action=delete` なら `DeleteEvent`、それ以外は `UpdateEvent` を呼ぶ。
 3. 成功時、共通 client が一覧 cache を全破棄する。
-4. 更新または削除の結果を tool 出力として返す。
+4. write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われない。エラー時のみ tool result が LLM へ返る。
 
 ### シナリオ: 会話時に予定を文脈へ注入する
 旧 `conversation` component の削除により、この経路は現在未接続です。

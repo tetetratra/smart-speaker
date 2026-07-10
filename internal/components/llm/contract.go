@@ -17,8 +17,14 @@ type rawTimelineItem struct {
 }
 
 type rawTimeline struct {
-	Items []rawTimelineItem `json:"items"`
+	Items         []rawTimelineItem `json:"items"`
+	SetWhiteboard json.RawMessage   `json:"set_whiteboard,omitempty"`
 }
+
+const (
+	maxTimelineItems = 20
+	maxTimelineTools = 3
+)
 
 type timelineParseError struct {
 	err     error
@@ -53,17 +59,15 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 	if err := json.Unmarshal([]byte(rawText), &timeline); err != nil {
 		return nil, newTimelineParseError(rawText, "invalid timeline json: %w", err)
 	}
+	if err := validateTimelineLimits(timeline.Items); err != nil {
+		return nil, newTimelineParseError(rawText, "%s", err.Error())
+	}
 	items := make([]types.TimelineItem, 0, len(timeline.Items))
-	seenTool := false
-	for i, raw := range timeline.Items {
+	for _, raw := range timeline.Items {
 		rawPreview := marshalRawTimelineItem(raw)
-		if seenTool {
-			return nil, newTimelineParseError(rawPreview, "tool must be the last item")
-		}
 		item := types.TimelineItem{
 			Kind:         strings.TrimSpace(raw.Type),
 			GenerationID: generationID,
-			SequenceID:   fmt.Sprintf("%d", i+1),
 		}
 		switch item.Kind {
 		case types.TimelineKindSpeech:
@@ -84,17 +88,56 @@ func parseTimelineJSON(rawText string, generationID types.GenerationID) ([]types
 			if item.ToolName == "" {
 				return nil, newTimelineParseError(rawPreview, "tool name is required")
 			}
+			if item.ToolName == setWhiteboardToolName {
+				return nil, newTimelineParseError(rawPreview, "set_whiteboard must not appear in items")
+			}
 			if len(raw.Args) == 0 {
 				raw.Args = json.RawMessage(`{}`)
 			}
 			item.ToolArgs = raw.Args
-			seenTool = true
 		default:
 			return nil, newTimelineParseError(rawPreview, "unknown timeline item type: %s", item.Kind)
 		}
 		items = append(items, item)
 	}
+	if hasSetWhiteboardField(timeline.SetWhiteboard) {
+		var err error
+		items, err = prependSetWhiteboardTool(items, timeline.SetWhiteboard, generationID)
+		if err != nil {
+			return nil, newTimelineParseError(rawText, "%s", err.Error())
+		}
+	}
+	for i := range items {
+		items[i].SequenceID = fmt.Sprintf("%d", i+1)
+	}
 	return items, nil
+}
+
+func hasSetWhiteboardField(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
+}
+
+func prependSetWhiteboardTool(items []types.TimelineItem, raw json.RawMessage, generationID types.GenerationID) ([]types.TimelineItem, error) {
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("invalid set_whiteboard field: %w", err)
+	}
+	content := strings.TrimSpace(payload.Content)
+	content = strings.ReplaceAll(content, `\n`, "\n")
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("set_whiteboard content is required")
+	}
+	toolItem := types.TimelineItem{
+		Kind:         types.TimelineKindTool,
+		ToolName:     setWhiteboardToolName,
+		ToolArgs:     raw,
+		GenerationID: generationID,
+	}
+	return append([]types.TimelineItem{toolItem}, items...), nil
 }
 
 func marshalRawTimelineItem(item rawTimelineItem) string {
@@ -126,4 +169,20 @@ func marshalRawTimelineItem(item rawTimelineItem) string {
 		return fmt.Sprintf("%+v", item)
 	}
 	return string(data)
+}
+
+func validateTimelineLimits(items []rawTimelineItem) error {
+	if len(items) > maxTimelineItems {
+		return fmt.Errorf("items must be at most %d, got %d", maxTimelineItems, len(items))
+	}
+	toolCount := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.Type) == types.TimelineKindTool {
+			toolCount++
+		}
+	}
+	if toolCount > maxTimelineTools {
+		return fmt.Errorf("tool items must be at most %d, got %d", maxTimelineTools, toolCount)
+	}
+	return nil
 }

@@ -5,11 +5,10 @@ import { createWS } from './ws'
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
 
-type StatusTone = 'idle' | 'active' | 'done' | 'error'
-type ButtonTone = 'primary' | 'secondary'
 type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
+type ServerEventLog = { id: number; line: string }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -18,13 +17,14 @@ if (browserURL.port === '5173') {
 }
 const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
 const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
-const serverHTTPBaseUrl = backendURL.origin
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
 const toolToastDurationMs = 5000
+const receivedVolumeMeterMax = 1000
+const serverEventLogLimit = 1000
 
 type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
 
@@ -36,6 +36,12 @@ const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: 
 }
 const playbackVolumeLevels: PlaybackVolumeLevel[] = ['quiet', 'low', 'normal', 'boost']
 const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'low'
+
+function meterPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(receivedVolumeMeterMax, value)) / receivedVolumeMeterMax * 100
+}
+
 const liveRootStyle = `
   :root {
     --live-bg: #f6f6f4;
@@ -109,12 +115,12 @@ const liveRootStyle = `
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: auto auto auto 1fr;
+    grid-template-rows: auto 1fr auto;
     gap: 8px;
   }
   .live-controls-row {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 6px;
     width: 100%;
     align-items: center;
@@ -133,7 +139,8 @@ const liveRootStyle = `
     padding: 8px 10px 7px;
     position: relative;
     overflow: hidden;
-    min-height: 88px;
+    min-height: 0;
+    flex: 1;
   }
   .live-tool-toast-stack {
     position: absolute;
@@ -202,33 +209,88 @@ const liveRootStyle = `
   }
   .live-volume-slider {
     width: 100%;
-    accent-color: var(--live-toggle-on);
-    cursor: pointer;
+    height: 10px;
     margin: 0;
+    cursor: pointer;
+    accent-color: var(--live-toggle-on);
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
   }
-  .live-audio-stats {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-  .live-audio-stat {
-    border: 1px solid var(--live-line);
-    background: var(--live-panel-soft);
+  .live-volume-slider::-webkit-slider-runnable-track {
+    height: 4px;
     border-radius: 999px;
-    padding: 4px 8px;
+    background: var(--live-toggle-bg);
+  }
+  .live-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border: 1px solid var(--live-line);
+    border-radius: 50%;
+    background: var(--live-toggle-knob);
+    box-shadow: 0 1px 2px var(--live-shadow);
+  }
+  .live-volume-slider::-moz-range-track {
+    height: 4px;
+    border: none;
+    border-radius: 999px;
+    background: var(--live-toggle-bg);
+  }
+  .live-volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--live-line);
+    border-radius: 50%;
+    background: var(--live-toggle-knob);
+    box-shadow: 0 1px 2px var(--live-shadow);
+  }
+  .live-playback-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .live-playback-slider-label {
+    flex-shrink: 0;
+    width: 52px;
     font-size: 10px;
     line-height: 1;
     color: var(--live-muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
     white-space: nowrap;
   }
-  .live-audio-stat strong {
-    color: var(--live-text);
-    font-weight: 700;
+  .live-playback-slider-row .live-volume-slider {
+    flex: 1;
+    min-width: 0;
+  }
+  .live-received-volume-meter {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--live-toggle-bg);
+    overflow: visible;
+  }
+  .live-received-volume-fill {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    border-radius: inherit;
+    background: var(--live-toggle-on);
+    transition: width 90ms linear;
+  }
+  .live-received-volume-threshold {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--live-muted);
+    box-shadow: 0 0 0 1px var(--live-panel-soft);
+    transform: translateX(-1px);
   }
   .live-status-grid {
     display: grid;
@@ -316,6 +378,12 @@ const liveRootStyle = `
   .live-toggle-switch.on::after {
     left: 18px;
   }
+  .live-bubble-slot {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .live-bubble {
     background: var(--live-panel-raised);
     border: 1px solid var(--live-line);
@@ -324,12 +392,15 @@ const liveRootStyle = `
     font-size: 24px;
     line-height: 1.3;
     position: relative;
-    min-height: 120px;
     box-shadow: 0 1px 2px var(--live-shadow);
     text-align: center;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    min-width: 0;
+    overflow: visible;
   }
   .live-bubble-content {
     display: flex;
@@ -337,6 +408,11 @@ const liveRootStyle = `
     align-items: center;
     gap: 10px;
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .live-bubble-user {
     color: var(--live-muted);
@@ -361,6 +437,16 @@ const liveRootStyle = `
     border-right: 1px solid var(--live-line);
     border-top: 1px solid var(--live-line);
     transform: rotate(45deg);
+  }
+  .live-bubble-ai-speaking {
+    border-color: var(--live-toggle-on);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--live-toggle-on) 35%, transparent),
+      0 0 12px color-mix(in srgb, var(--live-toggle-on) 45%, transparent);
+  }
+  .live-bubble-ai-speaking::after {
+    border-right-color: var(--live-toggle-on);
+    border-top-color: var(--live-toggle-on);
   }
   .live-board {
     background: var(--live-panel-soft);
@@ -388,87 +474,129 @@ const liveRootStyle = `
     border-top: 1px solid var(--live-line);
     margin: 10px 0;
   }
-  .live-mini {
-    width: 100%;
-    height: 100%;
-    border-radius: 14px;
-    border: 1px dashed var(--live-line);
-    background: var(--live-panel-soft);
-    color: var(--live-muted);
+  .live-controls-panel {
     display: grid;
-    place-items: center;
-    font-size: 11px;
+    grid-template-rows: auto auto auto;
+    gap: 8px;
+    min-width: 0;
     min-height: 0;
   }
-`
-
-function getStatusTone(status: string): StatusTone {
-  if (status.includes('失敗') || status.includes('エラー')) return 'error'
-  if (status === '接続済み' || status === '完了') return 'done'
-  if (status === '接続中' || status === '送信中' || status === '検知中' || status === '認識中' || status === '最終結果待ち') {
-    return 'active'
+  .live-character-area {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
   }
-  return 'idle'
-}
-
-function getStatusBadgeStyle(tone: StatusTone): React.CSSProperties {
-  switch (tone) {
-    case 'active':
-      return { background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }
-    case 'done':
-      return { background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }
-    case 'error':
-      return { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5' }
-    default:
-      return { background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }
-  }
-}
-
-function getButtonStyle(tone: ButtonTone, disabled: boolean): React.CSSProperties {
-  const base: React.CSSProperties = {
-    borderRadius: 12,
-    padding: '10px 14px',
-    fontSize: 14,
-    fontWeight: 700,
-    border: '1px solid transparent',
-    transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.45 : 1,
-  }
-  if (tone === 'primary') {
-    return {
-      ...base,
-      background: '#0f172a',
-      color: '#f8fafc',
-      borderColor: '#0f172a',
+  @media (orientation: portrait) {
+    .live-main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .live-left,
+    .live-right {
+      display: contents;
+    }
+    .live-controls-panel {
+      grid-row: 1;
+    }
+    .live-board {
+      grid-row: 2;
+    }
+    .live-character-area {
+      grid-row: 3;
+    }
+    .live-bubble-slot {
+      grid-row: 4;
+    }
+    .live-bubble {
+      width: 100%;
+      font-size: clamp(14px, 4vw, 20px);
+    }
+    .live-bubble-user {
+      font-size: clamp(12px, 3.2vw, 16px);
+    }
+    .live-bubble::after {
+      right: auto;
+      bottom: auto;
+      left: 50%;
+      top: -6px;
+      width: 11px;
+      height: 11px;
+      border-right: none;
+      border-bottom: none;
+      border-left: 1px solid var(--live-line);
+      border-top: 1px solid var(--live-line);
+      transform: translateX(-50%) rotate(45deg);
+    }
+    .live-bubble-ai-speaking::after {
+      border-right-color: transparent;
+      border-bottom-color: transparent;
+      border-left-color: var(--live-toggle-on);
+      border-top-color: var(--live-toggle-on);
     }
   }
-  return {
-    ...base,
-    background: '#ffffff',
-    color: '#334155',
-    borderColor: '#cbd5e1',
-  }
-}
+`
 
 function isNightModeTime(date: Date): boolean {
   const hour = date.getHours()
   return hour >= nightModeStartHour || hour < nightModeEndHour
 }
 
-function getPipelineStateOptions(label: string): string[] {
-  switch (label) {
-    case 'WebRTC接続':
-      return ['停止中', '接続中', '接続済み', '切断', '失敗']
-    case 'マイクストリーム送信':
-      return ['停止中', '確認中', '待機中', '送信中', '確認失敗']
-    case 'サーバー発話検知':
-      return ['待機中', '検知中']
-    case 'Google文字起こし':
-      return ['停止中', '待機中', '認識中', '最終結果待ち', '完了', 'エラー']
-    default:
-      return []
+function isSTTUserMessage(raw: any, role: ChatMessage['type']): boolean {
+  if (role !== 'user') return false
+  return raw.source === 'stt' || raw.source === 'server-stt'
+}
+
+function isBinaryLikeValue(value: unknown): boolean {
+  return value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob
+}
+
+function isBinaryLikeKey(key: string): boolean {
+  return /audio|pcm|sample|prebuffer|bytes|buffer|blob|binary|data/i.test(key)
+}
+
+function isBase64Like(value: string): boolean {
+  if (value.length < 256 || value.length % 4 !== 0) return false
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value)
+}
+
+function sanitizeEventValue(value: unknown, key = ''): unknown {
+  if (isBinaryLikeValue(value)) return '...'
+  if (typeof value === 'string') {
+    if (isBinaryLikeKey(key) || isBase64Like(value)) return '...'
+    return value
   }
+  if (Array.isArray(value)) {
+    if (isBinaryLikeKey(key) && value.length > 0) return '...'
+    return value.map((item) => sanitizeEventValue(item))
+  }
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>
+    const result: Record<string, unknown> = {}
+    if (Object.prototype.hasOwnProperty.call(source, 'type')) {
+      result.type = sanitizeEventValue(source.type, 'type')
+    }
+    for (const [entryKey, entryValue] of Object.entries(source)) {
+      if (entryKey === 'type') continue
+      result[entryKey] = sanitizeEventValue(entryValue, entryKey)
+    }
+    return result
+  }
+  return value
+}
+
+function formatServerEventLog(raw: unknown): string {
+  const sanitized = sanitizeEventValue(raw)
+  try {
+    return JSON.stringify(sanitized)
+  } catch {
+    return JSON.stringify({ type: 'unserializable', value: '...' })
+  }
+}
+
+function isScrolledToBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
 }
 
 type LiveViewProps = {
@@ -480,6 +608,8 @@ type LiveViewProps = {
   speechThreshold: number
   lastAssistantMessage: string
   lastUserMessage: string
+  isAiSpeaking: boolean
+  isConversationBubbleHidden: boolean
   boardEntries: BoardEntry[]
   toolToasts: ToolToast[]
   playbackVolumeLevel: PlaybackVolumeLevel
@@ -504,8 +634,12 @@ function App() {
   const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
+  const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
+  const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
-  const chatRef = useRef<HTMLDivElement | null>(null)
+  const adminLogRef = useRef<HTMLDivElement | null>(null)
+  const shouldFollowAdminLogRef = useRef(true)
   const remoteStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -529,6 +663,19 @@ function App() {
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg])
   }, [])
+
+  const updateAdminLogFollow = useCallback(() => {
+    const el = adminLogRef.current
+    shouldFollowAdminLogRef.current = !el || isScrolledToBottom(el)
+  }, [])
+
+  const appendServerEventLog = useCallback((raw: unknown) => {
+    updateAdminLogFollow()
+    setServerEventLogs((prev) => {
+      const next = [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }]
+      return next.length > serverEventLogLimit ? next.slice(-serverEventLogLimit) : next
+    })
+  }, [nextMessageId, updateAdminLogFollow])
 
   const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
     const normalizedToolName = toolName.trim() || 'unknown_tool'
@@ -586,6 +733,14 @@ function App() {
     playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
   }, [selectedPlaybackVolume.gain])
 
+  const interruptRemoteAudioPlayback = useCallback(() => {
+    stopRemoteAudioGraph()
+    if (!remoteStreamRef.current) return
+    void connectRemoteStreamToAudioGraph().catch((err) => {
+      setRtcError(err instanceof Error ? err.message : 'RTC audio reconnect error')
+    })
+  }, [connectRemoteStreamToAudioGraph, stopRemoteAudioGraph])
+
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
     if (!peer) return
@@ -620,6 +775,7 @@ function App() {
 
   const handleChatMessage = useCallback(
     (raw: any) => {
+      appendServerEventLog(raw)
       if (!raw || typeof raw !== 'object') return
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
@@ -638,9 +794,14 @@ function App() {
           if (role === 'tool_call' || role === 'tool_result') {
             showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
           }
-          if (raw.source === 'server-stt' && role === 'user') {
+          if (role === 'agent') {
+            setIsAiSpeaking(true)
+          }
+          if (isSTTUserMessage(raw, role)) {
+            setIsAiSpeaking(false)
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
+            setIsConversationBubbleHidden(false)
           }
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
@@ -653,9 +814,25 @@ function App() {
           })
           break
         }
+        case 'speech_start': {
+          interruptRemoteAudioPlayback()
+          setIsAiSpeaking(false)
+          setSpeechDetectStatus('検出中')
+          setSttStatus('認識中')
+          break
+        }
         case 'speech_end': {
           setSpeechDetectStatus('待機中')
           setSttStatus('最終結果待ち')
+          break
+        }
+        case 'agent_speech_end': {
+          setIsAiSpeaking(false)
+          break
+        }
+        case 'session_reset': {
+          setIsAiSpeaking(false)
+          setIsConversationBubbleHidden(true)
           break
         }
         case 'rtc_vad_status': {
@@ -675,7 +852,7 @@ function App() {
           break
       }
     },
-    [appendMessage, handleRTCSignal, nextMessageId, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -812,6 +989,7 @@ function App() {
       }, () => {
         stopRTC()
         setConnected(false)
+        setIsAiSpeaking(false)
         if (wsChatRef.current === wsChat) {
           wsChatRef.current = null
         }
@@ -859,6 +1037,7 @@ function App() {
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
+    setIsAiSpeaking(false)
   }, [clearReconnectTimer, stopRTC])
 
   useEffect(() => {
@@ -887,8 +1066,9 @@ function App() {
           if (report.type !== 'outbound-rtp') return
           const mediaType = (report as RTCOutboundRtpStreamStats).kind || (report as RTCOutboundRtpStreamStats & { mediaType?: string }).mediaType
           if (mediaType !== 'audio') return
-          if (typeof (report as RTCOutboundRtpStreamStats).bytesSent !== 'number') return
-          currentBytesSent = (report as RTCOutboundRtpStreamStats).bytesSent
+          const bytesSent = (report as RTCOutboundRtpStreamStats).bytesSent
+          if (typeof bytesSent !== 'number') return
+          currentBytesSent = bytesSent
         })
         if (currentBytesSent === null) {
           setAudioSendStatus('確認中')
@@ -915,25 +1095,11 @@ function App() {
 
 
   useEffect(() => {
-    const el = chatRef.current
-    if (el) {
+    const el = adminLogRef.current
+    if (el && shouldFollowAdminLogRef.current) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages])
-  const startGoogleAuth = useCallback(() => {
-    const url = `${serverHTTPBaseUrl}/oauth/google/start`
-    const opened = window.open(url, '_blank')
-    if (!opened) {
-      window.location.href = url
-    }
-  }, [])
-
-  const pipelineStatuses = [
-    { label: 'WebRTC接続', status: rtcStatus },
-    { label: 'マイクストリーム送信', status: audioSendStatus },
-    { label: 'サーバー発話検知', status: speechDetectStatus },
-    { label: 'Google文字起こし', status: sttStatus },
-  ]
+  }, [serverEventLogs])
   const lastAssistantMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const msg = messages[i]
@@ -979,6 +1145,16 @@ function App() {
     }
     return () => body.classList.remove('admin-mode')
   }, [uiMode])
+  useEffect(() => {
+    if (uiMode !== 'admin' || !shouldFollowAdminLogRef.current) return
+    const frame = window.requestAnimationFrame(() => {
+      const el = adminLogRef.current
+      if (el) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [uiMode])
   const setMode = useCallback((mode: 'admin' | 'app') => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
@@ -1004,6 +1180,8 @@ function App() {
           speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
+          isAiSpeaking={isAiSpeaking}
+          isConversationBubbleHidden={isConversationBubbleHidden}
           boardEntries={boardEntries}
           toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
@@ -1019,126 +1197,52 @@ function App() {
           flexDirection: 'column',
           gap: 12,
           padding: 12,
-          minHeight: '100vh',
+          height: '100vh',
+          minHeight: 0,
+          overflow: 'hidden',
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={connect} disabled={connected || busy} style={getButtonStyle('primary', connected || busy)}>
-            接続
-          </button>
-          <button onClick={disconnect} disabled={!connected} style={getButtonStyle('secondary', !connected)}>
-            切断
-          </button>
-          <button onClick={startGoogleAuth} style={getButtonStyle('secondary', false)}>
-            Google認証
-          </button>
-          <button onClick={() => setMode('app')} style={getButtonStyle('secondary', false)}>
-            アプリ画面へ
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
-            {pipelineStatuses.map((item) => {
-              const tone = getStatusTone(item.status)
-              const options = getPipelineStateOptions(item.label)
-              return (
-                <div
-                  key={item.label}
-                  style={{
-                    borderRadius: 10,
-                    border: '1px solid #e2e8f0',
-                    background: '#ffffff',
-                    padding: 10,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#475569' }}>{item.label}</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {options.map((option) => {
-                      const isCurrent = option === item.status
-                      return (
-                        <span
-                          key={option}
-                          style={{
-                            ...(isCurrent
-                              ? getStatusBadgeStyle(tone)
-                              : {
-                                  background: '#f8fafc',
-                                  color: '#94a3b8',
-                                  border: '1px solid #e2e8f0',
-                                }),
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            borderRadius: 9999,
-                            padding: '4px 10px',
-                            fontSize: 12,
-                            fontWeight: isCurrent ? 700 : 500,
-                            opacity: isCurrent ? 1 : 0.55,
-                          }}
-                        >
-                          {option}
-                        </span>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {rtcError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>音声エラー:</strong> {rtcError}
-            </div>
-          )}
-          <div>
-            <strong>再生音量:</strong> {selectedPlaybackVolume.label} (gain {selectedPlaybackVolume.gain})
-          </div>
-          {sttError && (
-            <div style={{ color: '#dc2626' }}>
-              <strong>文字起こしエラー:</strong> {sttError}
-            </div>
-          )}
-        </div>
         <div
           style={{
-            border: '1px solid #ddd',
-            borderRadius: 8,
-            padding: 12,
-            minHeight: 300,
-            maxHeight: 500,
-            overflowY: 'auto',
+            flex: '1 1 auto',
+            minHeight: 0,
+            height: '100%',
+            border: '2px solid #e2e8f0',
+            borderRadius: 10,
+            padding: '10px 12px',
+            overflow: 'auto',
             background: '#fafafa',
+            boxShadow: 'inset 0 0 0 1px #f0f0f0',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+            fontSize: 12,
+            lineHeight: 1.5,
           }}
-          ref={chatRef}
+          ref={adminLogRef}
+          onScroll={updateAdminLogFollow}
         >
-          {messages.map((m) => {
-            let color = '#16a34a'
-            let label = 'Agent'
-            if (m.type === 'user') {
-              color = '#2563eb'
-              label = 'User'
-            } else if (m.type === 'system') {
-              color = '#6b7280'
-              label = 'System'
-            } else if (m.type === 'tool_call') {
-              color = '#8b5cf6'
-              label = 'Tool call'
-            } else if (m.type === 'tool_result') {
-              color = '#ec4899'
-              label = 'Tool result'
-            }
-            const sourceLabel = m.source ? ` (${m.source})` : ''
-            return (
-              <div key={m.id} style={{ marginBottom: 8 }}>
-                <strong style={{ color }}>{label}{sourceLabel}</strong>
-                <div>{m.text}</div>
-              </div>
-            )
-          })}
+          {serverEventLogs.map((log) => (
+            <div key={log.id} style={{ whiteSpace: 'pre', minWidth: 'max-content' }}>
+              {log.line}
+            </div>
+          ))}
         </div>
+        <button
+          onClick={() => setMode('app')}
+          style={{
+            alignSelf: 'flex-start',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            color: '#334155',
+            padding: '10px 14px',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          app画面
+        </button>
       </div>
     </>
   )
@@ -1154,6 +1258,8 @@ function LiveView(props: LiveViewProps) {
     speechThreshold,
     lastAssistantMessage,
     lastUserMessage,
+    isAiSpeaking,
+    isConversationBubbleHidden,
     boardEntries,
     toolToasts,
     playbackVolumeLevel,
@@ -1185,6 +1291,8 @@ function LiveView(props: LiveViewProps) {
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
+  const inputLevelPercent = meterPercent(inputLevel)
+  const speechThresholdPercent = meterPercent(speechThreshold)
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1192,10 +1300,7 @@ function LiveView(props: LiveViewProps) {
         <div className="live-main">
           <div className="live-left">
             <div className="live-board" ref={boardRef}>
-              {boardEntries.length === 0 ? (
-                <div className="live-board-empty">ホワイトボード</div>
-              ) : (
-                boardEntries.map((entry, index) => (
+              {boardEntries.map((entry, index) => (
                   <React.Fragment key={entry.id}>
                     {index > 0 && <hr className="live-board-separator" />}
                     <div className="live-board-entry">
@@ -1203,65 +1308,76 @@ function LiveView(props: LiveViewProps) {
                     </div>
                   </React.Fragment>
                 ))
-              )}
+              }
             </div>
-            <div className="live-bubble">
-              {lastAssistantMessage && (
-                <div className="live-bubble-content">
-                  {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
-                  <div className="live-bubble-agent">{lastAssistantMessage}</div>
+            <div className="live-bubble-slot">
+              {lastAssistantMessage && !isConversationBubbleHidden && (
+                <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
+                  <div className="live-bubble-content">
+                    {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
+                    <div className="live-bubble-agent">{lastAssistantMessage}</div>
+                  </div>
                 </div>
               )}
             </div>
           </div>
           <div className="live-right">
-            <div className="live-controls-row">
-              <div className="live-audio-stats" aria-label="VAD状態">
-                <div className="live-audio-stat">音量 <strong>{inputLevel}</strong></div>
-                <div className="live-audio-stat">しきい値 <strong>{speechThreshold}</strong></div>
+            <div className="live-controls-panel">
+              <div className="live-controls-row">
+                <div className="live-controls-actions">
+                  <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                    <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                    接続
+                  </button>
+                  <button onClick={goAdmin} className="live-admin-btn">ログ</button>
+                </div>
               </div>
-              <div className="live-controls-actions">
-                <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
-                  <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
-                  接続
-                </button>
-                <button onClick={goAdmin} className="live-admin-btn">管理画面</button>
+              <div className="live-status-grid">
+                <div className="live-status-card">
+                  <div className="live-status-label">接続</div>
+                  <div className="live-status-value">{connectionStatus}</div>
+                </div>
+                <div className="live-status-card">
+                  <div className="live-status-label">マイク</div>
+                  <div className="live-status-value">{speechDetectStatus}</div>
+                </div>
+                <div className="live-status-card">
+                  <div className="live-status-label">認識</div>
+                  <div className="live-status-value">{sttStatus}</div>
+                </div>
+              </div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">受信音量</span>
+                <div className="live-received-volume-meter" aria-label="受信音量">
+                  <div className="live-received-volume-fill" style={{ width: `${inputLevelPercent}%` }} />
+                  <div className="live-received-volume-threshold" style={{ left: `${speechThresholdPercent}%` }} />
+                </div>
+              </div>
+              <div className="live-playback-slider-row">
+                <span className="live-playback-slider-label">再生音量</span>
+                <input
+                  className="live-volume-slider"
+                  type="range"
+                  min={0}
+                  max={playbackVolumeLevels.length - 1}
+                  step={1}
+                  value={playbackVolumeIndex}
+                  aria-label="再生音量"
+                  onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
+                />
               </div>
             </div>
-            <div className="live-status-grid">
-              <div className="live-status-card">
-                <div className="live-status-label">接続</div>
-                <div className="live-status-value">{connectionStatus}</div>
-              </div>
-              <div className="live-status-card">
-                <div className="live-status-label">マイク</div>
-                <div className="live-status-value">{speechDetectStatus}</div>
-              </div>
-              <div className="live-status-card">
-                <div className="live-status-label">認識</div>
-                <div className="live-status-value">{sttStatus}</div>
+            <div className="live-character-area">
+              <div className="live-volume-control" aria-label="キャラクターエリア">
+                <div className="live-tool-toast-stack">
+                  {toolToasts.map((toast) => (
+                    <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
+                      <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'call' : 'result'}: {toast.toolName}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <input
-              className="live-volume-slider"
-              type="range"
-              min={0}
-              max={playbackVolumeLevels.length - 1}
-              step={1}
-              value={playbackVolumeIndex}
-              aria-label="再生音量"
-              onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-            />
-            <div className="live-volume-control" aria-label="キャラクターエリア">
-              <div className="live-tool-toast-stack">
-                {toolToasts.map((toast) => (
-                  <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
-                    <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'tool call' : 'tool result'}: {toast.toolName}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="live-mini"></div>
           </div>
         </div>
       </div>

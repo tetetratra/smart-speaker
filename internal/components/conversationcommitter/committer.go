@@ -35,6 +35,8 @@ func (c *committer) Commit(ctx context.Context, req types.ConversationCommitRequ
 		c.emitUser(ctx, record)
 	case types.RoleAgent:
 		c.emitAgent(ctx, record)
+	case types.RoleSystem:
+		c.emitSystem(ctx, record)
 	case types.RoleToolCall:
 		c.emitToolCall(ctx, record)
 	case types.RoleToolResult:
@@ -66,6 +68,23 @@ func (c *committer) emitAgent(ctx context.Context, record types.ConversationReco
 		Source:       record.Source,
 		GenerationID: record.GenerationID,
 		Final:        true,
+	}})
+	_ = ctx
+}
+
+func (c *committer) emitSystem(ctx context.Context, record types.ConversationRecord) {
+	c.emit(types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{
+		Role:         types.RoleSystem,
+		Text:         record.Text,
+		Source:       record.Source,
+		GenerationID: record.GenerationID,
+		Final:        true,
+	}})
+	c.emit(types.Event{Kind: types.EventLLMRequest, Payload: types.LLMRequest{
+		RequestID:    record.ID,
+		Role:         types.RoleSystem,
+		Text:         record.Text,
+		GenerationID: record.GenerationID,
 	}})
 	_ = ctx
 }

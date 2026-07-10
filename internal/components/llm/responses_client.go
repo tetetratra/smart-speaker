@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -18,6 +20,8 @@ type Config struct {
 	Model        string
 	Instructions string
 	History      historyReader
+	AgentStatus  agentStatusReader
+	Timers       timerSnapshotReader
 	ToolSchemas  []any
 	Client       responseClient
 }
@@ -28,6 +32,14 @@ type responseClient interface {
 
 type historyReader interface {
 	Snapshot() []types.ConversationRecord
+}
+
+type agentStatusReader interface {
+	Status() agentstatus.Status
+}
+
+type timerSnapshotReader interface {
+	Snapshot() []timerstate.Timer
 }
 
 type Client struct {
@@ -194,6 +206,23 @@ func appendCurrentTimestamp(prompt string) string {
 		return dateLine + "\n" + timeLine
 	}
 	return strings.TrimRight(prompt, "\n") + "\n" + dateLine + "\n" + timeLine
+}
+
+func appendTimerSnapshot(prompt string, timers []timerstate.Timer) string {
+	var lines []string
+	lines = append(lines, "現在の未到達タイマー一覧:")
+	if len(timers) == 0 {
+		lines = append(lines, "- なし")
+	} else {
+		for _, timer := range timers {
+			lines = append(lines, fmt.Sprintf("- id=%s at=%s action=%s", timer.ID, timer.At.Format(time.RFC3339), timer.Action))
+		}
+	}
+	block := strings.Join(lines, "\n")
+	if strings.TrimSpace(prompt) == "" {
+		return block
+	}
+	return strings.TrimRight(prompt, "\n") + "\n" + block
 }
 
 func formatJapaneseWeekday(w time.Weekday) string {

@@ -16,12 +16,14 @@ permissions:
 jobs:
   bootstrap:
     if: >-
-      (
-        github.event.action == 'opened' &&
-        contains(github.event.issue.labels.*.name, 'AI主導開発')
-      ) || (
-        github.event.action == 'labeled' &&
-        github.event.label.name == 'AI主導開発'
+      github.event.issue.state == 'open' && (
+        (
+          github.event.action == 'opened' &&
+          contains(github.event.issue.labels.*.name, 'AI主導開発')
+        ) || (
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'AI主導開発'
+        )
       )
     runs-on: ubuntu-latest
     outputs:
@@ -88,11 +90,6 @@ jobs:
           } > "$comment_file"
           gh pr comment "$PR_NUMBER" --body-file "$comment_file"
           rm -f "$comment_file"
-
-      - name: 元 issue を close する
-        shell: bash
-        run: |
-          gh issue close "${{ steps.create.outputs.issue_number }}"
 
       - name: 作成した PR へのリンクを元 issue に残す
         shell: bash

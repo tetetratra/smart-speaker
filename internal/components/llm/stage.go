@@ -3,13 +3,12 @@ package llm
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -17,13 +16,16 @@ import (
 const maxContractRetries = 10
 const maxRawLinePreviewRunes = 400
 const rawLinePreviewSuffix = "..."
-const idleFollowupThreshold = 10 * time.Minute
+const noResponseReasonIdleCandidate = "idle_candidate"
+const noResponseReasonModel = "model_no_response"
 
 type stage struct {
 	upstream     chan types.Event
 	downstream   chan types.Event
 	client       responseClient
 	history      historyReader
+	agentStatus  agentStatusReader
+	timers       timerSnapshotReader
 	systemPrompt string
 	once         sync.Once
 	cancel       context.CancelFunc
@@ -43,6 +45,8 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		downstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		client:       client,
 		history:      cfg.History,
+		agentStatus:  cfg.AgentStatus,
+		timers:       cfg.Timers,
 		systemPrompt: buildSystemPrompt(cfg.Instructions, cfg.ToolSchemas),
 	}
 	return &graph.Stage{
@@ -94,14 +98,26 @@ func (s *stage) handleRequest(ctx context.Context, req types.LLMRequest) {
 		case s.downstream <- types.Event{Kind: types.EventTimelineItem, Payload: item}:
 		}
 	}
+	select {
+	case <-ctx.Done():
+		return
+	case s.downstream <- types.Event{
+		Kind: types.EventAgentTimelineEnd,
+		Payload: types.AgentTimelineEnd{
+			GenerationID: req.GenerationID,
+		},
+	}:
+	}
 }
 
 func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]types.TimelineItem, error) {
 	var lastErr error
 	basePrompt := s.systemPrompt
-	if gap, ok := s.idleGapBefore(req); ok {
-		basePrompt = appendIdleFollowupInstruction(basePrompt, formatDurationMinutes(gap))
+	noResponseReason := s.noResponseReason(req)
+	if noResponseReason == noResponseReasonIdleCandidate {
+		basePrompt = appendIdleFollowupInstruction(basePrompt)
 	}
+	basePrompt = s.appendTimerSnapshot(basePrompt)
 	systemPrompt := basePrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
 		messages := s.messages(req)
@@ -111,6 +127,19 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 		}
 		items, err := parseTimelineJSON(rawText, req.GenerationID)
 		if err == nil {
+			if len(items) == 0 {
+				reason := noResponseReason
+				if reason == "" {
+					reason = noResponseReasonModel
+				}
+				log.Printf(
+					"llm: no response generation=%d request_id=%s reason=%s text=%q",
+					req.GenerationID,
+					req.RequestID,
+					reason,
+					strings.TrimSpace(req.Text),
+				)
+			}
 			return items, nil
 		}
 		lastErr = err
@@ -155,55 +184,47 @@ func (s *stage) messages(req types.LLMRequest) []types.ChatMessage {
 	return []types.ChatMessage{{Role: role, Content: req.Text}}
 }
 
-func (s *stage) idleGapBefore(req types.LLMRequest) (time.Duration, bool) {
-	if s.history == nil {
-		return 0, false
+func (s *stage) noResponseReason(req types.LLMRequest) string {
+	if !s.isIdle() {
+		return ""
 	}
-	gap, ok := idleGapBeforeRequest(s.history.Snapshot(), req)
-	if !ok || gap < idleFollowupThreshold {
-		return 0, false
+	if !isMonologueCandidate(strings.TrimSpace(req.Text)) {
+		return ""
 	}
-	return gap, true
+	return noResponseReasonIdleCandidate
 }
 
-func idleGapBeforeRequest(records []types.ConversationRecord, req types.LLMRequest) (time.Duration, bool) {
-	currentIndex := -1
-	reqText := strings.TrimSpace(req.Text)
-	for i, rec := range records {
-		if strings.TrimSpace(rec.Role) != types.RoleUser {
-			continue
-		}
-		if rec.ID == req.RequestID || (rec.GenerationID == req.GenerationID && strings.TrimSpace(rec.Text) == reqText) {
-			currentIndex = i
-		}
+func (s *stage) isIdle() bool {
+	if s.agentStatus == nil {
+		return false
 	}
-	if currentIndex < 0 {
-		return 0, false
-	}
-	current := records[currentIndex]
-	if current.CreatedAt.IsZero() {
-		return 0, false
-	}
-	for i := currentIndex - 1; i >= 0; i-- {
-		prev := records[i]
-		if strings.TrimSpace(prev.Role) != types.RoleUser || prev.CreatedAt.IsZero() {
-			continue
-		}
-		gap := current.CreatedAt.Sub(prev.CreatedAt)
-		if gap < 0 {
-			return 0, false
-		}
-		return gap, true
-	}
-	return 0, false
+	return s.agentStatus.Status() == agentstatus.StatusIdle
 }
 
-func formatDurationMinutes(d time.Duration) string {
-	minutes := int(d.Round(time.Minute) / time.Minute)
-	if minutes <= 0 {
-		return d.String()
+func (s *stage) appendTimerSnapshot(prompt string) string {
+	if s.timers == nil {
+		return prompt
 	}
-	return fmt.Sprintf("%d分", minutes)
+	return appendTimerSnapshot(prompt, s.timers.Snapshot())
+}
+
+func isMonologueCandidate(text string) bool {
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "？") || strings.Contains(text, "?") {
+		return false
+	}
+	requestHints := []string{
+		"して", "してくれ", "してほしい", "してください", "して下さい",
+		"つけて", "消して", "教えて", "お願い", "頼む",
+	}
+	for _, hint := range requestHints {
+		if strings.Contains(text, hint) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *stage) close() error {

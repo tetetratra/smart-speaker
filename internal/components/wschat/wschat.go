@@ -14,18 +14,24 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
+
+type Config struct {
+	TimerStore *timerstate.Store
+}
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
 // pushes graph events to the connected client, and receives WebRTC signaling
 // messages from the client.
-func NewStage(mux *http.ServeMux) *graph.Stage {
+func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
 	holder := &connHolder{}
 	c := &chatWS{
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		holder:     holder,
+		timerStore: cfg.TimerStore,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
 	return &graph.Stage{
@@ -98,6 +104,7 @@ type chatWS struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	holder     *connHolder
+	timerStore *timerstate.Store
 	once       sync.Once
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -129,13 +136,21 @@ func (c *chatWS) consume(ctx context.Context) {
 }
 
 func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
+	msg, targetID, ok := messageForEvent(evt)
+	if !ok {
+		return
+	}
+	c.writeMessage(ctx, msg, targetID)
+}
+
+func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	msg := map[string]any{}
 	targetID := ""
 	switch evt.Kind {
 	case types.EventRealtimeOutput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "message",
@@ -150,7 +165,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventRTCSignal:
 		sig, ok := evt.Payload.(types.RTCSignal)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		targetID = sig.ClientID
 		msg = map[string]any{
@@ -158,10 +173,20 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 			"sdp":       sig.SDP,
 			"candidate": sig.Candidate,
 		}
+	case types.EventSpeechStart:
+		speech, ok := evt.Payload.(types.SpeechEvent)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":        "speech_start",
+			"source":      speech.Source,
+			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
+		}
 	case types.EventSpeechEnd:
 		speech, ok := evt.Payload.(types.SpeechEvent)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "speech_end",
@@ -171,7 +196,7 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventRTCVADStatus:
 		status, ok := evt.Payload.(types.RTCVADStatus)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":        "rtc_vad_status",
@@ -182,17 +207,73 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	case types.EventWhiteboardUpdate:
 		update, ok := evt.Payload.(types.WhiteboardUpdate)
 		if !ok {
-			return
+			return nil, "", false
 		}
 		msg = map[string]any{
 			"type":    "whiteboard_update",
 			"content": update.Content,
 		}
+	case types.EventSessionReset:
+		reset, ok := evt.Payload.(types.SessionResetEvent)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":         "session_reset",
+			"requested_at": reset.RequestedAt.Format(time.RFC3339Nano),
+		}
+	case types.EventAgentSpeechPlaybackEnd:
+		end, ok := evt.Payload.(types.AgentSpeechPlaybackEnd)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{
+			"type":          "agent_speech_end",
+			"generation_id": uint64(end.GenerationID),
+			"completed_at":  end.CompletedAt.Format(time.RFC3339Nano),
+		}
+	case types.EventTimerState:
+		state, ok := evt.Payload.(types.TimerState)
+		if !ok {
+			return nil, "", false
+		}
+		msg = timerStateMessage(state)
 	default:
+		return nil, "", false
+	}
+	return msg, targetID, true
+}
+
+func timerStateMessage(state types.TimerState) map[string]any {
+	timers := make([]map[string]any, 0, len(state.Timers))
+	for _, timer := range state.Timers {
+		timers = append(timers, map[string]any{
+			"id":         timer.ID,
+			"at":         timer.At.Format(time.RFC3339),
+			"action":     timer.Action,
+			"created_at": timer.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return map[string]any{
+		"type":   "timer.state",
+		"timers": timers,
+	}
+}
+
+func (c *chatWS) pushTimerState(ctx context.Context, connID string) {
+	if c.timerStore == nil {
 		return
 	}
-
-	c.writeMessage(ctx, msg, targetID)
+	state := types.TimerState{}
+	for _, timer := range c.timerStore.Snapshot() {
+		state.Timers = append(state.Timers, types.TimerStateItem{
+			ID:        timer.ID,
+			At:        timer.At,
+			Action:    timer.Action,
+			CreatedAt: timer.CreatedAt,
+		})
+	}
+	c.writeMessage(ctx, timerStateMessage(state), connID)
 }
 
 func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) {
@@ -225,6 +306,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 	if c.holder != nil {
 		c.holder.add(connID, conn)
 	}
+	c.pushTimerState(r.Context(), connID)
 	defer func() {
 		if c.holder != nil {
 			c.holder.remove(connID)

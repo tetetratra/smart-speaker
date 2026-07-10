@@ -5,7 +5,7 @@
 - **解決する課題**: LLM が生成した `tool` item を、会話生成パイプライン内で local tool 実行へ橋渡しする。
 - **提供価値**: tool 実行結果を会話履歴へ戻し、必要に応じて LLM の次の推論へつなげる。UI 副作用を持つ tool は、tool result とは別に graph event として下流へ通知できる。
 - **責務の境界**: `toolcaller` は tool の実行と tool result 保存要求 event の発行を担う。tool request の生成は `scheduler` / `router`、結果の履歴保存と LLM 再投入は `conversationcommitter` の責務。
-- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` を `toolcaller.NewStage(toolHandlers)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
+- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` は `buildToolRegistry` で local tool registry を構築し、`registry.Handlers()` と `registry.ToolModes()` を `toolcaller.NewStage(toolHandlers, toolModes)` に渡す。これにより通常 pipeline でも登録済み local tool が実行対象になる。
 - **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`、`internal/types/event.go`、`internal/types/conversation_record.go`。
 
 ## 2. 論理構造・機能俯瞰
@@ -57,9 +57,9 @@
 6. 引数を decode する: `ToolRequest.Arguments` が空でなければ JSON object として `map[string]any` へ unmarshal する。失敗した場合は log を出し、空 map で処理を続ける。
 7. handler を実行する: `ToolRequest.Name` に対応する handler があれば `Run(args)` を呼ぶ。未登録の場合は unknown function error、handler error の場合は error 文字列を map に入れる。
 8. 結果を JSON 化する: `map[string]any` を `json.Marshal` し、失敗した場合は `{"error":"result encoding failed"}` に置き換える。
-9. tool result 保存要求を emit する: `types.ToolResultRecord` を作り、`types.ConversationCommitRequest{Role: RoleToolResult, ToolResult: &result}` を `EventConversationCommitRequest` として downstream へ送る。
+9. tool result 保存要求を emit する: read 系 tool の成功結果、write 系 tool のエラー結果、unknown tool / handler error について、`types.ToolResultRecord` を作り `EventConversationCommitRequest` を downstream へ送る。write 系 tool の成功結果は送らない。
 10. graph が保存要求を転送する: 通常 pipeline では `toolcaller -> conversationcommitter` が `EventConversationCommitRequest` で接続される。
-11. 会話履歴へ保存される: `conversationcommitter` は `conversationhistory.NewRecord` を経由して tool result を履歴化し、trim 後の text が空でなければ `EventLLMRequest` を `Role: "tool_result"` で発行する。
+11. 会話履歴へ保存される: `conversationcommitter` は commit された tool result を `conversationhistory.NewRecord` を経由して履歴化し、trim 後の text が空でなければ `EventLLMRequest` を `Role: "tool_result"` で発行する。
 
 ```mermaid
 sequenceDiagram
@@ -114,10 +114,11 @@ sequenceDiagram
   - components/
     - toolcaller/
       - toolcaller.go: `EventToolRequest` を受けて local tool handler を実行し、結果を `EventConversationCommitRequest` として downstream へ流す stage。
-        - `NewStage`: handler map から graph stage を生成する。nil handler map は空 map にする。
+        - `NewStage`: handler map と tool mode map から graph stage を生成する。nil handler map / tool mode map は空 map にする。
         - `run`: stage context を作り、`ContextAware` / `EventEmitterAware` handler へ依存を注入したうえで upstream を購読する。
-        - `dispatchTool`: 1 request ごとに goroutine を起動し、tool 実行と result commit event の emit を行う。
+        - `dispatchTool`: 1 request ごとに goroutine を起動し、tool 実行と result commit event の emit を行う。write 系 tool の成功結果は commit しない。
         - `executeTool`: JSON 引数 decode、handler lookup、handler 実行、error 正規化、結果 JSON encode、`ToolResultRecord` 生成を行う。
+        - `shouldSuppressToolResult`: tool 定義の `x_tool_mode` と実行結果を見て、write 成功時の commit 抑止を判定する。
         - `close`: context cancel、受信 goroutine 待機、upstream close を行う。
         - `emit`: `EventEmitterAware` tool から受けた event を context cancel を尊重して downstream へ流す。
       - toolcaller_test.go: 未登録 tool が空 output ではない `ToolResultRecord` を含む `EventConversationCommitRequest` として downstream に出ることを検証する。
@@ -134,7 +135,7 @@ sequenceDiagram
     - wschat/
       - wschat.go: `EventWhiteboardUpdate` を websocket の `whiteboard_update` message に変換する。
   - tools/
-    - interfaces.go: `Handler`、`ContextAware`、`EventEmitterAware`、`DefinitionProvider` を定義する。
+    - interfaces.go: `Handler`、`ContextAware`、`EventEmitterAware`、`DefinitionProvider` を定義する。`DefinitionWithMode` と `ModeFromDefinition` で tool 定義へ `x_tool_mode: "read" | "write"` を付与・参照する。
     - registry/
       - registry.go: tool definitions と handler map を構築する。通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` 経由で `llm` と `toolcaller` に接続される。
     - functions/
@@ -142,7 +143,7 @@ sequenceDiagram
         - tool.go: `EventEmitterAware` の確認済み実装。`set_whiteboard` 実行時に `EventWhiteboardUpdate` を emit する。
 - cmd/
   - smart-speaker/
-    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers)` に registry 由来の handler map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> conversationcommitter` は `EventConversationCommitRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
+    - main.go: 通常 pipeline の stage 生成と graph 接続を定義する。`toolcaller.NewStage(toolHandlers, toolModes)` に registry 由来の handler map と tool mode map を渡す。`router -> toolcaller` は `EventToolRequest`、`toolcaller -> conversationcommitter` は `EventConversationCommitRequest`、`toolcaller -> wschat` は `EventWhiteboardUpdate` で接続する。
 
 ### Event 設計
 
@@ -168,12 +169,12 @@ sequenceDiagram
 
 ### Handler 登録設計
 
-- `toolcaller.NewStage` の第 1 引数が実行可能な handler map である。
-- map key は `ToolRequest.Name` と照合される。`registry.Handlers()` は `handler.Name()` を key にした map を返す。
+- `toolcaller.NewStage` の第 1 引数が実行可能な handler map、第 2 引数が tool 名から read/write mode への map である。
+- map key は `ToolRequest.Name` と照合される。`registry.Handlers()` は `handler.Name()` を key にした map を返す。`registry.ToolModes()` は tool 定義の `x_tool_mode` から mode map を返す。
 - registry で handler が nil の entry は handler map に含まれない。
 - `web_search` は `OPENAI_API_KEY` と `OPENAI_RESPONSES_MODEL` が registry config に渡される通常起動で登録される。LLM には local tool schema として提示され、handler map にも `web_search` key で入る。
 - `web_search` handler は `query` 以外の引数を拒否し、OpenAI Responses API hosted `web_search` の回答本文を `{"result":"..."}` として commit 対象にする。citations や sources は tool result には含めない。
-- 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が registry を作り、`registry.Definitions()` を `llm.Config.ToolSchemas` に、`registry.Handlers()` を `toolcaller.NewStage` に渡す。
+- 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が registry を作り、`registry.Definitions()` を `llm.Config.ToolSchemas` に、`registry.Handlers()` と `registry.ToolModes()` を `toolcaller.NewStage` に渡す。
 - SwitchBot tool は `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` が揃う場合だけ登録される。scene 一覧取得に失敗した場合は `switchbot_execute_scene` のみ未登録になり、Hub 2 tool は token/secret が揃っていれば残る。
 
 ### エラー処理・副作用
@@ -182,8 +183,9 @@ sequenceDiagram
 - unknown tool: `{"error":"unknown function: <name>"}` を `ToolResultRecord.Output` に入れる。
 - handler error: `{"error":"<err.Error()>"}` を `ToolResultRecord.Output` に入れる。
 - result JSON encode error: `{"error":"result encoding failed"}` を `ToolResultRecord.Output` に入れる。
+- write 系 tool 成功時: `EventConversationCommitRequest` を emit しない。履歴保存と LLM 再投入は行われない。
 - commit event emit: stage context が cancel 済みの場合は送信せずに終了する。
-- `conversationcommitter` 側の副作用: tool result は会話履歴に保存され、空でなければ `EventLLMRequest` として LLM に戻る。
+- `conversationcommitter` 側の副作用: commit された tool result は会話履歴に保存され、空でなければ `EventLLMRequest` として LLM に戻る。
 
 ### テーブル設計
 

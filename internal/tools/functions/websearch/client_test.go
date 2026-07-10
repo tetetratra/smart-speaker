@@ -41,8 +41,12 @@ func TestClientSearchSendsHostedWebSearchRequest(t *testing.T) {
 	if payload["model"] != "test-model" {
 		t.Fatalf("model = %#v", payload["model"])
 	}
-	if payload["input"] != "今日のニュース" {
+	if payload["input"] != "検索依頼:\n今日のニュース" {
 		t.Fatalf("input = %#v", payload["input"])
+	}
+	instructions, ok := payload["instructions"].(string)
+	if !ok || !strings.Contains(instructions, "逆質問") {
+		t.Fatalf("instructions = %#v", payload["instructions"])
 	}
 	tools, ok := payload["tools"].([]any)
 	if !ok || len(tools) != 1 {

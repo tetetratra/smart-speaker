@@ -39,16 +39,18 @@
 
 ### シナリオ: 最新世代の timeline / speech / tool event だけを後続へ流す
 
-1. 世代の採番: `utterancebuffer` が STT の確定テキストをまとめ、flush 時に `generation.Store.Next()` を呼んで新しい `GenerationID` を採番する。
-2. LLM request の作成: `conversationcommitter` が user の `ConversationCommitRequest` を履歴へ保存し、同じ `GenerationID` を持つ `EventLLMRequest` を発行する。
-3. timeline item の生成: `llm` が Responses API の Structured Outputs JSON を `types.TimelineItem` に変換し、request と同じ `GenerationID` を設定する。
-4. TTS 変換: `tts` は `speech` の `TimelineItem` を `types.PlayableSpeech` に変換し、元の `GenerationID` を引き継ぐ。`speech` 以外の timeline item はそのまま後続へ流す。
-5. スケジューリング: `scheduler` は `PlayableSpeech` と `TimelineItem` を世代ごとに worker へ enqueue し、再生可能音声や tool item を `EventScheduledItem` として出力する。
-6. 世代フィルタ: `generationfilter` は event payload から `GenerationID` を取り出し、`generation.Store.IsCurrent(id)` が true の event だけを `Downstream` へ送る。
-7. 後続 routing: `router` は通過した `EventScheduledItem` を `EventRealtimeAudio`、agent の `EventConversationCommitRequest`、または `EventToolRequest` に変換する。
+1. 世代の採番: `rtcvad` が speech start 判定時に `generation.Store.Next()` を呼んで新しい `GenerationID` を採番する。STT interim が届く構成では `interimstopper` も早期停止用に世代を進める。
+2. user commit: `utterancebuffer` が STT の確定テキストをまとめ、flush 時に `generation.Store.Current()` を読んで現在の `GenerationID` を付与する。
+3. LLM request の作成: `conversationcommitter` が user の `ConversationCommitRequest` を履歴へ保存し、同じ `GenerationID` を持つ `EventLLMRequest` を発行する。
+4. timeline item の生成: `llm` が Responses API の Structured Outputs JSON を `types.TimelineItem` に変換し、request と同じ `GenerationID` を設定する。
+5. TTS 変換: `tts` は `speech` の `TimelineItem` を `types.PlayableSpeech` に変換し、元の `GenerationID` を引き継ぐ。`speech` 以外の timeline item はそのまま後続へ流す。
+6. スケジューリング: `scheduler` は `PlayableSpeech` と `TimelineItem` を世代ごとに worker へ enqueue し、再生可能音声や tool item を `EventScheduledItem` として出力する。
+7. 世代フィルタ: `generationfilter` は event payload から `GenerationID` を取り出し、`generation.Store.IsCurrent(id)` が true の event だけを `Downstream` へ送る。
+8. 後続 routing: `router` は通過した `EventScheduledItem` を `EventRealtimeAudio`、agent の `EventConversationCommitRequest`、または `EventToolRequest` に変換する。
 
 ```mermaid
 sequenceDiagram
+    participant V as rtcvad
     participant U as utterancebuffer
     participant G as generation.Store
     participant C as conversationcommitter
@@ -58,7 +60,9 @@ sequenceDiagram
     participant F as generationfilter
     participant R as router
 
-    U->>G: Next()
+    V->>G: Next()
+    G-->>V: GenerationID
+    U->>G: Current()
     G-->>U: GenerationID
     U->>C: EventConversationCommitRequest(user, GenerationID)
     C->>L: EventLLMRequest(GenerationID)
@@ -148,7 +152,7 @@ flowchart TD
     F -->|false| E
 ```
 
-`generationfilter` は `Store.Current()` を直接呼ばず、判定用の `Store.IsCurrent(id)` だけを使う。`IsCurrent` 内部で read lock を取るため、`utterancebuffer` などが `Next()` で世代を進める処理と並行しても、比較は store のロック下で行われる。
+`generationfilter` は `Store.Current()` を直接呼ばず、判定用の `Store.IsCurrent(id)` だけを使う。`IsCurrent` 内部で read lock を取るため、`rtcvad` や `interimstopper` などが `Next()` で世代を進める処理と並行しても、比較は store のロック下で行われる。
 
 ### API設計
 

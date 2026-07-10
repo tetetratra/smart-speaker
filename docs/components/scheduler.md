@@ -13,8 +13,8 @@
 
 - **scheduler stage**
   - `graph.Stage` として `Upstream` / `Downstream` channel、`Run`、`CloseFn` を提供する。
-  - 入力は実装上、payload が `types.PlayableSpeech` または `types.TimelineItem` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
-  - 出力は `EventScheduledItem` で、payload は `types.PlayableSpeech` または `types.ToolRequest` になる。
+  - 入力は実装上、payload が `types.PlayableSpeech`、`types.TimelineItem`、または `types.AgentTimelineEnd` の event である。`generationID` は event kind ではなく payload 型だけを見ている。
+  - 出力は `EventScheduledItem`（payload は `types.PlayableSpeech` または `types.ToolRequest`）と、queue 内の最後の `AgentTimelineEnd` 処理後に発行する `EventAgentSpeechPlaybackEnd` である。
   - production の graph では `tts -> generationfilter-tts -> scheduler -> generationfilter-scheduler -> router` の順に接続される。
 
 - **世代別 worker**
@@ -45,6 +45,8 @@
   - `EventScheduledItem`: scheduler が実行タイミングに到達した item として発行する event。
   - `EventToolRequest`: router が `EventScheduledItem` payload の `ToolRequest` を受けて発行する event。
   - `EventRealtimeAudio` / `EventConversationCommitRequest`: router が `PlayableSpeech` を受け、音声再生と agent 履歴保存用に発行する event。
+  - `EventAgentTimelineEnd`: LLM が timeline item をすべて発行したあとに 1 回発行する終端印。scheduler は同一世代 queue の最後に処理し、先行する speech / wait / tool が完了したあと `EventAgentSpeechPlaybackEnd` を下流へ出す。
+  - `EventAgentSpeechPlaybackEnd`: `generationfilter-scheduler` を通過したものだけ `wschat` へ接続され、UI の `isAiSpeaking` を `false` にする。
 
 ## 3. 主要なデータフロー
 
@@ -64,6 +66,8 @@
 ```mermaid
 sequenceDiagram
     participant LLM as llm
+    participant SA as sessionactivate
+    participant GF0 as generationfilter-llm
     participant TTS as tts
     participant GF1 as generationfilter-tts
     participant S as scheduler
@@ -73,7 +77,9 @@ sequenceDiagram
     participant RTCOut as rtcout
     participant CC as conversationcommitter
 
-    LLM->>TTS: EventTimelineItem(speech, GenerationID)
+    LLM->>SA: EventTimelineItem(speech, GenerationID)
+    SA->>GF0: EventTimelineItem(speech, GenerationID)
+    GF0->>TTS: EventTimelineItem(speech, GenerationID)
     TTS->>GF1: EventPlayableSpeech(PlayableSpeech)
     GF1->>S: EventPlayableSpeech(PlayableSpeech)
     S->>GF2: EventScheduledItem(PlayableSpeech)
@@ -81,7 +87,9 @@ sequenceDiagram
     GF2->>R: EventScheduledItem(PlayableSpeech)
     R->>RTCOut: EventRealtimeAudio
     R->>CC: EventConversationCommitRequest(RoleAgent)
-    LLM->>TTS: EventTimelineItem(tool, GenerationID)
+    LLM->>SA: EventTimelineItem(tool, GenerationID)
+    SA->>GF0: EventTimelineItem(tool, GenerationID)
+    GF0->>TTS: EventTimelineItem(tool, GenerationID)
     TTS->>GF1: EventTimelineItem(tool, GenerationID)
     GF1->>S: EventTimelineItem(tool, GenerationID)
     S->>GF2: EventScheduledItem(ToolRequest)
@@ -177,8 +185,8 @@ flowchart TD
 
 ### speech / tool の順序制御
 
-- LLM の契約上、tool は 1 回の LLM 応答の末尾に最大 1 件だけ許可される。これは `internal/components/llm/contract.go` の `parseTimelineJSON` が `seenTool` 後の item をエラーにすることで担保している。
-- scheduler は tool が末尾かどうかを再検証しない。入力済み timeline item を、世代別 queue の順序に従って処理する。
+- LLM の契約上、1 回の LLM 応答に複数の tool item を出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限と案内する。
+- scheduler は tool の配置や件数を再検証しない。入力済み timeline item を、世代別 queue の順序に従って処理する。
 - `internal/components/pipeline/conversation_pipeline_test.go` では、`PlayableSpeech` の後に tool item を投入した場合、router の出力が `EventRealtimeAudio`、`EventConversationCommitRequest`、`EventToolRequest` の順になることを確認している。
 
 ### 制約・不明点

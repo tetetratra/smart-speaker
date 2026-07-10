@@ -18,7 +18,9 @@ type Config struct {
 	SystemPrompt            string
 	ConversationIdleTimeout time.Duration
 	AutoPromptMessage       string
+	TTSProvider             string
 	ElevenLabs              ElevenLabsConfig
+	Voicevox                VoicevoxConfig
 	SwitchBot               SwitchBotConfig
 	GoogleCloudProject      string
 	GoogleRecognizer        string
@@ -40,6 +42,12 @@ type ElevenLabsConfig struct {
 	APIKey  string
 	VoiceID string
 	Model   string
+}
+
+type VoicevoxConfig struct {
+	Endpoint   string
+	SpeakerID  int
+	SpeedScale *float64
 }
 
 func LoadConfig(promptPath string) Config {
@@ -87,6 +95,16 @@ func LoadConfig(promptPath string) Config {
 		elv.Model = "eleven_v3"
 	}
 
+	ttsProvider := strings.TrimSpace(os.Getenv("TTS_PROVIDER"))
+	if ttsProvider == "" {
+		ttsProvider = "elevenlabs"
+	}
+	voicevox := VoicevoxConfig{
+		Endpoint:   strings.TrimSpace(os.Getenv("VOICEVOX_ENDPOINT")),
+		SpeakerID:  intFromEnv("VOICEVOX_SPEAKER_ID", 1),
+		SpeedScale: optionalPositiveFloatFromEnv("VOICEVOX_SPEED_SCALE"),
+	}
+
 	rtcIceHostIPs := splitComma(os.Getenv("RTC_ICE_HOST_IPS"))
 	googleProject := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
 	googleRecognizer := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_RECOGNIZER"))
@@ -106,7 +124,9 @@ func LoadConfig(promptPath string) Config {
 		SystemPrompt:            prompt,
 		ConversationIdleTimeout: conversationIdleTimeout,
 		AutoPromptMessage:       message,
+		TTSProvider:             ttsProvider,
 		ElevenLabs:              elv,
+		Voicevox:                voicevox,
 		SwitchBot:               switchCfg,
 		GoogleCloudProject:      googleProject,
 		GoogleRecognizer:        googleRecognizer,
@@ -119,8 +139,32 @@ func LoadConfig(promptPath string) Config {
 	}
 }
 
+func intFromEnv(name string, defaultValue int) int {
+	trimmed := strings.TrimSpace(os.Getenv(name))
+	if trimmed == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+func optionalPositiveFloatFromEnv(name string) *float64 {
+	trimmed := strings.TrimSpace(os.Getenv(name))
+	if trimmed == "" {
+		return nil
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil || value <= 0 {
+		return nil
+	}
+	return &value
+}
+
 func conversationIdleTimeoutFromEnv(raw string) time.Duration {
-	const defaultConversationIdleTimeout = 10 * time.Minute
+	const defaultConversationIdleTimeout = 5 * time.Minute
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return defaultConversationIdleTimeout

@@ -14,14 +14,17 @@ type EventDetailFormatter func(types.Event) string
 
 func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 	return map[types.EventKind]struct{}{
-		types.EventRTCVADStatus:  {},
-		types.EventRealtimeAudio: {},
+		types.EventRTCVADStatus:      {},
+		types.EventRealtimeAudio:     {},
+		types.EventRTCPeerAudioFrame: {},
+		types.EventRTCSpeechAudio:    {},
 	}
 }
 
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
 		types.EventHumanUtterance:            formatOutputLineDetail,
+		types.EventHumanInterimUtterance:     formatOutputLineDetail,
 		types.EventSpeechEnd:                 formatSpeechEventDetail,
 		types.EventRealtimeOutput:            formatOutputLineDetail,
 		types.EventRealtimeAudio:             formatRealtimeAudioDetail,
@@ -33,6 +36,8 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventTimelineItem:              formatTimelineItemDetail,
 		types.EventPlayableSpeech:            formatPlayableSpeechDetail,
 		types.EventScheduledItem:             formatScheduledItemDetail,
+		types.EventAgentTimelineEnd:          formatAgentTimelineEndDetail,
+		types.EventAgentSpeechPlaybackEnd:    formatAgentSpeechPlaybackEndDetail,
 	}
 }
 
@@ -211,6 +216,22 @@ func formatPlayableSpeechDetail(evt types.Event) string {
 		return ""
 	}
 	return fmt.Sprintf("text=%s, generation=%d, duration=%.3f", quoteText(speech.Text), speech.GenerationID, speech.DurationSeconds)
+}
+
+func formatAgentTimelineEndDetail(evt types.Event) string {
+	end, ok := evt.Payload.(types.AgentTimelineEnd)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("generation=%d", end.GenerationID)
+}
+
+func formatAgentSpeechPlaybackEndDetail(evt types.Event) string {
+	end, ok := evt.Payload.(types.AgentSpeechPlaybackEnd)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("generation=%d, completed_at=%s", end.GenerationID, end.CompletedAt.Format(time.RFC3339Nano))
 }
 
 func formatScheduledItemDetail(evt types.Event) string {

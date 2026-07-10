@@ -13,6 +13,8 @@ type EventKind int
 
 const (
 	EventHumanUtterance EventKind = iota
+	EventHumanInterimUtterance
+	EventSpeechStart
 	EventSpeechEnd
 	EventRTCVADStatus
 	EventRealtimeOutput
@@ -22,13 +24,17 @@ const (
 	EventTTSEnd
 	EventRTCSignal
 	EventConversationCommitRequest
+	EventSessionReset
 	EventLLMRequest
 	EventTimelineItem
 	EventPlayableSpeech
 	EventScheduledItem
+	EventAgentTimelineEnd
+	EventAgentSpeechPlaybackEnd
 	EventRTCPeerAudioFrame
 	EventRTCSpeechAudio
 	EventRTCPeerOutputSink
+	EventTimerState
 )
 
 // Event is the common data structure passed between stages.
@@ -41,6 +47,10 @@ func (k EventKind) String() string {
 	switch k {
 	case EventHumanUtterance:
 		return "EventHumanUtterance"
+	case EventHumanInterimUtterance:
+		return "EventHumanInterimUtterance"
+	case EventSpeechStart:
+		return "EventSpeechStart"
 	case EventSpeechEnd:
 		return "EventSpeechEnd"
 	case EventRTCVADStatus:
@@ -59,6 +69,8 @@ func (k EventKind) String() string {
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:
 		return "EventConversationCommitRequest"
+	case EventSessionReset:
+		return "EventSessionReset"
 	case EventLLMRequest:
 		return "EventLLMRequest"
 	case EventTimelineItem:
@@ -67,12 +79,18 @@ func (k EventKind) String() string {
 		return "EventPlayableSpeech"
 	case EventScheduledItem:
 		return "EventScheduledItem"
+	case EventAgentTimelineEnd:
+		return "EventAgentTimelineEnd"
+	case EventAgentSpeechPlaybackEnd:
+		return "EventAgentSpeechPlaybackEnd"
 	case EventRTCPeerAudioFrame:
 		return "EventRTCPeerAudioFrame"
 	case EventRTCSpeechAudio:
 		return "EventRTCSpeechAudio"
 	case EventRTCPeerOutputSink:
 		return "EventRTCPeerOutputSink"
+	case EventTimerState:
+		return "EventTimerState"
 	default:
 		return fmt.Sprintf("EventKind(%d)", int(k))
 	}

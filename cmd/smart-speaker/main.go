@@ -17,12 +17,14 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/conversationcommitter"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
+	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcvad"
 	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
+	"github.com/tetetratra/smart-speaker/internal/components/sessionactivate"
 	"github.com/tetetratra/smart-speaker/internal/components/sessionreset"
 	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
@@ -31,10 +33,13 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
+	timerfunc "github.com/tetetratra/smart-speaker/internal/tools/functions/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -51,13 +56,15 @@ func main() {
 
 	ensureGoogleCalendarToken()
 
-	server, chatStage, err := buildHTTPServer(cfg)
+	timerStore := timerstate.NewStore()
+
+	server, chatStage, err := buildHTTPServer(cfg, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage)
+	stages, err := buildStages(cfg, chatStage, timerStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -111,11 +118,13 @@ type appStages struct {
 	rtcpeer      *graph.Stage
 	rtcvad       *graph.Stage
 	stt          *graph.Stage
+	interimStop  *graph.Stage
 	rtcout       *graph.Stage
 	utterance    *graph.Stage
 	sessionReset *graph.Stage
 	committer    *graph.Stage
 	llm          *graph.Stage
+	sessionAct   *graph.Stage
 	filterLLM    *graph.Stage
 	tts          *graph.Stage
 	filterTTS    *graph.Stage
@@ -131,11 +140,13 @@ func (s appStages) all() []*graph.Stage {
 		s.rtcpeer,
 		s.rtcvad,
 		s.stt,
+		s.interimStop,
 		s.rtcout,
 		s.utterance,
 		s.sessionReset,
 		s.committer,
 		s.llm,
+		s.sessionAct,
 		s.filterLLM,
 		s.tts,
 		s.filterTTS,
@@ -146,7 +157,7 @@ func (s appStages) all() []*graph.Stage {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.Store) (appStages, error) {
 	var stages appStages
 	if chatStage != nil {
 		chatStage.Name = "wschat"
@@ -155,15 +166,24 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
+	agentStatusStore := agentstatus.NewStore()
 
 	var err error
 	stages.tts, err = tts.NewStage(tts.Config{
-		APIKey: cfg.ElevenLabs.APIKey,
-		Voice:  cfg.ElevenLabs.VoiceID,
-		Model:  cfg.ElevenLabs.Model,
+		Provider: cfg.TTSProvider,
+		ElevenLabs: tts.ElevenLabsConfig{
+			APIKey: cfg.ElevenLabs.APIKey,
+			Voice:  cfg.ElevenLabs.VoiceID,
+			Model:  cfg.ElevenLabs.Model,
+		},
+		Voicevox: tts.VoicevoxConfig{
+			Endpoint:   cfg.Voicevox.Endpoint,
+			SpeakerID:  cfg.Voicevox.SpeakerID,
+			SpeedScale: cfg.Voicevox.SpeedScale,
+		},
 	})
 	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init elevenlabs stage: %w", err)
+		return appStages{}, fmt.Errorf("failed to init tts stage: %w", err)
 	}
 	if stages.tts != nil {
 		stages.tts.Name = "tts"
@@ -174,10 +194,15 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.utterance != nil {
 		stages.utterance.Name = "utterancebuffer"
 	}
+	stages.interimStop = interimstopper.NewStage(interimstopper.Config{
+		Generation: generationStore,
+	})
+	stages.interimStop.Name = "interimstopper"
 	stages.sessionReset = sessionreset.NewStage(sessionreset.Config{
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		History:     historyStore,
 		Generation:  generationStore,
+		AgentStatus: agentStatusStore,
 	})
 	if stages.sessionReset != nil {
 		stages.sessionReset.Name = "sessionreset"
@@ -189,12 +214,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.committer != nil {
 		stages.committer.Name = "conversationcommitter"
 	}
-	toolSchemas, toolHandlers := buildToolRegistry(cfg)
+	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, timerStore, generationStore)
 	stages.llm, err = llm.NewStage(llm.Config{
 		APIKey:       cfg.APIKey,
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		History:      historyStore,
+		AgentStatus:  agentStatusStore,
+		Timers:       timerStore,
 		ToolSchemas:  toolSchemas,
 	})
 	if err != nil {
@@ -206,6 +233,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.llm != nil {
 		stages.llm.Name = "llm"
 	}
+	stages.sessionAct = sessionactivate.NewStage(sessionactivate.Config{AgentStatus: agentStatusStore})
+	stages.sessionAct.Name = "sessionactivate"
 	stages.filterLLM = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
 	stages.filterLLM.Name = "generationfilter-llm"
 	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
@@ -216,7 +245,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	stages.scheduler.Name = "scheduler"
 	stages.router = router.NewStage(router.Config{})
 	stages.router.Name = "router"
-	stages.tool = toolcaller.NewStage(toolHandlers)
+	stages.tool = toolcaller.NewStage(toolHandlers, toolModes)
 	if stages.tool != nil {
 		stages.tool.Name = "toolcaller"
 	}
@@ -232,7 +261,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	if stages.rtcpeer != nil {
 		stages.rtcpeer.Name = "rtcpeer"
 	}
-	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{})
+	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{
+		Generation: generationStore,
+	})
 	if err != nil {
 		if stages.tts != nil {
 			stages.tts.Close()
@@ -271,20 +302,25 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler) {
+func buildToolRegistry(cfg app.Config, timerStore *timerstate.Store, generationStore *generation.Store) ([]any, map[string]tools.Handler, map[string]string) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
 		scenes = loadSwitchBotScenes(switchBotClient)
 	}
+	timerTool := timerfunc.New(timerfunc.Config{
+		Store:      timerStore,
+		Generation: generationStore,
+	})
 
 	reg := registry.New(registry.Config{
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
+		TimerTool:       timerTool,
 	})
-	return reg.Definitions(), reg.Handlers()
+	return reg.DefinitionsForLLM(), reg.Handlers(), reg.ToolModes()
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
@@ -306,7 +342,7 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, timerStore *timerstate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
@@ -314,7 +350,7 @@ func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	chat := wschat.NewStage(mux)
+	chat := wschat.NewStage(mux, wschat.Config{TimerStore: timerStore})
 	return server, chat, nil
 }
 
@@ -341,11 +377,13 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	rtcpeerNode := add(stages.rtcpeer)
 	rtcvadNode := add(stages.rtcvad)
 	sttNode := add(stages.stt)
+	interimStopNode := add(stages.interimStop)
 	rtcoutNode := add(stages.rtcout)
 	utteranceNode := add(stages.utterance)
 	sessionResetNode := add(stages.sessionReset)
 	committerNode := add(stages.committer)
 	llmNode := add(stages.llm)
+	sessionActNode := add(stages.sessionAct)
 	filterLLMNode := add(stages.filterLLM)
 	ttsNode := add(stages.tts)
 	filterTTSNode := add(stages.filterTTS)
@@ -358,24 +396,28 @@ func wireGraph(g *graph.Graph, stages appStages) {
 	connectKinds(g, rtcpeerNode, chatNode, types.EventRTCSignal)
 	connectKinds(g, rtcpeerNode, rtcvadNode, types.EventRTCPeerAudioFrame)
 	connectKinds(g, rtcpeerNode, rtcoutNode, types.EventRTCPeerOutputSink)
-	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechEnd, types.EventRTCVADStatus)
+	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechStart, types.EventSpeechEnd, types.EventRTCVADStatus)
 	connectKinds(g, rtcvadNode, sttNode, types.EventRTCSpeechAudio)
-	connectKinds(g, sttNode, utteranceNode, types.EventHumanUtterance)
+	connectKinds(g, sttNode, interimStopNode, types.EventHumanInterimUtterance, types.EventHumanUtterance)
+	connectKinds(g, interimStopNode, utteranceNode, types.EventHumanUtterance)
 	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
+	connectKinds(g, sessionResetNode, chatNode, types.EventSessionReset)
 	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
 	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
-	connectKinds(g, llmNode, filterLLMNode, types.EventTimelineItem)
-	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem)
-	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech)
-	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech)
-	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem)
+	connectKinds(g, llmNode, sessionActNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
+	connectKinds(g, sessionActNode, filterLLMNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
+	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
+	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
+	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
+	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem, types.EventAgentSpeechPlaybackEnd)
+	connectKinds(g, filterSchedNode, chatNode, types.EventAgentSpeechPlaybackEnd)
 	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
 	connectKinds(g, routerNode, rtcoutNode, types.EventRealtimeAudio)
 	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
 	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
 	connectKinds(g, toolNode, committerNode, types.EventConversationCommitRequest)
-	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
+	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate, types.EventTimerState)
 }
 
 func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {

@@ -7,6 +7,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
+	timerfunc "github.com/tetetratra/smart-speaker/internal/tools/functions/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
@@ -32,6 +33,7 @@ type Config struct {
 	OpenAIAPIKey       string
 	OpenAIModel        string
 	WebSearchClient    websearch.SearchClient
+	TimerTool          *timerfunc.Tool
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -42,7 +44,7 @@ func New(cfg Config) *Registry {
 	if switchBotClient == nil && strings.TrimSpace(cfg.SwitchBotToken) != "" && strings.TrimSpace(cfg.SwitchBotSecret) != "" {
 		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
 	}
-	hub2Tool := switchbot.NewHub2WithClient(switchBotClient)
+	hub2Tools := switchbot.NewHub2ToolsWithClient(switchBotClient)
 	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
 	calendarClient := cfg.CalendarClient
 	if calendarClient == nil {
@@ -52,9 +54,16 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
+	timerTool := cfg.TimerTool
+	if timerTool == nil {
+		timerTool = timerfunc.New(timerfunc.Config{})
+	}
+	cancelTimerTool := timerTool.CancelTool()
 	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
+		{def: timerTool.Definition(), handler: timerTool},
+		{def: cancelTimerTool.Definition(), handler: cancelTimerTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
@@ -62,8 +71,12 @@ func New(cfg Config) *Registry {
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
 	}
-	if hub2Tool != nil {
-		toolEntries = append([]entry{{def: hub2Tool.Definition(), handler: hub2Tool}}, toolEntries...)
+	if len(hub2Tools) > 0 {
+		hub2Entries := make([]entry, 0, len(hub2Tools))
+		for _, hub2Tool := range hub2Tools {
+			hub2Entries = append(hub2Entries, entry{def: hub2Tool.Definition(), handler: hub2Tool})
+		}
+		toolEntries = append(hub2Entries, toolEntries...)
 	}
 	if sceneTool != nil {
 		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
@@ -102,6 +115,25 @@ func (r *Registry) Definitions() []any {
 	return defs
 }
 
+// DefinitionsForLLM は LLM 向け schema 生成用の tool 定義を返します。
+// set_whiteboard は root の追加フィールドとして扱うため、items 内 tool 定義からは除外します。
+func (r *Registry) DefinitionsForLLM() []any {
+	if r == nil {
+		return nil
+	}
+	defs := make([]any, 0, len(r.entries))
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		if name, ok := e.def["name"].(string); ok && name == "set_whiteboard" {
+			continue
+		}
+		defs = append(defs, e.def)
+	}
+	return defs
+}
+
 // DefinitionByName returns a tool definition by name.
 func (r *Registry) DefinitionByName(name string) (map[string]any, bool) {
 	if r == nil {
@@ -131,4 +163,23 @@ func (r *Registry) Handlers() map[string]tools.Handler {
 		handlers[e.handler.Name()] = e.handler
 	}
 	return handlers
+}
+
+// ToolModes はtoolcaller向けのname->read/write modeマップを返します。
+func (r *Registry) ToolModes() map[string]string {
+	modes := map[string]string{}
+	if r == nil {
+		return modes
+	}
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		name, ok := e.def["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		modes[name] = tools.ModeFromDefinition(e.def)
+	}
+	return modes
 }
