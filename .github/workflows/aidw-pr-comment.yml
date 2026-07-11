@@ -1,0 +1,17 @@
+name: AI PR Comment
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  comment:
+    uses: tetetratra/ai-driven-workflow/.github/workflows/pr-comment.yml@main
+    secrets: inherit

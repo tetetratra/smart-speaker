@@ -1,0 +1,17 @@
+name: AI PR Docs Update
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  docs-update:
+    uses: tetetratra/ai-driven-workflow/.github/workflows/pr-docs-update.yml@main
+    secrets: inherit
