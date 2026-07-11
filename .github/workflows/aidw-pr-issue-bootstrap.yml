@@ -1,0 +1,29 @@
+name: AI PR Issue Bootstrap
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  models: read
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    if: >-
+      github.event.issue.state == 'open' && (
+        (
+          github.event.action == 'opened' &&
+          contains(github.event.issue.labels.*.name, 'AI主導開発')
+        ) || (
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'AI主導開発'
+        )
+      )
+    uses: tetetratra/ai-driven-workflow/.github/workflows/pr-bootstrap.yml@main
+    secrets: inherit

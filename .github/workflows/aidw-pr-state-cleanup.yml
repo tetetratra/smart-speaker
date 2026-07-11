@@ -1,0 +1,14 @@
+name: AI PR State Cleanup
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    uses: tetetratra/ai-driven-workflow/.github/workflows/pr-state-cleanup.yml@main
