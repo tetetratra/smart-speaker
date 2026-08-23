@@ -70,6 +70,13 @@ func TestOpenAIClientCreateCandidatesSendsStructuredOutputSchema(t *testing.T) {
 	if len(input) != 2 {
 		t.Fatalf("input len = %d, want 2", len(input))
 	}
+	system := input[0].(map[string]any)
+	instructions := system["content"].(string)
+	for _, want := range []string{"出力例", "SwitchBot ハブミニ", "candidates: []"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("system instructions = %s, want it to contain %s", instructions, want)
+		}
+	}
 	history := input[1].(map[string]any)
 	if history["role"] != types.RoleUser {
 		t.Fatalf("history role = %v, want user", history["role"])

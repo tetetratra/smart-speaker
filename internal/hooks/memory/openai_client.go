@@ -133,7 +133,17 @@ const memoryCandidateInstructions = `Reset前の会話履歴から、後続会�
 候補がない場合は candidates を空配列にしてください。
 content は1候補につき1つの事実を、短く、主語が分かる自然文で書いてください。
 tags は検索補助用の短いラベルで、固有名詞、カテゴリ、場所、習慣、健康、デバイス種別などを含めてください。
-会話ログの生コピー、一時的な依頼、古くなりやすい状態、秘密情報らしき内容は保存候補にしないでください。`
+会話ログの生コピー、一時的な依頼、古くなりやすい状態、秘密情報らしき内容は保存候補にしないでください。
+
+出力例:
+- content: "ユーザーは平日の朝にコーヒーを飲むことが多い"
+  tags: ["routine", "morning", "coffee", "weekday"]
+- content: "ユーザーはリビングの照明操作に SwitchBot ハブミニを使っている"
+  tags: ["SwitchBot", "smart_home", "living_room", "lighting", "device"]
+- content: "ユーザーは雨の日に頭痛が出やすい"
+  tags: ["health", "weather", "rain", "headache"]
+- 保存すべき長期記憶候補がない場合:
+  candidates: []`
 
 type historyPayload struct {
 	ID           string         `json:"id,omitempty"`
