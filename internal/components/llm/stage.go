@@ -48,7 +48,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		history:      cfg.History,
 		agentStatus:  cfg.AgentStatus,
 		timers:       cfg.Timers,
-		memory:       cfg.Memory,
+		memory:       cfg.MemoryContextProvider,
 		systemPrompt: buildSystemPrompt(cfg.Instructions, cfg.ToolSchemas),
 	}
 	return &graph.Stage{

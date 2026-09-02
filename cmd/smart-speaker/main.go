@@ -234,14 +234,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 	}
 	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, timerStore, generationStore)
 	stages.llm, err = llm.NewStage(llm.Config{
-		APIKey:       cfg.APIKey,
-		Model:        cfg.ResponsesModel,
-		Instructions: cfg.SystemPrompt,
-		History:      historyStore,
-		AgentStatus:  agentStatusStore,
-		Timers:       timerStore,
-		Memory:       memoryContextProvider,
-		ToolSchemas:  toolSchemas,
+		APIKey:                cfg.APIKey,
+		Model:                 cfg.ResponsesModel,
+		Instructions:          cfg.SystemPrompt,
+		History:               historyStore,
+		AgentStatus:           agentStatusStore,
+		Timers:                timerStore,
+		MemoryContextProvider: memoryContextProvider,
+		ToolSchemas:           toolSchemas,
 	})
 	if err != nil {
 		if stages.tts != nil {

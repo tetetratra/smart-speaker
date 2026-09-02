@@ -270,7 +270,7 @@ func TestStagePrependsMemoryContextMessages(t *testing.T) {
 	memory := &fakeMemoryContextProvider{
 		messages: []types.ChatMessage{{Role: types.RoleSystem, Content: `{"type":"memory_context","memories":[{"content":"朝はコーヒー"}]}`}},
 	}
-	st, err := NewStage(Config{History: history, Memory: memory, Client: client})
+	st, err := NewStage(Config{History: history, MemoryContextProvider: memory, Client: client})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestStageFallsBackWhenMemoryContextFails(t *testing.T) {
 	history.Append(types.ConversationRecord{Role: types.RoleUser, Text: "朝食を考えて", GenerationID: 1})
 	client := &fakeClient{responses: []string{`{"items":[]}`}}
 	memory := &fakeMemoryContextProvider{err: errors.New("embedding unavailable")}
-	st, err := NewStage(Config{History: history, Memory: memory, Client: client})
+	st, err := NewStage(Config{History: history, MemoryContextProvider: memory, Client: client})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestStageBuildsMemoryContextOnceAcrossRetries(t *testing.T) {
 	memory := &fakeMemoryContextProvider{
 		messages: []types.ChatMessage{{Role: types.RoleSystem, Content: `{"type":"memory_context","memories":[{"content":"寒がり"}]}`}},
 	}
-	st, err := NewStage(Config{History: history, Memory: memory, Client: client})
+	st, err := NewStage(Config{History: history, MemoryContextProvider: memory, Client: client})
 	if err != nil {
 		t.Fatal(err)
 	}

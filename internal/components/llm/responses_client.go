@@ -16,15 +16,15 @@ import (
 )
 
 type Config struct {
-	APIKey       string
-	Model        string
-	Instructions string
-	History      historyReader
-	AgentStatus  agentStatusReader
-	Timers       timerSnapshotReader
-	Memory       memoryContextProvider
-	ToolSchemas  []any
-	Client       responseClient
+	APIKey                string
+	Model                 string
+	Instructions          string
+	History               historyReader
+	AgentStatus           agentStatusReader
+	Timers                timerSnapshotReader
+	MemoryContextProvider memoryContextProvider
+	ToolSchemas           []any
+	Client                responseClient
 }
 
 type responseClient interface {
