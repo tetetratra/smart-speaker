@@ -15,8 +15,13 @@
 - TTS provider ごとの設定
   - `TTS_PROVIDER=elevenlabs` または未指定の場合: `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`
   - `TTS_PROVIDER=voicevox` の場合: 起動済みの VOICEVOX Engine と `VOICEVOX_ENDPOINT`
+- STT provider ごとの設定
+  - `STT_PROVIDER=google` または未指定の場合: `GOOGLE_CLOUD_PROJECT`、必要に応じて `GOOGLE_APPLICATION_CREDENTIALS_JSON`
+  - `STT_PROVIDER=openai` の場合: `OPENAI_API_KEY`
 - 任意の環境変数:
   - `TTS_PROVIDER`（未指定時は `elevenlabs`）
+  - `STT_PROVIDER`（未指定時は `google`）
+  - `OPENAI_STT_MODEL`（未指定時は `gpt-realtime-whisper`）
   - `ELEVENLABS_MODEL_ID`
   - `VOICEVOX_SPEAKER_ID`
   - `VOICEVOX_SPEED_SCALE`

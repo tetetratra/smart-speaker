@@ -18,6 +18,8 @@ type Config struct {
 	SystemPrompt            string
 	ConversationIdleTimeout time.Duration
 	AutoPromptMessage       string
+	STTProvider             string
+	OpenAISTTModel          string
 	TTSProvider             string
 	ElevenLabs              ElevenLabsConfig
 	Voicevox                VoicevoxConfig
@@ -117,6 +119,14 @@ func LoadConfig(promptPath string) Config {
 	}
 	googleCredentials := strings.TrimSpace(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 	sttPhrases := readSTTPhrases("stt_phrases.txt")
+	sttProvider := strings.TrimSpace(os.Getenv("STT_PROVIDER"))
+	if sttProvider == "" {
+		sttProvider = "google"
+	}
+	openAISTTModel := strings.TrimSpace(os.Getenv("OPENAI_STT_MODEL"))
+	if openAISTTModel == "" {
+		openAISTTModel = "gpt-realtime-whisper"
+	}
 
 	return Config{
 		APIKey:                  apiKey,
@@ -124,6 +134,8 @@ func LoadConfig(promptPath string) Config {
 		SystemPrompt:            prompt,
 		ConversationIdleTimeout: conversationIdleTimeout,
 		AutoPromptMessage:       message,
+		STTProvider:             sttProvider,
+		OpenAISTTModel:          openAISTTModel,
 		TTSProvider:             ttsProvider,
 		ElevenLabs:              elv,
 		Voicevox:                voicevox,

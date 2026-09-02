@@ -14,7 +14,7 @@ flowchart TB
   WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
   RTCPeer["rtcpeer<br/>WebRTC signaling、peer lifecycle、track境界を担当"]
   RTCVAD["rtcvad<br/>上り音声のVAD、prebuffer、世代更新、UI向け状態通知を担当"]
-  STT["stt<br/>Google STT streamとinterim/final transcript出力を担当"]
+  STT["stt / openaistt<br/>選択中のSTT providerでinterim/final transcript出力を担当"]
   IS["interimstopper<br/>interimでAI出力停止用に世代を前進させる"]
   RTCOut["rtcout<br/>assistant音声をWebRTC下りtrackへ書き込む"]
   UB["utterancebuffer<br/>STT final transcriptを短時間バッファして1発話にまとめる"]
@@ -100,6 +100,7 @@ flowchart TB
 - `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
 - `generationfilter` は世代id付き event のうち最新世代だけを下流へ通す。
 - `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `TTS_PROVIDER` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
+- STT は `STT_PROVIDER` で切り替え、未指定時は Google Speech-to-Text の `stt`、`openai` 指定時は OpenAI Realtime transcription の `openaistt` を同じ graph 位置に接続する。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
 - `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
