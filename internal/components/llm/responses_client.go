@@ -22,6 +22,7 @@ type Config struct {
 	History      historyReader
 	AgentStatus  agentStatusReader
 	Timers       timerSnapshotReader
+	Memory       memoryContextProvider
 	ToolSchemas  []any
 	Client       responseClient
 }
@@ -40,6 +41,10 @@ type agentStatusReader interface {
 
 type timerSnapshotReader interface {
 	Snapshot() []timerstate.Timer
+}
+
+type memoryContextProvider interface {
+	BuildContext(context.Context, []types.ConversationRecord) ([]types.ChatMessage, error)
 }
 
 type Client struct {

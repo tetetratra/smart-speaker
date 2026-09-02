@@ -26,6 +26,7 @@ type stage struct {
 	history      historyReader
 	agentStatus  agentStatusReader
 	timers       timerSnapshotReader
+	memory       memoryContextProvider
 	systemPrompt string
 	once         sync.Once
 	cancel       context.CancelFunc
@@ -47,6 +48,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		history:      cfg.History,
 		agentStatus:  cfg.AgentStatus,
 		timers:       cfg.Timers,
+		memory:       cfg.Memory,
 		systemPrompt: buildSystemPrompt(cfg.Instructions, cfg.ToolSchemas),
 	}
 	return &graph.Stage{
@@ -118,9 +120,9 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 		basePrompt = appendIdleFollowupInstruction(basePrompt)
 	}
 	basePrompt = s.appendTimerSnapshot(basePrompt)
+	messages := s.messages(ctx, req)
 	systemPrompt := basePrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
-		messages := s.messages(req)
 		rawText, err := s.client.CreateResponse(ctx, messages, appendCurrentTimestamp(systemPrompt))
 		if err != nil {
 			return nil, err
@@ -171,10 +173,22 @@ func rawPreviewText(rawText string) string {
 	return string(runes[:maxRawLinePreviewRunes]) + rawLinePreviewSuffix
 }
 
-func (s *stage) messages(req types.LLMRequest) []types.ChatMessage {
+func (s *stage) messages(ctx context.Context, req types.LLMRequest) []types.ChatMessage {
 	if s.history != nil {
 		if records := s.history.Snapshot(); len(records) > 0 {
-			return conversationhistory.ToChatMessages(records)
+			messages := conversationhistory.ToChatMessages(records)
+			if s.memory == nil {
+				return messages
+			}
+			memoryMessages, err := s.memory.BuildContext(ctx, records)
+			if err != nil {
+				log.Printf("llm: memory context unavailable generation=%d request_id=%s err=%v", req.GenerationID, req.RequestID, err)
+				return messages
+			}
+			if len(memoryMessages) == 0 {
+				return messages
+			}
+			return append(memoryMessages, messages...)
 		}
 	}
 	role := req.Role
