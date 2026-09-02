@@ -27,6 +27,7 @@ STT provider は `STT_PROVIDER` で切り替える。未指定または `google`
   - `OPENAI_STT_MODEL` 未指定時は `gpt-realtime-whisper` を使う。
   - `stt_phrases.txt` は OpenAI transcription の `keywords` として渡す。
   - OpenAI Realtime transcription 向けに 24 kHz mono PCM16 へ正規化し、turn detection は使わず既存 `rtcvad` の start/end で発話単位を commit する。
+  - 詳細は `docs/components/openaistt.md` を参照する。
 
 ## 主な event
 
