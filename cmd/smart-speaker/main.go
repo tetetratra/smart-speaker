@@ -19,6 +19,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
 	"github.com/tetetratra/smart-speaker/internal/components/llm"
+	"github.com/tetetratra/smart-speaker/internal/components/openaistt"
 	"github.com/tetetratra/smart-speaker/internal/components/router"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
@@ -273,13 +274,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 	if stages.rtcvad != nil {
 		stages.rtcvad.Name = "rtcvad"
 	}
-	stages.stt, err = stt.NewStage(stt.Config{
-		SpeechProjectID:  cfg.GoogleCloudProject,
-		SpeechRecognizer: cfg.GoogleRecognizer,
-		SpeechLanguage:   cfg.GoogleLanguage,
-		SpeechCredsJSON:  cfg.GoogleCredentials,
-		SpeechPhrases:    cfg.STTPhrases,
-	})
+	stages.stt, err = buildSTTStage(cfg)
 	if err != nil {
 		if stages.tts != nil {
 			stages.tts.Close()
@@ -300,6 +295,31 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 		stages.rtcout.Name = "rtcout"
 	}
 	return stages, nil
+}
+
+func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
+	provider := strings.TrimSpace(cfg.STTProvider)
+	if provider == "" {
+		provider = "google"
+	}
+	switch provider {
+	case "google":
+		return stt.NewStage(stt.Config{
+			SpeechProjectID:  cfg.GoogleCloudProject,
+			SpeechRecognizer: cfg.GoogleRecognizer,
+			SpeechLanguage:   cfg.GoogleLanguage,
+			SpeechCredsJSON:  cfg.GoogleCredentials,
+			SpeechPhrases:    cfg.STTPhrases,
+		})
+	case "openai":
+		return openaistt.NewStage(openaistt.Config{
+			APIKey:  cfg.APIKey,
+			Model:   cfg.OpenAISTTModel,
+			Phrases: cfg.STTPhrases,
+		})
+	default:
+		return nil, fmt.Errorf("stt: unknown provider %q", provider)
+	}
 }
 
 func buildToolRegistry(cfg app.Config, timerStore *timerstate.Store, generationStore *generation.Store) ([]any, map[string]tools.Handler, map[string]string) {
