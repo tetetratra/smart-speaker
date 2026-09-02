@@ -16,14 +16,15 @@ import (
 )
 
 type Config struct {
-	APIKey       string
-	Model        string
-	Instructions string
-	History      historyReader
-	AgentStatus  agentStatusReader
-	Timers       timerSnapshotReader
-	ToolSchemas  []any
-	Client       responseClient
+	APIKey                string
+	Model                 string
+	Instructions          string
+	History               historyReader
+	AgentStatus           agentStatusReader
+	Timers                timerSnapshotReader
+	MemoryContextProvider memoryContextProvider
+	ToolSchemas           []any
+	Client                responseClient
 }
 
 type responseClient interface {
@@ -40,6 +41,10 @@ type agentStatusReader interface {
 
 type timerSnapshotReader interface {
 	Snapshot() []timerstate.Timer
+}
+
+type memoryContextProvider interface {
+	BuildContext(context.Context, []types.ConversationRecord) ([]types.ChatMessage, error)
 }
 
 type Client struct {
