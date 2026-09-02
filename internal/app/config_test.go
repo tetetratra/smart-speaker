@@ -82,11 +82,19 @@ func TestLoadConfigReadsTTSProviderConfig(t *testing.T) {
 
 func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("STT_PROVIDER", "")
+	t.Setenv("OPENAI_STT_MODEL", "")
 	t.Setenv("TTS_PROVIDER", "")
 	t.Setenv("VOICEVOX_SPEAKER_ID", "")
 	t.Setenv("VOICEVOX_SPEED_SCALE", "")
 
 	cfg := LoadConfig("")
+	if cfg.STTProvider != "google" {
+		t.Fatalf("STTProvider = %q, want google", cfg.STTProvider)
+	}
+	if cfg.OpenAISTTModel != "gpt-realtime-whisper" {
+		t.Fatalf("OpenAISTTModel = %q, want gpt-realtime-whisper", cfg.OpenAISTTModel)
+	}
 	if cfg.TTSProvider != "elevenlabs" {
 		t.Fatalf("TTSProvider = %q, want elevenlabs", cfg.TTSProvider)
 	}
@@ -95,6 +103,20 @@ func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
 	}
 	if cfg.Voicevox.SpeedScale != nil {
 		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+	}
+}
+
+func TestLoadConfigReadsSTTProviderConfig(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("STT_PROVIDER", "openai")
+	t.Setenv("OPENAI_STT_MODEL", "gpt-live-transcribe")
+
+	cfg := LoadConfig("")
+	if cfg.STTProvider != "openai" {
+		t.Fatalf("STTProvider = %q, want openai", cfg.STTProvider)
+	}
+	if cfg.OpenAISTTModel != "gpt-live-transcribe" {
+		t.Fatalf("OpenAISTTModel = %q, want gpt-live-transcribe", cfg.OpenAISTTModel)
 	}
 }
 
