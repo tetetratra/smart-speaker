@@ -32,10 +32,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
@@ -43,6 +45,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
+
+const defaultMemoryStorePath = "data/memory.json"
 
 func main() {
 	log.SetFlags(0)
@@ -167,8 +171,22 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
 	agentStatusStore := agentstatus.NewStore()
+	memoryStore, err := memorystate.NewStore(defaultMemoryStorePath)
+	if err != nil {
+		return appStages{}, fmt.Errorf("failed to init memory store: %w", err)
+	}
+	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{})
+	if err != nil {
+		return appStages{}, fmt.Errorf("failed to init memory embedder: %w", err)
+	}
+	memoryContextProvider, err := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{
+		Embedder: memoryEmbedder,
+		Memory:   memoryStore,
+	})
+	if err != nil {
+		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
+	}
 
-	var err error
 	stages.tts, err = tts.NewStage(tts.Config{
 		Provider: cfg.TTSProvider,
 		ElevenLabs: tts.ElevenLabsConfig{
@@ -222,6 +240,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 		History:      historyStore,
 		AgentStatus:  agentStatusStore,
 		Timers:       timerStore,
+		Memory:       memoryContextProvider,
 		ToolSchemas:  toolSchemas,
 	})
 	if err != nil {
