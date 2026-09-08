@@ -2,6 +2,8 @@ package rtcpeer
 
 import (
 	"context"
+	"fmt"
+	"net/netip"
 	"sync"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
@@ -14,10 +16,13 @@ const (
 )
 
 type Config struct {
-	IceHostIPs []string
+	IceAdvertiseIPs []string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
+	if err := validateICEAdvertiseIPs(cfg.IceAdvertiseIPs); err != nil {
+		return nil, err
+	}
 	s := &stage{
 		cfg:        cfg,
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
@@ -29,6 +34,24 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		Run:        s.run,
 		CloseFn:    s.close,
 	}, nil
+}
+
+func validateICEAdvertiseIPs(values []string) error {
+	tailscaleIPv4 := netip.MustParsePrefix("100.64.0.0/10")
+	for _, value := range values {
+		addr, err := netip.ParseAddr(value)
+		if err != nil {
+			return fmt.Errorf("rtcpeer: invalid ICE advertise IP %q: %w", value, err)
+		}
+		addr = addr.Unmap()
+		if !addr.Is4() {
+			return fmt.Errorf("rtcpeer: ICE advertise IP must be IPv4: %q", value)
+		}
+		if !addr.IsPrivate() && !tailscaleIPv4.Contains(addr) {
+			return fmt.Errorf("rtcpeer: ICE advertise IP must be private or Tailscale IPv4: %q", value)
+		}
+	}
+	return nil
 }
 
 type stage struct {

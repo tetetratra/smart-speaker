@@ -2,12 +2,80 @@ package rtcpeer
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
+
+func TestNewPeerConnectionAdvertisesConfiguredIPs(t *testing.T) {
+	advertiseIPs := []string{"192.168.0.100", "100.64.0.1"}
+	peer, err := newPeerConnection(advertiseIPs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := peer.Close(); err != nil {
+			t.Errorf("peer.Close() error = %v", err)
+		}
+	}()
+
+	track, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: webrtcSampleRate, Channels: webrtcChannels},
+		"audio",
+		"test",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peer.AddTrack(track); err != nil {
+		t.Fatal(err)
+	}
+
+	offer, err := peer.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatheringComplete := webrtc.GatheringCompletePromise(peer)
+	if err := peer.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gatheringComplete:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ICE gathering timed out")
+	}
+
+	localDescription := peer.LocalDescription()
+	if localDescription == nil {
+		t.Fatal("LocalDescription() = nil")
+	}
+	for _, ip := range advertiseIPs {
+		found := false
+		for _, line := range strings.Split(localDescription.SDP, "\n") {
+			if strings.Contains(line, " "+ip+" ") && strings.Contains(line, " typ srflx") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("server reflexive candidate for %s was not found in SDP", ip)
+		}
+	}
+}
+
+func TestNewPeerConnectionAllowsEmptyAdvertiseIPs(t *testing.T) {
+	peer, err := newPeerConnection(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.Close(); err != nil {
+		t.Errorf("peer.Close() error = %v", err)
+	}
+}
 
 func TestParseOpusChannels(t *testing.T) {
 	tests := []struct {
