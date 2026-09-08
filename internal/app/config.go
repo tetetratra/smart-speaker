@@ -15,6 +15,7 @@ import (
 type Config struct {
 	APIKey                  string
 	ResponsesModel          string
+	Memory                  MemoryConfig
 	SystemPrompt            string
 	ConversationIdleTimeout time.Duration
 	AutoPromptMessage       string
@@ -32,6 +33,16 @@ type Config struct {
 	RTCIceHostIPs           []string
 	WSAddr                  string
 	WebDistDir              string
+}
+
+type MemoryConfig struct {
+	Model               string
+	StorePath           string
+	EmbeddingBaseURL    string
+	EmbeddingModel      string
+	SimilarityThreshold float64
+	MaxContextMemories  int
+	MaxTags             int
 }
 
 type SwitchBotConfig struct {
@@ -62,6 +73,7 @@ func LoadConfig(promptPath string) Config {
 		// realtime系のapiはコンテキストウィンドウが小さいのと高いため、response系のモデルを使う
 		responsesModel = "gpt-5.2-2025-12-11"
 	}
+	memoryCfg := loadMemoryConfig(responsesModel)
 
 	prompt := readSystemPrompt(promptPath)
 
@@ -131,6 +143,7 @@ func LoadConfig(promptPath string) Config {
 	return Config{
 		APIKey:                  apiKey,
 		ResponsesModel:          responsesModel,
+		Memory:                  memoryCfg,
 		SystemPrompt:            prompt,
 		ConversationIdleTimeout: conversationIdleTimeout,
 		AutoPromptMessage:       message,
@@ -151,12 +164,52 @@ func LoadConfig(promptPath string) Config {
 	}
 }
 
+func loadMemoryConfig(responsesModel string) MemoryConfig {
+	memoryModel := strings.TrimSpace(os.Getenv("OPENAI_MEMORY_MODEL"))
+	if memoryModel == "" {
+		memoryModel = responsesModel
+	}
+	storePath := strings.TrimSpace(os.Getenv("MEMORY_STORE_PATH"))
+	if storePath == "" {
+		storePath = "data/memories.json"
+	}
+	embeddingBaseURL := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_BASE_URL"))
+	if embeddingBaseURL == "" {
+		embeddingBaseURL = "http://embedding:80"
+	}
+	embeddingModel := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_MODEL"))
+	if embeddingModel == "" {
+		embeddingModel = "intfloat/multilingual-e5-small"
+	}
+	return MemoryConfig{
+		Model:               memoryModel,
+		StorePath:           storePath,
+		EmbeddingBaseURL:    embeddingBaseURL,
+		EmbeddingModel:      embeddingModel,
+		SimilarityThreshold: floatFromEnv("MEMORY_SIMILARITY_THRESHOLD", 0.7),
+		MaxContextMemories:  intFromEnv("MEMORY_MAX_CONTEXT_MEMORIES", 3),
+		MaxTags:             intFromEnv("MEMORY_MAX_TAGS", 5),
+	}
+}
+
 func intFromEnv(name string, defaultValue int) int {
 	trimmed := strings.TrimSpace(os.Getenv(name))
 	if trimmed == "" {
 		return defaultValue
 	}
 	value, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+func floatFromEnv(name string, defaultValue float64) float64 {
+	trimmed := strings.TrimSpace(os.Getenv(name))
+	if trimmed == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
 	if err != nil {
 		return defaultValue
 	}
