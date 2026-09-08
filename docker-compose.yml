@@ -18,6 +18,14 @@ services:
       - /var/lib/smart-speaker/data:/app/data
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_RESPONSES_MODEL: ${OPENAI_RESPONSES_MODEL:-}
+      OPENAI_MEMORY_MODEL: ${OPENAI_MEMORY_MODEL:-}
+      MEMORY_STORE_PATH: ${MEMORY_STORE_PATH:-/app/data/memories.json}
+      MEMORY_EMBEDDING_BASE_URL: ${MEMORY_EMBEDDING_BASE_URL:-http://embedding:80}
+      MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+      MEMORY_SIMILARITY_THRESHOLD: ${MEMORY_SIMILARITY_THRESHOLD:-0.7}
+      MEMORY_MAX_CONTEXT_MEMORIES: ${MEMORY_MAX_CONTEXT_MEMORIES:-3}
+      MEMORY_MAX_TAGS: ${MEMORY_MAX_TAGS:-5}
       TTS_PROVIDER: ${TTS_PROVIDER:-elevenlabs}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID}
@@ -39,7 +47,7 @@ services:
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     platform: ${EMBEDDING_PLATFORM:-linux/amd64}
-    command: ["--model-id", "intfloat/multilingual-e5-small"]
+    command: ["--model-id", "${MEMORY_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}"]
     restart: unless-stopped
     volumes:
       - embedding-model-cache:/data

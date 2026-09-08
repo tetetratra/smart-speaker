@@ -31,6 +31,21 @@ docker compose up
 
 `http://localhost:5173` に配信されます。
 
+### メモリ機能
+
+メモリ機能は、会話履歴から長期記憶候補を作成し、ローカル embedding server の検索結果を LLM の入力に追加します。
+Docker Compose ではメモリ store を `/app/data/memories.json` に保存し、host 側の `/var/lib/smart-speaker/data` に永続化します。
+
+主な設定は以下です。
+
+- `OPENAI_MEMORY_MODEL`: メモリ候補作成に使う Responses API model。未指定時は `OPENAI_RESPONSES_MODEL` を使います。
+- `MEMORY_STORE_PATH`: メモリ JSON file store の保存先。Compose 既定値は `/app/data/memories.json` です。
+- `MEMORY_EMBEDDING_BASE_URL`: ローカル embedding server の base URL。Compose 既定値は `http://embedding:80` です。
+- `MEMORY_EMBEDDING_MODEL`: embedding service の model-id。既定値は `intfloat/multilingual-e5-small` です。
+- `MEMORY_SIMILARITY_THRESHOLD`: 検索と近似重複判定に使う類似度閾値。既定値は `0.7` です。
+- `MEMORY_MAX_CONTEXT_MEMORIES`: LLM に注入する最大メモリ件数。既定値は `3` です。
+- `MEMORY_MAX_TAGS`: メモリ候補 1 件あたりの最大 tag 数。既定値は `5` です。
+
 ## 本番環境
 
 ### 準備
@@ -45,4 +60,3 @@ docker context create production --docker "host=ssh://<user>@<本番サーバー
 ```sh
 ./scripts/deploy.sh
 ```
-
