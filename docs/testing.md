@@ -25,7 +25,7 @@
   - `ELEVENLABS_MODEL_ID`
   - `VOICEVOX_SPEAKER_ID`
   - `VOICEVOX_SPEED_SCALE`
-  - `RTC_ICE_HOST_IPS`
+  - `RTC_ICE_ADVERTISE_IPS`（RFC 1918またはTailscaleのIPv4をカンマ区切りで指定）
   - `WEB_DIST_DIR`
   - `WS_ADDR`
   - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 300 秒、`0` で idle reset 無効）
@@ -46,6 +46,7 @@
 ### ブラウザ・操作条件
 - 旧資料では `macOS + Chrome` 前提です。
 - マイク権限の許可、Google OAuth 同意画面の操作は手動対応を前提とします。
+- 自宅LANと外出先TailscaleのWebRTC確認には、iPhoneのSafariまたはインストール済みPWAを使用します。
 
 ## 3. 起動パターン
 
@@ -111,6 +112,48 @@ docker compose -f docker-compose.yml up --build
 - WebSocket 接続が成立する。
 - WebRTC を使う画面の場合、接続状態が接続済み相当へ遷移する。
 - マイク権限ダイアログが出た場合、許可後に処理継続できる。
+
+### 手順2.1: 自宅LAN経路のWebRTC確認
+
+1. 本番サーバーのLAN IPとTailscale IPが `RTC_ICE_PRODUCTION_ADVERTISE_IPS` に設定されていることを確認する。
+2. iPhoneを自宅Wi-Fiへ接続し、Tailscaleを無効にする。
+3. SafariまたはPWAからアプリへ接続する。
+4. 短い発話を行い、サーバーへの音声入力とiPhoneでの応答音声再生を確認する。
+5. サーバーログでPeerConnectionが `connected` になり、選択されたローカルcandidateが本番サーバーのLAN IPであることを確認する。
+
+確認するログ:
+
+```text
+rtcpeer: local ICE candidate client_id=... type=srflx protocol=udp address=<本番サーバーのLAN IP> port=...
+rtcpeer: ICE connection state=connected client_id=...
+rtcpeer: selected ICE pair client_id=... local=<本番サーバーのLAN IP>:.../srflx/udp remote=.../udp
+rtcpeer: connection state=connected client_id=...
+```
+
+### 手順2.2: 外出先Tailscale経路のWebRTC確認
+
+1. iPhoneを自宅LAN以外のネットワークへ接続する。
+2. iPhoneのTailscaleを有効にし、同じtailnetへ参加していることを確認する。
+3. SafariまたはPWAから本番サーバーのTailscale経路でアプリへ接続する。
+4. 短い発話を行い、サーバーへの音声入力とiPhoneでの応答音声再生を確認する。
+5. サーバーログでPeerConnectionが `connected` になり、選択されたローカルcandidateが本番サーバーのTailscale IPであることを確認する。
+
+確認するログ:
+
+```text
+rtcpeer: local ICE candidate client_id=... type=srflx protocol=udp address=<本番サーバーのTailscale IP> port=...
+rtcpeer: ICE connection state=connected client_id=...
+rtcpeer: selected ICE pair client_id=... local=<本番サーバーのTailscale IP>:.../srflx/udp remote=.../udp
+rtcpeer: connection state=connected client_id=...
+```
+
+### 手順2.3: 外部インターネットへ公開されていないことの確認
+
+1. iPhoneを自宅LAN以外のネットワークへ接続する。
+2. iPhoneのTailscaleを無効にする。
+3. アプリへ接続できないことを確認する。
+4. 家庭用ルーターにTCP 8081とUDP `50000-50100` のインターネット向けポート転送が設定されていないことを確認する。
+5. STUNサーバーとTURNサーバーを公開していないことを確認する。
 
 ### 手順3: 音声入力の確認
 1. マイク入力を有効化した状態で短い発話を行う。

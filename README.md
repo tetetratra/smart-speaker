@@ -31,6 +31,19 @@ docker compose up
 
 `http://localhost:5173` に配信されます。
 
+### WebRTCのICE候補
+
+`RTC_ICE_ADVERTISE_IPS` には、ブラウザから到達できるサーバーのIPv4アドレスをカンマ区切りで指定します。
+ローカル開発では、開発PCのLAN IPを指定します。
+未指定の場合は、Pionが実行環境から検出したアドレスだけを使用します。
+
+指定できるのは、RFC 1918のプライベートIPv4アドレスと、Tailscaleが使用する `100.64.0.0/10` のIPv4アドレスです。
+意図しない外部公開を防ぐため、グローバルIPv4アドレスとIPv6アドレスは受け付けません。
+
+PionのAddress Rewrite Rulesにより、指定したアドレスは既存のICE candidateへ追加されます。
+
+https://pkg.go.dev/github.com/pion/webrtc/v4#SettingEngine.SetICEAddressRewriteRules
+
 ### メモリ機能
 
 メモリ機能は、会話履歴から長期記憶候補を作成し、ローカル embedding server の検索結果を LLM の入力に追加します。
@@ -54,6 +67,20 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 ```sh
 docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
 ```
+
+本番デプロイを実行する環境では、`RTC_ICE_PRODUCTION_ADVERTISE_IPS` に本番サーバーのLAN IPとTailscale IPをカンマ区切りで設定してください。
+
+```sh
+export RTC_ICE_PRODUCTION_ADVERTISE_IPS="<本番サーバーのLAN IP>,<本番サーバーのTailscale IP>"
+```
+
+デプロイスクリプトは本番専用の値を `RTC_ICE_ADVERTISE_IPS` へ割り当てます。
+本番サーバーのLAN IPは、家庭用ルーターのDHCP予約などで固定してください。
+
+Docker ComposeはWebRTC用UDPポート `50000-50100` をホストへ公開しますが、家庭用ルーターでインターネット向けのポート転送は行わないでください。
+外出先からは、tailnetへ参加した端末で本番サーバーのTailscaleアドレスへ接続します。
+
+https://tailscale.com/docs/how-to/connect-to-devices
 
 ## デプロイ
 
