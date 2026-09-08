@@ -93,6 +93,7 @@ flowchart TB
 - `rtcpeer` は WebRTC signaling、peer lifecycle、remote track decode、下り音声 sink 通知を担当する。
 - `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、speech start 時の世代更新、UI向け状態通知を担当する。
 - `stt` は Google Speech-to-Text v2 の streaming recognition と interim/final transcript 出力を担当する。
+- `openaistt` は OpenAI Realtime transcription への WebSocket 接続、24 kHz mono PCM16 への正規化、interim/final transcript 出力を担当する。
 - `rtcout` は agent 音声を WebRTC の下り audio track へ書き込む。
 - `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させ、agent status を idle に戻し、reset発火をUIへ通知する。
 - `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
@@ -186,4 +187,5 @@ UIは `session_reset` を受けると通常画面の直近会話吹き出しを�
 - `internal/components/rtcpeer/`
 - `internal/components/rtcvad/`
 - `internal/components/stt/`
+- `internal/components/openaistt/`
 - `internal/components/rtcout/`
