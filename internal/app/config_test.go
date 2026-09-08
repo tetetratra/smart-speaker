@@ -120,6 +120,76 @@ func TestLoadConfigReadsSTTProviderConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReadsMemoryConfig(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
+	t.Setenv("OPENAI_MEMORY_MODEL", "gpt-memory")
+	t.Setenv("MEMORY_STORE_PATH", "/app/data/memories.json")
+	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "http://embedding.local:8080")
+	t.Setenv("MEMORY_EMBEDDING_MODEL", "model-name")
+	t.Setenv("MEMORY_SIMILARITY_THRESHOLD", "0.82")
+	t.Setenv("MEMORY_MAX_CONTEXT_MEMORIES", "4")
+	t.Setenv("MEMORY_MAX_TAGS", "6")
+
+	cfg := LoadConfig("")
+	if cfg.Memory.Model != "gpt-memory" {
+		t.Fatalf("Memory.Model = %q, want gpt-memory", cfg.Memory.Model)
+	}
+	if cfg.Memory.StorePath != "/app/data/memories.json" {
+		t.Fatalf("Memory.StorePath = %q", cfg.Memory.StorePath)
+	}
+	if cfg.Memory.EmbeddingBaseURL != "http://embedding.local:8080" {
+		t.Fatalf("Memory.EmbeddingBaseURL = %q", cfg.Memory.EmbeddingBaseURL)
+	}
+	if cfg.Memory.EmbeddingModel != "model-name" {
+		t.Fatalf("Memory.EmbeddingModel = %q", cfg.Memory.EmbeddingModel)
+	}
+	if cfg.Memory.SimilarityThreshold != 0.82 {
+		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.82", cfg.Memory.SimilarityThreshold)
+	}
+	if cfg.Memory.MaxContextMemories != 4 {
+		t.Fatalf("Memory.MaxContextMemories = %d, want 4", cfg.Memory.MaxContextMemories)
+	}
+	if cfg.Memory.MaxTags != 6 {
+		t.Fatalf("Memory.MaxTags = %d, want 6", cfg.Memory.MaxTags)
+	}
+}
+
+func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
+	t.Setenv("OPENAI_MEMORY_MODEL", "")
+	t.Setenv("MEMORY_STORE_PATH", "")
+	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "")
+	t.Setenv("MEMORY_EMBEDDING_MODEL", "")
+	t.Setenv("MEMORY_SIMILARITY_THRESHOLD", "invalid")
+	t.Setenv("MEMORY_MAX_CONTEXT_MEMORIES", "invalid")
+	t.Setenv("MEMORY_MAX_TAGS", "invalid")
+
+	cfg := LoadConfig("")
+	if cfg.Memory.Model != "gpt-response" {
+		t.Fatalf("Memory.Model = %q, want OPENAI_RESPONSES_MODEL fallback", cfg.Memory.Model)
+	}
+	if cfg.Memory.StorePath != "data/memories.json" {
+		t.Fatalf("Memory.StorePath = %q, want data/memories.json", cfg.Memory.StorePath)
+	}
+	if cfg.Memory.EmbeddingBaseURL != "http://embedding:80" {
+		t.Fatalf("Memory.EmbeddingBaseURL = %q, want http://embedding:80", cfg.Memory.EmbeddingBaseURL)
+	}
+	if cfg.Memory.EmbeddingModel != "intfloat/multilingual-e5-small" {
+		t.Fatalf("Memory.EmbeddingModel = %q", cfg.Memory.EmbeddingModel)
+	}
+	if cfg.Memory.SimilarityThreshold != 0.7 {
+		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.7", cfg.Memory.SimilarityThreshold)
+	}
+	if cfg.Memory.MaxContextMemories != 3 {
+		t.Fatalf("Memory.MaxContextMemories = %d, want 3", cfg.Memory.MaxContextMemories)
+	}
+	if cfg.Memory.MaxTags != 5 {
+		t.Fatalf("Memory.MaxTags = %d, want 5", cfg.Memory.MaxTags)
+	}
+}
+
 func TestLoadConfigHandlesInvalidVoicevoxNumbers(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai")
 	t.Setenv("VOICEVOX_SPEAKER_ID", "invalid")

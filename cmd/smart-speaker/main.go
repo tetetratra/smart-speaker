@@ -47,8 +47,6 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-const defaultMemoryStorePath = "data/memory.json"
-
 func main() {
 	log.SetFlags(0)
 
@@ -172,20 +170,42 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
 	agentStatusStore := agentstatus.NewStore()
-	memoryStore, err := memorystate.NewStore(defaultMemoryStorePath)
+	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory store: %w", err)
 	}
-	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{})
+	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
+		BaseURL: cfg.Memory.EmbeddingBaseURL,
+	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory embedder: %w", err)
 	}
 	memoryContextProvider, err := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{
-		Embedder: memoryEmbedder,
-		Memory:   memoryStore,
+		Embedder:      memoryEmbedder,
+		Memory:        memoryStore,
+		SearchLimit:   cfg.Memory.MaxContextMemories,
+		MinSimilarity: cfg.Memory.SimilarityThreshold,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
+	}
+	memoryCandidateCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
+		APIKey:  cfg.APIKey,
+		Model:   cfg.Memory.Model,
+		MaxTags: cfg.Memory.MaxTags,
+	})
+	if err != nil {
+		return appStages{}, fmt.Errorf("failed to init memory candidate creator: %w", err)
+	}
+	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
+		History:                historyStore,
+		CandidateCreator:       memoryCandidateCreator,
+		Embedder:               memoryEmbedder,
+		Memory:                 memoryStore,
+		DuplicateMinSimilarity: cfg.Memory.SimilarityThreshold,
+	})
+	if err != nil {
+		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
 	stages.tts, err = tts.NewStage(tts.Config{
@@ -222,6 +242,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 		History:     historyStore,
 		Generation:  generationStore,
 		AgentStatus: agentStatusStore,
+		Hooks:       []sessionreset.Hook{memoryCreatorHook},
 	})
 	if stages.sessionReset != nil {
 		stages.sessionReset.Name = "sessionreset"

@@ -144,8 +144,8 @@ LLM が `{"items":[]}` を返した場合は timeline event が発行されな�
 `memory.Store.Upsert()` は content 完全一致、タグ集合一致、embedding の cosine similarity による近似一致で既存メモリを更新し、該当がなければ新規作成する。
 `memory.Store.Search()` は query embedding と保存済み embedding の cosine similarity を計算し、閾値、最大件数、類似度降順 sort を適用して返す。
 embedding 生成は `internal/hooks/memory.EmbeddingClient` が担当し、Docker Compose 内の `embedding` service に対して TEI ネイティブの `POST /embed` を呼び出す。
-接続先は `http://embedding:80`、モデルは `intfloat/multilingual-e5-small` 固定で、環境変数による切り替えは持たない。
-現時点では Store と EmbeddingClient の土台だけがあり、session reset hook、LLM context 注入、production graph への接続は後続の変更対象である。
+通常起動では `MEMORY_EMBEDDING_BASE_URL` で接続先を切り替えられ、Docker Compose の embedding service は `MEMORY_EMBEDDING_MODEL` を model-id として起動する。
+session reset hook は reset 前履歴からメモリ候補を作成・保存し、LLM は応答生成前に関連メモリを検索して system message として注入する。
 
 ## セッションリセット
 
