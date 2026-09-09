@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -102,97 +103,79 @@ func TestStoreUpsertRejectsEmptyContent(t *testing.T) {
 	}
 }
 
-func TestStoreUpsertUpdatesDuplicateRecord(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	created, _, err := store.Upsert(UpsertInput{
-		Content:   "犬を飼っている",
-		Tags:      []string{"profile", "pet"},
-		Embedding: []float64{1, 0},
-	})
-	if err != nil {
-		t.Fatalf("Upsert(create) error = %v", err)
-	}
-
-	updated, result, err := store.Upsert(UpsertInput{
-		Content:   "犬を飼っている",
-		Tags:      []string{"profile", "dog"},
-		Embedding: []float64{0.8, 0.2},
-	})
-	if err != nil {
-		t.Fatalf("Upsert(update) error = %v", err)
-	}
-	if result.Created {
-		t.Fatal("UpsertResult.Created = true, want false")
-	}
-	if result.DuplicateReason != "content" {
-		t.Fatalf("DuplicateReason = %q, want content", result.DuplicateReason)
-	}
-	if updated.ID != created.ID {
-		t.Fatalf("updated ID = %q, want %q", updated.ID, created.ID)
-	}
-	if !updated.CreatedAt.Equal(created.CreatedAt) {
-		t.Fatalf("CreatedAt changed: %v -> %v", created.CreatedAt, updated.CreatedAt)
-	}
-	if !updated.UpdatedAt.After(created.UpdatedAt) && !updated.UpdatedAt.Equal(created.UpdatedAt) {
-		t.Fatalf("UpdatedAt = %v, want >= %v", updated.UpdatedAt, created.UpdatedAt)
+func TestStoreUpsertSkipsDuplicateRecord(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      UpsertInput
+		wantReason string
+	}{
+		{
+			name: "content",
+			input: UpsertInput{
+				Content:   "犬を飼っている",
+				Tags:      []string{"profile", "dog"},
+				Embedding: []float64{0.8, 0.2},
+			},
+			wantReason: "content",
+		},
+		{
+			name: "tags",
+			input: UpsertInput{
+				Content:   "猫を飼っている",
+				Tags:      []string{"pet", "profile"},
+				Embedding: []float64{0.7, 0.3},
+			},
+			wantReason: "tags",
+		},
+		{
+			name: "embedding",
+			input: UpsertInput{
+				Content:                "雨の日は頭痛になりやすい",
+				Tags:                   []string{"weather"},
+				Embedding:              []float64{0.99, 0.01},
+				DuplicateMinSimilarity: 0.98,
+			},
+			wantReason: "embedding",
+		},
 	}
 
-	byTags, result, err := store.Upsert(UpsertInput{
-		Content:   "タグ一致で更新する",
-		Tags:      []string{"dog", "profile"},
-		Embedding: []float64{0.7, 0.3},
-	})
-	if err != nil {
-		t.Fatalf("Upsert(tag duplicate) error = %v", err)
-	}
-	if result.DuplicateReason != "tags" {
-		t.Fatalf("DuplicateReason = %q, want tags", result.DuplicateReason)
-	}
-	if byTags.ID != created.ID {
-		t.Fatalf("tag duplicate ID = %q, want %q", byTags.ID, created.ID)
-	}
-	if len(store.Snapshot()) != 1 {
-		t.Fatalf("Snapshot len = %d, want 1", len(store.Snapshot()))
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
+			if err != nil {
+				t.Fatalf("NewStore() error = %v", err)
+			}
+			created, _, err := store.Upsert(UpsertInput{
+				Content:   "犬を飼っている",
+				Tags:      []string{"profile", "pet"},
+				Embedding: []float64{1, 0},
+			})
+			if err != nil {
+				t.Fatalf("Upsert(create) error = %v", err)
+			}
 
-func TestStoreUpsertUpdatesSimilarRecord(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	created, _, err := store.Upsert(UpsertInput{
-		Content:   "低気圧の日は頭痛になりやすい",
-		Tags:      []string{"health"},
-		Embedding: []float64{1, 0},
-	})
-	if err != nil {
-		t.Fatalf("Upsert(create) error = %v", err)
-	}
-
-	updated, result, err := store.Upsert(UpsertInput{
-		Content:                "雨の日は頭痛になりやすい",
-		Tags:                   []string{"weather"},
-		Embedding:              []float64{0.99, 0.01},
-		DuplicateMinSimilarity: 0.98,
-	})
-	if err != nil {
-		t.Fatalf("Upsert(similar) error = %v", err)
-	}
-	if result.Created {
-		t.Fatal("UpsertResult.Created = true, want false")
-	}
-	if result.DuplicateReason != "embedding" {
-		t.Fatalf("DuplicateReason = %q, want embedding", result.DuplicateReason)
-	}
-	if result.Similarity < 0.98 {
-		t.Fatalf("Similarity = %f, want >= 0.98", result.Similarity)
-	}
-	if updated.ID != created.ID {
-		t.Fatalf("updated ID = %q, want %q", updated.ID, created.ID)
+			// 重複時に永続化しようとすると失敗するパスへ差し替え、保存もスキップされることを確認する。
+			store.path = t.TempDir()
+			got, result, err := store.Upsert(tt.input)
+			if err != nil {
+				t.Fatalf("Upsert(duplicate) error = %v", err)
+			}
+			if result.Created {
+				t.Fatal("UpsertResult.Created = true, want false")
+			}
+			if result.DuplicateReason != tt.wantReason {
+				t.Fatalf("DuplicateReason = %q, want %q", result.DuplicateReason, tt.wantReason)
+			}
+			if tt.wantReason == "embedding" && result.Similarity < tt.input.DuplicateMinSimilarity {
+				t.Fatalf("Similarity = %f, want >= %f", result.Similarity, tt.input.DuplicateMinSimilarity)
+			}
+			if !reflect.DeepEqual(got, created) {
+				t.Fatalf("Upsert() record = %#v, want unchanged %#v", got, created)
+			}
+			if snapshot := store.Snapshot(); !reflect.DeepEqual(snapshot, []Record{created}) {
+				t.Fatalf("Snapshot() = %#v, want unchanged %#v", snapshot, []Record{created})
+			}
+		})
 	}
 }
 
@@ -250,45 +233,6 @@ func TestStoreSnapshotReturnsDeepCopy(t *testing.T) {
 	}
 	if again[0].Embedding[0] == 99 {
 		t.Fatal("Embedding changed through snapshot")
-	}
-}
-
-func TestStoreSearchFiltersSortsAndLimitsResults(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	inputs := []UpsertInput{
-		{Content: "近い記憶", Tags: []string{"a"}, Embedding: []float64{1, 0}},
-		{Content: "少し近い記憶", Tags: []string{"b"}, Embedding: []float64{0.8, 0.2}},
-		{Content: "遠い記憶", Tags: []string{"c"}, Embedding: []float64{0, 1}},
-		{Content: "embeddingなし", Tags: []string{"d"}},
-		{Content: "次元違い", Tags: []string{"e"}, Embedding: []float64{1, 0, 0}},
-	}
-	for _, input := range inputs {
-		if _, _, err := store.Upsert(input); err != nil {
-			t.Fatalf("Upsert(%q) error = %v", input.Content, err)
-		}
-	}
-
-	results := store.Search([]float64{1, 0}, SearchOptions{MinSimilarity: 0.7, Limit: 2})
-	if len(results) != 2 {
-		t.Fatalf("Search len = %d, want 2", len(results))
-	}
-	if results[0].Record.Content != "近い記憶" {
-		t.Fatalf("results[0].Content = %q, want 近い記憶", results[0].Record.Content)
-	}
-	if results[1].Record.Content != "少し近い記憶" {
-		t.Fatalf("results[1].Content = %q, want 少し近い記憶", results[1].Record.Content)
-	}
-	if results[0].Similarity < results[1].Similarity {
-		t.Fatalf("results not sorted desc: %f < %f", results[0].Similarity, results[1].Similarity)
-	}
-
-	results[0].Record.Embedding[0] = 99
-	again := store.Search([]float64{1, 0}, SearchOptions{MinSimilarity: 0.7, Limit: 1})
-	if again[0].Record.Embedding[0] == 99 {
-		t.Fatal("Search returned internal record")
 	}
 }
 

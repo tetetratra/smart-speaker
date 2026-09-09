@@ -10,117 +10,33 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-const (
-	DefaultContextQueryRecordLimit = 8
-	DefaultContextSearchLimit      = 3
-	DefaultContextMinSimilarity    = 0.95
-)
-
 type ContextProviderConfig struct {
-	Embedder         contextEmbedder
-	Memory           memorySearcher
-	QueryRecordLimit int
-	SearchLimit      int
-	MinSimilarity    float64
+	Memory memoryReader
 }
 
 type ContextProvider struct {
-	embedder         contextEmbedder
-	memory           memorySearcher
-	queryRecordLimit int
-	searchLimit      int
-	minSimilarity    float64
+	memory memoryReader
 }
 
-type contextEmbedder interface {
-	Embed(context.Context, string) ([]float64, error)
-}
-
-type memorySearcher interface {
-	Search([]float64, memorystate.SearchOptions) []memorystate.SearchResult
+type memoryReader interface {
+	Snapshot() []memorystate.Record
 }
 
 func NewContextProvider(cfg ContextProviderConfig) (*ContextProvider, error) {
-	if cfg.Embedder == nil {
-		return nil, fmt.Errorf("memory context provider: embedder is required")
-	}
 	if cfg.Memory == nil {
 		return nil, fmt.Errorf("memory context provider: memory is required")
 	}
-	queryRecordLimit := cfg.QueryRecordLimit
-	if queryRecordLimit <= 0 {
-		queryRecordLimit = DefaultContextQueryRecordLimit
-	}
-	searchLimit := cfg.SearchLimit
-	if searchLimit <= 0 {
-		searchLimit = DefaultContextSearchLimit
-	}
-	minSimilarity := cfg.MinSimilarity
-	if minSimilarity <= 0 {
-		minSimilarity = DefaultContextMinSimilarity
-	}
-	if minSimilarity > 1 {
-		return nil, fmt.Errorf("memory context provider: min similarity must be <= 1")
-	}
-	return &ContextProvider{
-		embedder:         cfg.Embedder,
-		memory:           cfg.Memory,
-		queryRecordLimit: queryRecordLimit,
-		searchLimit:      searchLimit,
-		minSimilarity:    minSimilarity,
-	}, nil
+	return &ContextProvider{memory: cfg.Memory}, nil
 }
 
-func (p *ContextProvider) BuildContext(ctx context.Context, records []types.ConversationRecord) ([]types.ChatMessage, error) {
-	query := p.buildQuery(records)
-	if query == "" {
-		return nil, nil
-	}
-	embedding, err := p.embedder.Embed(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	results := p.memory.Search(embedding, memorystate.SearchOptions{
-		MinSimilarity: p.minSimilarity,
-		Limit:         p.searchLimit,
-	})
-	return memoryContextMessages(results)
+func (p *ContextProvider) BuildContext(_ context.Context, _ []types.ConversationRecord) ([]types.ChatMessage, error) {
+	return memoryContextMessages(p.memory.Snapshot())
 }
 
-func (p *ContextProvider) buildQuery(records []types.ConversationRecord) string {
-	eligible := make([]types.ConversationRecord, 0, len(records))
+func memoryContextMessages(records []memorystate.Record) ([]types.ChatMessage, error) {
+	memories := make([]memoryContextItem, 0, len(records))
 	for _, record := range records {
-		if !isMemoryQueryRole(record.Role) || strings.TrimSpace(record.Text) == "" {
-			continue
-		}
-		eligible = append(eligible, record)
-	}
-	if len(eligible) == 0 {
-		return ""
-	}
-	if len(eligible) > p.queryRecordLimit {
-		eligible = eligible[len(eligible)-p.queryRecordLimit:]
-	}
-	lines := make([]string, 0, len(eligible))
-	for _, record := range eligible {
-		lines = append(lines, strings.TrimSpace(record.Role)+": "+strings.TrimSpace(record.Text))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func isMemoryQueryRole(role string) bool {
-	switch strings.TrimSpace(role) {
-	case types.RoleUser, types.RoleAgent, types.RoleSystem:
-		return true
-	default:
-		return false
-	}
-}
-
-func memoryContextMessages(results []memorystate.SearchResult) ([]types.ChatMessage, error) {
-	memories := make([]memoryContextItem, 0, len(results))
-	for _, result := range results {
-		content := strings.TrimSpace(result.Record.Content)
+		content := strings.TrimSpace(record.Content)
 		if content == "" {
 			continue
 		}

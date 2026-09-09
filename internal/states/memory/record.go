@@ -35,16 +35,6 @@ type UpsertResult struct {
 	Similarity      float64
 }
 
-type SearchOptions struct {
-	MinSimilarity float64
-	Limit         int
-}
-
-type SearchResult struct {
-	Record     Record
-	Similarity float64
-}
-
 func (r Record) SearchText() string {
 	parts := make([]string, 0, 1+len(r.Tags))
 	if content := strings.TrimSpace(r.Content); content != "" {

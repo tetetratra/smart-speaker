@@ -63,17 +63,8 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 		Embedding:     embedding,
 		MinSimilarity: input.DuplicateMinSimilarity,
 	}); ok {
-		updated := s.records[idx]
-		updated.Content = content
-		updated.Tags = tags
-		updated.Embedding = embedding
-		updated.UpdatedAt = now
-		s.records[idx] = updated
-		if err := s.saveLocked(); err != nil {
-			return Record{}, UpsertResult{}, err
-		}
 		result.Created = false
-		return cloneRecord(updated), result, nil
+		return cloneRecord(s.records[idx]), result, nil
 	}
 
 	record := Record{
@@ -99,30 +90,6 @@ func (s *Store) FindDuplicate(input DuplicateInput) (Record, bool) {
 		return Record{}, false
 	}
 	return cloneRecord(s.records[idx]), true
-}
-
-func (s *Store) Search(query []float64, opts SearchOptions) []SearchResult {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	results := make([]SearchResult, 0, len(s.records))
-	for _, record := range s.records {
-		similarity, ok := cosineSimilarity(query, record.Embedding)
-		if !ok || similarity < opts.MinSimilarity {
-			continue
-		}
-		results = append(results, SearchResult{
-			Record:     cloneRecord(record),
-			Similarity: similarity,
-		})
-	}
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].Similarity > results[j].Similarity
-	})
-	if opts.Limit > 0 && len(results) > opts.Limit {
-		results = results[:opts.Limit]
-	}
-	return results
 }
 
 func (s *Store) Reset() error {

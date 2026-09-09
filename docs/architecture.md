@@ -140,12 +140,11 @@ LLM が `{"items":[]}` を返した場合は timeline event が発行されな�
 
 メモリは `internal/states/memory` が保持する。
 メモリStoreは、メモリ本文、関連タグ、embedding、作成更新時刻を JSON file に永続化する。
-検索用文字列は保存せず、必要な場面で `Content` と `Tags` から組み立てる。
-`memory.Store.Upsert()` は content 完全一致、タグ集合一致、embedding の cosine similarity による近似一致で既存メモリを更新し、該当がなければ新規作成する。
-`memory.Store.Search()` は query embedding と保存済み embedding の cosine similarity を計算し、閾値、最大件数、類似度降順 sort を適用して返す。
-embedding 生成は `internal/hooks/memory.EmbeddingClient` が担当し、Docker Compose 内の `embedding` service に対して TEI ネイティブの `POST /embed` を呼び出す。
+embedding 用文字列は保存せず、メモリ候補の保存時に `Content` と `Tags` から組み立てる。
+`memory.Store.Upsert()` は content 完全一致、タグ集合一致、embedding の cosine similarity による近似一致で重複を判定する。重複時は既存メモリを更新せず、該当がなければ新規作成する。
+embedding 生成はメモリ候補の保存時に `internal/hooks/memory.EmbeddingClient` が担当し、Docker Compose 内の `embedding` service に対して TEI ネイティブの `POST /embed` を呼び出す。
 通常起動では `MEMORY_EMBEDDING_BASE_URL` で接続先を切り替えられ、Docker Compose の embedding service は `MEMORY_EMBEDDING_MODEL` を model-id として起動する。
-session reset hook は reset 前履歴からメモリ候補を作成・保存し、LLM は応答生成前に関連メモリを検索して system message として注入する。
+session reset hook は reset 前履歴からメモリ候補を作成・保存し、LLM は応答生成前に保存済みメモリを全件取得して system message として注入する。
 
 ## セッションリセット
 
