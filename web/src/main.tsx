@@ -9,6 +9,15 @@ type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
+type UiMode = 'admin' | 'app' | 'memory'
+type MemoryItem = {
+  id: string
+  content: string
+  tags: string[]
+  created_at: string
+  updated_at: string
+}
+type MemoryListResponse = { memories: MemoryItem[] }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -595,6 +604,15 @@ function formatServerEventLog(raw: unknown): string {
   }
 }
 
+function formatMemoryDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
 function isScrolledToBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
 }
@@ -616,6 +634,7 @@ type LiveViewProps = {
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
   disconnect: () => void
+  goMemory: () => void
   goAdmin: () => void
 }
 
@@ -635,6 +654,9 @@ function App() {
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
+  const [memories, setMemories] = useState<MemoryItem[]>([])
+  const [memoryLoading, setMemoryLoading] = useState(false)
+  const [memoryError, setMemoryError] = useState('')
   const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
@@ -1114,10 +1136,12 @@ function App() {
     }
     return ''
   }, [messages])
-  const [uiMode, setUiMode] = useState<'admin' | 'app'>(() => {
+  const [uiMode, setUiMode] = useState<UiMode>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ui') === 'admin') return 'admin'
+    if (params.get('ui') === 'memory') return 'memory'
     if (window.location.pathname.startsWith('/admin')) return 'admin'
+    if (window.location.pathname.startsWith('/memory')) return 'memory'
     return 'app'
   })
   useEffect(() => {
@@ -1127,8 +1151,16 @@ function App() {
         setUiMode('admin')
         return
       }
+      if (params.get('ui') === 'memory') {
+        setUiMode('memory')
+        return
+      }
       if (window.location.pathname.startsWith('/admin')) {
         setUiMode('admin')
+        return
+      }
+      if (window.location.pathname.startsWith('/memory')) {
+        setUiMode('memory')
         return
       }
       setUiMode('app')
@@ -1138,7 +1170,7 @@ function App() {
   }, [])
   useEffect(() => {
     const body = document.body
-    if (uiMode === 'admin') {
+    if (uiMode !== 'app') {
       body.classList.add('admin-mode')
     } else {
       body.classList.remove('admin-mode')
@@ -1155,10 +1187,49 @@ function App() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [uiMode])
-  const setMode = useCallback((mode: 'admin' | 'app') => {
+  useEffect(() => {
+    if (uiMode !== 'memory') return
+    const controller = new AbortController()
+    setMemoryLoading(true)
+    setMemoryError('')
+
+    fetch(new URL('/api/memories', backendURL).toString(), { signal: controller.signal })
+      .then(async (resp) => {
+        if (!resp.ok) {
+          throw new Error(`メモリ一覧を取得できませんでした (${resp.status})`)
+        }
+        return await resp.json() as MemoryListResponse
+      })
+      .then((data) => {
+        if (!Array.isArray(data.memories)) {
+          throw new Error('メモリ一覧の形式が不正です')
+        }
+        setMemories(data.memories.map((memory) => ({
+          id: String(memory.id),
+          content: String(memory.content),
+          tags: Array.isArray(memory.tags) ? memory.tags.map(String) : [],
+          created_at: String(memory.created_at),
+          updated_at: String(memory.updated_at),
+        })))
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        setMemoryError(err instanceof Error ? err.message : 'メモリ一覧を取得できませんでした')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setMemoryLoading(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [uiMode])
+  const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
       params.set('ui', 'admin')
+    } else if (mode === 'memory') {
+      params.set('ui', 'memory')
     } else {
       params.delete('ui')
     }
@@ -1188,6 +1259,7 @@ function App() {
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
           disconnect={disconnect}
+          goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
         />
       </div>
@@ -1244,7 +1316,144 @@ function App() {
           app画面
         </button>
       </div>
+      <MemoryView
+        visible={uiMode === 'memory'}
+        memories={memories}
+        loading={memoryLoading}
+        error={memoryError}
+        goApp={() => setMode('app')}
+      />
     </>
+  )
+}
+
+function MemoryView(props: {
+  visible: boolean
+  memories: MemoryItem[]
+  loading: boolean
+  error: string
+  goApp: () => void
+}) {
+  const { visible, memories, loading, error, goApp } = props
+  return (
+    <div
+      style={{
+        display: visible ? 'flex' : 'none',
+        flexDirection: 'column',
+        gap: 12,
+        padding: 12,
+        height: '100vh',
+        minHeight: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flex: '0 0 auto',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, color: '#1e293b' }}>メモリ</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>
+          {loading ? '取得中' : `${memories.length}件`}
+        </div>
+      </div>
+      {error && (
+        <div
+          style={{
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            background: '#fef2f2',
+            color: '#991b1b',
+            padding: '10px 12px',
+            fontSize: 13,
+            lineHeight: 1.4,
+            fontWeight: 700,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflow: 'auto',
+          border: '2px solid #e2e8f0',
+          borderRadius: 10,
+          background: '#fafafa',
+          padding: 12,
+        }}
+      >
+        {!loading && !error && memories.length === 0 && (
+          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
+        )}
+        <div style={{ display: 'grid', gap: 10 }}>
+          {memories.map((memory) => (
+            <div
+              key={memory.id}
+              style={{
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                background: '#ffffff',
+                padding: 12,
+                display: 'grid',
+                gap: 8,
+              }}
+            >
+              <div style={{ color: '#0f172a', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                {memory.content}
+              </div>
+              {memory.tags.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {memory.tags.map((tag) => (
+                    <span
+                      key={`${memory.id}-${tag}`}
+                      style={{
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 999,
+                        padding: '3px 8px',
+                        background: '#f8fafc',
+                        color: '#475569',
+                        fontSize: 12,
+                        lineHeight: 1.2,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#64748b', fontSize: 12 }}>
+                <span>作成: {formatMemoryDate(memory.created_at)}</span>
+                <span>更新: {formatMemoryDate(memory.updated_at)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={goApp}
+        style={{
+          alignSelf: 'flex-start',
+          borderRadius: 8,
+          border: '1px solid #cbd5e1',
+          background: '#ffffff',
+          color: '#334155',
+          padding: '10px 14px',
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        app画面
+      </button>
+    </div>
   )
 }
 
@@ -1266,6 +1475,7 @@ function LiveView(props: LiveViewProps) {
     onPlaybackVolumeChange,
     connect,
     disconnect,
+    goMemory,
     goAdmin,
   } = props
   const [isNightMode, setIsNightMode] = useState(() => isNightModeTime(new Date()))
@@ -1329,6 +1539,7 @@ function LiveView(props: LiveViewProps) {
                     <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                     接続
                   </button>
+                  <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 </div>
               </div>
