@@ -30,7 +30,9 @@
   - メモリ本文、タグ、embedding、作成・更新時刻を JSON file に永続化する
   - content 完全一致、タグ集合一致、embedding の cosine similarity で重複を判定する
   - 重複した候補は既存 record を更新せず、保存をスキップする
-  - query embedding と保存済み embedding の cosine similarity で検索する
+- **`internal/hooks/memory.ContextProvider`**
+  - `memory.Store.Snapshot()` から保存済みメモリを全件取得する
+  - メモリ本文だけを `memory_context` system message として LLM の入力に追加する
 - **`GET /api/memories`**
   - 管理画面から保存済みメモリ一覧を確認するための HTTP API
   - 会話処理と同じ `memory.Store` インスタンスの `Snapshot()` から一覧を取得する
@@ -53,8 +55,7 @@
 | `MEMORY_STORE_PATH` | `data/memories.json` | メモリ JSON file store の保存先 |
 | `MEMORY_EMBEDDING_BASE_URL` | `http://embedding:80` | ローカル embedding server の base URL |
 | `MEMORY_EMBEDDING_MODEL` | `intfloat/multilingual-e5-small` | Docker Compose の embedding service で起動する model |
-| `MEMORY_SIMILARITY_THRESHOLD` | `0.95` | LLM 注入時の検索閾値と保存時の近似重複判定閾値 |
-| `MEMORY_MAX_CONTEXT_MEMORIES` | `3` | LLM context に注入する最大メモリ件数 |
+| `MEMORY_SIMILARITY_THRESHOLD` | `0.95` | 保存時の近似重複判定閾値 |
 | `MEMORY_MAX_TAGS` | `5` | メモリ候補 1 件あたりの最大 tag 数 |
 
 Docker Compose では `MEMORY_STORE_PATH=/app/data/memories.json`、`MEMORY_EMBEDDING_BASE_URL=http://embedding:80` を server に渡します。
@@ -97,32 +98,25 @@ sequenceDiagram
     SR->>Hist: Reset()
 ```
 
-### シナリオ: user 発話から関連メモリを検索して LLM に注入する
+### シナリオ: 保存済みメモリを全件取得して LLM に注入する
 
 1. user 発話が履歴へ保存される。
 2. `llm` が応答生成前に保存済み履歴 snapshot を読む。
-3. `ContextProvider` が直近の user / agent / system 発話から検索 query を作る。
-4. `EmbeddingClient` が query を `POST /embed` に送り、検索用 embedding を取得する。
-5. `memory.Store.Search` が similarity threshold と最大件数を適用し、類似度順に結果を返す。
-6. `llm` が検索結果の `content` だけを `memory_context` system message として通常の会話履歴より前に追加する。
+3. `ContextProvider` が `memory.Store.Snapshot()` から保存済みメモリを全件取得する。
+4. `llm` が全メモリの `content` を `memory_context` system message として通常の会話履歴より前に追加する。
 
 ```mermaid
 sequenceDiagram
     participant LLM as llm
     participant Hist as conversationhistory.Store
     participant Provider as ContextProvider
-    participant Client as EmbeddingClient
-    participant TEI as embedding service
     participant Store as memory.Store
     participant OpenAI as OpenAI Responses API
 
     LLM->>Hist: Snapshot()
     LLM->>Provider: BuildContext(ctx, records)
-    Provider->>Client: Embed(ctx, query)
-    Client->>TEI: POST /embed {"inputs": "..."}
-    TEI-->>Client: [[0.0123, -0.0456, ...]]
-    Provider->>Store: Search(embedding, threshold, limit)
-    Store-->>Provider: related memories
+    Provider->>Store: Snapshot()
+    Store-->>Provider: all memories
     Provider-->>LLM: memory_context system message
     LLM->>OpenAI: memory_context + conversation history
 ```
@@ -152,7 +146,6 @@ sequenceDiagram
 
 - メモリ候補作成で OpenAI Responses API が失敗した場合、`CreatorHook` は error を返しますが、`sessionreset` は error をログに残して reset 処理を継続します。
 - 候補単位の embedding 生成または保存に失敗した場合、`CreatorHook` は残り候補の処理を継続し、最後に error を集約して返します。
-- LLM 注入前の memory context 取得に失敗した場合、`llm` は error をログに残し、memory context なしで通常の応答生成を継続します。
 - store file が読めない、または不正な version の JSON がある場合は通常起動時の store 初期化に失敗します。
 - `GET /api/memories` が `memory.Store` を参照できない場合は 500 を返します。
 - メモリ画面で `GET /api/memories` の取得に失敗した場合は、画面内にエラーを表示します。
@@ -173,14 +166,15 @@ sequenceDiagram
         - `NewCreatorHook`: history、candidate creator、embedder、memory upserter を受け取り、必須依存の nil を拒否する
         - `Exec`: reset 前履歴の snapshot、候補生成、embedding 生成、Store upsert を順に実行する
         - 候補単位の embedding / upsert 失敗は `errors.Join` で集約しつつ、残り候補の処理を続ける
+      - `context_provider.go`: LLM 応答生成前のメモリ注入を担当する
+        - `BuildContext`: 保存済みメモリを全件取得し、本文だけを `memory_context` system message にする
       - `embedding_client.go`: TEI `/embed` への HTTP 通信と `number[][]` response の変換を担当する
         - `NewEmbeddingClient`: base URL の default 補完と形式検証を行う。生成時の疎通確認はしない
         - `Embed`: 空 text を拒否し、HTTP error や空 embedding を error として返す
   - `states/`
     - `memory/`
-      - `store.go`: メモリ record の永続化、重複判定、検索を担当する
+      - `store.go`: メモリ record の永続化と重複判定を担当する
         - `Upsert`: content、tags、embedding 類似度で重複を判定し、重複していなければ保存する。重複時は既存 record を更新しない
-        - `Search`: query embedding と保存済み embedding の cosine similarity で結果を返す
 
 ### API設計
 
@@ -189,8 +183,8 @@ sequenceDiagram
   - user input: reset 前の `ConversationRecord` 配列を JSON 文字列化したもの
   - structured output schema: `{ "candidates": [{ "content": string, "tags": string[] }] }`
   - 空候補は `{ "candidates": [] }` として扱う
-- `POST http://embedding:80/embed`: 単一テキストから embedding vector を取得する
-  - リクエスト: `{"inputs":"検索または保存対象のテキスト"}`
+- `POST http://embedding:80/embed`: メモリ候補から embedding vector を取得する
+  - リクエスト: `{"inputs":"保存対象のテキスト"}`
   - レスポンス: `[[0.0123, -0.0456, 0.0789]]`
 - `GET /api/memories`: 管理画面向けに保存済みメモリ一覧を取得する
   - リクエスト: なし

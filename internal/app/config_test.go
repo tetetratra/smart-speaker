@@ -139,7 +139,6 @@ func TestLoadConfigReadsMemoryConfig(t *testing.T) {
 	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "http://embedding.local:8080")
 	t.Setenv("MEMORY_EMBEDDING_MODEL", "model-name")
 	t.Setenv("MEMORY_SIMILARITY_THRESHOLD", "0.82")
-	t.Setenv("MEMORY_MAX_CONTEXT_MEMORIES", "4")
 	t.Setenv("MEMORY_MAX_TAGS", "6")
 
 	cfg := LoadConfig("")
@@ -155,11 +154,8 @@ func TestLoadConfigReadsMemoryConfig(t *testing.T) {
 	if cfg.Memory.EmbeddingModel != "model-name" {
 		t.Fatalf("Memory.EmbeddingModel = %q", cfg.Memory.EmbeddingModel)
 	}
-	if cfg.Memory.SimilarityThreshold != 0.82 {
-		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.82", cfg.Memory.SimilarityThreshold)
-	}
-	if cfg.Memory.MaxContextMemories != 4 {
-		t.Fatalf("Memory.MaxContextMemories = %d, want 4", cfg.Memory.MaxContextMemories)
+	if cfg.Memory.DuplicateMinSimilarity != 0.82 {
+		t.Fatalf("Memory.DuplicateMinSimilarity = %f, want 0.82", cfg.Memory.DuplicateMinSimilarity)
 	}
 	if cfg.Memory.MaxTags != 6 {
 		t.Fatalf("Memory.MaxTags = %d, want 6", cfg.Memory.MaxTags)
@@ -174,7 +170,6 @@ func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
 	t.Setenv("MEMORY_EMBEDDING_BASE_URL", "")
 	t.Setenv("MEMORY_EMBEDDING_MODEL", "")
 	t.Setenv("MEMORY_SIMILARITY_THRESHOLD", "invalid")
-	t.Setenv("MEMORY_MAX_CONTEXT_MEMORIES", "invalid")
 	t.Setenv("MEMORY_MAX_TAGS", "invalid")
 
 	cfg := LoadConfig("")
@@ -190,11 +185,8 @@ func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
 	if cfg.Memory.EmbeddingModel != "intfloat/multilingual-e5-small" {
 		t.Fatalf("Memory.EmbeddingModel = %q", cfg.Memory.EmbeddingModel)
 	}
-	if cfg.Memory.SimilarityThreshold != 0.95 {
-		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.95", cfg.Memory.SimilarityThreshold)
-	}
-	if cfg.Memory.MaxContextMemories != 3 {
-		t.Fatalf("Memory.MaxContextMemories = %d, want 3", cfg.Memory.MaxContextMemories)
+	if cfg.Memory.DuplicateMinSimilarity != 0.95 {
+		t.Fatalf("Memory.DuplicateMinSimilarity = %f, want 0.95", cfg.Memory.DuplicateMinSimilarity)
 	}
 	if cfg.Memory.MaxTags != 5 {
 		t.Fatalf("Memory.MaxTags = %d, want 5", cfg.Memory.MaxTags)

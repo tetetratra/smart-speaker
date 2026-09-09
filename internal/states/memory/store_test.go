@@ -236,45 +236,6 @@ func TestStoreSnapshotReturnsDeepCopy(t *testing.T) {
 	}
 }
 
-func TestStoreSearchFiltersSortsAndLimitsResults(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	inputs := []UpsertInput{
-		{Content: "近い記憶", Tags: []string{"a"}, Embedding: []float64{1, 0}},
-		{Content: "少し近い記憶", Tags: []string{"b"}, Embedding: []float64{0.8, 0.2}},
-		{Content: "遠い記憶", Tags: []string{"c"}, Embedding: []float64{0, 1}},
-		{Content: "embeddingなし", Tags: []string{"d"}},
-		{Content: "次元違い", Tags: []string{"e"}, Embedding: []float64{1, 0, 0}},
-	}
-	for _, input := range inputs {
-		if _, _, err := store.Upsert(input); err != nil {
-			t.Fatalf("Upsert(%q) error = %v", input.Content, err)
-		}
-	}
-
-	results := store.Search([]float64{1, 0}, SearchOptions{MinSimilarity: 0.7, Limit: 2})
-	if len(results) != 2 {
-		t.Fatalf("Search len = %d, want 2", len(results))
-	}
-	if results[0].Record.Content != "近い記憶" {
-		t.Fatalf("results[0].Content = %q, want 近い記憶", results[0].Record.Content)
-	}
-	if results[1].Record.Content != "少し近い記憶" {
-		t.Fatalf("results[1].Content = %q, want 少し近い記憶", results[1].Record.Content)
-	}
-	if results[0].Similarity < results[1].Similarity {
-		t.Fatalf("results not sorted desc: %f < %f", results[0].Similarity, results[1].Similarity)
-	}
-
-	results[0].Record.Embedding[0] = 99
-	again := store.Search([]float64{1, 0}, SearchOptions{MinSimilarity: 0.7, Limit: 1})
-	if again[0].Record.Embedding[0] == 99 {
-		t.Fatal("Search returned internal record")
-	}
-}
-
 func TestStoreResetPersistsEmptyRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.json")
 	store, err := NewStore(path)
