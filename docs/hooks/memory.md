@@ -29,6 +29,7 @@
 - **`internal/states/memory.Store`**
   - メモリ本文、タグ、embedding、作成・更新時刻を JSON file に永続化する
   - content 完全一致、タグ集合一致、embedding の cosine similarity で重複を判定する
+  - 重複した候補は既存 record を更新せず、保存をスキップする
   - query embedding と保存済み embedding の cosine similarity で検索する
 - **`GET /api/memories`**
   - 管理画面から保存済みメモリ一覧を確認するための HTTP API
@@ -69,7 +70,7 @@ embedding は OpenAI API ではなく、Compose 内の `embedding` service が�
 3. 候補生成: `OpenAIClient` が会話履歴を JSON 文字列として Responses API に送り、`content` と `tags[]` を持つ候補配列を受け取る。
 4. 候補正規化: 空の `content` は除外し、`tags` は trim、空文字除外、大文字小文字を無視した重複除外、最大件数で切り詰める。
 5. embedding 生成: `EmbeddingClient` が候補ごとの `content` と `tags` を連結した検索用文字列を `POST http://embedding:80/embed` に送る。
-6. 保存: `memory.Store.Upsert` が `content`、`tags`、embedding を保存し、既存 record との重複を判定する。
+6. 保存: `memory.Store.Upsert` が既存 record との重複を判定し、重複していなければ `content`、`tags`、embedding を保存する。重複している場合は既存 record を更新せずにスキップする。
 7. reset 継続: hook が error を返しても、`sessionreset` の既存仕様により履歴 reset、世代更新、agent status idle 化は継続される。
 
 ```mermaid
@@ -178,7 +179,7 @@ sequenceDiagram
   - `states/`
     - `memory/`
       - `store.go`: メモリ record の永続化、重複判定、検索を担当する
-        - `Upsert`: content、tags、embedding 類似度で重複を判定して保存する
+        - `Upsert`: content、tags、embedding 類似度で重複を判定し、重複していなければ保存する。重複時は既存 record を更新しない
         - `Search`: query embedding と保存済み embedding の cosine similarity で結果を返す
 
 ### API設計

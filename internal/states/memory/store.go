@@ -63,17 +63,8 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 		Embedding:     embedding,
 		MinSimilarity: input.DuplicateMinSimilarity,
 	}); ok {
-		updated := s.records[idx]
-		updated.Content = content
-		updated.Tags = tags
-		updated.Embedding = embedding
-		updated.UpdatedAt = now
-		s.records[idx] = updated
-		if err := s.saveLocked(); err != nil {
-			return Record{}, UpsertResult{}, err
-		}
 		result.Created = false
-		return cloneRecord(updated), result, nil
+		return cloneRecord(s.records[idx]), result, nil
 	}
 
 	record := Record{
