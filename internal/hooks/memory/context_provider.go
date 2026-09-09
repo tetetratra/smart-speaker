@@ -13,7 +13,7 @@ import (
 const (
 	DefaultContextQueryRecordLimit = 8
 	DefaultContextSearchLimit      = 3
-	DefaultContextMinSimilarity    = 0.7
+	DefaultContextMinSimilarity    = 0.95
 )
 
 type ContextProviderConfig struct {

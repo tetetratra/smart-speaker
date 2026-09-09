@@ -52,7 +52,7 @@
 | `MEMORY_STORE_PATH` | `data/memories.json` | メモリ JSON file store の保存先 |
 | `MEMORY_EMBEDDING_BASE_URL` | `http://embedding:80` | ローカル embedding server の base URL |
 | `MEMORY_EMBEDDING_MODEL` | `intfloat/multilingual-e5-small` | Docker Compose の embedding service で起動する model |
-| `MEMORY_SIMILARITY_THRESHOLD` | `0.7` | LLM 注入時の検索閾値と保存時の近似重複判定閾値 |
+| `MEMORY_SIMILARITY_THRESHOLD` | `0.95` | LLM 注入時の検索閾値と保存時の近似重複判定閾値 |
 | `MEMORY_MAX_CONTEXT_MEMORIES` | `3` | LLM context に注入する最大メモリ件数 |
 | `MEMORY_MAX_TAGS` | `5` | メモリ候補 1 件あたりの最大 tag 数 |
 

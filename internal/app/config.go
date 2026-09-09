@@ -186,7 +186,7 @@ func loadMemoryConfig(responsesModel string) MemoryConfig {
 		StorePath:           storePath,
 		EmbeddingBaseURL:    embeddingBaseURL,
 		EmbeddingModel:      embeddingModel,
-		SimilarityThreshold: floatFromEnv("MEMORY_SIMILARITY_THRESHOLD", 0.7),
+		SimilarityThreshold: floatFromEnv("MEMORY_SIMILARITY_THRESHOLD", 0.95),
 		MaxContextMemories:  intFromEnv("MEMORY_MAX_CONTEXT_MEMORIES", 3),
 		MaxTags:             intFromEnv("MEMORY_MAX_TAGS", 5),
 	}

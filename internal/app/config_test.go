@@ -190,8 +190,8 @@ func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
 	if cfg.Memory.EmbeddingModel != "intfloat/multilingual-e5-small" {
 		t.Fatalf("Memory.EmbeddingModel = %q", cfg.Memory.EmbeddingModel)
 	}
-	if cfg.Memory.SimilarityThreshold != 0.7 {
-		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.7", cfg.Memory.SimilarityThreshold)
+	if cfg.Memory.SimilarityThreshold != 0.95 {
+		t.Fatalf("Memory.SimilarityThreshold = %f, want 0.95", cfg.Memory.SimilarityThreshold)
 	}
 	if cfg.Memory.MaxContextMemories != 3 {
 		t.Fatalf("Memory.MaxContextMemories = %d, want 3", cfg.Memory.MaxContextMemories)

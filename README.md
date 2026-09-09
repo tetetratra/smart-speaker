@@ -56,7 +56,7 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 - `MEMORY_STORE_PATH`: メモリ JSON file store の保存先。Compose 既定値は `/app/data/memories.json` です。
 - `MEMORY_EMBEDDING_BASE_URL`: ローカル embedding server の base URL。Compose 既定値は `http://embedding:80` です。
 - `MEMORY_EMBEDDING_MODEL`: embedding service の model-id。既定値は `intfloat/multilingual-e5-small` です。
-- `MEMORY_SIMILARITY_THRESHOLD`: 検索と近似重複判定に使う類似度閾値。既定値は `0.7` です。
+- `MEMORY_SIMILARITY_THRESHOLD`: 検索と近似重複判定に使う類似度閾値。既定値は `0.95` です。
 - `MEMORY_MAX_CONTEXT_MEMORIES`: LLM に注入する最大メモリ件数。既定値は `3` です。
 - `MEMORY_MAX_TAGS`: メモリ候補 1 件あたりの最大 tag 数。既定値は `5` です。
 
