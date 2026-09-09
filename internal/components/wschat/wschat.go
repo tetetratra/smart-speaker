@@ -14,12 +14,10 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	timerstate "github.com/tetetratra/smart-speaker/internal/states/timer"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
-	TimerStore *timerstate.Store
 }
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
@@ -31,7 +29,6 @@ func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
 		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		holder:     holder,
-		timerStore: cfg.TimerStore,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
 	return &graph.Stage{
@@ -104,7 +101,6 @@ type chatWS struct {
 	upstream   chan types.Event
 	downstream chan types.Event
 	holder     *connHolder
-	timerStore *timerstate.Store
 	once       sync.Once
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -232,48 +228,10 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"generation_id": uint64(end.GenerationID),
 			"completed_at":  end.CompletedAt.Format(time.RFC3339Nano),
 		}
-	case types.EventTimerState:
-		state, ok := evt.Payload.(types.TimerState)
-		if !ok {
-			return nil, "", false
-		}
-		msg = timerStateMessage(state)
 	default:
 		return nil, "", false
 	}
 	return msg, targetID, true
-}
-
-func timerStateMessage(state types.TimerState) map[string]any {
-	timers := make([]map[string]any, 0, len(state.Timers))
-	for _, timer := range state.Timers {
-		timers = append(timers, map[string]any{
-			"id":         timer.ID,
-			"at":         timer.At.Format(time.RFC3339),
-			"action":     timer.Action,
-			"created_at": timer.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	return map[string]any{
-		"type":   "timer.state",
-		"timers": timers,
-	}
-}
-
-func (c *chatWS) pushTimerState(ctx context.Context, connID string) {
-	if c.timerStore == nil {
-		return
-	}
-	state := types.TimerState{}
-	for _, timer := range c.timerStore.Snapshot() {
-		state.Timers = append(state.Timers, types.TimerStateItem{
-			ID:        timer.ID,
-			At:        timer.At,
-			Action:    timer.Action,
-			CreatedAt: timer.CreatedAt,
-		})
-	}
-	c.writeMessage(ctx, timerStateMessage(state), connID)
 }
 
 func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) {
@@ -306,7 +264,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 	if c.holder != nil {
 		c.holder.add(connID, conn)
 	}
-	c.pushTimerState(r.Context(), connID)
 	defer func() {
 		if c.holder != nil {
 			c.holder.remove(connID)

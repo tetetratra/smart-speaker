@@ -25,7 +25,6 @@ type stage struct {
 	client       responseClient
 	history      historyReader
 	agentStatus  agentStatusReader
-	timers       timerSnapshotReader
 	memory       memoryContextProvider
 	systemPrompt string
 	once         sync.Once
@@ -47,7 +46,6 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		client:       client,
 		history:      cfg.History,
 		agentStatus:  cfg.AgentStatus,
-		timers:       cfg.Timers,
 		memory:       cfg.MemoryContextProvider,
 		systemPrompt: buildSystemPrompt(cfg.Instructions, cfg.ToolSchemas),
 	}
@@ -119,7 +117,6 @@ func (s *stage) requestTimeline(ctx context.Context, req types.LLMRequest) ([]ty
 	if noResponseReason == noResponseReasonIdleCandidate {
 		basePrompt = appendIdleFollowupInstruction(basePrompt)
 	}
-	basePrompt = s.appendTimerSnapshot(basePrompt)
 	messages := s.messages(ctx, req)
 	systemPrompt := basePrompt
 	for attempt := 1; attempt <= maxContractRetries; attempt++ {
@@ -213,13 +210,6 @@ func (s *stage) isIdle() bool {
 		return false
 	}
 	return s.agentStatus.Status() == agentstatus.StatusIdle
-}
-
-func (s *stage) appendTimerSnapshot(prompt string) string {
-	if s.timers == nil {
-		return prompt
-	}
-	return appendTimerSnapshot(prompt, s.timers.Snapshot())
 }
 
 func isMonologueCandidate(text string) bool {

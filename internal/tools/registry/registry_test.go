@@ -27,20 +27,8 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
 		t.Fatal("set_whiteboard should be registered")
 	}
-	if _, ok := reg.DefinitionByName("register_timer"); !ok {
-		t.Fatal("register_timer should be registered")
-	}
-	if _, ok := reg.DefinitionByName("cancel_timer"); !ok {
-		t.Fatal("cancel_timer should be registered")
-	}
 	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
 		t.Fatal("set_whiteboard handler should be registered")
-	}
-	if _, ok := reg.Handlers()["register_timer"]; !ok {
-		t.Fatal("register_timer handler should be registered")
-	}
-	if _, ok := reg.Handlers()["cancel_timer"]; !ok {
-		t.Fatal("cancel_timer handler should be registered")
 	}
 	if _, ok := reg.DefinitionByName("write_diary"); ok {
 		t.Fatal("write_diary should not be registered")
@@ -58,8 +46,6 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 		assertToolMode(t, reg, name, "read")
 	}
 	assertToolMode(t, reg, "set_whiteboard", "write")
-	assertToolMode(t, reg, "register_timer", "write")
-	assertToolMode(t, reg, "cancel_timer", "write")
 	assertToolMode(t, reg, "google_calendar_list", "read")
 	assertToolMode(t, reg, "google_calendar_create", "write")
 	assertToolMode(t, reg, "google_calendar_update", "write")
@@ -95,12 +81,6 @@ func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
 	}
 	if _, ok := reg.DefinitionByName("set_whiteboard"); !ok {
 		t.Fatal("set_whiteboard should be registered")
-	}
-	if _, ok := reg.DefinitionByName("register_timer"); !ok {
-		t.Fatal("register_timer should be registered")
-	}
-	if _, ok := reg.DefinitionByName("cancel_timer"); !ok {
-		t.Fatal("cancel_timer should be registered")
 	}
 	for _, name := range []string{"google_calendar_list", "google_calendar_create", "google_calendar_update"} {
 		if _, ok := reg.DefinitionByName(name); !ok {
