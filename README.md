@@ -68,19 +68,17 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
 ```
 
-本番デプロイを実行する環境では、`RTC_ICE_PRODUCTION_ADVERTISE_IPS` に本番サーバーのLAN IPとTailscale IPをカンマ区切りで設定してください。
-
-```sh
-export RTC_ICE_PRODUCTION_ADVERTISE_IPS="<本番サーバーのLAN IP>,<本番サーバーのTailscale IP>"
-```
-
-デプロイスクリプトは本番専用の値を `RTC_ICE_ADVERTISE_IPS` へ割り当てます。
+デプロイスクリプトは `production` Docker contextのSSH接続先で、本番サーバー自身のLAN IPとTailscale IPを取得します。
+取得した値は `RTC_ICE_ADVERTISE_IPS` に割り当てられるため、本番用IPをデプロイ元PCへ設定する必要はありません。
+本番サーバーでは、`ip` コマンドと `tailscale ip -4` を実行できる必要があります。
 本番サーバーのLAN IPは、家庭用ルーターのDHCP予約などで固定してください。
 
 Docker ComposeはWebRTC用UDPポート `50000-50100` をホストへ公開しますが、家庭用ルーターでインターネット向けのポート転送は行わないでください。
 外出先からは、tailnetへ参加した端末で本番サーバーのTailscaleアドレスへ接続します。
 
 https://tailscale.com/docs/how-to/connect-to-devices
+https://docs.docker.com/reference/cli/docker/context/inspect/
+https://tailscale.com/docs/reference/tailscale-cli
 
 ## デプロイ
 

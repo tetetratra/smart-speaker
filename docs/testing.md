@@ -25,7 +25,7 @@
   - `ELEVENLABS_MODEL_ID`
   - `VOICEVOX_SPEAKER_ID`
   - `VOICEVOX_SPEED_SCALE`
-  - `RTC_ICE_ADVERTISE_IPS`（RFC 1918またはTailscaleのIPv4をカンマ区切りで指定）
+  - `RTC_ICE_ADVERTISE_IPS`（ローカル起動時に、RFC 1918またはTailscaleのIPv4をカンマ区切りで指定）
   - `WEB_DIST_DIR`
   - `WS_ADDR`
   - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 300 秒、`0` で idle reset 無効）
@@ -115,7 +115,7 @@ docker compose -f docker-compose.yml up --build
 
 ### 手順2.1: 自宅LAN経路のWebRTC確認
 
-1. 本番サーバーのLAN IPとTailscale IPが `RTC_ICE_PRODUCTION_ADVERTISE_IPS` に設定されていることを確認する。
+1. デプロイ時に、本番サーバー上で `ip` コマンドと `tailscale ip -4` を実行できることを確認する。
 2. iPhoneを自宅Wi-Fiへ接続し、Tailscaleを無効にする。
 3. SafariまたはPWAからアプリへ接続する。
 4. 短い発話を行い、サーバーへの音声入力とiPhoneでの応答音声再生を確認する。

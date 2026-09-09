@@ -7,13 +7,41 @@ set -euo pipefail
 CONTEXT_NAME="production"
 COMPOSE_FILE="docker-compose.yml"
 
-if [[ -z "${RTC_ICE_PRODUCTION_ADVERTISE_IPS:-}" ]]; then
-  echo "RTC_ICE_PRODUCTION_ADVERTISE_IPS に本番サーバーのLAN IPとTailscale IPを設定してください。" >&2
+production_docker_host="$(
+  docker context inspect "$CONTEXT_NAME" --format '{{ (index .Endpoints "docker").Host }}'
+)"
+if [[ "$production_docker_host" != ssh://* ]]; then
+  echo "Docker context '$CONTEXT_NAME' の接続先はSSH形式である必要があります。" >&2
   exit 1
 fi
 
-# 開発PCの設定を本番へ誤って渡さないよう、本番専用設定から明示的に割り当てる。
-export RTC_ICE_ADVERTISE_IPS="$RTC_ICE_PRODUCTION_ADVERTISE_IPS"
+# デプロイ元PCではなく、本番サーバー自身のLAN IPとTailscale IPを取得する。
+RTC_ICE_ADVERTISE_IPS="$(
+  ssh "$production_docker_host" '
+    set -eu
+
+    default_interface="$(ip -4 route show default | sed -n "1s/.* dev \([^ ]*\).*/\1/p")"
+    if [ -z "$default_interface" ]; then
+      echo "本番サーバーのデフォルトネットワークインターフェースを取得できません。" >&2
+      exit 1
+    fi
+
+    lan_ip="$(ip -4 -o address show dev "$default_interface" scope global | sed -n "1s/.* inet \([^/]*\)\/.*/\1/p")"
+    if [ -z "$lan_ip" ]; then
+      echo "本番サーバーのLAN IPを取得できません。" >&2
+      exit 1
+    fi
+
+    tailscale_ip="$(tailscale ip -4)"
+    if [ -z "$tailscale_ip" ]; then
+      echo "本番サーバーのTailscale IPを取得できません。" >&2
+      exit 1
+    fi
+
+    printf "%s,%s\n" "$lan_ip" "$tailscale_ip"
+  '
+)"
+export RTC_ICE_ADVERTISE_IPS
 
 current_context="$(docker context show)"
 restore_context() {
