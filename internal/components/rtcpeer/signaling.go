@@ -38,7 +38,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	peerState := s.getOrCreatePeer(clientID)
 	s.resetPeer(peerState)
 
-	peer, err := newPeerConnection(s.cfg.IceHostIPs)
+	peer, err := newPeerConnection(s.cfg.IceAdvertiseIPs)
 	if err != nil {
 		log.Printf("rtc: peer create error: %v", err)
 		return
@@ -54,15 +54,25 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		log.Printf("rtc: track create error: %v", err)
 		return
 	}
-	if _, err := peer.AddTrack(track); err != nil {
+	sender, err := peer.AddTrack(track)
+	if err != nil {
 		log.Printf("rtc: add track error: %v", err)
 		return
 	}
+	registerSelectedCandidatePairLogger(clientID, sender)
 
 	peer.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
 		}
+		log.Printf(
+			"rtcpeer: local ICE candidate client_id=%s type=%s protocol=%s address=%s port=%d",
+			clientID,
+			c.Typ.String(),
+			c.Protocol.String(),
+			c.Address,
+			c.Port,
+		)
 		init := c.ToJSON()
 		s.emit(types.Event{Kind: types.EventRTCSignal, Payload: types.RTCSignal{
 			Type: "webrtc.ice",
@@ -75,13 +85,16 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		}})
 	})
 	peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Printf("rtcpeer: connection state=%s", state.String())
+		log.Printf("rtcpeer: connection state=%s client_id=%s", state.String(), clientID)
 		if state == webrtc.PeerConnectionStateClosed || state == webrtc.PeerConnectionStateFailed {
 			peerState.mu.Lock()
 			peerState.connected = false
 			peerState.mu.Unlock()
 			s.emitPeerOutputSink(clientID, nil, opusChannels, false)
 		}
+	})
+	peer.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		log.Printf("rtcpeer: ICE connection state=%s client_id=%s", state.String(), clientID)
 	})
 	peer.OnTrack(func(trackRemote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		log.Printf("rtcpeer: incoming track kind=%s codec=%s/%d channels=%d", trackRemote.Kind().String(), trackRemote.Codec().MimeType, trackRemote.Codec().ClockRate, trackRemote.Codec().Channels)
@@ -131,7 +144,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	}})
 }
 
-func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
+func newPeerConnection(iceAdvertiseIPs []string) (*webrtc.PeerConnection, error) {
 	var m webrtc.MediaEngine
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		return nil, err
@@ -147,9 +160,16 @@ func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
 		return nil, err
 	}
 	log.Printf("rtcpeer: use ICE UDP port range %d-%d", icePortMin, icePortMax)
-	if len(iceHostIPs) > 0 {
-		log.Printf("rtcpeer: use ICE host IPs: %s", strings.Join(iceHostIPs, ","))
-		s.SetNAT1To1IPs(iceHostIPs, webrtc.ICECandidateTypeHost)
+	if len(iceAdvertiseIPs) > 0 {
+		log.Printf("rtcpeer: use ICE advertise IPs: %s", strings.Join(iceAdvertiseIPs, ","))
+		if err := s.SetICEAddressRewriteRules(webrtc.ICEAddressRewriteRule{
+			External:        iceAdvertiseIPs,
+			AsCandidateType: webrtc.ICECandidateTypeSrflx,
+			Mode:            webrtc.ICEAddressRewriteAppend,
+			Networks:        []webrtc.NetworkType{webrtc.NetworkTypeUDP4},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(&m),
@@ -157,6 +177,35 @@ func newPeerConnection(iceHostIPs []string) (*webrtc.PeerConnection, error) {
 		webrtc.WithSettingEngine(s),
 	)
 	return api.NewPeerConnection(webrtc.Configuration{})
+}
+
+func registerSelectedCandidatePairLogger(clientID string, sender *webrtc.RTPSender) {
+	if sender == nil {
+		return
+	}
+	transport := sender.Transport()
+	if transport == nil {
+		return
+	}
+	iceTransport := transport.ICETransport()
+	if iceTransport == nil {
+		return
+	}
+	iceTransport.OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
+		if pair == nil || pair.Local == nil || pair.Remote == nil {
+			return
+		}
+		log.Printf(
+			"rtcpeer: selected ICE pair client_id=%s local=%s:%d/%s/%s remote=%s/%s",
+			clientID,
+			pair.Local.Address,
+			pair.Local.Port,
+			pair.Local.Typ.String(),
+			pair.Local.Protocol.String(),
+			pair.Remote.Typ.String(),
+			pair.Remote.Protocol.String(),
+		)
+	})
 }
 
 func (s *stage) handleAnswer(sig types.RTCSignal) {

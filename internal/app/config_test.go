@@ -120,6 +120,17 @@ func TestLoadConfigReadsSTTProviderConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReadsRTCIceAdvertiseIPs(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("RTC_ICE_ADVERTISE_IPS", " 192.168.0.100,100.64.0.1, ,192.168.0.101 ")
+
+	cfg := LoadConfig("")
+	want := []string{"192.168.0.100", "100.64.0.1", "192.168.0.101"}
+	if !reflect.DeepEqual(cfg.RTCIceAdvertiseIPs, want) {
+		t.Fatalf("RTCIceAdvertiseIPs = %#v, want %#v", cfg.RTCIceAdvertiseIPs, want)
+	}
+}
+
 func TestLoadConfigReadsMemoryConfig(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai")
 	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")

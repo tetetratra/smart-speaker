@@ -291,7 +291,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, timerStore *timerstate.
 		stages.tool.Name = "toolcaller"
 	}
 	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{
-		IceHostIPs: cfg.RTCIceHostIPs,
+		IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs,
 	})
 	if err != nil {
 		if stages.tts != nil {

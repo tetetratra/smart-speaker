@@ -30,7 +30,7 @@ type Config struct {
 	GoogleLanguage          string
 	GoogleCredentials       string
 	STTPhrases              []string
-	RTCIceHostIPs           []string
+	RTCIceAdvertiseIPs      []string
 	WSAddr                  string
 	WebDistDir              string
 }
@@ -119,7 +119,7 @@ func LoadConfig(promptPath string) Config {
 		SpeedScale: optionalPositiveFloatFromEnv("VOICEVOX_SPEED_SCALE"),
 	}
 
-	rtcIceHostIPs := splitComma(os.Getenv("RTC_ICE_HOST_IPS"))
+	rtcIceAdvertiseIPs := splitComma(os.Getenv("RTC_ICE_ADVERTISE_IPS"))
 	googleProject := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
 	googleRecognizer := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_RECOGNIZER"))
 	if googleRecognizer == "" {
@@ -158,7 +158,7 @@ func LoadConfig(promptPath string) Config {
 		GoogleLanguage:          googleLanguage,
 		GoogleCredentials:       googleCredentials,
 		STTPhrases:              sttPhrases,
-		RTCIceHostIPs:           rtcIceHostIPs,
+		RTCIceAdvertiseIPs:      rtcIceAdvertiseIPs,
 		WSAddr:                  wsAddr,
 		WebDistDir:              webDistDir,
 	}
