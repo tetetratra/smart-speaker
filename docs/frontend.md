@@ -125,7 +125,7 @@ sequenceDiagram
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。
 - `session_reset`
   - 通常画面の直近 user / agent 発話の吹き出しを非表示にする。
-  - メッセージ一覧自体は消さない。
+  - 吹き出し算出元のメッセージ一覧を空にし、前セッションの user / agent 発話が次セッションで再表示されないようにする。
   - 次に `role: "user"` かつ `source` が `"stt"` または `"server-stt"` の `message` を受け取ると、吹き出しを表示に戻す。
 - tool call / tool result
   - 通常の会話UIには表示しない。
@@ -216,7 +216,7 @@ sequenceDiagram
 - 接続制御は WebSocket と WebRTC の二段構えで、WebSocket 接続成功後に WebRTC を開始する。
 - VAD start は WebSocket の `speech_start` として届き、フロントはそのタイミングで再生中の remote 音声を中断する。
 - whiteboard 更新は通常メッセージとは別イベントで流れ、UI上では追記entryとして扱われる。
-- session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しだけを非表示にする。会話ログは維持される。
+- session reset は通常メッセージとは別イベントで流れ、通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。
 - tool call / tool result は通常画面ではトースト表示、ログ管理画面ではメッセージログとして観測できる。
 - メモリ画面は表示時点の `/api/memories` レスポンスを表示し、リアルタイム同期は行わない。
 - 再生音量はブラウザ側の `GainNode` で制御している。
