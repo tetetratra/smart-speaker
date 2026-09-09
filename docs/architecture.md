@@ -154,7 +154,7 @@ session reset hook は reset 前履歴からメモリ候補を作成・保存し
 リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進め、agent status を `idle` に更新する。
 hook が error を返してもログに残して後続 hook とリセット処理を継続する。
 その後、`sessionreset` は `EventSessionReset` を `wschat` へ流し、`wschat` が WebSocket の `session_reset` message としてブラウザUIへ配信する。
-UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、次の `stt` または `server-stt` 由来 user message で再表示する。
+UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。次の `stt` または `server-stt` 由来 user message で吹き出しを再表示する。
 
 ## 参照元
 
