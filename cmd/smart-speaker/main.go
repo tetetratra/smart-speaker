@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -57,13 +59,18 @@ func main() {
 
 	ensureGoogleCalendarToken()
 
-	server, chatStage, err := buildHTTPServer(cfg)
+	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
+	if err != nil {
+		log.Fatalf("failed to init memory store: %v", err)
+	}
+
+	server, chatStage, err := buildHTTPServer(cfg, memoryStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage)
+	stages, err := buildStages(cfg, chatStage, memoryStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,7 +163,7 @@ func (s appStages) all() []*graph.Stage {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store) (appStages, error) {
 	var stages appStages
 	if chatStage != nil {
 		chatStage.Name = "wschat"
@@ -166,9 +173,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage) (appStages, error) {
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
 	agentStatusStore := agentstatus.NewStore()
-	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
-	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init memory store: %w", err)
+	if memoryStore == nil {
+		return appStages{}, fmt.Errorf("memory store is required")
 	}
 	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
 		BaseURL: cfg.Memory.EmbeddingBaseURL,
@@ -392,8 +398,9 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
+	registerMemoryAPI(mux, memoryStore)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
@@ -402,6 +409,55 @@ func buildHTTPServer(cfg app.Config) (*http.Server, *graph.Stage, error) {
 	}
 	chat := wschat.NewStage(mux, wschat.Config{})
 	return server, chat, nil
+}
+
+type memoryListResponse struct {
+	Memories []memoryListItem `json:"memories"`
+}
+
+type memoryListItem struct {
+	ID        string    `json:"id"`
+	Content   string    `json:"content"`
+	Tags      []string  `json:"tags"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store) {
+	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if memoryStore == nil {
+			http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+			return
+		}
+
+		records := memoryStore.Snapshot()
+		sort.SliceStable(records, func(i, j int) bool {
+			return records[i].CreatedAt.After(records[j].CreatedAt)
+		})
+		items := make([]memoryListItem, 0, len(records))
+		for _, record := range records {
+			tags := record.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			items = append(items, memoryListItem{
+				ID:        record.ID,
+				Content:   record.Content,
+				Tags:      tags,
+				CreatedAt: record.CreatedAt,
+				UpdatedAt: record.UpdatedAt,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(memoryListResponse{Memories: items}); err != nil {
+			log.Printf("memory api: encode memories: %v", err)
+		}
+	})
 }
 
 func runHTTPServer(server *http.Server) {
