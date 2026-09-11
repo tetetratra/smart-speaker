@@ -41,7 +41,10 @@
   - `Snapshot()` は record を clone して返すため、LLM 側は履歴を直接変更しない。
 - **`generation.Store` / `generationfilter`**
   - LLM が付与した `GenerationID` は下流の `generationfilter` で最新世代か判定される。
-  - 古い世代の `TimelineItem` は LLM の外側で落とされる。
+  - VAD や interim transcript によって pending interruption がある場合、LLM は timeline の空/非空を `generation.Store` へ反映する。
+  - 空 timeline は誤検知・ひとりごと扱いとして `ResumeIfPending` を呼び、paused 世代を再開する。
+  - 非空 timeline は追加発話扱いとして `ConfirmIfPending` を呼び、candidate 世代を正式な current として確定する。
+  - pending ではない古い世代の `TimelineItem` は LLM の外側で落とされる。
 - **`agentstatus.Store` / `sessionactivate`**
   - `agentstatus.Store` は `idle` / `active` を保持し、LLM は request ごとに read して追記指示の適用可否を判定する。
   - `sessionactivate` は `llm` と `generationfilter-llm` の間で `speech` item 通過時に `agentstatus` を `active` に更新する。
@@ -94,8 +97,9 @@ sequenceDiagram
 2. `conversationcommitter` が user record を保存し、`EventLLMRequest` を発行する。
 3. `llm.stage` は request ごとに `agentstatus` を参照し、`idle` かつ現在発話が明示依頼・疑問文でない場合にのみ無応答候補向け追記を system prompt に追加する。
 4. LLM が `{"items":[]}` を返した場合、`parseTimelineJSON` は空 slice を正常結果として返す。
-5. `llm.stage` は `llm: no response generation=... request_id=... reason=... text=...` をログ出力する。
-6. `llm.stage` は発行対象の `EventTimelineItem` がないため、下流へ何も流さず処理を終える。
+5. `llm.stage` は `generation.Store.ResumeIfPending(request.GenerationID)` を呼び、pending 中の candidate generation であれば paused generation を再開する。
+6. `llm.stage` は `llm: no response generation=... request_id=... reason=... text=...` をログ出力する。
+7. `llm.stage` は発行対象の `EventTimelineItem` がないため、下流へ何も流さず処理を終える。
 
 ```mermaid
 sequenceDiagram
@@ -113,6 +117,7 @@ sequenceDiagram
   LLM->>OpenAI: idle候補向け指示つきで呼び出し
   OpenAI-->>LLM: {"items":[]}
   LLM->>LLM: 空timelineを有効な応答として扱う
+  LLM->>LLM: pending中ならResumeIfPending
   LLM->>LLM: no response reason をログ出力
   Note over LLM,Down: EventTimelineItemは発行しない
 ```
@@ -165,6 +170,7 @@ sequenceDiagram
         - `run`: parent context から cancel 可能な context を作り、consume goroutine を開始する。
         - `consume`: upstream から `EventLLMRequest` を読み、request ごとに `handleRequest` を goroutine で実行する。
         - `handleRequest`: `requestTimeline` の結果を `EventTimelineItem` として順番に下流へ送る。
+        - `resolveGeneration`: `requestTimeline` の item 数を見て、空なら `ResumeIfPending`、非空なら `ConfirmIfPending` を呼ぶ。
         - `requestTimeline`: Responses API 呼び出し、`parseTimelineJSON`、最大10回 retry を行う。
         - `isIdle`: `agentstatus` を参照し、request 時点の状態が `idle` か判定する。
         - `isMonologueCandidate`: 明示依頼・疑問文を除外した独り言候補判定を行う。

@@ -4,7 +4,7 @@
 
 - **解決する課題**: 会話応答の生成後に、音声再生、会話履歴への保存、tool 実行を正しい順序で連携できることを確認する。
 - **対象範囲**: `internal/components/pipeline/` は、現時点では主に pipeline 統合テスト用 package であり、production 用の pipeline 実行本体は含まれていない。
-- **提供価値**: `scheduler`、`generationfilter`、`router` を実際の channel 接続に近い形で組み合わせ、発話が tool 実行より先に処理されることや、interim transcript で古いAI出力を止められることを検証する。
+- **提供価値**: `scheduler`、`generationfilter`、`router` を実際の channel 接続に近い形で組み合わせ、発話が tool 実行より先に処理されることや、interim transcript で古いAI出力を保留し、LLM 判定後に再開または破棄できることを検証する。
 - **根拠**: 本ドキュメントは `internal/components/pipeline/conversation_pipeline_test.go`、`internal/components/interimstopper/stage.go`、`internal/components/utterancebuffer/stage.go`、`internal/components/scheduler/stage.go`、`internal/components/generationfilter/stage.go`、`internal/components/router/stage.go`、`internal/types/`、`internal/states/generation/store.go` の実コードに基づく。外部 URL は参照していない。
 
 ## 2. 論理構造・機能俯瞰
@@ -14,13 +14,14 @@
 - **pipeline package**
   - `internal/components/pipeline/conversation_pipeline_test.go` のみで構成される。
   - `TestSchedulerRouterKeepsSpeechBeforeTool` により、複数 component を接続したときの event 順序を検証する。
-  - `TestInterimStopsOldGenerationAndFinalCommitsUserUtterance` により、interim transcript で古いgenerationのscheduled itemが落ち、final transcript が現在generationのuser commitになることを検証する。
+  - `TestInterimStopsOldGenerationAndFinalCommitsUserUtterance` により、interim transcript で古いgenerationのscheduled itemが保留され、追加発話として確定した場合に破棄され、final transcript が現在generationのuser commitになることを検証する。
+  - 誤検知時に保留 event が再開される挙動は、`internal/components/generationfilter/stage_test.go` と `internal/components/llm/stage_timeline_end_test.go` 側で検証する。
   - package 内に production 用の `NewStage`、runtime、設定構造体は定義されていない。
 
 - **interimstopper**
-  - `EventHumanInterimUtterance` を受け取ったら、同一発話中の初回だけ `generation.Store.Next()` を呼ぶ。
+  - `EventHumanInterimUtterance` を受け取ったら、同一発話中の初回だけ `generation.Store.BeginInterruption()` を呼ぶ。
   - interim event は下流へ流さず、final の `EventHumanUtterance` だけを通す。
-  - final を通すと停止済みフラグを解除し、次の発話のinterimで再度停止できるようにする。
+  - final を通すと保留開始済みフラグを解除し、次の発話のinterimで再度保留開始できるようにする。
 
 - **utterancebuffer**
   - `EventHumanUtterance` を短時間bufferし、flush時に user の `EventConversationCommitRequest` を発行する。
@@ -34,7 +35,7 @@
   - `TimelineKindWait` は待機のみを行い、event は出力しない。
 
 - **generationfilter**
-  - `generation.Store` がある場合、event payload の `GenerationID` が現在世代と一致するものだけを通す。
+  - `generation.Store` がある場合、event payload の `GenerationID` を `Disposition` で通過、保留、破棄に分類する。
   - 対象 payload は `TimelineItem`、`PlayableSpeech`、`ToolRequest`、`OutputAudio`、`ConversationCommitRequest`。
   - `generation.Store` が `nil` の場合は全 event を許可する。
   - `GenerationID` を取り出せない event は通さない。
@@ -47,7 +48,8 @@
 
 - **generation.Store**
   - 現在の会話世代 ID の正本。
-  - `Next()` で世代を進め、`IsCurrent(id)` で最新世代かどうかを判定する。
+  - `Next()` で世代を進め、`BeginInterruption()` で paused / candidate の pending interruption を開始する。
+  - `Disposition(id)` で latest / pending 状態に応じた通過、保留、破棄を判定する。
   - pipeline 統合テストでは `store.Next()` により current generation を `1` にした上で、`GenerationID: 1` の event を流している。
 
 - **production graph 上の補足**
@@ -55,17 +57,18 @@
   - LLM 出力直後の経路は `llm -> sessionactivate -> generationfilter-llm -> tts` で、`sessionactivate` が speech 通過時に `agentstatus.Store` を `active` に戻す。
   - この package の統合テストは `scheduler -> generationfilter -> router` の順序保証に絞っており、`sessionactivate` は直接テスト対象に含めていない。
 
-### シナリオ: interim transcript で古いAI出力を止める
+### シナリオ: interim transcript で古いAI出力を保留し、追加発話時に破棄する
 
 1. **テスト初期化**: `generation.NewStore()` で世代 Store を作り、`store.Next()` で current generation を `1` にする。
 2. **Stage 構築**: `interimstopper.NewStage`、`utterancebuffer.NewStage`、`generationfilter.NewStage` を生成し、それぞれ `Run(ctx)` で非同期処理を開始する。
 3. **Stage 接続**: `pump` goroutine により、`interimstopper.Downstream -> utterancebuffer.Upstream` を channel で接続する。
 4. **interim event 投入**: `interimstopper.Upstream` に `EventHumanInterimUtterance` を投入する。
-5. **generation 更新**: `interimstopper` が `generation.Store.Next()` を呼び、current generation が `2` になる。
+5. **generation 更新**: `interimstopper` が `generation.Store.BeginInterruption()` を呼び、paused generation が `1`、candidate generation が `2` になる。
 6. **旧generation event 投入**: `generationfilter.Upstream` に `GenerationID: 1` の `EventScheduledItem` を投入する。
-7. **generationfilter 処理**: event payload の generation が current ではないため、下流へ流さない。
+7. **generationfilter 処理**: event payload の generation が paused なので、下流へ流さず held buffer に保持する。
 8. **final event 投入**: `interimstopper.Upstream` に `EventHumanUtterance` を投入する。
 9. **user commit**: `interimstopper` が final を `utterancebuffer` へ通し、`utterancebuffer` が現在generationの user `EventConversationCommitRequest` を発行する。
+10. **追加発話確定**: candidate generation の LLM が非空 timeline を返し、`generation.Store.ConfirmIfPending(2)` が呼ばれると、held buffer の paused generation event は破棄される。
 
 ## 3. 主要なデータフロー
 
@@ -122,11 +125,12 @@ sequenceDiagram
         - `emit`: downstream へ event を送信する。
         - `close`: cancel と upstream close を一度だけ実行する。
     - generationfilter/
-      - stage.go: current generation に属する event のみを下流に通す Stage。
-        - `NewStage`: `generation.Store` を設定した `graph.Stage` を構築する。
+      - stage.go: event を generation 状態に応じて通過、保留、破棄する Stage。
+        - `NewStage`: `generation.Store` と held buffer 上限を設定した `graph.Stage` を構築する。
         - `run`: consume goroutine を起動する。
-        - `consume`: upstream から event を受け取り、`allow` が true の event だけを downstream へ送信する。
-        - `allow`: `generation.Store` が nil なら通過、nil でなければ event の `GenerationID` が current generation かどうかを判定する。
+        - `consume`: upstream から event を受け取り、allow は downstream へ送信し、hold は buffer に保持し、drop は破棄する。
+        - `disposition`: `generation.Store` が nil なら通過、nil でなければ event の `GenerationID` を `Store.Disposition` で判定する。
+        - `flushHeld`: store の状態変更通知後に held event を再判定する。
         - `close`: cancel と upstream close を一度だけ実行する。
     - router/
       - stage.go: scheduled item を再生、会話履歴保存要求、tool 実行要求へ変換する Stage。
@@ -138,12 +142,16 @@ sequenceDiagram
         - `close`: cancel と upstream close を一度だけ実行する。
   - states/
     - generation/
-      - store.go: current generation ID を保持する共有 Store。
+      - store.go: current generation ID と pending interruption を保持する共有 Store。
         - `NewStore`: 初期値 `0` の Store を作る。
         - `Next`: current generation を 1 つ進めて返す。
+        - `BeginInterruption`: paused / candidate の pending interruption を開始する。
         - `Current`: current generation を返す。
         - `IsCurrent`: 指定 generation が current generation と一致するかを返す。
-        - `Reset`: current generation を `0` に戻す。
+        - `Disposition`: 指定 generation の通過、保留、破棄を返す。
+        - `ResumeIfPending`: candidate が一致する場合に paused generation へ戻す。
+        - `ConfirmIfPending`: candidate が一致する場合に candidate generation を確定する。
+        - `Reset`: pending を解除し、current generation を `0` に戻す。
   - types/
     - event.go: component 間を流れる `Event`、`EventKind`、`ToolRequest` を定義する。
     - timeline_item.go: LLM timeline item と TTS 済み発話である `PlayableSpeech` を定義する。
