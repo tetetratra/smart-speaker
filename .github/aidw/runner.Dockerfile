@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   git \
   jq \
+  libopus-dev \
+  libopusfile-dev \
   openssh-client \
+  pkg-config \
   ripgrep \
   tar \
   unzip \
