@@ -66,9 +66,9 @@ func (s *stage) consume(ctx context.Context) {
 					log.Printf("interimstopper: generation store is nil")
 					continue
 				}
-				id := s.generation.Next()
+				id := s.generation.BeginInterruption()
 				stopped = true
-				log.Printf("interimstopper: stopped current AI output at generation %d", id)
+				log.Printf("interimstopper: began generation interruption at generation %d", id)
 			case types.EventHumanUtterance:
 				stopped = false
 				s.emit(ctx, evt)

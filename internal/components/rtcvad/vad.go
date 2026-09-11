@@ -119,8 +119,8 @@ func (s *stage) handleAudioFrame(frame types.RTCPeerAudioFrame) {
 			if s.generation == nil {
 				log.Printf("rtcvad: generation store is nil")
 			} else {
-				id := s.generation.Next()
-				log.Printf("rtcvad: advanced generation on speech start generation=%d", id)
+				id := s.generation.BeginInterruption()
+				log.Printf("rtcvad: began generation interruption on speech start generation=%d", id)
 			}
 			s.emit(types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "server-vad", CapturedAt: now}})
 			s.emit(types.Event{Kind: types.EventRTCSpeechAudio, Payload: types.RTCSpeechAudio{

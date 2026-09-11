@@ -34,6 +34,9 @@ func TestStageStopsOncePerUtteranceAndPassesFinal(t *testing.T) {
 	if line.Text != "明日の予定" {
 		t.Fatalf("Text = %q, want 明日の予定", line.Text)
 	}
+	if !store.ConfirmIfPending(1) {
+		t.Fatal("ConfirmIfPending(1) = false, want true")
+	}
 
 	st.Upstream <- interim("天気")
 	if !waitForGeneration(store, 2) {
