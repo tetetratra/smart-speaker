@@ -1458,20 +1458,6 @@ function MemoryView(props: {
         boxSizing: 'border-box',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          flex: '0 0 auto',
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 800, color: '#1e293b' }}>メモリ</div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>
-          {loading ? '取得中' : `${memories.length}件`}
-        </div>
-      </div>
       {error && (
         <div
           style={{
@@ -1490,51 +1476,6 @@ function MemoryView(props: {
       )}
       <div
         style={{
-          display: 'grid',
-          gap: 8,
-          border: '2px solid #e2e8f0',
-          borderRadius: 8,
-          background: '#ffffff',
-          padding: 12,
-        }}
-      >
-        <textarea
-          value={newContent}
-          onChange={(event) => setNewContent(event.currentTarget.value)}
-          placeholder="追加するメモリ文"
-          rows={3}
-          style={{
-            width: '100%',
-            resize: 'vertical',
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '10px 12px',
-            color: '#0f172a',
-            fontSize: 14,
-            lineHeight: 1.5,
-            fontFamily: 'inherit',
-          }}
-        />
-        <button
-          onClick={() => void submitNew()}
-          disabled={!newContent.trim() || pendingAction === 'create'}
-          style={{
-            justifySelf: 'start',
-            borderRadius: 8,
-            border: '1px solid #2563eb',
-            background: !newContent.trim() || pendingAction === 'create' ? '#dbeafe' : '#2563eb',
-            color: !newContent.trim() || pendingAction === 'create' ? '#1d4ed8' : '#ffffff',
-            padding: '9px 13px',
-            fontSize: 14,
-            fontWeight: 800,
-            cursor: !newContent.trim() || pendingAction === 'create' ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {pendingAction === 'create' ? '追加中' : '追加'}
-        </button>
-      </div>
-      <div
-        style={{
           flex: '1 1 auto',
           minHeight: 0,
           overflow: 'auto',
@@ -1544,10 +1485,55 @@ function MemoryView(props: {
           padding: 12,
         }}
       >
-        {!loading && !error && memories.length === 0 && (
-          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
-        )}
         <div style={{ display: 'grid', gap: 10 }}>
+          <div
+            style={{
+              display: 'grid',
+              gap: 8,
+              border: '2px solid #e2e8f0',
+              borderRadius: 8,
+              background: '#ffffff',
+              padding: 12,
+            }}
+          >
+            <textarea
+              value={newContent}
+              onChange={(event) => setNewContent(event.currentTarget.value)}
+              placeholder="追加するメモリ文"
+              rows={3}
+              style={{
+                width: '100%',
+                resize: 'vertical',
+                border: '1px solid #cbd5e1',
+                borderRadius: 8,
+                padding: '10px 12px',
+                color: '#0f172a',
+                fontSize: 14,
+                lineHeight: 1.5,
+                fontFamily: 'inherit',
+              }}
+            />
+            <button
+              onClick={() => void submitNew()}
+              disabled={!newContent.trim() || pendingAction === 'create'}
+              style={{
+                justifySelf: 'start',
+                borderRadius: 8,
+                border: '1px solid #2563eb',
+                background: !newContent.trim() || pendingAction === 'create' ? '#dbeafe' : '#2563eb',
+                color: !newContent.trim() || pendingAction === 'create' ? '#1d4ed8' : '#ffffff',
+                padding: '9px 13px',
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: !newContent.trim() || pendingAction === 'create' ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {pendingAction === 'create' ? '追加中' : '追加'}
+            </button>
+          </div>
+          {!loading && !error && memories.length === 0 && (
+            <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
+          )}
           {memories.map((memory) => (
             <div
               key={memory.id}
