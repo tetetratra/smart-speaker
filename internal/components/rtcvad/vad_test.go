@@ -81,3 +81,41 @@ func TestIsSpeechFrame(t *testing.T) {
 		}
 	})
 }
+
+func TestPCMRingBufferKeepsLatestPrebufferWindow(t *testing.T) {
+	const sampleRate = 1000
+	const channels = 1
+	limit := prebufferBytes(sampleRate, channels, prebufferSeconds)
+	ring := newPCMRingBuffer(limit)
+
+	chunkSize := prebufferBytes(sampleRate, channels, 1)
+	for second := 1; second <= prebufferSeconds+1; second++ {
+		chunk := make([]byte, chunkSize)
+		for i := range chunk {
+			chunk[i] = byte(second)
+		}
+		ring.append(chunk)
+	}
+
+	got := ring.snapshot()
+	if len(got) != limit {
+		t.Fatalf("prebuffer length = %d, want %d", len(got), limit)
+	}
+	if !ring.full() {
+		t.Fatal("expected prebuffer to be full")
+	}
+	if got[0] != 2 {
+		t.Fatalf("expected oldest retained second to be 2, got %d", got[0])
+	}
+	if got[len(got)-1] != byte(prebufferSeconds+1) {
+		t.Fatalf("expected newest retained second to be %d, got %d", prebufferSeconds+1, got[len(got)-1])
+	}
+}
+
+func TestPCMDurationMs(t *testing.T) {
+	got := pcmDurationMs(prebufferBytes(16000, 1, prebufferSeconds), 16000, 1)
+	want := prebufferSeconds * 1000
+	if got != want {
+		t.Fatalf("duration = %dms, want %dms", got, want)
+	}
+}

@@ -50,7 +50,7 @@
 - **Session reset関連events**
   - `sessionreset` は idle timeout による reset 実行後に `EventSessionReset` を emit する。
   - `wschat` は `types.SessionResetEvent.RequestedAt` を `type: "session_reset", requested_at: ...` に変換する。
-  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に再表示する。
+  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に吹き出しを再表示する。
 
 ## 3. 主要なデータフロー
 
@@ -137,7 +137,7 @@ sequenceDiagram
 1. idle timeout 到達: `sessionreset` が hook、会話履歴 reset、世代id前進を実行する。
 2. reset event発行: `sessionreset` が `EventSessionReset{RequestedAt}` を `wschat` へ流す。
 3. JSON変換: `wschat.handleEvent` が `session_reset` JSON に変換する。
-4. UI反映: UIは通常画面の直近会話吹き出しを非表示にする。
+4. UI反映: UIは通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。
 5. 会話再開: 次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に、UIは吹き出しを再表示する。
 
 ```mermaid
@@ -148,7 +148,7 @@ sequenceDiagram
 
     SR->>WS: EventSessionReset{RequestedAt}
     WS->>UI: {"type":"session_reset","requested_at":"..."}
-    UI->>UI: 直近会話吹き出しを非表示
+    UI->>UI: 直近会話吹き出しを非表示 / メッセージ一覧を空にする
     WS->>UI: {"type":"message","role":"user","source":"stt",...}
     UI->>UI: 直近会話吹き出しを再表示
 ```

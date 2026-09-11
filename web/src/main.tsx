@@ -854,6 +854,7 @@ function App() {
         }
         case 'session_reset': {
           setIsAiSpeaking(false)
+          setMessages([])
           setIsConversationBubbleHidden(true)
           break
         }

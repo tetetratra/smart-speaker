@@ -183,10 +183,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory embedder: %w", err)
 	}
 	memoryContextProvider, err := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{
-		Embedder:      memoryEmbedder,
-		Memory:        memoryStore,
-		SearchLimit:   cfg.Memory.MaxContextMemories,
-		MinSimilarity: cfg.Memory.SimilarityThreshold,
+		Memory: memoryStore,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
@@ -204,7 +201,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		CandidateCreator:       memoryCandidateCreator,
 		Embedder:               memoryEmbedder,
 		Memory:                 memoryStore,
-		DuplicateMinSimilarity: cfg.Memory.SimilarityThreshold,
+		DuplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
