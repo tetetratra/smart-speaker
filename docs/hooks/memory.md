@@ -121,25 +121,32 @@ sequenceDiagram
     LLM->>OpenAI: memory_context + conversation history
 ```
 
-### シナリオ: 管理画面から保存済みメモリ一覧を確認する
+### シナリオ: 管理画面から保存済みメモリを確認・手動更新する
 
 1. 通常画面で「メモリ」ボタンを押す、または `?ui=memory` / `/memory` で Web UI を開く。
 2. フロントエンドがメモリ画面へ切り替わったタイミングで `GET /api/memories` を呼び出す。
 3. HTTP handler が会話処理と共有している `memory.Store` の `Snapshot()` を取得する。
 4. handler が `created_at` 降順に並べ、`id`、`content`、`tags`、`created_at`、`updated_at` に絞った JSON を返す。
 5. フロントエンドが件数、本文、タグ、作成日時、更新日時を表示する。
+6. 追加・編集時は `POST /api/memories` または `PUT /api/memories/{id}` を呼び出し、入力されたメモリ文からタグと embedding を再計算して保存する。
+7. 削除時は `DELETE /api/memories/{id}` を呼び出し、該当 record を store から削除する。
 
 ```mermaid
 sequenceDiagram
     participant UI as メモリ画面
-    participant HTTP as GET /api/memories
+    participant HTTP as /api/memories
     participant Store as memory.Store
+    participant AI as OpenAI / embedding
 
     UI->>HTTP: メモリ一覧を取得
     HTTP->>Store: Snapshot()
     Store-->>HTTP: 保存済み record
     HTTP-->>UI: {memories:[{id, content, tags, created_at, updated_at}]}
     UI->>UI: 一覧、空状態、エラー状態を表示
+    UI->>HTTP: 追加・編集・削除
+    HTTP->>AI: 追加・編集時は tags / embedding を再計算
+    HTTP->>Store: Upsert / Update / Delete
+    HTTP-->>UI: 更新後の memory または 204
 ```
 
 ## 5. 失敗時の扱い
@@ -148,7 +155,9 @@ sequenceDiagram
 - 候補単位の embedding 生成または保存に失敗した場合、`CreatorHook` は残り候補の処理を継続し、最後に error を集約して返します。
 - store file が読めない、または不正な version の JSON がある場合は通常起動時の store 初期化に失敗します。
 - `GET /api/memories` が `memory.Store` を参照できない場合は 500 を返します。
-- メモリ画面で `GET /api/memories` の取得に失敗した場合は、画面内にエラーを表示します。
+- 手動追加・編集でタグ生成または embedding 生成に失敗した場合は 500 を返し、store は更新しません。
+- 手動編集・削除で対象 ID が見つからない場合は 404 を返します。
+- メモリ画面で一覧取得や保存操作に失敗した場合は、画面内にエラーを表示します。
 
 ## 6. 詳細設計
 
@@ -191,6 +200,17 @@ sequenceDiagram
   - レスポンス: `{"memories":[{"id":"...","content":"...","tags":["..."],"created_at":"...","updated_at":"..."}]}`
   - `created_at` 降順で返す
   - embedding ベクトル本体は返さない
+- `POST /api/memories`: 管理画面向けにメモリを手動追加する
+  - リクエスト: `{"content":"保存するメモリ文"}`
+  - レスポンス: `{"memory":{"id":"...","content":"...","tags":["..."],"created_at":"...","updated_at":"..."}}`
+  - 入力本文から tags と embedding を再計算して保存する
+- `PUT /api/memories/{id}`: 管理画面向けにメモリ本文を編集する
+  - リクエスト: `{"content":"更新後のメモリ文"}`
+  - レスポンス: `{"memory":{"id":"...","content":"...","tags":["..."],"created_at":"...","updated_at":"..."}}`
+  - 入力本文から tags と embedding を再計算し、作成日時は維持して更新日時を更新する
+- `DELETE /api/memories/{id}`: 管理画面向けにメモリを削除する
+  - リクエスト: なし
+  - レスポンス: なし
 
 ### メモリ候補の生成ルール
 
@@ -219,7 +239,6 @@ sequenceDiagram
 
 ### 現時点の対象外
 
-- メモリを編集・削除する UI
 - メモリ一覧のリアルタイム更新
 - メモリ store の migration
 - embedding service の host port 公開

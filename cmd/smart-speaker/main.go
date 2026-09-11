@@ -2,16 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
-	"net/http"
-	"os"
 	"os/signal"
-	"path"
-	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -33,7 +26,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
-	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
@@ -103,12 +95,6 @@ func ensureGoogleCalendarToken() {
 		return
 	}
 	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
-}
-
-func closeHTTPServer(server *http.Server) {
-	if server != nil {
-		_ = server.Close()
-	}
 }
 
 func closeStages(stages ...*graph.Stage) {
@@ -396,79 +382,6 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
-	mux := http.NewServeMux()
-	registerMemoryAPI(mux, memoryStore)
-	registerWebUI(mux, cfg.WebDistDir)
-	oauthgooglecalendar.RegisterHTTPHandlers(mux)
-	server := &http.Server{
-		Addr:    cfg.WSAddr,
-		Handler: mux,
-	}
-	chat := wschat.NewStage(mux, wschat.Config{})
-	return server, chat, nil
-}
-
-type memoryListResponse struct {
-	Memories []memoryListItem `json:"memories"`
-}
-
-type memoryListItem struct {
-	ID        string    `json:"id"`
-	Content   string    `json:"content"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store) {
-	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if memoryStore == nil {
-			http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
-			return
-		}
-
-		records := memoryStore.Snapshot()
-		sort.SliceStable(records, func(i, j int) bool {
-			return records[i].CreatedAt.After(records[j].CreatedAt)
-		})
-		items := make([]memoryListItem, 0, len(records))
-		for _, record := range records {
-			tags := record.Tags
-			if tags == nil {
-				tags = []string{}
-			}
-			items = append(items, memoryListItem{
-				ID:        record.ID,
-				Content:   record.Content,
-				Tags:      tags,
-				CreatedAt: record.CreatedAt,
-				UpdatedAt: record.UpdatedAt,
-			})
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(memoryListResponse{Memories: items}); err != nil {
-			log.Printf("memory api: encode memories: %v", err)
-		}
-	})
-}
-
-func runHTTPServer(server *http.Server) {
-	if server == nil {
-		return
-	}
-	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("http server listen error: %v", err)
-		}
-	}()
-}
-
 func wireGraph(g *graph.Graph, stages appStages) {
 	add := func(stage *graph.Stage) *graph.Node {
 		if stage == nil {
@@ -529,53 +442,4 @@ func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind
 		return
 	}
 	g.ConnectKinds(from, to, kinds...)
-}
-
-func registerWebUI(mux *http.ServeMux, distDir string) {
-	if distDir == "" {
-		distDir = "web/dist"
-	}
-	absDir, err := filepath.Abs(distDir)
-	if err != nil {
-		log.Printf("web ui: invalid dist dir: %v", err)
-		return
-	}
-	info, err := os.Stat(absDir)
-	if err != nil || !info.IsDir() {
-		log.Printf("web ui: dist dir not found: %s", absDir)
-		return
-	}
-	indexPath := filepath.Join(absDir, "index.html")
-	if info, err := os.Stat(indexPath); err != nil || info.IsDir() {
-		log.Printf("web ui: index.html not found: %s", indexPath)
-		return
-	}
-	log.Printf("web ui: serve %s", absDir)
-
-	fileServer := http.FileServer(http.Dir(absDir))
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		cleanPath := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
-		if cleanPath == "/" {
-			http.ServeFile(w, r, indexPath)
-			return
-		}
-		targetPath := filepath.Join(absDir, strings.TrimPrefix(cleanPath, "/"))
-		if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-
-		// assets や拡張子付きの静的ファイルは SPA フォールバックの対象外にする。
-		if strings.HasPrefix(cleanPath, "/assets/") || cleanPath == "/assets" || path.Ext(cleanPath) != "" {
-			http.NotFound(w, r)
-			return
-		}
-
-		// SPA ルーティング向けに index.html を直接返す（URL書き換えしない）。
-		http.ServeFile(w, r, indexPath)
-	}))
 }

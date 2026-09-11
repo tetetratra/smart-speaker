@@ -98,27 +98,7 @@ func (c *OpenAIClient) CreateCandidates(ctx context.Context, records []types.Con
 		},
 		"text": memoryCandidateTextFormat(c.maxCandidates, c.maxTags),
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("memory openai: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-	}
-	text, err := readOpenAIResponseBody(resp.Body)
+	text, err := c.createStructuredText(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +107,54 @@ func (c *OpenAIClient) CreateCandidates(ctx context.Context, records []types.Con
 		return nil, fmt.Errorf("memory openai: parse candidates: %w", err)
 	}
 	return normalizeCandidates(decoded.Candidates, c.maxCandidates, c.maxTags), nil
+}
+
+func (c *OpenAIClient) CreateTags(ctx context.Context, content string) ([]string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("memory openai: content is required")
+	}
+	payload := map[string]any{
+		"model": c.model,
+		"input": []map[string]any{
+			{"role": "system", "content": memoryTagInstructions(c.maxTags)},
+			{"role": "user", "content": content},
+		},
+		"text": memoryTagTextFormat(c.maxTags),
+	}
+	text, err := c.createStructuredText(ctx, payload)
+	if err != nil {
+		return nil, err
+	}
+	var decoded tagResponse
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		return nil, fmt.Errorf("memory openai: parse tags: %w", err)
+	}
+	return normalizeCandidateTags(decoded.Tags, c.maxTags), nil
+}
+
+func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[string]any) (string, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("memory openai: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	return readOpenAIResponseBody(resp.Body)
 }
 
 const memoryCandidateInstructions = `Reset前の会話履歴から、後続会話で再利用できる長期記憶候補だけを抽出してください。
@@ -220,8 +248,45 @@ func memoryCandidateSchema(maxCandidates, maxTags int) map[string]any {
 	}
 }
 
+func memoryTagInstructions(maxTags int) string {
+	return fmt.Sprintf(`ユーザーが手動入力した長期記憶の本文から、検索補助用の短いタグだけを抽出してください。
+タグは固有名詞、カテゴリ、場所、習慣、健康、デバイス種別などを優先し、最大%d件にしてください。
+本文を書き換えたり、タグ以外の説明を出力したりしないでください。
+秘密情報らしき値そのものはタグに含めず、必要ならカテゴリ名だけにしてください。`, maxTags)
+}
+
+func memoryTagTextFormat(maxTags int) map[string]any {
+	return map[string]any{
+		"format": map[string]any{
+			"type":   "json_schema",
+			"name":   "memory_tags",
+			"strict": true,
+			"schema": memoryTagSchema(maxTags),
+		},
+	}
+}
+
+func memoryTagSchema(maxTags int) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"tags": map[string]any{
+				"type":     "array",
+				"maxItems": maxTags,
+				"items":    map[string]any{"type": "string"},
+			},
+		},
+		"required":             []string{"tags"},
+		"additionalProperties": false,
+	}
+}
+
 type candidateResponse struct {
 	Candidates []Candidate `json:"candidates"`
+}
+
+type tagResponse struct {
+	Tags []string `json:"tags"`
 }
 
 type openAIResponseBody struct {

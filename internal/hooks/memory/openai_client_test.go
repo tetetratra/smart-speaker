@@ -182,6 +182,90 @@ func TestOpenAIClientCreateCandidatesNormalizesCandidates(t *testing.T) {
 	}
 }
 
+func TestOpenAIClientCreateTagsSendsStructuredOutputSchema(t *testing.T) {
+	var payload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output_text":"{\"tags\":[\" coffee \",\"Coffee\",\"morning\",\"routine\"]}"}`))
+	}))
+	defer srv.Close()
+
+	client, err := NewOpenAIClient(OpenAIClientConfig{
+		APIKey:     "test-key",
+		Model:      "test-model",
+		Endpoint:   srv.URL,
+		HTTPClient: srv.Client(),
+		MaxTags:    2,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAIClient() error = %v", err)
+	}
+	got, err := client.CreateTags(context.Background(), "  ユーザーは朝にコーヒーを飲む  ")
+	if err != nil {
+		t.Fatalf("CreateTags() error = %v", err)
+	}
+
+	input := payload["input"].([]any)
+	if len(input) != 2 {
+		t.Fatalf("input len = %d, want 2", len(input))
+	}
+	if input[1].(map[string]any)["content"] != "ユーザーは朝にコーヒーを飲む" {
+		t.Fatalf("user content = %#v", input[1])
+	}
+	format := payload["text"].(map[string]any)["format"].(map[string]any)
+	if format["type"] != "json_schema" || format["name"] != "memory_tags" || format["strict"] != true {
+		t.Fatalf("format = %#v", format)
+	}
+	schema, _ := json.Marshal(format["schema"])
+	schemaText := string(schema)
+	for _, want := range []string{`"tags"`, `"maxItems":2`, `"additionalProperties":false`} {
+		if !strings.Contains(schemaText, want) {
+			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
+		}
+	}
+	if want := []string{"coffee", "morning"}; !sameStringSlice(got, want) {
+		t.Fatalf("tags = %#v, want %#v", got, want)
+	}
+}
+
+func TestOpenAIClientCreateTagsRejectsEmptyContent(t *testing.T) {
+	client := &OpenAIClient{
+		apiKey:   "test-key",
+		model:    "test-model",
+		endpoint: "http://127.0.0.1:1",
+		client:   &http.Client{},
+		maxTags:  DefaultMaxMemoryCandidateTags,
+	}
+	_, err := client.CreateTags(context.Background(), "   ")
+	if err == nil || !strings.Contains(err.Error(), "content is required") {
+		t.Fatalf("err = %v, want content is required", err)
+	}
+}
+
+func TestOpenAIClientCreateTagsReturnsParseError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"output_text":"not json"}`))
+	}))
+	defer srv.Close()
+
+	client, err := NewOpenAIClient(OpenAIClientConfig{
+		APIKey:     "test-key",
+		Model:      "test-model",
+		Endpoint:   srv.URL,
+		HTTPClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAIClient() error = %v", err)
+	}
+	_, err = client.CreateTags(context.Background(), "ユーザーは朝にコーヒーを飲む")
+	if err == nil || !strings.Contains(err.Error(), "parse tags") {
+		t.Fatalf("err = %v, want it to contain parse tags", err)
+	}
+}
+
 func TestOpenAIClientCreateCandidatesReturnsErrors(t *testing.T) {
 	tests := []struct {
 		name     string
