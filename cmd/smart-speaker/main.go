@@ -398,7 +398,11 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, memoryStore)
+	manualMemory, err := newManualMemoryProcessor(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	registerMemoryAPI(mux, memoryStore, manualMemory)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
@@ -413,6 +417,10 @@ type memoryListResponse struct {
 	Memories []memoryListItem `json:"memories"`
 }
 
+type memoryItemResponse struct {
+	Memory memoryListItem `json:"memory"`
+}
+
 type memoryListItem struct {
 	ID        string    `json:"id"`
 	Content   string    `json:"content"`
@@ -421,41 +429,233 @@ type memoryListItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store) {
+type memoryWriteRequest struct {
+	Content string `json:"content"`
+}
+
+type memoryMetadataBuilder interface {
+	Build(context.Context, string) ([]string, []float64, error)
+}
+
+type manualMemoryProcessor struct {
+	tagger   memoryTagger
+	embedder memoryEmbedder
+}
+
+type memoryTagger interface {
+	CreateTags(context.Context, string) ([]string, error)
+}
+
+type memoryEmbedder interface {
+	Embed(context.Context, string) ([]float64, error)
+}
+
+func newManualMemoryProcessor(cfg app.Config) (*manualMemoryProcessor, error) {
+	tagger, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
+		APIKey:  cfg.APIKey,
+		Model:   cfg.Memory.Model,
+		MaxTags: cfg.Memory.MaxTags,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to init manual memory tagger: %w", err)
+	}
+	embedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
+		BaseURL: cfg.Memory.EmbeddingBaseURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to init manual memory embedder: %w", err)
+	}
+	return &manualMemoryProcessor{tagger: tagger, embedder: embedder}, nil
+}
+
+func (p *manualMemoryProcessor) Build(ctx context.Context, content string) ([]string, []float64, error) {
+	if p == nil || p.tagger == nil || p.embedder == nil {
+		return nil, nil, fmt.Errorf("manual memory processor is unavailable")
+	}
+	tags, err := p.tagger.CreateTags(ctx, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	searchText := memorystate.Record{Content: content, Tags: tags}.SearchText()
+	embedding, err := p.embedder.Embed(ctx, searchText)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tags, embedding, nil
+}
+
+func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store, metadata memoryMetadataBuilder) {
 	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		if r.URL.Path != "/api/memories" {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			handleMemoryList(w, memoryStore)
+		case http.MethodPost:
+			handleMemoryCreate(w, r, memoryStore, metadata)
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if memoryStore == nil {
-			http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
-			return
-		}
-
-		records := memoryStore.Snapshot()
-		sort.SliceStable(records, func(i, j int) bool {
-			return records[i].CreatedAt.After(records[j].CreatedAt)
-		})
-		items := make([]memoryListItem, 0, len(records))
-		for _, record := range records {
-			tags := record.Tags
-			if tags == nil {
-				tags = []string{}
-			}
-			items = append(items, memoryListItem{
-				ID:        record.ID,
-				Content:   record.Content,
-				Tags:      tags,
-				CreatedAt: record.CreatedAt,
-				UpdatedAt: record.UpdatedAt,
-			})
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(memoryListResponse{Memories: items}); err != nil {
-			log.Printf("memory api: encode memories: %v", err)
 		}
 	})
+	mux.HandleFunc("/api/memories/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/api/memories/")
+		id = strings.TrimSpace(id)
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPatch:
+			handleMemoryUpdate(w, r, memoryStore, metadata, id)
+		case http.MethodDelete:
+			handleMemoryDelete(w, memoryStore, id)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func handleMemoryList(w http.ResponseWriter, memoryStore *memorystate.Store) {
+	if memoryStore == nil {
+		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	records := memoryStore.Snapshot()
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].CreatedAt.After(records[j].CreatedAt)
+	})
+	items := make([]memoryListItem, 0, len(records))
+	for _, record := range records {
+		items = append(items, memoryListItemFromRecord(record))
+	}
+
+	writeJSON(w, http.StatusOK, memoryListResponse{Memories: items})
+}
+
+func handleMemoryCreate(w http.ResponseWriter, r *http.Request, memoryStore *memorystate.Store, metadata memoryMetadataBuilder) {
+	if memoryStore == nil {
+		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+		return
+	}
+	req, ok := readMemoryWriteRequest(w, r)
+	if !ok {
+		return
+	}
+	tags, embedding, err := buildMemoryMetadata(r.Context(), metadata, req.Content)
+	if err != nil {
+		http.Error(w, "memory metadata unavailable", http.StatusBadGateway)
+		return
+	}
+	record, result, err := memoryStore.Upsert(memorystate.UpsertInput{
+		Content:   req.Content,
+		Tags:      tags,
+		Embedding: embedding,
+	})
+	if err != nil {
+		writeMemoryStoreError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if !result.Created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, memoryItemResponse{Memory: memoryListItemFromRecord(record)})
+}
+
+func handleMemoryUpdate(w http.ResponseWriter, r *http.Request, memoryStore *memorystate.Store, metadata memoryMetadataBuilder, id string) {
+	if memoryStore == nil {
+		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+		return
+	}
+	req, ok := readMemoryWriteRequest(w, r)
+	if !ok {
+		return
+	}
+	tags, embedding, err := buildMemoryMetadata(r.Context(), metadata, req.Content)
+	if err != nil {
+		http.Error(w, "memory metadata unavailable", http.StatusBadGateway)
+		return
+	}
+	record, err := memoryStore.Update(id, memorystate.UpdateInput{
+		Content:   req.Content,
+		Tags:      tags,
+		Embedding: embedding,
+	})
+	if err != nil {
+		writeMemoryStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memoryItemResponse{Memory: memoryListItemFromRecord(record)})
+}
+
+func handleMemoryDelete(w http.ResponseWriter, memoryStore *memorystate.Store, id string) {
+	if memoryStore == nil {
+		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := memoryStore.Delete(id); err != nil {
+		writeMemoryStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func readMemoryWriteRequest(w http.ResponseWriter, r *http.Request) (memoryWriteRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	defer r.Body.Close()
+	var req memoryWriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid memory request", http.StatusBadRequest)
+		return memoryWriteRequest{}, false
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		http.Error(w, "memory content is required", http.StatusBadRequest)
+		return memoryWriteRequest{}, false
+	}
+	return req, true
+}
+
+func buildMemoryMetadata(ctx context.Context, metadata memoryMetadataBuilder, content string) ([]string, []float64, error) {
+	if metadata == nil {
+		return nil, nil, fmt.Errorf("memory metadata builder is unavailable")
+	}
+	return metadata.Build(ctx, content)
+}
+
+func memoryListItemFromRecord(record memorystate.Record) memoryListItem {
+	tags := record.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	return memoryListItem{
+		ID:        record.ID,
+		Content:   record.Content,
+		Tags:      tags,
+		CreatedAt: record.CreatedAt,
+		UpdatedAt: record.UpdatedAt,
+	}
+}
+
+func writeMemoryStoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, memorystate.ErrEmptyContent):
+		http.Error(w, "memory content is required", http.StatusBadRequest)
+	case errors.Is(err, memorystate.ErrRecordNotFound):
+		http.Error(w, "memory not found", http.StatusNotFound)
+	default:
+		http.Error(w, "memory store error", http.StatusInternalServerError)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		log.Printf("memory api: encode response: %v", err)
+	}
 }
 
 func runHTTPServer(server *http.Server) {

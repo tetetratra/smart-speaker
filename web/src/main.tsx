@@ -18,6 +18,7 @@ type MemoryItem = {
   updated_at: string
 }
 type MemoryListResponse = { memories: MemoryItem[] }
+type MemoryMutationResponse = { memory: MemoryItem }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -614,6 +615,16 @@ function formatMemoryDate(value: string): string {
   }).format(date)
 }
 
+function normalizeMemory(raw: MemoryItem): MemoryItem {
+  return {
+    id: String(raw.id),
+    content: String(raw.content),
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    created_at: String(raw.created_at),
+    updated_at: String(raw.updated_at),
+  }
+}
+
 function isScrolledToBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
 }
@@ -658,6 +669,7 @@ function App() {
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [memoryError, setMemoryError] = useState('')
+  const [memorySaving, setMemorySaving] = useState(false)
   const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const idRef = useRef(0)
@@ -1189,13 +1201,11 @@ function App() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [uiMode])
-  useEffect(() => {
-    if (uiMode !== 'memory') return
-    const controller = new AbortController()
+  const loadMemories = useCallback((signal?: AbortSignal) => {
     setMemoryLoading(true)
     setMemoryError('')
 
-    fetch(new URL('/api/memories', backendURL).toString(), { signal: controller.signal })
+    return fetch(new URL('/api/memories', backendURL).toString(), { signal })
       .then(async (resp) => {
         if (!resp.ok) {
           throw new Error(`メモリ一覧を取得できませんでした (${resp.status})`)
@@ -1206,26 +1216,91 @@ function App() {
         if (!Array.isArray(data.memories)) {
           throw new Error('メモリ一覧の形式が不正です')
         }
-        setMemories(data.memories.map((memory) => ({
-          id: String(memory.id),
-          content: String(memory.content),
-          tags: Array.isArray(memory.tags) ? memory.tags.map(String) : [],
-          created_at: String(memory.created_at),
-          updated_at: String(memory.updated_at),
-        })))
+        setMemories(data.memories.map(normalizeMemory))
       })
       .catch((err) => {
-        if (controller.signal.aborted) return
+        if (signal?.aborted) return
         setMemoryError(err instanceof Error ? err.message : 'メモリ一覧を取得できませんでした')
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (!signal?.aborted) {
           setMemoryLoading(false)
         }
       })
+  }, [])
+
+  useEffect(() => {
+    if (uiMode !== 'memory') return
+    const controller = new AbortController()
+    void loadMemories(controller.signal)
 
     return () => controller.abort()
-  }, [uiMode])
+  }, [loadMemories, uiMode])
+  const createMemory = useCallback(async (content: string): Promise<boolean> => {
+    setMemorySaving(true)
+    setMemoryError('')
+    try {
+      const resp = await fetch(new URL('/api/memories', backendURL).toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (!resp.ok) {
+        throw new Error(`メモリを追加できませんでした (${resp.status})`)
+      }
+      const data = await resp.json() as MemoryMutationResponse
+      const memory = normalizeMemory(data.memory)
+      setMemories((prev) => [memory, ...prev.filter((item) => item.id !== memory.id)])
+      return true
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : 'メモリを追加できませんでした')
+      return false
+    } finally {
+      setMemorySaving(false)
+    }
+  }, [])
+  const updateMemory = useCallback(async (id: string, content: string): Promise<boolean> => {
+    setMemorySaving(true)
+    setMemoryError('')
+    try {
+      const resp = await fetch(new URL(`/api/memories/${encodeURIComponent(id)}`, backendURL).toString(), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (!resp.ok) {
+        throw new Error(`メモリを更新できませんでした (${resp.status})`)
+      }
+      const data = await resp.json() as MemoryMutationResponse
+      const memory = normalizeMemory(data.memory)
+      setMemories((prev) => prev.map((item) => item.id === id ? memory : item))
+      return true
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : 'メモリを更新できませんでした')
+      return false
+    } finally {
+      setMemorySaving(false)
+    }
+  }, [])
+  const deleteMemory = useCallback(async (id: string): Promise<boolean> => {
+    setMemorySaving(true)
+    setMemoryError('')
+    try {
+      const resp = await fetch(new URL(`/api/memories/${encodeURIComponent(id)}`, backendURL).toString(), {
+        method: 'DELETE',
+      })
+      if (!resp.ok) {
+        throw new Error(`メモリを削除できませんでした (${resp.status})`)
+      }
+      setMemories((prev) => prev.filter((item) => item.id !== id))
+      return true
+    } catch (err) {
+      setMemoryError(err instanceof Error ? err.message : 'メモリを削除できませんでした')
+      return false
+    } finally {
+      setMemorySaving(false)
+    }
+  }, [])
   const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
@@ -1323,6 +1398,10 @@ function App() {
         memories={memories}
         loading={memoryLoading}
         error={memoryError}
+        saving={memorySaving}
+        createMemory={createMemory}
+        updateMemory={updateMemory}
+        deleteMemory={deleteMemory}
         goApp={() => setMode('app')}
       />
     </>
@@ -1334,9 +1413,35 @@ function MemoryView(props: {
   memories: MemoryItem[]
   loading: boolean
   error: string
+  saving: boolean
+  createMemory: (content: string) => Promise<boolean>
+  updateMemory: (id: string, content: string) => Promise<boolean>
+  deleteMemory: (id: string) => Promise<boolean>
   goApp: () => void
 }) {
-  const { visible, memories, loading, error, goApp } = props
+  const { visible, memories, loading, error, saving, createMemory, updateMemory, deleteMemory, goApp } = props
+  const [newContent, setNewContent] = useState('')
+  const [editingID, setEditingID] = useState('')
+  const [editingContent, setEditingContent] = useState('')
+  const beginEdit = (memory: MemoryItem) => {
+    setEditingID(memory.id)
+    setEditingContent(memory.content)
+  }
+  const submitNew = async () => {
+    const content = newContent.trim()
+    if (!content) return
+    if (await createMemory(content)) {
+      setNewContent('')
+    }
+  }
+  const submitEdit = async (id: string) => {
+    const content = editingContent.trim()
+    if (!content) return
+    if (await updateMemory(id, content)) {
+      setEditingID('')
+      setEditingContent('')
+    }
+  }
   return (
     <div
       style={{
@@ -1382,6 +1487,51 @@ function MemoryView(props: {
       )}
       <div
         style={{
+          border: '2px solid #dbeafe',
+          borderRadius: 8,
+          background: '#ffffff',
+          padding: 12,
+          display: 'grid',
+          gap: 8,
+          flex: '0 0 auto',
+        }}
+      >
+        <textarea
+          value={newContent}
+          onChange={(event) => setNewContent(event.target.value)}
+          placeholder="新しいメモリ"
+          rows={3}
+          style={{
+            width: '100%',
+            resize: 'vertical',
+            border: '1px solid #cbd5e1',
+            borderRadius: 6,
+            padding: '9px 10px',
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: '#0f172a',
+          }}
+        />
+        <button
+          onClick={() => void submitNew()}
+          disabled={saving || newContent.trim() === ''}
+          style={{
+            justifySelf: 'flex-start',
+            borderRadius: 8,
+            border: '1px solid #2563eb',
+            background: saving || newContent.trim() === '' ? '#bfdbfe' : '#2563eb',
+            color: '#ffffff',
+            padding: '9px 13px',
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: saving || newContent.trim() === '' ? 'not-allowed' : 'pointer',
+          }}
+        >
+          追加
+        </button>
+      </div>
+      <div
+        style={{
           flex: '1 1 auto',
           minHeight: 0,
           overflow: 'auto',
@@ -1407,9 +1557,27 @@ function MemoryView(props: {
                 gap: 8,
               }}
             >
-              <div style={{ color: '#0f172a', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                {memory.content}
-              </div>
+              {editingID === memory.id ? (
+                <textarea
+                  value={editingContent}
+                  onChange={(event) => setEditingContent(event.target.value)}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    resize: 'vertical',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
+                    padding: '9px 10px',
+                    color: '#0f172a',
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                  }}
+                />
+              ) : (
+                <div style={{ color: '#0f172a', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {memory.content}
+                </div>
+              )}
               {memory.tags.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {memory.tags.map((tag) => (
@@ -1434,6 +1602,86 @@ function MemoryView(props: {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#64748b', fontSize: 12 }}>
                 <span>作成: {formatMemoryDate(memory.created_at)}</span>
                 <span>更新: {formatMemoryDate(memory.updated_at)}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {editingID === memory.id ? (
+                  <>
+                    <button
+                      onClick={() => void submitEdit(memory.id)}
+                      disabled={saving || editingContent.trim() === ''}
+                      style={{
+                        borderRadius: 8,
+                        border: '1px solid #2563eb',
+                        background: saving || editingContent.trim() === '' ? '#bfdbfe' : '#2563eb',
+                        color: '#ffffff',
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: saving || editingContent.trim() === '' ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      保存
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingID('')
+                        setEditingContent('')
+                      }}
+                      disabled={saving}
+                      style={{
+                        borderRadius: 8,
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#334155',
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => beginEdit(memory)}
+                      disabled={saving}
+                      style={{
+                        borderRadius: 8,
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#334155',
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      編集
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('このメモリを削除しますか？')) {
+                          void deleteMemory(memory.id)
+                        }
+                      }}
+                      disabled={saving}
+                      style={{
+                        borderRadius: 8,
+                        border: '1px solid #fecaca',
+                        background: '#fff7f7',
+                        color: '#b91c1c',
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      削除
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}

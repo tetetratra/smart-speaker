@@ -15,6 +15,7 @@ import (
 const currentVersion = 1
 
 var ErrEmptyContent = errors.New("memory content is empty")
+var ErrRecordNotFound = errors.New("memory record not found")
 
 type Store struct {
 	mu      sync.RWMutex
@@ -80,6 +81,57 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 		return Record{}, UpsertResult{}, err
 	}
 	return cloneRecord(record), UpsertResult{Created: true}, nil
+}
+
+func (s *Store) Update(id string, input UpdateInput) (Record, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Record{}, ErrRecordNotFound
+	}
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return Record{}, ErrEmptyContent
+	}
+	tags := normalizeTags(input.Tags)
+	embedding := cloneFloat64s(input.Embedding)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, record := range s.records {
+		if record.ID != id {
+			continue
+		}
+		record.Content = content
+		record.Tags = tags
+		record.Embedding = embedding
+		record.UpdatedAt = time.Now().UTC()
+		s.records[i] = record
+		if err := s.saveLocked(); err != nil {
+			return Record{}, err
+		}
+		return cloneRecord(record), nil
+	}
+	return Record{}, ErrRecordNotFound
+}
+
+func (s *Store) Delete(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrRecordNotFound
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, record := range s.records {
+		if record.ID != id {
+			continue
+		}
+		s.records = append(s.records[:i], s.records[i+1:]...)
+		return s.saveLocked()
+	}
+	return ErrRecordNotFound
 }
 
 func (s *Store) FindDuplicate(input DuplicateInput) (Record, bool) {

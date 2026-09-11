@@ -129,6 +129,50 @@ func (c *OpenAIClient) CreateCandidates(ctx context.Context, records []types.Con
 	return normalizeCandidates(decoded.Candidates, c.maxCandidates, c.maxTags), nil
 }
 
+func (c *OpenAIClient) CreateTags(ctx context.Context, content string) ([]string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("memory openai: content is required")
+	}
+	payload := map[string]any{
+		"model": c.model,
+		"input": []map[string]any{
+			{"role": "system", "content": manualMemoryTagInstructions},
+			{"role": "user", "content": content},
+		},
+		"text": manualMemoryTagTextFormat(c.maxTags),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("memory openai: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	text, err := readOpenAIResponseBody(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var decoded tagResponse
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		return nil, fmt.Errorf("memory openai: parse tags: %w", err)
+	}
+	return normalizeCandidateTags(decoded.Tags, c.maxTags), nil
+}
+
 const memoryCandidateInstructions = `Reset前の会話履歴から、後続会話で再利用できる長期記憶候補だけを抽出してください。
 候補がない場合は candidates を空配列にしてください。
 content は1候補につき1つの事実を、短く、主語が分かる自然文で書いてください。
@@ -144,6 +188,10 @@ tags は検索補助用の短いラベルで、固有名詞、カテゴリ、場
   tags: ["health", "weather", "rain", "headache"]
 - 保存すべき長期記憶候補がない場合:
   candidates: []`
+
+const manualMemoryTagInstructions = `ユーザーが手入力した長期記憶文に対して、検索補助用の短いタグだけを作成してください。
+タグは固有名詞、カテゴリ、場所、習慣、健康、デバイス種別などを含め、英単語または短い snake_case を優先してください。
+本文を書き換えたり要約したりせず、タグだけを返してください。`
 
 type historyPayload struct {
 	ID           string         `json:"id,omitempty"`
@@ -220,8 +268,38 @@ func memoryCandidateSchema(maxCandidates, maxTags int) map[string]any {
 	}
 }
 
+func manualMemoryTagTextFormat(maxTags int) map[string]any {
+	return map[string]any{
+		"format": map[string]any{
+			"type":   "json_schema",
+			"name":   "manual_memory_tags",
+			"strict": true,
+			"schema": manualMemoryTagSchema(maxTags),
+		},
+	}
+}
+
+func manualMemoryTagSchema(maxTags int) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"tags": map[string]any{
+				"type":     "array",
+				"maxItems": maxTags,
+				"items":    map[string]any{"type": "string"},
+			},
+		},
+		"required":             []string{"tags"},
+		"additionalProperties": false,
+	}
+}
+
 type candidateResponse struct {
 	Candidates []Candidate `json:"candidates"`
+}
+
+type tagResponse struct {
+	Tags []string `json:"tags"`
 }
 
 type openAIResponseBody struct {

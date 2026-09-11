@@ -22,6 +22,12 @@ type UpsertInput struct {
 	DuplicateMinSimilarity float64
 }
 
+type UpdateInput struct {
+	Content   string
+	Tags      []string
+	Embedding []float64
+}
+
 type DuplicateInput struct {
 	Content       string
 	Tags          []string
