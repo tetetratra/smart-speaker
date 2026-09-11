@@ -127,7 +127,7 @@ sequenceDiagram
 2. フロントエンドがメモリ画面へ切り替わったタイミングで `GET /api/memories` を呼び出す。
 3. HTTP handler が会話処理と共有している `memory.Store` の `Snapshot()` を取得する。
 4. handler が `created_at` 降順に並べ、`id`、`content`、`tags`、`created_at`、`updated_at` に絞った JSON を返す。
-5. フロントエンドが件数、本文、タグ、作成日時、更新日時を表示する。
+5. フロントエンドが本文、タグ、作成日時、更新日時を表示する。
 6. 追加・編集時は `POST /api/memories` または `PUT /api/memories/{id}` を呼び出し、入力されたメモリ文からタグと embedding を再計算して保存する。
 7. 削除時は `DELETE /api/memories/{id}` を呼び出し、該当 record を store から削除する。
 
