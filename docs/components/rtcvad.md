@@ -30,6 +30,8 @@ WebRTC や Google STT の API には直接触れず、`rtcpeer` から受け取�
 - speech inactive 中にしきい値未満の frame が来た場合、`voicedMs` は 0 に戻る。
 - そのため、一瞬だけしきい値を超えた frame では speech start にならない。
 - しきい値は直近 energy 履歴から 1 秒ごとに更新され、実効値は下限 50 を持つ。
+- speech start 前の PCM は最大 10 秒ぶん prebuffer に保持し、speech start event と一緒に STT へ渡す。
+- speech start ログには `prebuffer_ms`、`prebuffer_limit_ms`、`prebuffer_full`、`voiced_ms` を出し、開始判定時に prebuffer 上限へ到達していたかを確認できる。
 
 ## 接続
 
