@@ -7,7 +7,7 @@
 
 ## 主要 event
 
-- `EventHumanInterimUtterance`: STT の未確定テキスト。AI出力停止の早期シグナルとして使い、履歴やLLM入力には流さない。
+- `EventHumanInterimUtterance`: STT の未確定テキスト。AI出力保留の早期シグナルとして使い、履歴やLLM入力には流さない。
 - `EventHumanUtterance`: STT の確定テキスト。
 - `EventConversationCommitRequest`: user / agent / tool_call / tool_result の履歴保存要求。
 - `EventLLMRequest`: LLM component への推論要求。
@@ -26,7 +26,7 @@
 
 ## 共有Store
 
-- `internal/states/generation` は最新世代idを保持する。interim transcript 到着時は `interimstopper` がAI出力停止用に世代を進め、確定 user 発話の flush 時は `utterancebuffer` が会話継続用に世代を進める。
+- `internal/states/generation` は最新世代idと保留中割り込みを保持する。VAD speech start や interim transcript 到着時は `BeginInterruption()` で旧世代を paused、新しい発話判定用世代を candidate として扱う。LLM の空 timeline では `ResumeIfPending()` で paused 世代を再開し、非空 timeline では `ConfirmIfPending()` で candidate 世代を確定する。
 - `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
 - `internal/states/agentstatus` は LLM がひとりごと候補判定で参照する `idle` / `active` 状態を保持する。
 - Store は graph node ではなく、必要な component へ依存注入する。

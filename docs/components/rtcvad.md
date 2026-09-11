@@ -7,7 +7,8 @@ WebRTC や Google STT の API には直接触れず、`rtcpeer` から受け取�
 
 - `EventRTCPeerAudioFrame` の PCM sample から入力 energy を測定する。
 - 直近 energy 履歴から適応しきい値を計算し、speech start / speech end を判定する。
-- speech start 判定時に `generation.Store.Next()` を呼び、古い LLM / TTS / scheduler 出力を早期に stale 化する。
+- speech start 判定時に `generation.Store.BeginInterruption()` を呼び、古い LLM / TTS / scheduler 出力を即破棄せず pending 中の paused 世代として扱う。
+- 後段の LLM が空 timeline を返した場合は paused 世代が再開され、非空 timeline を返した場合は新しい candidate 世代が確定される。
 - STT に送る発話開始、音声 frame、発話終了を `EventRTCSpeechAudio` として出す。
 - `EventRTCVADStatus` を UI 表示用に `wschat` へ出す。
 - 発話開始時に `EventSpeechStart` を `wschat` へ出す。
@@ -38,7 +39,7 @@ WebRTC や Google STT の API には直接触れず、`rtcpeer` から受け取�
 ```mermaid
 flowchart LR
   RTCPeer["rtcpeer"] -->|"EventRTCPeerAudioFrame"| VAD["rtcvad"]
-  VAD -.->|"speech startでNext"| GEN[("generation.Store")]
+  VAD -.->|"speech startでBeginInterruption"| GEN[("generation.Store")]
   VAD -->|"EventRTCSpeechAudio"| STT["stt"]
   VAD -->|"EventRTCVADStatus / EventSpeechStart / EventSpeechEnd"| WS["wschat"]
 ```
