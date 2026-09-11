@@ -35,16 +35,17 @@ const toolToastDurationMs = 5000
 const receivedVolumeMeterMax = 1000
 const serverEventLogLimit = 1000
 
-type PlaybackVolumeLevel = 'quiet' | 'low' | 'normal' | 'boost'
+type PlaybackVolumeLevel = 'mute' | 'quiet' | 'low' | 'normal' | 'boost'
 
 const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: number }> = {
+  mute: { label: '0倍', gain: 0 },
   quiet: { label: '0.3倍', gain: 0.3 },
   low: { label: '0.6倍', gain: 0.6 },
   normal: { label: '1倍', gain: 1.0 },
   boost: { label: '1.5倍', gain: 1.5 },
 }
-const playbackVolumeLevels: PlaybackVolumeLevel[] = ['quiet', 'low', 'normal', 'boost']
-const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'low'
+const playbackVolumeLevels: PlaybackVolumeLevel[] = ['mute', 'quiet', 'low', 'normal', 'boost']
+const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'boost'
 
 function meterPercent(value: number): number {
   if (!Number.isFinite(value)) return 0
