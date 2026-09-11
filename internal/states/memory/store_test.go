@@ -210,6 +210,107 @@ func TestStoreFindDuplicate(t *testing.T) {
 	}
 }
 
+func TestStoreUpdateReplacesAndPersistsRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.json")
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	record, _, err := store.Upsert(UpsertInput{
+		Content:   "朝はコーヒーを飲む",
+		Tags:      []string{"coffee"},
+		Embedding: []float64{1, 0},
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	updated, err := store.Update(record.ID, UpdateInput{
+		Content:   "  朝は紅茶を飲む  ",
+		Tags:      []string{" tea ", "Tea", "morning"},
+		Embedding: []float64{0, 1},
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.ID != record.ID {
+		t.Fatalf("ID = %q, want %q", updated.ID, record.ID)
+	}
+	if !updated.CreatedAt.Equal(record.CreatedAt) {
+		t.Fatalf("CreatedAt = %v, want %v", updated.CreatedAt, record.CreatedAt)
+	}
+	if !updated.UpdatedAt.After(record.UpdatedAt) && !updated.UpdatedAt.Equal(record.UpdatedAt) {
+		t.Fatalf("UpdatedAt = %v, want >= %v", updated.UpdatedAt, record.UpdatedAt)
+	}
+	if updated.Content != "朝は紅茶を飲む" {
+		t.Fatalf("Content = %q, want trimmed", updated.Content)
+	}
+	if got, want := updated.Tags, []string{"morning", "tea"}; !sameStrings(got, want) {
+		t.Fatalf("Tags = %#v, want %#v", got, want)
+	}
+	if got, want := updated.Embedding, []float64{0, 1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Embedding = %#v, want %#v", got, want)
+	}
+
+	reloaded, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore(reload) error = %v", err)
+	}
+	snapshot := reloaded.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].Content != updated.Content {
+		t.Fatalf("reloaded snapshot = %#v, want updated record", snapshot)
+	}
+}
+
+func TestStoreUpdateRejectsEmptyContentAndUnknownID(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if _, err := store.Update("missing", UpdateInput{Content: "   "}); !errors.Is(err, ErrEmptyContent) {
+		t.Fatalf("Update(empty) error = %v, want ErrEmptyContent", err)
+	}
+	if _, err := store.Update("missing", UpdateInput{Content: "有効な記憶"}); !errors.Is(err, ErrRecordNotFound) {
+		t.Fatalf("Update(missing) error = %v, want ErrRecordNotFound", err)
+	}
+}
+
+func TestStoreDeleteRemovesAndPersistsRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.json")
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	record, _, err := store.Upsert(UpsertInput{Content: "消す記憶"})
+	if err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	if err := store.Delete(record.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if got := len(store.Snapshot()); got != 0 {
+		t.Fatalf("Snapshot len = %d, want 0", got)
+	}
+	reloaded, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore(reload) error = %v", err)
+	}
+	if got := len(reloaded.Snapshot()); got != 0 {
+		t.Fatalf("reloaded Snapshot len = %d, want 0", got)
+	}
+}
+
+func TestStoreDeleteRejectsUnknownID(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if err := store.Delete("missing"); !errors.Is(err, ErrRecordNotFound) {
+		t.Fatalf("Delete() error = %v, want ErrRecordNotFound", err)
+	}
+}
+
 func TestStoreSnapshotReturnsDeepCopy(t *testing.T) {
 	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {

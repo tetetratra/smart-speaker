@@ -48,7 +48,8 @@ https://pkg.go.dev/github.com/pion/webrtc/v4#SettingEngine.SetICEAddressRewriteR
 
 メモリ機能は、会話履歴から長期記憶候補を作成し、保存済みの全メモリを LLM の入力に追加します。
 Docker Compose ではメモリ store を `/app/data/memories.json` に保存し、host 側の `/var/lib/smart-speaker/data` に永続化します。
-通常画面の「メモリ」ボタン、または `?ui=memory` / `/memory` から、その時点で保存されているメモリ一覧を確認できます。
+通常画面の「メモリ」ボタン、または `?ui=memory` / `/memory` から、その時点で保存されているメモリ一覧を確認し、メモリ文の追加・編集・削除ができます。
+追加・編集時は、入力したメモリ文からタグと embedding を再計算して保存します。
 
 主な設定は以下です。
 

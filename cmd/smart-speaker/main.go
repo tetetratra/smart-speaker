@@ -398,7 +398,26 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, memoryStore)
+	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
+		BaseURL: cfg.Memory.EmbeddingBaseURL,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init memory api embedder: %w", err)
+	}
+	memoryTagger, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
+		APIKey:  cfg.APIKey,
+		Model:   cfg.Memory.Model,
+		MaxTags: cfg.Memory.MaxTags,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init memory api tagger: %w", err)
+	}
+	registerMemoryAPI(mux, memoryStore, &manualMemoryService{
+		store:                  memoryStore,
+		tagger:                 memoryTagger,
+		embedder:               memoryEmbedder,
+		duplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
+	})
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
@@ -421,41 +440,213 @@ type memoryListItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store) {
+type memoryWriteRequest struct {
+	Content string `json:"content"`
+}
+
+type memoryWriteResponse struct {
+	Memory memoryListItem `json:"memory"`
+}
+
+type manualMemoryWriter interface {
+	Create(context.Context, string) (memorystate.Record, memorystate.UpsertResult, error)
+	Update(context.Context, string, string) (memorystate.Record, error)
+	Delete(string) error
+}
+
+type memoryTagger interface {
+	CreateTags(context.Context, string) ([]string, error)
+}
+
+type memoryEmbedder interface {
+	Embed(context.Context, string) ([]float64, error)
+}
+
+type manualMemoryService struct {
+	store                  *memorystate.Store
+	tagger                 memoryTagger
+	embedder               memoryEmbedder
+	duplicateMinSimilarity float64
+}
+
+func (s *manualMemoryService) Create(ctx context.Context, content string) (memorystate.Record, memorystate.UpsertResult, error) {
+	tags, embedding, err := s.recalculate(ctx, content)
+	if err != nil {
+		return memorystate.Record{}, memorystate.UpsertResult{}, err
+	}
+	return s.store.Upsert(memorystate.UpsertInput{
+		Content:                content,
+		Tags:                   tags,
+		Embedding:              embedding,
+		DuplicateMinSimilarity: s.duplicateMinSimilarity,
+	})
+}
+
+func (s *manualMemoryService) Update(ctx context.Context, id, content string) (memorystate.Record, error) {
+	tags, embedding, err := s.recalculate(ctx, content)
+	if err != nil {
+		return memorystate.Record{}, err
+	}
+	return s.store.Update(id, memorystate.UpdateInput{
+		Content:   content,
+		Tags:      tags,
+		Embedding: embedding,
+	})
+}
+
+func (s *manualMemoryService) Delete(id string) error {
+	return s.store.Delete(id)
+}
+
+func (s *manualMemoryService) recalculate(ctx context.Context, content string) ([]string, []float64, error) {
+	tags, err := s.tagger.CreateTags(ctx, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	searchText := memorystate.Record{Content: content, Tags: tags}.SearchText()
+	embedding, err := s.embedder.Embed(ctx, searchText)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tags, embedding, nil
+}
+
+func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store, writer manualMemoryWriter) {
 	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			handleMemoryList(w, memoryStore)
+		case http.MethodPost:
+			handleMemoryCreate(w, r, writer)
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if memoryStore == nil {
-			http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
-			return
-		}
-
-		records := memoryStore.Snapshot()
-		sort.SliceStable(records, func(i, j int) bool {
-			return records[i].CreatedAt.After(records[j].CreatedAt)
-		})
-		items := make([]memoryListItem, 0, len(records))
-		for _, record := range records {
-			tags := record.Tags
-			if tags == nil {
-				tags = []string{}
-			}
-			items = append(items, memoryListItem{
-				ID:        record.ID,
-				Content:   record.Content,
-				Tags:      tags,
-				CreatedAt: record.CreatedAt,
-				UpdatedAt: record.UpdatedAt,
-			})
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(memoryListResponse{Memories: items}); err != nil {
-			log.Printf("memory api: encode memories: %v", err)
 		}
 	})
+	mux.HandleFunc("/api/memories/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(path.Clean(r.URL.Path), "/api/memories/")
+		if id == "." || id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			handleMemoryUpdate(w, r, writer, id)
+		case http.MethodDelete:
+			handleMemoryDelete(w, writer, id)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+func handleMemoryList(w http.ResponseWriter, memoryStore *memorystate.Store) {
+	if memoryStore == nil {
+		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	records := memoryStore.Snapshot()
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].CreatedAt.After(records[j].CreatedAt)
+	})
+	items := make([]memoryListItem, 0, len(records))
+	for _, record := range records {
+		items = append(items, memoryItemFromRecord(record))
+	}
+
+	writeJSON(w, http.StatusOK, memoryListResponse{Memories: items})
+}
+
+func handleMemoryCreate(w http.ResponseWriter, r *http.Request, writer manualMemoryWriter) {
+	if writer == nil {
+		http.Error(w, "memory writer is unavailable", http.StatusInternalServerError)
+		return
+	}
+	req, ok := decodeMemoryWriteRequest(w, r)
+	if !ok {
+		return
+	}
+	record, _, err := writer.Create(r.Context(), req.Content)
+	if err != nil {
+		writeMemoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, memoryWriteResponse{Memory: memoryItemFromRecord(record)})
+}
+
+func handleMemoryUpdate(w http.ResponseWriter, r *http.Request, writer manualMemoryWriter, id string) {
+	if writer == nil {
+		http.Error(w, "memory writer is unavailable", http.StatusInternalServerError)
+		return
+	}
+	req, ok := decodeMemoryWriteRequest(w, r)
+	if !ok {
+		return
+	}
+	record, err := writer.Update(r.Context(), id, req.Content)
+	if err != nil {
+		writeMemoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memoryWriteResponse{Memory: memoryItemFromRecord(record)})
+}
+
+func handleMemoryDelete(w http.ResponseWriter, writer manualMemoryWriter, id string) {
+	if writer == nil {
+		http.Error(w, "memory writer is unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := writer.Delete(id); err != nil {
+		writeMemoryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeMemoryWriteRequest(w http.ResponseWriter, r *http.Request) (memoryWriteRequest, bool) {
+	var req memoryWriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid memory request", http.StatusBadRequest)
+		return memoryWriteRequest{}, false
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		http.Error(w, memorystate.ErrEmptyContent.Error(), http.StatusBadRequest)
+		return memoryWriteRequest{}, false
+	}
+	return req, true
+}
+
+func writeMemoryError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, memorystate.ErrEmptyContent):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, memorystate.ErrRecordNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func memoryItemFromRecord(record memorystate.Record) memoryListItem {
+	tags := record.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	return memoryListItem{
+		ID:        record.ID,
+		Content:   record.Content,
+		Tags:      tags,
+		CreatedAt: record.CreatedAt,
+		UpdatedAt: record.UpdatedAt,
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("memory api: encode response: %v", err)
+	}
 }
 
 func runHTTPServer(server *http.Server) {
