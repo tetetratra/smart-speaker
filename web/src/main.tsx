@@ -687,6 +687,12 @@ function App() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
+  const resetConversationBubble = useCallback(() => {
+    setIsAiSpeaking(false)
+    setMessages([])
+    setIsConversationBubbleHidden(true)
+  }, [])
+
   const updateAdminLogFollow = useCallback(() => {
     const el = adminLogRef.current
     shouldFollowAdminLogRef.current = !el || isScrolledToBottom(el)
@@ -854,9 +860,7 @@ function App() {
           break
         }
         case 'session_reset': {
-          setIsAiSpeaking(false)
-          setMessages([])
-          setIsConversationBubbleHidden(true)
+          resetConversationBubble()
           break
         }
         case 'rtc_vad_status': {
@@ -876,7 +880,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, resetConversationBubble, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -1061,8 +1065,8 @@ function App() {
     wsChatRef.current?.close()
     wsChatRef.current = null
     setConnected(false)
-    setIsAiSpeaking(false)
-  }, [clearReconnectTimer, stopRTC])
+    resetConversationBubble()
+  }, [clearReconnectTimer, resetConversationBubble, stopRTC])
 
   useEffect(() => {
     return () => {
