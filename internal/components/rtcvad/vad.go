@@ -36,6 +36,10 @@ func (s *stage) handleAudioFrame(frame types.RTCPeerAudioFrame) {
 	var shouldEnd bool
 	var shouldSend bool
 	var prebuffer []byte
+	var prebufferFull bool
+	var prebufferDurationMs int
+	var prebufferLimitMs int
+	var startVoicedMs int
 
 	peerState.mu.Lock()
 	if peerState.prebuffer == nil || peerState.inputSampleRate != sampleRate {
@@ -63,11 +67,24 @@ func (s *stage) handleAudioFrame(frame types.RTCPeerAudioFrame) {
 		}
 		if peerState.voicedMs >= vadStartThreshold {
 			peerState.speechActive = true
+			startVoicedMs = peerState.voicedMs
 			peerState.voicedMs = 0
 			peerState.silenceMs = 0
 			shouldStart = true
-			log.Printf("rtcvad: speech start sample_rate=%d energy=%d threshold=%d", sampleRate, frameEnergy, currentThreshold)
 			prebuffer = peerState.prebuffer.snapshot()
+			prebufferFull = peerState.prebuffer.full()
+			prebufferDurationMs = pcmDurationMs(len(prebuffer), sampleRate, 1)
+			prebufferLimitMs = pcmDurationMs(peerState.prebuffer.limit, sampleRate, 1)
+			log.Printf(
+				"rtcvad: speech start sample_rate=%d energy=%d threshold=%d prebuffer_ms=%d prebuffer_limit_ms=%d prebuffer_full=%t voiced_ms=%d",
+				sampleRate,
+				frameEnergy,
+				currentThreshold,
+				prebufferDurationMs,
+				prebufferLimitMs,
+				prebufferFull,
+				startVoicedMs,
+			)
 		}
 	} else {
 		if isSpeech {
@@ -311,6 +328,23 @@ func prebufferBytes(sampleRate int, channels int, seconds int) int {
 	return sampleRate * channels * seconds * 2
 }
 
+func pcmDurationMs(byteLen int, sampleRate int, channels int) int {
+	if byteLen <= 0 {
+		return 0
+	}
+	if sampleRate <= 0 {
+		sampleRate = webrtcSampleRate
+	}
+	if channels <= 0 {
+		channels = 1
+	}
+	bytesPerSecond := sampleRate * channels * 2
+	if bytesPerSecond <= 0 {
+		return 0
+	}
+	return byteLen * 1000 / bytesPerSecond
+}
+
 type pcmRingBuffer struct {
 	buf   []byte
 	head  int
@@ -351,6 +385,10 @@ func (r *pcmRingBuffer) append(data []byte) {
 	if r.size > r.limit {
 		r.size = r.limit
 	}
+}
+
+func (r *pcmRingBuffer) full() bool {
+	return r != nil && r.size >= r.limit
 }
 
 func (r *pcmRingBuffer) snapshot() []byte {

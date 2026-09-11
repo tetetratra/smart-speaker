@@ -13,7 +13,7 @@ import (
 const (
 	webrtcSampleRate = 48000
 
-	prebufferSeconds  = 3
+	prebufferSeconds  = 10
 	vadStartThreshold = 200
 	vadEndThreshold   = 500
 
