@@ -10,7 +10,7 @@
 
 ### 2.1 配信形態
 - Web UI は SPA として配信される。
-- ルート配信は `cmd/smart-speaker/main.go` の `registerWebUI` が担当し、`/` は `index.html` を返す。
+- ルート配信は `cmd/smart-speaker/web_ui.go` の `registerWebUI` が担当し、`/` は `index.html` を返す。
 - `/assets/*` や拡張子付き path は静的ファイルとして扱い、存在しなければ 404 になる。
 - `/admin` のような拡張子なし path は SPA fallback で `index.html` を返す。
 
@@ -247,5 +247,7 @@ sequenceDiagram
 - `web/public/manifest.webmanifest`
 - `web/public/sw.js`
 - `internal/components/wschat/wschat.go`
-- `cmd/smart-speaker/main.go`
+- `cmd/smart-speaker/http_server.go`
+- `cmd/smart-speaker/web_ui.go`
+- `cmd/smart-speaker/memory_http.go`
 - `git show HEAD^:docs/4.Webフロントと接続ライフサイクル.md`
