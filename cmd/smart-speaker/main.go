@@ -259,6 +259,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		Model:                 cfg.ResponsesModel,
 		Instructions:          cfg.SystemPrompt,
 		History:               historyStore,
+		Generation:            generationStore,
 		AgentStatus:           agentStatusStore,
 		MemoryContextProvider: memoryContextProvider,
 		ToolSchemas:           toolSchemas,
