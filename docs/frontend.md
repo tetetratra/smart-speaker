@@ -33,6 +33,8 @@
 - whiteboard の内容を表示する。
 - 直近の user / agent 発話を表示する。
 - 再生音量をスライダーで切り替える。
+  - 段階は `0倍` / `0.3倍` / `0.6倍` / `1倍` / `1.5倍` である。
+  - 初期値は最大段階の `1.5倍` である。
 - tool call / tool result を右側のキャラクターエリア上部に短時間のトーストとして表示する。
   - 通常の会話UIには追加しない。
   - 表示内容はツール名と call / result の区別に限定し、引数や結果本文は表示しない。
@@ -174,6 +176,7 @@ sequenceDiagram
 - サーバーから来た remote stream を再生する。
 - 再生経路は `<audio>` 要素ではなく Web Audio API である。
 - `GainNode` で再生音量プリセットを反映する。
+  - 左端のプリセットは gain `0` で、受信音声を無音にする。
 - `speech_start` 受信時は WebRTC remote track 自体は止めず、Web Audio graph を一度閉じて同じ remote stream へ再接続することで、再生中の音声を破棄する。
 
 ### 4.3 UI 状態管理
