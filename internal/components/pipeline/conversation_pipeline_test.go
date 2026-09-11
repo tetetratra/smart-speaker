@@ -115,6 +115,18 @@ func TestInterimStopsOldGenerationAndFinalCommitsUserUtterance(t *testing.T) {
 	if req.GenerationID != 2 {
 		t.Fatalf("GenerationID = %d, want 2", req.GenerationID)
 	}
+	if !store.ConfirmIfPending(req.GenerationID) {
+		t.Fatalf("ConfirmIfPending(%d) = false, want true", req.GenerationID)
+	}
+	assertNoPipelineEvent(t, filter.Downstream)
+
+	filter.Upstream <- types.Event{
+		Kind:    types.EventScheduledItem,
+		Payload: types.TimelineItem{GenerationID: req.GenerationID, Kind: types.TimelineKindSpeech, Text: "new"},
+	}
+	if evt := expect(t, filter.Downstream); evt.Kind != types.EventScheduledItem {
+		t.Fatalf("Kind = %s, want EventScheduledItem", evt.Kind)
+	}
 }
 
 func pump(ctx context.Context, in <-chan types.Event, out chan<- types.Event) {

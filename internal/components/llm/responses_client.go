@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -19,6 +20,7 @@ type Config struct {
 	Model                 string
 	Instructions          string
 	History               historyReader
+	Generation            *generation.Store
 	AgentStatus           agentStatusReader
 	MemoryContextProvider memoryContextProvider
 	ToolSchemas           []any

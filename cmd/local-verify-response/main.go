@@ -120,6 +120,7 @@ func buildPipeline(ctx context.Context, cfg app.Config) (*graph.Stage, <-chan ty
 		Model:        cfg.ResponsesModel,
 		Instructions: cfg.SystemPrompt,
 		History:      historyStore,
+		Generation:   generationStore,
 	})
 	if err != nil {
 		log.Fatal(err)

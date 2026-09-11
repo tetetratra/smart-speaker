@@ -10,6 +10,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -24,6 +25,7 @@ type stage struct {
 	downstream   chan types.Event
 	client       responseClient
 	history      historyReader
+	generation   *generation.Store
 	agentStatus  agentStatusReader
 	memory       memoryContextProvider
 	systemPrompt string
@@ -45,6 +47,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		downstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
 		client:       client,
 		history:      cfg.History,
+		generation:   cfg.Generation,
 		agentStatus:  cfg.AgentStatus,
 		memory:       cfg.MemoryContextProvider,
 		systemPrompt: buildSystemPrompt(cfg.Instructions, cfg.ToolSchemas),
@@ -91,6 +94,7 @@ func (s *stage) handleRequest(ctx context.Context, req types.LLMRequest) {
 		log.Printf("llm: drop response generation=%d request_id=%s err=%v", req.GenerationID, req.RequestID, err)
 		return
 	}
+	s.resolveGeneration(req, len(items))
 	for _, item := range items {
 		select {
 		case <-ctx.Done():
@@ -107,6 +111,21 @@ func (s *stage) handleRequest(ctx context.Context, req types.LLMRequest) {
 			GenerationID: req.GenerationID,
 		},
 	}:
+	}
+}
+
+func (s *stage) resolveGeneration(req types.LLMRequest, itemCount int) {
+	if s.generation == nil {
+		return
+	}
+	if itemCount == 0 {
+		if s.generation.ResumeIfPending(req.GenerationID) {
+			log.Printf("llm: resumed paused generation after empty timeline generation=%d request_id=%s", req.GenerationID, req.RequestID)
+		}
+		return
+	}
+	if s.generation.ConfirmIfPending(req.GenerationID) {
+		log.Printf("llm: confirmed generation interruption generation=%d request_id=%s items=%d", req.GenerationID, req.RequestID, itemCount)
 	}
 }
 
