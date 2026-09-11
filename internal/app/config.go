@@ -70,7 +70,7 @@ func LoadConfig(promptPath string) Config {
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
 		// realtime系のapiはコンテキストウィンドウが小さいのと高いため、response系のモデルを使う
-		responsesModel = "gpt-5.2-2025-12-11"
+		responsesModel = "gpt-5.4-mini-2026-03-17"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
 
