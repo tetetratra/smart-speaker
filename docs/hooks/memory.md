@@ -13,6 +13,7 @@
 - **`internal/hooks/memory.OpenAIClient`**
   - reset 前の会話履歴を OpenAI Responses API に渡し、長期記憶候補を structured output として生成する
   - 候補は `content` と `tags[]` を持つ
+  - 手動入力されたメモリ本文から検索補助用の `tags[]` だけを structured output として生成する
   - 通常起動では `OPENAI_MEMORY_MODEL` を使い、未指定の場合は `OPENAI_RESPONSES_MODEL` に fallback する
   - 1 reset あたりの候補数は既定で最大 5 件、1 候補あたりの tag は既定で最大 5 件
   - 履歴が空の場合は OpenAI API を呼ばず、候補なしとして返す
@@ -30,6 +31,8 @@
   - メモリ本文、タグ、embedding、作成・更新時刻を JSON file に永続化する
   - content 完全一致、タグ集合一致、embedding の cosine similarity で重複を判定する
   - 重複した候補は既存 record を更新せず、保存をスキップする
+  - ID 指定で本文、タグ、embedding、更新時刻を置き換える
+  - ID 指定で record を削除する
 - **`internal/hooks/memory.ContextProvider`**
   - `memory.Store.Snapshot()` から保存済みメモリを全件取得する
   - メモリ本文だけを `memory_context` system message として LLM の入力に追加する
@@ -37,10 +40,15 @@
   - 管理画面から保存済みメモリ一覧を確認するための HTTP API
   - 会話処理と同じ `memory.Store` インスタンスの `Snapshot()` から一覧を取得する
   - レスポンスには `id`、`content`、`tags`、`created_at`、`updated_at` を含め、embedding ベクトル本体は返さない
+- **`POST /api/memories`, `PUT /api/memories/{id}`, `DELETE /api/memories/{id}`**
+  - 管理画面から保存済みメモリを手動追加・編集・削除するための HTTP API
+  - 追加・編集時は `manualMemoryService` が本文からタグと embedding を再計算してから store を更新する
+  - 削除時は ID 指定で store から record を削除する
 - **メモリ画面**
   - 通常画面の「メモリ」ボタンから遷移する専用画面
   - 表示時に `GET /api/memories` を呼び出し、その時点のメモリ一覧を表示する
-  - リアルタイム更新、編集、削除は行わない
+  - ユーザー入力によるメモリ文の追加、保存済みメモリ本文のインライン編集、保存済みメモリの削除ができる
+  - WebSocket やポーリングによるリアルタイム更新は行わない
 - **`embedding` service**
   - `docker-compose.yml` で起動するローカル embedding server
   - host port は公開せず、Go server から Compose 内部 DNS で接続する
@@ -169,6 +177,7 @@ sequenceDiagram
       - `openai_client.go`: reset 前会話履歴からメモリ候補を生成する
         - `NewOpenAIClient`: API key、model、endpoint、HTTP client、最大候補数、最大 tag 数を受け取る
         - `CreateCandidates`: 履歴が空なら候補なしを返し、履歴があれば Responses API の strict JSON schema で候補を生成する
+        - `CreateTags`: 手動入力本文からタグだけを Responses API の strict JSON schema で生成する
         - `memoryCandidateInstructions`: 長期記憶候補の抽出ルールと出力例を定義する
         - `normalizeCandidates`: 空 `content` の除外、`tags` の trim / 重複除外 / 件数制限を行う
       - `creator_hook.go`: session reset 前にメモリ候補を生成して保存する hook を担当する
@@ -180,10 +189,18 @@ sequenceDiagram
       - `embedding_client.go`: TEI `/embed` への HTTP 通信と `number[][]` response の変換を担当する
         - `NewEmbeddingClient`: base URL の default 補完と形式検証を行う。生成時の疎通確認はしない
         - `Embed`: 空 text を拒否し、HTTP error や空 embedding を error として返す
+  - `cmd/`
+    - `smart-speaker/`
+      - `http_server.go`: HTTP server と mux の構築、共通 JSON 応答、server 起動・終了を担当する
+      - `memory_http.go`: `/api/memories` の routing、request decode、response DTO、error mapping を担当する
+      - `manual_memory_service.go`: 手動追加・編集時のタグ生成、embedding 生成、store 更新と、手動削除時の store 削除を担当する
+      - `web_ui.go`: Web UI の静的ファイル配信と SPA fallback を担当する
   - `states/`
     - `memory/`
       - `store.go`: メモリ record の永続化と重複判定を担当する
         - `Upsert`: content、tags、embedding 類似度で重複を判定し、重複していなければ保存する。重複時は既存 record を更新しない
+        - `Update`: ID 指定で content、tags、embedding を更新し、作成日時を維持して更新日時を更新する
+        - `Delete`: ID 指定で record を削除する
 
 ### API設計
 
