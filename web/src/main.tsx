@@ -690,7 +690,6 @@ function App() {
   const [switchBotScenes, setSwitchBotScenes] = useState<SwitchBotSceneItem[]>([])
   const [switchBotSceneLoading, setSwitchBotSceneLoading] = useState(false)
   const [switchBotSceneError, setSwitchBotSceneError] = useState('')
-  const [switchBotSceneStatus, setSwitchBotSceneStatus] = useState('')
   const loadMemories = useCallback((signal?: AbortSignal) => {
     setMemoryLoading(true)
     setMemoryError('')
@@ -721,7 +720,6 @@ function App() {
   const loadSwitchBotScenes = useCallback((signal?: AbortSignal) => {
     setSwitchBotSceneLoading(true)
     setSwitchBotSceneError('')
-    setSwitchBotSceneStatus('')
 
     return fetch(new URL('/api/switchbot/scenes', backendURL).toString(), { signal })
       .then(async (resp) => {
@@ -1351,12 +1349,10 @@ function App() {
   const executeSwitchBotScene = useCallback(async (scene: SwitchBotSceneItem) => {
     try {
       setSwitchBotSceneError('')
-      setSwitchBotSceneStatus('')
       const resp = await fetch(new URL(`/api/switchbot/scenes/${encodeURIComponent(scene.id)}/execute`, backendURL).toString(), { method: 'POST' })
       if (!resp.ok) {
         throw new Error(`シーンを実行できませんでした (${resp.status})`)
       }
-      setSwitchBotSceneStatus(`${scene.name} を実行しました`)
     } catch (err) {
       setSwitchBotSceneError(err instanceof Error ? err.message : 'シーンを実行できませんでした')
       throw err
@@ -1472,7 +1468,6 @@ function App() {
         scenes={switchBotScenes}
         loading={switchBotSceneLoading}
         error={switchBotSceneError}
-        status={switchBotSceneStatus}
         onExecute={executeSwitchBotScene}
         goApp={() => setMode('app')}
       />
@@ -1787,11 +1782,10 @@ function SwitchBotSceneView(props: {
   scenes: SwitchBotSceneItem[]
   loading: boolean
   error: string
-  status: string
   onExecute: (scene: SwitchBotSceneItem) => Promise<void>
   goApp: () => void
 }) {
-  const { visible, scenes, loading, error, status, onExecute, goApp } = props
+  const { visible, scenes, loading, error, onExecute, goApp } = props
   const [pendingSceneID, setPendingSceneID] = useState('')
   const submitScene = useCallback(async (scene: SwitchBotSceneItem) => {
     setPendingSceneID(scene.id)
@@ -1830,22 +1824,6 @@ function SwitchBotSceneView(props: {
           {error}
         </div>
       )}
-      {status && !error && (
-        <div
-          style={{
-            border: '1px solid #bbf7d0',
-            borderRadius: 8,
-            background: '#f0fdf4',
-            color: '#166534',
-            padding: '10px 12px',
-            fontSize: 13,
-            lineHeight: 1.4,
-            fontWeight: 700,
-          }}
-        >
-          {status}
-        </div>
-      )}
       <div
         style={{
           flex: '1 1 auto',
@@ -1866,7 +1844,7 @@ function SwitchBotSceneView(props: {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
             gap: 10,
           }}
         >
@@ -1884,8 +1862,8 @@ function SwitchBotSceneView(props: {
                   border: '1px solid #cbd5e1',
                   background: pending ? '#dbeafe' : '#ffffff',
                   color: pending ? '#1d4ed8' : '#0f172a',
-                  padding: '10px 8px',
-                  fontSize: 14,
+                  padding: '5px 8px',
+                  fontSize: 21,
                   fontWeight: 800,
                   lineHeight: 1.35,
                   whiteSpace: 'normal',
