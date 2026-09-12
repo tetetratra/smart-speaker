@@ -9,7 +9,7 @@ type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory'
+type UiMode = 'admin' | 'app' | 'memory' | 'scenes'
 type MemoryItem = {
   id: string
   content: string
@@ -19,6 +19,11 @@ type MemoryItem = {
 }
 type MemoryListResponse = { memories: MemoryItem[] }
 type MemoryWriteResponse = { memory: MemoryItem }
+type SwitchBotSceneItem = {
+  id: string
+  name: string
+}
+type SwitchBotSceneListResponse = { scenes: SwitchBotSceneItem[] }
 
 const browserURL = new URL(window.location.href)
 const backendURL = new URL(window.location.origin)
@@ -361,6 +366,11 @@ const liveRootStyle = `
     width: auto;
     padding-inline: 10px;
   }
+  .live-scene-nav-btn {
+    width: 30px;
+    padding: 0;
+    font-size: 17px;
+  }
   .live-toggle-switch {
     width: 36px;
     height: 20px;
@@ -625,6 +635,13 @@ function normalizeMemoryItem(memory: MemoryItem): MemoryItem {
   }
 }
 
+function normalizeSwitchBotSceneItem(scene: SwitchBotSceneItem): SwitchBotSceneItem {
+  return {
+    id: String(scene.id),
+    name: String(scene.name),
+  }
+}
+
 function isScrolledToBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
 }
@@ -646,6 +663,7 @@ type LiveViewProps = {
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
   disconnect: () => void
+  goScenes: () => void
   goMemory: () => void
   goAdmin: () => void
 }
@@ -669,6 +687,10 @@ function App() {
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [memoryError, setMemoryError] = useState('')
+  const [switchBotScenes, setSwitchBotScenes] = useState<SwitchBotSceneItem[]>([])
+  const [switchBotSceneLoading, setSwitchBotSceneLoading] = useState(false)
+  const [switchBotSceneError, setSwitchBotSceneError] = useState('')
+  const [switchBotSceneStatus, setSwitchBotSceneStatus] = useState('')
   const loadMemories = useCallback((signal?: AbortSignal) => {
     setMemoryLoading(true)
     setMemoryError('')
@@ -693,6 +715,34 @@ function App() {
       .finally(() => {
         if (!signal?.aborted) {
           setMemoryLoading(false)
+        }
+      })
+  }, [])
+  const loadSwitchBotScenes = useCallback((signal?: AbortSignal) => {
+    setSwitchBotSceneLoading(true)
+    setSwitchBotSceneError('')
+    setSwitchBotSceneStatus('')
+
+    return fetch(new URL('/api/switchbot/scenes', backendURL).toString(), { signal })
+      .then(async (resp) => {
+        if (!resp.ok) {
+          throw new Error(`シーン一覧を取得できませんでした (${resp.status})`)
+        }
+        return await resp.json() as SwitchBotSceneListResponse
+      })
+      .then((data) => {
+        if (!Array.isArray(data.scenes)) {
+          throw new Error('シーン一覧の形式が不正です')
+        }
+        setSwitchBotScenes(data.scenes.map(normalizeSwitchBotSceneItem))
+      })
+      .catch((err) => {
+        if (signal?.aborted) return
+        setSwitchBotSceneError(err instanceof Error ? err.message : 'シーン一覧を取得できませんでした')
+      })
+      .finally(() => {
+        if (!signal?.aborted) {
+          setSwitchBotSceneLoading(false)
         }
       })
   }, [])
@@ -1184,8 +1234,10 @@ function App() {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ui') === 'admin') return 'admin'
     if (params.get('ui') === 'memory') return 'memory'
+    if (params.get('ui') === 'scenes') return 'scenes'
     if (window.location.pathname.startsWith('/admin')) return 'admin'
     if (window.location.pathname.startsWith('/memory')) return 'memory'
+    if (window.location.pathname.startsWith('/scenes')) return 'scenes'
     return 'app'
   })
   useEffect(() => {
@@ -1199,12 +1251,20 @@ function App() {
         setUiMode('memory')
         return
       }
+      if (params.get('ui') === 'scenes') {
+        setUiMode('scenes')
+        return
+      }
       if (window.location.pathname.startsWith('/admin')) {
         setUiMode('admin')
         return
       }
       if (window.location.pathname.startsWith('/memory')) {
         setUiMode('memory')
+        return
+      }
+      if (window.location.pathname.startsWith('/scenes')) {
+        setUiMode('scenes')
         return
       }
       setUiMode('app')
@@ -1237,6 +1297,12 @@ function App() {
     void loadMemories(controller.signal)
     return () => controller.abort()
   }, [loadMemories, uiMode])
+  useEffect(() => {
+    if (uiMode !== 'scenes') return
+    const controller = new AbortController()
+    void loadSwitchBotScenes(controller.signal)
+    return () => controller.abort()
+  }, [loadSwitchBotScenes, uiMode])
   const writeMemory = useCallback(async (method: 'POST' | 'PUT', content: string, id?: string) => {
     setMemoryError('')
     const path = id ? `/api/memories/${encodeURIComponent(id)}` : '/api/memories'
@@ -1282,12 +1348,28 @@ function App() {
       throw err
     }
   }, [])
+  const executeSwitchBotScene = useCallback(async (scene: SwitchBotSceneItem) => {
+    try {
+      setSwitchBotSceneError('')
+      setSwitchBotSceneStatus('')
+      const resp = await fetch(new URL(`/api/switchbot/scenes/${encodeURIComponent(scene.id)}/execute`, backendURL).toString(), { method: 'POST' })
+      if (!resp.ok) {
+        throw new Error(`シーンを実行できませんでした (${resp.status})`)
+      }
+      setSwitchBotSceneStatus(`${scene.name} を実行しました`)
+    } catch (err) {
+      setSwitchBotSceneError(err instanceof Error ? err.message : 'シーンを実行できませんでした')
+      throw err
+    }
+  }, [])
   const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
     if (mode === 'admin') {
       params.set('ui', 'admin')
     } else if (mode === 'memory') {
       params.set('ui', 'memory')
+    } else if (mode === 'scenes') {
+      params.set('ui', 'scenes')
     } else {
       params.delete('ui')
     }
@@ -1317,6 +1399,7 @@ function App() {
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
           disconnect={disconnect}
+          goScenes={() => setMode('scenes')}
           goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
         />
@@ -1382,6 +1465,15 @@ function App() {
         onCreate={createMemory}
         onUpdate={updateMemory}
         onDelete={deleteMemory}
+        goApp={() => setMode('app')}
+      />
+      <SwitchBotSceneView
+        visible={uiMode === 'scenes'}
+        scenes={switchBotScenes}
+        loading={switchBotSceneLoading}
+        error={switchBotSceneError}
+        status={switchBotSceneStatus}
+        onExecute={executeSwitchBotScene}
         goApp={() => setMode('app')}
       />
     </>
@@ -1690,6 +1782,145 @@ function MemoryView(props: {
   )
 }
 
+function SwitchBotSceneView(props: {
+  visible: boolean
+  scenes: SwitchBotSceneItem[]
+  loading: boolean
+  error: string
+  status: string
+  onExecute: (scene: SwitchBotSceneItem) => Promise<void>
+  goApp: () => void
+}) {
+  const { visible, scenes, loading, error, status, onExecute, goApp } = props
+  const [pendingSceneID, setPendingSceneID] = useState('')
+  const submitScene = useCallback(async (scene: SwitchBotSceneItem) => {
+    setPendingSceneID(scene.id)
+    try {
+      await onExecute(scene)
+    } finally {
+      setPendingSceneID('')
+    }
+  }, [onExecute])
+  return (
+    <div
+      style={{
+        display: visible ? 'flex' : 'none',
+        flexDirection: 'column',
+        gap: 12,
+        padding: 12,
+        height: '100vh',
+        minHeight: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
+      {error && (
+        <div
+          style={{
+            border: '1px solid #fecaca',
+            borderRadius: 8,
+            background: '#fef2f2',
+            color: '#991b1b',
+            padding: '10px 12px',
+            fontSize: 13,
+            lineHeight: 1.4,
+            fontWeight: 700,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {status && !error && (
+        <div
+          style={{
+            border: '1px solid #bbf7d0',
+            borderRadius: 8,
+            background: '#f0fdf4',
+            color: '#166534',
+            padding: '10px 12px',
+            fontSize: 13,
+            lineHeight: 1.4,
+            fontWeight: 700,
+          }}
+        >
+          {status}
+        </div>
+      )}
+      <div
+        style={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflow: 'auto',
+          border: '2px solid #e2e8f0',
+          borderRadius: 10,
+          background: '#fafafa',
+          padding: 12,
+        }}
+      >
+        {loading && (
+          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>シーンを読み込み中です</div>
+        )}
+        {!loading && !error && scenes.length === 0 && (
+          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>利用できるシーンはありません</div>
+        )}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 10,
+          }}
+        >
+          {scenes.map((scene) => {
+            const pending = pendingSceneID === scene.id
+            return (
+              <button
+                key={scene.id}
+                onClick={() => void submitScene(scene)}
+                disabled={pendingSceneID !== ''}
+                style={{
+                  minWidth: 0,
+                  minHeight: 84,
+                  borderRadius: 8,
+                  border: '1px solid #cbd5e1',
+                  background: pending ? '#dbeafe' : '#ffffff',
+                  color: pending ? '#1d4ed8' : '#0f172a',
+                  padding: '10px 8px',
+                  fontSize: 14,
+                  fontWeight: 800,
+                  lineHeight: 1.35,
+                  whiteSpace: 'normal',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  cursor: pendingSceneID !== '' ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                }}
+              >
+                {pending ? '実行中' : scene.name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <button
+        onClick={goApp}
+        style={{
+          alignSelf: 'flex-start',
+          borderRadius: 8,
+          border: '1px solid #cbd5e1',
+          background: '#ffffff',
+          color: '#334155',
+          padding: '10px 14px',
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        app画面
+      </button>
+    </div>
+  )
+}
+
 function LiveView(props: LiveViewProps) {
   const {
     connected,
@@ -1708,6 +1939,7 @@ function LiveView(props: LiveViewProps) {
     onPlaybackVolumeChange,
     connect,
     disconnect,
+    goScenes,
     goMemory,
     goAdmin,
   } = props
@@ -1772,6 +2004,7 @@ function LiveView(props: LiveViewProps) {
                     <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                     接続
                   </button>
+                  <button onClick={goScenes} className="live-admin-btn live-scene-nav-btn" aria-label="シーン" title="シーン">⌂</button>
                   <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 </div>
