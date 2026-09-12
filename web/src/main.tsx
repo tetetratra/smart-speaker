@@ -366,11 +366,6 @@ const liveRootStyle = `
     width: auto;
     padding-inline: 10px;
   }
-  .live-scene-nav-btn {
-    width: 30px;
-    padding: 0;
-    font-size: 17px;
-  }
   .live-toggle-switch {
     width: 36px;
     height: 20px;
@@ -1982,7 +1977,7 @@ function LiveView(props: LiveViewProps) {
                     <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                     接続
                   </button>
-                  <button onClick={goScenes} className="live-admin-btn live-scene-nav-btn" aria-label="シーン" title="シーン">⌂</button>
+                  <button onClick={goScenes} className="live-admin-btn">リモコン</button>
                   <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 </div>
