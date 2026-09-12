@@ -60,6 +60,15 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 - `MEMORY_SIMILARITY_THRESHOLD`: 保存時の近似重複判定に使う類似度閾値。既定値は `0.95` です。
 - `MEMORY_MAX_TAGS`: メモリ候補 1 件あたりの最大 tag 数。既定値は `5` です。
 
+### SwitchBot シーン操作
+
+SwitchBot シーン操作画面では、AI に依頼せずに登録済みシーンを手動で実行できます。
+通常画面の家アイコン、または `?ui=scenes` / `/scenes` から、その時点で SwitchBot に登録されているシーン一覧を確認し、各シーンのボタンを押して実行できます。
+シーン実行結果は会話履歴には追加されません。
+
+この画面を使うには、SwitchBot Open API の `SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定してください。
+未設定の場合や SwitchBot API への接続に失敗した場合は、シーン操作画面にエラーが表示されます。
+
 ## 本番環境
 
 ### 準備
