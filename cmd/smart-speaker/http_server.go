@@ -37,6 +37,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Serv
 		embedder:               memoryEmbedder,
 		duplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
 	})
+	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{
