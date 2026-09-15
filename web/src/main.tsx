@@ -1782,6 +1782,9 @@ function SwitchBotSceneView(props: {
 }) {
   const { visible, scenes, loading, error, onExecute, goApp } = props
   const [pendingSceneID, setPendingSceneID] = useState('')
+  const sortedScenes = useMemo(() => {
+    return [...scenes].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+  }, [scenes])
   const submitScene = useCallback(async (scene: SwitchBotSceneItem) => {
     setPendingSceneID(scene.id)
     try {
@@ -1803,6 +1806,32 @@ function SwitchBotSceneView(props: {
         boxSizing: 'border-box',
       }}
     >
+      <style>{`
+        .switchbot-scene-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .switchbot-scene-button {
+          min-width: 0;
+          min-height: 42px;
+          border-radius: 8px;
+          border: 1px solid #cbd5e1;
+          padding: 4px 8px;
+          font-size: 21px;
+          font-weight: 800;
+          line-height: 1.2;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        @media (orientation: portrait) {
+          .switchbot-scene-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+        }
+      `}</style>
       {error && (
         <div
           style={{
@@ -1837,35 +1866,20 @@ function SwitchBotSceneView(props: {
           <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>利用できるシーンはありません</div>
         )}
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-            gap: 10,
-          }}
+          className="switchbot-scene-grid"
         >
-          {scenes.map((scene) => {
+          {sortedScenes.map((scene) => {
             const pending = pendingSceneID === scene.id
             return (
               <button
                 key={scene.id}
                 onClick={() => void submitScene(scene)}
                 disabled={pendingSceneID !== ''}
+                className="switchbot-scene-button"
                 style={{
-                  minWidth: 0,
-                  minHeight: 84,
-                  borderRadius: 8,
-                  border: '1px solid #cbd5e1',
                   background: pending ? '#dbeafe' : '#ffffff',
                   color: pending ? '#1d4ed8' : '#0f172a',
-                  padding: '5px 8px',
-                  fontSize: 21,
-                  fontWeight: 800,
-                  lineHeight: 1.35,
-                  whiteSpace: 'normal',
-                  overflowWrap: 'anywhere',
-                  wordBreak: 'break-word',
                   cursor: pendingSceneID !== '' ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
                 }}
               >
                 {pending ? '実行中' : scene.name}
