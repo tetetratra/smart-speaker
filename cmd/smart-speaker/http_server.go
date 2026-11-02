@@ -13,6 +13,7 @@ import (
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 )
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
@@ -38,6 +39,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Serv
 		duplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
 	})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
+	registerLocationAPI(mux, &userlocation.Store{})
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{

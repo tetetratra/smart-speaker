@@ -60,6 +60,43 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 - `MEMORY_SIMILARITY_THRESHOLD`: 保存時の近似重複判定に使う類似度閾値。既定値は `0.95` です。
 - `MEMORY_MAX_TAGS`: メモリ候補 1 件あたりの最大 tag 数。既定値は `5` です。
 
+### 現在地API
+
+iPhoneのショートカットなどから、現在いる場所を任意の文字列で送信できます。
+経度・緯度は扱わず、最後に受け取った場所とサーバーでの更新日時だけをメモリ上に保持します。
+サーバー再起動時に消去され、初回更新前は `null` です。同じ場所を再送した場合も更新日時を更新します。
+このAPIでは情報を保持するだけで、会話の応答にはまだ反映しません。
+
+Goサーバーのポート（既定は8081）にリクエストを送信します。
+既存APIと同様にアプリ独自の認証はないため、自宅LANまたはTailscale経由で利用してください。
+
+```sh
+curl -X POST http://localhost:8081/api/location \
+  -H 'Content-Type: application/json' \
+  -d '{"place":"home"}'
+
+curl http://localhost:8081/api/location
+```
+
+どちらも成功時は200で、更新後は次の形式を返します。`updated_at` はUTCのRFC3339形式です。
+
+```json
+{"place":"home","updated_at":"2026-11-03T00:00:00Z"}
+```
+
+`place` は空文字・空白のみ・未指定・null・文字列以外を受け付けません。
+不正なJSONや複数のJSON値は400、本文が4KiBを超える場合は413、GET・POST以外は405を返し、保存済みの情報は変更しません。
+空でない文字列は前後の空白も含めてそのまま保存します。
+
+iPhoneのショートカットでは「URLの内容を取得」に次を設定します。
+
+- URL: `http://<サーバーのLANまたはTailscaleアドレス>:8081/api/location`
+- 方法: POST
+- 要求本文: JSON
+- フィールド: `place`（テキスト）に `home` などの場所名
+
+設定したショートカットをパーソナルオートメーションなどから実行します。
+
 ## 本番環境
 
 ### 準備
