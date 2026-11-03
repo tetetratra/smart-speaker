@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 )
 
 type fakeSynthesizer struct {
+	mu    sync.Mutex
 	pcm   []byte
 	err   error
 	calls []string
@@ -22,7 +24,9 @@ func (f *fakeSynthesizer) Name() string {
 }
 
 func (f *fakeSynthesizer) SynthesizeSpeech(_ context.Context, text string) (synthesizedSpeech, error) {
+	f.mu.Lock()
 	f.calls = append(f.calls, text)
+	f.mu.Unlock()
 	if f.err != nil {
 		return synthesizedSpeech{}, f.err
 	}
@@ -51,8 +55,8 @@ func TestStagePassesThroughNonSpeechTimelineItemsAndAgentTimelineEnd(t *testing.
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: waitItem})
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: toolItem})
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventAgentTimelineEnd})
-	if len(synth.calls) != 0 {
-		t.Fatalf("expected no synthesize calls, got %v", synth.calls)
+	if len(synth.Calls()) != 0 {
+		t.Fatalf("expected no synthesize calls, got %v", synth.Calls())
 	}
 }
 
@@ -93,8 +97,8 @@ func TestStageEmitsPlayableSpeech(t *testing.T) {
 	if !reflect.DeepEqual(playable.OriginalTimeline, item) {
 		t.Fatalf("original timeline = %#v, want %#v", playable.OriginalTimeline, item)
 	}
-	if len(synth.calls) != 1 || synth.calls[0] != item.Text {
-		t.Fatalf("synthesize calls = %v, want [%q]", synth.calls, item.Text)
+	if len(synth.Calls()) != 1 || synth.Calls()[0] != item.Text {
+		t.Fatalf("synthesize calls = %v, want [%q]", synth.Calls(), item.Text)
 	}
 }
 
@@ -115,8 +119,8 @@ func TestStageDropsBlankSpeech(t *testing.T) {
 	}
 
 	assertNoEvent(t, stage.Downstream)
-	if len(synth.calls) != 0 {
-		t.Fatalf("expected no synthesize calls, got %v", synth.calls)
+	if len(synth.Calls()) != 0 {
+		t.Fatalf("expected no synthesize calls, got %v", synth.Calls())
 	}
 }
 
@@ -137,8 +141,8 @@ func TestStageDropsSpeechWhenSynthesisFails(t *testing.T) {
 	}
 
 	assertNoEvent(t, stage.Downstream)
-	if len(synth.calls) != 1 {
-		t.Fatalf("synthesize calls = %v, want one call", synth.calls)
+	if len(synth.Calls()) != 1 {
+		t.Fatalf("synthesize calls = %v, want one call", synth.Calls())
 	}
 }
 
@@ -168,4 +172,10 @@ func assertNoEvent(t *testing.T, events <-chan types.Event) {
 		t.Fatalf("unexpected event: %#v", evt)
 	case <-time.After(20 * time.Millisecond):
 	}
+}
+
+func (f *fakeSynthesizer) Calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
 }

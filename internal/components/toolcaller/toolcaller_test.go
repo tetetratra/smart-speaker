@@ -73,7 +73,7 @@ func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
 	}
 }
 
-func TestStageSuppressesSuccessfulWriteToolResult(t *testing.T) {
+func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 	st := NewStage(map[string]tools.Handler{
 		"set_whiteboard": stubHandler{
 			name: "set_whiteboard",
@@ -96,8 +96,12 @@ func TestStageSuppressesSuccessfulWriteToolResult(t *testing.T) {
 
 	select {
 	case evt := <-st.Downstream:
-		t.Fatalf("unexpected downstream event: %+v", evt)
-	case <-time.After(200 * time.Millisecond):
+		req := evt.Payload.(types.ConversationCommitRequest)
+		if req.ToolResult == nil {
+			t.Fatal("成功した操作結果が保存されない")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("結果が届かない")
 	}
 }
 
@@ -180,4 +184,40 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting commit request")
 	}
+}
+
+func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
+	handler := &countingHandler{}
+	st := NewStage(map[string]tools.Handler{"count": handler}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+	for i := 0; i < 2; i++ {
+		st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "same", Name: "count", Arguments: json.RawMessage(`{}`)}}
+		select {
+		case <-st.Downstream:
+		case <-time.After(time.Second):
+			t.Fatal("結果が届かない")
+		}
+	}
+	if handler.calls != 1 {
+		t.Fatal(handler.calls)
+	}
+}
+func TestInvalidArgumentsDoNotExecuteTool(t *testing.T) {
+	handler := &countingHandler{}
+	caller := &toolCaller{tools: map[string]tools.Handler{"count": handler}}
+	result := caller.executeTool(types.ToolRequest{Name: "count", Arguments: json.RawMessage(`{"broken"`)})
+	if handler.calls != 0 || !json.Valid(result.Output) {
+		t.Fatal(handler.calls, string(result.Output))
+	}
+}
+
+type countingHandler struct{ calls int }
+
+func (h *countingHandler) Name() string { return "count" }
+func (h *countingHandler) Run(map[string]any) (map[string]any, error) {
+	h.calls++
+	return map[string]any{"ok": true}, nil
 }

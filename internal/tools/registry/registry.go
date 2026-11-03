@@ -174,3 +174,21 @@ func (r *Registry) ToolModes() map[string]string {
 	}
 	return modes
 }
+
+// DefinitionsForRealtime は全ツールをfunction calling用に返す。
+func (r *Registry) DefinitionsForRealtime() []any {
+	defs := make([]any, 0, len(r.entries))
+	for _, e := range r.entries {
+		if e.def == nil {
+			continue
+		}
+		def := map[string]any{}
+		for _, key := range []string{"type", "name", "description", "parameters"} {
+			if value, ok := e.def[key]; ok {
+				def[key] = value
+			}
+		}
+		defs = append(defs, def)
+	}
+	return defs
+}

@@ -113,9 +113,11 @@ func TestHandleSpeechAudioEndSchedulesCloseSend(t *testing.T) {
 
 	s.handleSpeechAudio(types.RTCSpeechAudio{Type: types.RTCSpeechAudioEnd})
 
-	if !waitUntil(func() bool { return stream.closed }) {
+	if !waitUntil(func() bool { stream.mu.Lock(); defer stream.mu.Unlock(); return stream.closed }) {
 		t.Fatal("expected speech stream to be closed")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.speechStream != nil {
 		t.Fatal("expected stage speech stream to be cleared")
 	}

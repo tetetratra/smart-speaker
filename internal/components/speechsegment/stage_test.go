@@ -21,3 +21,19 @@ func TestSplit(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitParagraphsDoNotLoseText(t *testing.T) {
+	input := "\n こんにちは。\n次の説明です。\n残り"
+	var parts []string
+	for {
+		part, rest := Split(input, true)
+		if part == "" {
+			break
+		}
+		parts = append(parts, part)
+		input = rest
+	}
+	if strings.Join(parts, "") != "こんにちは。次の説明です。残り" {
+		t.Fatal(parts)
+	}
+}

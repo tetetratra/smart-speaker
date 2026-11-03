@@ -8,7 +8,6 @@ const (
 	EventAudioFrame
 	EventAudioSent
 	EventRealtimeStatus
-	EventConversationEnded
 )
 
 // ResponseText はAPI応答の差分。識別子は接続更新後も別応答と混ざらない。

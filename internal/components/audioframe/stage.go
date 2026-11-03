@@ -29,7 +29,7 @@ func NewStage() *graph.Stage {
 			}
 			switch p := e.Payload.(type) {
 			case types.AgentTimelineEnd:
-				if !emit(types.AudioFrame{GenerationID: p.GenerationID, End: true}) {
+				if !emit(types.AudioFrame{GenerationID: p.GenerationID, ItemID: p.ItemID, End: true}) {
 					return
 				}
 			case types.PlayableSpeech:

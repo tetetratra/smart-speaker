@@ -888,7 +888,7 @@ function App() {
         }
         case 'realtime_status': {
           setSttStatus(raw.status === 'connected' ? '待機中' : raw.status === 'error' ? 'エラー' : '接続中')
-          if (raw.message) setSttError(raw.message)
+          setSttError(raw.message || '')
           break
         }
         case 'speech_start': {

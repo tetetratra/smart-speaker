@@ -45,21 +45,20 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 	}
 
 	opusChannels := parseOpusChannels(sig.SDP)
-	track, err := webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: webrtcSampleRate, Channels: uint16(opusChannels)},
-		"audio",
-		"smart-speaker",
-	)
-	if err != nil {
-		log.Printf("rtc: track create error: %v", err)
-		return
+	var track *webrtc.TrackLocalStaticSample
+	if !s.cfg.InputOnly {
+		track, err = webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: webrtcSampleRate, Channels: uint16(opusChannels)}, "audio", "smart-speaker")
+		if err != nil {
+			peer.Close()
+			return
+		}
+		sender, err := peer.AddTrack(track)
+		if err != nil {
+			peer.Close()
+			return
+		}
+		registerSelectedCandidatePairLogger(clientID, sender)
 	}
-	sender, err := peer.AddTrack(track)
-	if err != nil {
-		log.Printf("rtc: add track error: %v", err)
-		return
-	}
-	registerSelectedCandidatePairLogger(clientID, sender)
 
 	peer.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {

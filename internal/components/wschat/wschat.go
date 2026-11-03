@@ -279,7 +279,7 @@ func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID 
 		if err == nil {
 			sent = true
 		} else {
-			conn.CloseNow()
+			conn.Close(websocket.StatusNormalClosure, "")
 		}
 	}
 	return sent

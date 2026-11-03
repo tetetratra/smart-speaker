@@ -10,26 +10,20 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/app"
-	"github.com/tetetratra/smart-speaker/internal/components/conversationcommitter"
+	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
+	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
-	"github.com/tetetratra/smart-speaker/internal/components/interimstopper"
-	"github.com/tetetratra/smart-speaker/internal/components/llm"
 	"github.com/tetetratra/smart-speaker/internal/components/openaistt"
-	"github.com/tetetratra/smart-speaker/internal/components/router"
-	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
+	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
-	"github.com/tetetratra/smart-speaker/internal/components/rtcvad"
-	"github.com/tetetratra/smart-speaker/internal/components/scheduler"
-	"github.com/tetetratra/smart-speaker/internal/components/sessionactivate"
-	"github.com/tetetratra/smart-speaker/internal/components/sessionreset"
+	"github.com/tetetratra/smart-speaker/internal/components/speechsegment"
 	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
-	"github.com/tetetratra/smart-speaker/internal/components/utterancebuffer"
+	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
-	"github.com/tetetratra/smart-speaker/internal/states/agentstatus"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -106,59 +100,21 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat         *graph.Stage
-	rtcpeer      *graph.Stage
-	rtcvad       *graph.Stage
-	stt          *graph.Stage
-	interimStop  *graph.Stage
-	rtcout       *graph.Stage
-	utterance    *graph.Stage
-	sessionReset *graph.Stage
-	committer    *graph.Stage
-	llm          *graph.Stage
-	sessionAct   *graph.Stage
-	filterLLM    *graph.Stage
-	tts          *graph.Stage
-	filterTTS    *graph.Stage
-	scheduler    *graph.Stage
-	filterSched  *graph.Stage
-	router       *graph.Stage
-	tool         *graph.Stage
+	chat, rtcpeer, realtime, segment, tts, frame, pace, tool *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{
-		s.chat,
-		s.rtcpeer,
-		s.rtcvad,
-		s.stt,
-		s.interimStop,
-		s.rtcout,
-		s.utterance,
-		s.sessionReset,
-		s.committer,
-		s.llm,
-		s.sessionAct,
-		s.filterLLM,
-		s.tts,
-		s.filterTTS,
-		s.scheduler,
-		s.filterSched,
-		s.router,
-		s.tool,
-	}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool}
 }
 
 func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store) (appStages, error) {
 	var stages appStages
+	stages.chat = chatStage
 	if chatStage != nil {
 		chatStage.Name = "wschat"
 	}
-	stages.chat = chatStage
-
 	generationStore := generation.NewStore()
 	historyStore := conversationhistory.NewStore()
-	agentStatusStore := agentstatus.NewStore()
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
 	}
@@ -193,132 +149,51 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	stages.tts, err = tts.NewStage(tts.Config{
-		Provider: cfg.TTSProvider,
-		ElevenLabs: tts.ElevenLabsConfig{
-			APIKey: cfg.ElevenLabs.APIKey,
-			Voice:  cfg.ElevenLabs.VoiceID,
-			Model:  cfg.ElevenLabs.Model,
-		},
-		Voicevox: tts.VoicevoxConfig{
-			Endpoint:   cfg.Voicevox.Endpoint,
-			SpeakerID:  cfg.Voicevox.SpeakerID,
-			SpeedScale: cfg.Voicevox.SpeedScale,
-		},
-	})
-	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init tts stage: %w", err)
-	}
-	if stages.tts != nil {
-		stages.tts.Name = "tts"
-	}
-	stages.utterance = utterancebuffer.NewStage(utterancebuffer.Config{
-		Generation: generationStore,
-	})
-	if stages.utterance != nil {
-		stages.utterance.Name = "utterancebuffer"
-	}
-	stages.interimStop = interimstopper.NewStage(interimstopper.Config{
-		Generation: generationStore,
-	})
-	stages.interimStop.Name = "interimstopper"
-	stages.sessionReset = sessionreset.NewStage(sessionreset.Config{
-		IdleTimeout: cfg.ConversationIdleTimeout,
-		History:     historyStore,
-		Generation:  generationStore,
-		AgentStatus: agentStatusStore,
-		Hooks:       []sessionreset.Hook{memoryCreatorHook},
-	})
-	if stages.sessionReset != nil {
-		stages.sessionReset.Name = "sessionreset"
-	}
-	stages.committer = conversationcommitter.NewStage(conversationcommitter.Config{
-		History:    historyStore,
-		Generation: generationStore,
-	})
-	if stages.committer != nil {
-		stages.committer.Name = "conversationcommitter"
-	}
 	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
-	stages.llm, err = llm.NewStage(llm.Config{
-		APIKey:                cfg.APIKey,
-		Model:                 cfg.ResponsesModel,
-		Instructions:          cfg.SystemPrompt,
-		History:               historyStore,
-		Generation:            generationStore,
-		AgentStatus:           agentStatusStore,
-		MemoryContextProvider: memoryContextProvider,
-		ToolSchemas:           toolSchemas,
+	stages.realtime, err = realtime.NewStage(realtime.Config{
+		APIKey: cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
+		Instructions: cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas,
+		IdleTimeout: cfg.ConversationIdleTimeout,
+		Context:     conversation.ContextBuilder{APIKey: cfg.APIKey, Model: cfg.ResponsesModel},
+		MemoryContext: func(ctx context.Context) (string, error) {
+			messages, err := memoryContextProvider.BuildContext(ctx, nil)
+			var parts []string
+			for _, m := range messages {
+				parts = append(parts, m.Content)
+			}
+			return strings.Join(parts, "\n"), err
+		},
+		OnConversationEnd: memoryCreatorHook.ExecRecords,
 	})
 	if err != nil {
-		if stages.tts != nil {
-			stages.tts.Close()
-		}
-		return appStages{}, fmt.Errorf("failed to init llm stage: %w", err)
+		return appStages{}, err
 	}
-	if stages.llm != nil {
-		stages.llm.Name = "llm"
+	stages.tts, err = tts.NewStage(tts.Config{
+		Provider:   cfg.TTSProvider,
+		ElevenLabs: tts.ElevenLabsConfig{APIKey: cfg.ElevenLabs.APIKey, Voice: cfg.ElevenLabs.VoiceID, Model: cfg.ElevenLabs.Model},
+		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeedScale: cfg.Voicevox.SpeedScale},
+	})
+	if err != nil {
+		return appStages{}, err
 	}
-	stages.sessionAct = sessionactivate.NewStage(sessionactivate.Config{AgentStatus: agentStatusStore})
-	stages.sessionAct.Name = "sessionactivate"
-	stages.filterLLM = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
-	stages.filterLLM.Name = "generationfilter-llm"
-	stages.filterTTS = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
-	stages.filterTTS.Name = "generationfilter-tts"
-	stages.filterSched = generationfilter.NewStage(generationfilter.Config{Generation: generationStore})
-	stages.filterSched.Name = "generationfilter-scheduler"
-	stages.scheduler = scheduler.NewStage(scheduler.Config{})
-	stages.scheduler.Name = "scheduler"
-	stages.router = router.NewStage(router.Config{})
-	stages.router.Name = "router"
+	stages.segment = speechsegment.NewStage()
+	stages.frame = audioframe.NewStage()
+	stages.pace = audiopace.NewStage()
 	stages.tool = toolcaller.NewStage(toolHandlers, toolModes)
-	if stages.tool != nil {
-		stages.tool.Name = "toolcaller"
-	}
-	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{
-		IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs,
-	})
-	if err != nil {
-		if stages.tts != nil {
-			stages.tts.Close()
+	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat} {
+		if stage != nil {
+			generationfilter.Attach(stage, generationStore)
 		}
-		return appStages{}, fmt.Errorf("failed to init rtcpeer stage: %w", err)
 	}
-	if stages.rtcpeer != nil {
-		stages.rtcpeer.Name = "rtcpeer"
-	}
-	stages.rtcvad, err = rtcvad.NewStage(rtcvad.Config{
-		Generation: generationStore,
-	})
+	generationfilter.AttachToolRequests(stages.tool, generationStore)
+	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs, InputOnly: true})
 	if err != nil {
-		if stages.tts != nil {
-			stages.tts.Close()
-		}
-		return appStages{}, fmt.Errorf("failed to init rtcvad stage: %w", err)
+		closeStages(stages.all()...)
+		return appStages{}, err
 	}
-	if stages.rtcvad != nil {
-		stages.rtcvad.Name = "rtcvad"
-	}
-	stages.stt, err = buildSTTStage(cfg)
-	if err != nil {
-		if stages.tts != nil {
-			stages.tts.Close()
-		}
-		return appStages{}, fmt.Errorf("failed to init stt stage: %w", err)
-	}
-	if stages.stt != nil {
-		stages.stt.Name = "stt"
-	}
-	stages.rtcout, err = rtcout.NewStage(rtcout.Config{})
-	if err != nil {
-		if stages.tts != nil {
-			stages.tts.Close()
-		}
-		return appStages{}, fmt.Errorf("failed to init rtcout stage: %w", err)
-	}
-	if stages.rtcout != nil {
-		stages.rtcout.Name = "rtcout"
-	}
+	stages.tts.Name = "tts"
+	stages.tool.Name = "toolcaller"
+	stages.rtcpeer.Name = "rtcpeer"
 	return stages, nil
 }
 
@@ -360,7 +235,7 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[str
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.DefinitionsForLLM(), reg.Handlers(), reg.ToolModes()
+	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ToolModes()
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
@@ -382,59 +257,28 @@ func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
 	return scenes
 }
 
-func wireGraph(g *graph.Graph, stages appStages) {
-	add := func(stage *graph.Stage) *graph.Node {
-		if stage == nil {
+func wireGraph(g *graph.Graph, s appStages) {
+	add := func(st *graph.Stage) *graph.Node {
+		if st == nil {
 			return nil
 		}
-		return g.AddNode(stage)
+		return g.AddNode(st)
 	}
-
-	chatNode := add(stages.chat)
-	rtcpeerNode := add(stages.rtcpeer)
-	rtcvadNode := add(stages.rtcvad)
-	sttNode := add(stages.stt)
-	interimStopNode := add(stages.interimStop)
-	rtcoutNode := add(stages.rtcout)
-	utteranceNode := add(stages.utterance)
-	sessionResetNode := add(stages.sessionReset)
-	committerNode := add(stages.committer)
-	llmNode := add(stages.llm)
-	sessionActNode := add(stages.sessionAct)
-	filterLLMNode := add(stages.filterLLM)
-	ttsNode := add(stages.tts)
-	filterTTSNode := add(stages.filterTTS)
-	schedulerNode := add(stages.scheduler)
-	filterSchedNode := add(stages.filterSched)
-	routerNode := add(stages.router)
-	toolNode := add(stages.tool)
-
-	connectKinds(g, chatNode, rtcpeerNode, types.EventRTCSignal)
-	connectKinds(g, rtcpeerNode, chatNode, types.EventRTCSignal)
-	connectKinds(g, rtcpeerNode, rtcvadNode, types.EventRTCPeerAudioFrame)
-	connectKinds(g, rtcpeerNode, rtcoutNode, types.EventRTCPeerOutputSink)
-	connectKinds(g, rtcvadNode, chatNode, types.EventSpeechStart, types.EventSpeechEnd, types.EventRTCVADStatus)
-	connectKinds(g, rtcvadNode, sttNode, types.EventRTCSpeechAudio)
-	connectKinds(g, sttNode, interimStopNode, types.EventHumanInterimUtterance, types.EventHumanUtterance)
-	connectKinds(g, interimStopNode, utteranceNode, types.EventHumanUtterance)
-	connectKinds(g, utteranceNode, committerNode, types.EventConversationCommitRequest)
-	connectKinds(g, utteranceNode, sessionResetNode, types.EventConversationCommitRequest)
-	connectKinds(g, sessionResetNode, chatNode, types.EventSessionReset)
-	connectKinds(g, committerNode, llmNode, types.EventLLMRequest)
-	connectKinds(g, committerNode, chatNode, types.EventRealtimeOutput)
-	connectKinds(g, llmNode, sessionActNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
-	connectKinds(g, sessionActNode, filterLLMNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
-	connectKinds(g, filterLLMNode, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
-	connectKinds(g, ttsNode, filterTTSNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, filterTTSNode, schedulerNode, types.EventTimelineItem, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, schedulerNode, filterSchedNode, types.EventScheduledItem, types.EventAgentSpeechPlaybackEnd)
-	connectKinds(g, filterSchedNode, chatNode, types.EventAgentSpeechPlaybackEnd)
-	connectKinds(g, filterSchedNode, routerNode, types.EventScheduledItem)
-	connectKinds(g, routerNode, rtcoutNode, types.EventRealtimeAudio)
-	connectKinds(g, routerNode, committerNode, types.EventConversationCommitRequest)
-	connectKinds(g, routerNode, toolNode, types.EventToolRequest)
-	connectKinds(g, toolNode, committerNode, types.EventConversationCommitRequest)
-	connectKinds(g, toolNode, chatNode, types.EventWhiteboardUpdate)
+	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
+	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
+	connectKinds(g, chat, peer, types.EventRTCSignal)
+	connectKinds(g, peer, chat, types.EventRTCSignal)
+	connectKinds(g, peer, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
+	connectKinds(g, rt, segment, types.EventResponseText)
+	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
+	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
+	connectKinds(g, frame, pace, types.EventAudioFrame)
+	connectKinds(g, pace, chat, types.EventAudioFrame)
+	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus, types.EventSessionReset)
+	connectKinds(g, rt, tool, types.EventToolRequest)
+	connectKinds(g, tool, rt, types.EventConversationCommitRequest)
+	connectKinds(g, tool, chat, types.EventWhiteboardUpdate)
+	connectKinds(g, chat, rt, types.EventAudioSent)
 }
 
 func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {

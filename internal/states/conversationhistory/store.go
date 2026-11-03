@@ -48,3 +48,25 @@ func cloneRecord(record types.ConversationRecord) types.ConversationRecord {
 	}
 	return record
 }
+
+// Upsert は遅れて届く文字起こしや送信実績を、元の発話位置へ反映する。
+func (s *Store) Upsert(record types.ConversationRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID == record.ID {
+			s.records[i] = cloneRecord(record)
+			return
+		}
+	}
+	s.records = append(s.records, cloneRecord(record))
+}
+
+// Drain は終了した会話だけを切り離し、後から始まる会話を消さない。
+func (s *Store) Drain() []types.ConversationRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.records
+	s.records = nil
+	return out
+}

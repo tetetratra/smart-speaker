@@ -64,7 +64,11 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 }
 
 func (h *CreatorHook) Exec(ctx context.Context) error {
-	records := h.history.Snapshot()
+	return h.ExecRecords(ctx, h.history.Snapshot())
+}
+
+// ExecRecords は終了時点で固定した会話を対象にする。
+func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.ConversationRecord) error {
 	if len(records) == 0 {
 		return nil
 	}

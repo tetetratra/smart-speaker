@@ -22,6 +22,8 @@ type toolCaller struct {
 
 	tools     map[string]tools.Handler
 	toolModes map[string]string
+	node      *graph.Stage
+	results   map[string]types.ToolResultRecord
 }
 
 func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *graph.Stage {
@@ -32,17 +34,19 @@ func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *g
 		toolModes = map[string]string{}
 	}
 	s := &toolCaller{
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
+		upstream:   make(chan types.Event),
+		results:    map[string]types.ToolResultRecord{},
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
 		toolModes:  toolModes,
 	}
-	return &graph.Stage{
+	s.node = &graph.Stage{
 		Upstream:   s.upstream,
 		Downstream: s.downstream,
 		Run:        s.run,
 		CloseFn:    s.close,
 	}
+	return s.node
 }
 
 func (s *toolCaller) run(parent context.Context) {
@@ -65,66 +69,36 @@ func (s *toolCaller) run(parent context.Context) {
 			close(s.downstream)
 		}()
 		for {
-			select {
-			case <-s.ctx.Done():
+			evt, ok := s.node.Receive(ctx)
+			if !ok {
 				return
-			case evt, ok := <-s.upstream:
-				if !ok {
-					return
-				}
-				switch evt.Kind {
-				case types.EventToolRequest:
-					req, ok := evt.Payload.(types.ToolRequest)
-					if !ok {
-						log.Printf("toolcaller: unexpected payload type %T", evt.Payload)
-						continue
-					}
-					s.dispatchTool(req)
-				default:
-					// ignore
-				}
 			}
+			if evt.Kind != types.EventToolRequest {
+				continue
+			}
+			req, ok := evt.Payload.(types.ToolRequest)
+			if !ok {
+				continue
+			}
+			s.dispatchTool(req)
 		}
 	}()
 }
 
 func (s *toolCaller) dispatchTool(req types.ToolRequest) {
-	s.taskGroup.Add(1)
-	go func() {
-		defer s.taskGroup.Done()
-		result := s.executeTool(req)
-		if s.shouldSuppressToolResult(result) {
-			return
-		}
-		s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{
-			Role:         types.RoleToolResult,
-			GenerationID: result.GenerationID,
-			Source:       result.Name,
-			ToolResult:   &result,
-		}})
-	}()
-}
-
-func (s *toolCaller) shouldSuppressToolResult(result types.ToolResultRecord) bool {
-	if s.toolModes[result.Name] != tools.ToolModeWrite {
-		return false
+	result, exists := s.results[req.ToolCallID]
+	if !exists {
+		result = s.executeTool(req)
+		s.results[req.ToolCallID] = result
 	}
-	var out map[string]any
-	if err := json.Unmarshal(result.Output, &out); err != nil {
-		return false
-	}
-	if _, ok := out["error"]; ok {
-		return false
-	}
-	return true
+	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}})
 }
 
 func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResultRecord {
 	args := map[string]any{}
 	if len(req.Arguments) > 0 {
 		if err := json.Unmarshal(req.Arguments, &args); err != nil {
-			log.Printf("toolcaller: arg parse error: %v", err)
-			args = map[string]any{}
+			return types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: json.RawMessage(`{"error":"invalid tool arguments"}`)}
 		}
 	}
 	tool, ok := s.tools[req.Name]

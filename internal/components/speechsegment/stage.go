@@ -54,7 +54,7 @@ func NewStage() *graph.Stage {
 				}
 			}
 			if p.Done {
-				if !emit(types.Event{Kind: types.EventAgentTimelineEnd, Payload: types.AgentTimelineEnd{GenerationID: p.GenerationID}}) {
+				if !emit(types.Event{Kind: types.EventAgentTimelineEnd, Payload: types.AgentTimelineEnd{GenerationID: p.GenerationID, ItemID: p.ItemID}}) {
 					return
 				}
 				buffer = ""
@@ -67,6 +67,7 @@ func NewStage() *graph.Stage {
 
 // Split は句点を優先し、長い文章は読点または最大80文字で区切る。
 func Split(s string, flush bool) (string, string) {
+	s = strings.TrimLeft(s, " \t\r\n")
 	n := 0
 	comma := 0
 	for pos, r := range s {

@@ -7,11 +7,13 @@ import (
 	"time"
 )
 
-// NewStage は一フレーム分だけ待つ。旧世代の累積送信予定時刻を保持しない。
+// NewStage は受け入れた一フレームずつ送信時刻を進める。
+// 待機音声全体の予定を積み上げず、タイマー処理の遅れも毎フレーム累積させない。
 func NewStage() *graph.Stage {
 	st := &graph.Stage{Name: "audiopace", Upstream: make(chan types.Event), Downstream: make(chan types.Event), CloseFn: func() error { return nil }}
 	st.Run = func(ctx context.Context) {
 		defer close(st.Downstream)
+		var next time.Time
 		for {
 			e, ok := st.Receive(ctx)
 			if !ok {
@@ -21,7 +23,12 @@ func NewStage() *graph.Stage {
 			if !ok {
 				continue
 			}
-			timer := time.NewTimer(p.Duration)
+			now := time.Now()
+			if next.IsZero() || now.Sub(next) > 100*time.Millisecond {
+				next = now
+			}
+			next = next.Add(p.Duration)
+			timer := time.NewTimer(max(0, time.Until(next)))
 			select {
 			case <-ctx.Done():
 				timer.Stop()

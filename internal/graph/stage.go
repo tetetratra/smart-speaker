@@ -19,7 +19,7 @@ type Stage struct {
 	// LatestOnly は応答出力キューで古い世代を捨てる。
 	LatestOnly bool
 	// ReceiveFilter は最後の受け渡し後、処理開始前に接続部分で適用する。
-	ReceiveFilter func(types.Event) bool
+	ReceiveFilter func(context.Context, types.Event) bool
 	closeOnce     sync.Once
 }
 
@@ -49,7 +49,7 @@ func (s *Stage) Receive(ctx context.Context) (types.Event, bool) {
 			if !ok {
 				return types.Event{}, false
 			}
-			if s.ReceiveFilter == nil || s.ReceiveFilter(e) {
+			if s.ReceiveFilter == nil || s.ReceiveFilter(ctx, e) {
 				return e, true
 			}
 		}

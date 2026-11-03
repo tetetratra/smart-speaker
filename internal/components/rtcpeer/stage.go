@@ -16,6 +16,7 @@ const (
 )
 
 type Config struct {
+	InputOnly       bool
 	IceAdvertiseIPs []string
 }
 
