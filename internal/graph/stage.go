@@ -16,7 +16,11 @@ type Stage struct {
 	Downstream chan types.Event
 	Run        func(context.Context)
 	CloseFn    func() error
-	closeOnce  sync.Once
+	// LatestOnly は応答出力キューで古い世代を捨てる。
+	LatestOnly bool
+	// ReceiveFilter は最後の受け渡し後、処理開始前に接続部分で適用する。
+	ReceiveFilter func(types.Event) bool
+	closeOnce     sync.Once
 }
 
 // Close invokes the stage's close handler once.
@@ -33,4 +37,21 @@ func (s *Stage) Close() error {
 		}
 	})
 	return err
+}
+
+// Receive は受信待ちの間に変わった世代も、処理へ渡す前に確認する。
+func (s *Stage) Receive(ctx context.Context) (types.Event, bool) {
+	for {
+		select {
+		case <-ctx.Done():
+			return types.Event{}, false
+		case e, ok := <-s.Upstream:
+			if !ok {
+				return types.Event{}, false
+			}
+			if s.ReceiveFilter == nil || s.ReceiveFilter(e) {
+				return e, true
+			}
+		}
+	}
 }

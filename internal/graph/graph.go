@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -62,7 +63,7 @@ func (g *Graph) connect(from, to *Node, kinds map[types.EventKind]struct{}) {
 	g.edges = append(g.edges, &Edge{From: from, To: to, Kinds: kinds})
 }
 
-// Run は各エッジごとに goroutine を起動し、Stage 間のチャネル転送を行う。
+// Run は宛先ごとの無制限キューへ投入し、後段の空き待ちを送信元から切り離す。
 func (g *Graph) Run(ctx context.Context) error {
 	log.Printf("graph nodes=%d edges=%d", len(g.nodes), len(g.edges))
 	adj := make(map[*Node][]edgeTarget, len(g.nodes))
@@ -70,17 +71,38 @@ func (g *Graph) Run(ctx context.Context) error {
 		adj[edge.From] = append(adj[edge.From], edgeTarget{stage: edge.To.Stage, kinds: edge.Kinds})
 	}
 
-	for _, node := range g.nodes {
-		go node.Stage.Run(ctx)
-	}
-
 	var wg sync.WaitGroup
+	queues := make(map[*Stage]*eventqueue.Queue[types.Event], len(g.nodes))
+	for _, node := range g.nodes {
+		st := node.Stage
+		var generation func(types.Event) (uint64, bool)
+		if st.LatestOnly {
+			generation = types.EventGeneration
+		}
+		q := eventqueue.New(generation)
+		queues[st] = q
+		go st.Run(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				e, ok := q.Pop(ctx)
+				if !ok {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case st.Upstream <- e:
+				}
+			}
+		}()
+	}
 	for _, node := range g.nodes {
 		targets := adj[node]
-		out := (<-chan types.Event)(node.Stage.Downstream)
+		out := node.Stage.Downstream
 		wg.Add(1)
-		go func(out <-chan types.Event, targets []edgeTarget) {
-			log.Printf("graph pump start from %p to %d downstreams", out, len(targets))
+		go func() {
 			defer wg.Done()
 			for {
 				select {
@@ -91,21 +113,16 @@ func (g *Graph) Run(ctx context.Context) error {
 						return
 					}
 					downstreams := matchingStages(targets, val.Kind)
-					if len(downstreams) == 0 {
-						continue
-					}
-					if g.shouldLogForwardEvent(val.Kind) {
+					if g.shouldLogForwardEvent(val.Kind) && len(downstreams) > 0 {
 						log.Printf("%s", g.formatForwardLog(node.Stage, downstreams, val))
 					}
 					for _, dst := range downstreams {
-						in := (chan<- types.Event)(dst.Upstream)
-						in <- val
+						queues[dst].Push(val)
 					}
 				}
 			}
-		}(out, targets)
+		}()
 	}
-
 	wg.Wait()
 	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
