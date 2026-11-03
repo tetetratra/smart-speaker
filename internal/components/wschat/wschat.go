@@ -174,11 +174,12 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			return nil, "", false
 		}
 		msg = map[string]any{
-			"type":        "message",
-			"role":        line.Role,
-			"text":        line.Text,
-			"response_id": line.ResponseID,
-			"final":       line.Final,
+			"type":          "message",
+			"role":          line.Role,
+			"text":          line.Text,
+			"response_id":   line.ResponseID,
+			"generation_id": uint64(line.GenerationID),
+			"final":         line.Final,
 		}
 		if line.Source != "" {
 			msg["source"] = line.Source
