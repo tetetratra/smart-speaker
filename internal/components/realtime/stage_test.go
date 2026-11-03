@@ -410,3 +410,40 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 	r.wait("session.update")
 	r.send(map[string]any{"type": "session.updated"})
 }
+
+func TestReadResultForcesWhiteboardAndThenReturnsToSpeech(t *testing.T) {
+	r := newRig(t, func(cfg *Config) {
+		cfg.ToolModes = map[string]string{"web_search": "read", "set_whiteboard": "write"}
+		cfg.Tools = []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}}}
+	})
+	r.utterance("user1")
+	initial := r.wait("response.create")
+	created := func(id string, req map[string]any) {
+		r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": id, "metadata": req["response"].(map[string]any)["metadata"]}})
+	}
+	call := func(responseID, callID, name string) {
+		r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": responseID, "call_id": callID, "name": name, "arguments": "{}"})
+		r.event(types.EventToolRequest)
+		r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": responseID}})
+	}
+	result := func(callID, name, output string) {
+		p := types.ToolResultRecord{ToolCallID: callID, Name: name, GenerationID: 1, Output: json.RawMessage(output)}
+		r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &p}}
+		r.wait("conversation.item.create")
+	}
+	created("r1", initial)
+	call("r1", "search1", "web_search")
+	result("search1", "web_search", `{"result":"明日の天気"}`)
+	required := r.wait("response.create")
+	choice, ok := required["response"].(map[string]any)["tool_choice"].(map[string]any)
+	if !ok || choice["type"] != "function" || choice["name"] != "set_whiteboard" {
+		t.Fatal(required)
+	}
+	created("r2", required)
+	call("r2", "board1", "set_whiteboard")
+	result("board1", "set_whiteboard", `{"updated":true}`)
+	speech := r.wait("response.create")
+	if _, forced := speech["response"].(map[string]any)["tool_choice"]; forced {
+		t.Fatal("表示後もホワイトボードを繰り返す", speech)
+	}
+}

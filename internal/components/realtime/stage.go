@@ -18,6 +18,7 @@ import (
 )
 
 type Config struct {
+	ToolModes                                                 map[string]string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	Tools                                                     []any
 	Generation                                                *generation.Store
@@ -29,19 +30,22 @@ type Config struct {
 }
 
 type response struct {
-	generation types.GenerationID
-	items      map[string]bool
+	whiteboardRevision uint64
+	generation         types.GenerationID
+	items              map[string]bool
 }
 type assistantItem struct {
 	generation      types.GenerationID
 	generated, sent string
 }
 type call struct {
-	epoch      uint64
-	generation types.GenerationID
-	finished   bool
+	whiteboardRevision uint64
+	epoch              uint64
+	generation         types.GenerationID
+	finished           bool
 }
 type stage struct {
+	whiteboard                                *conversation.WhiteboardPolicy
 	itemOrder                                 []string
 	pendingText                               []types.LLMRequest
 	contextResults                            []types.ToolResultRecord
@@ -85,6 +89,13 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		cfg.RotateAfter = 55 * time.Minute
 	}
 	s := &stage{cfg: cfg, queue: eventqueue.New[incoming](nil), controller: generationcontroller.New(cfg.Generation), peers: map[string]bool{}, calls: map[string]*call{}}
+	hasWhiteboard := false
+	for _, definition := range cfg.Tools {
+		if tool, ok := definition.(map[string]any); ok && tool["name"] == "set_whiteboard" {
+			hasWhiteboard = true
+		}
+	}
+	s.whiteboard = conversation.NewWhiteboardPolicy(cfg.ToolModes, hasWhiteboard)
 	s.node = &graph.Stage{Name: "realtime", Upstream: make(chan types.Event), Downstream: make(chan types.Event), Run: s.run, CloseFn: func() error { return nil }}
 	return s.node, nil
 }

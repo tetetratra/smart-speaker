@@ -152,7 +152,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		APIKey: cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
-		Instructions: cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas,
+		Instructions: cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolModes: toolModes,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		Context:     conversation.ContextBuilder{APIKey: cfg.APIKey, Model: cfg.ResponsesModel},
 		MemoryContext: func(ctx context.Context) (string, error) {

@@ -101,7 +101,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.status(ctx, "error", "応答の世代情報を確認できませんでした")
 			return
 		}
-		s.responses[e.Response.ID] = &response{generation: types.GenerationID(gen64), items: map[string]bool{}}
+		s.responses[e.Response.ID] = &response{generation: types.GenerationID(gen64), items: map[string]bool{}, whiteboardRevision: s.whiteboard.Revision(types.GenerationID(gen64))}
 		s.active = e.Response.ID
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
@@ -144,7 +144,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if !s.cfg.Generation.IsCurrent(r.generation) {
 			return
 		}
-		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation}
+		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, whiteboardRevision: r.whiteboardRevision}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
 		s.record(ctx, "call/"+e.CallID, types.RoleToolCall, e.Name+": "+e.Arguments, r.generation, e.Name)
 		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: req})
@@ -225,7 +225,13 @@ func (s *stage) maybeRespond(ctx context.Context) {
 		}
 	}
 	s.wantResponse = false
-	s.transport.send(map[string]any{"type": "response.create", "response": map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}})
+	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
+	if s.whiteboard.Pending(s.cfg.Generation.Current()) {
+		// 既存のツール結果後の応答を、情報を画面へ残す呼び出しに限定する。
+		response["tool_choice"] = map[string]any{"type": "function", "name": "set_whiteboard"}
+		s.whiteboard.Request(s.cfg.Generation.Current())
+	}
+	s.transport.send(map[string]any{"type": "response.create", "response": response})
 	// response.createdを受信するまでの二重開始を防ぐ。
 	s.active = "pending"
 }
@@ -235,6 +241,7 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
+	s.whiteboard.Observe(result, c.whiteboardRevision)
 	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: result.Name, CreatedAt: time.Now()})
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
 	if c.epoch != s.epoch || s.transport == nil {
