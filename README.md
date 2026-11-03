@@ -38,7 +38,8 @@ docker compose up
 - `OPENAI_REALTIME_TRANSCRIPTION_MODEL`: 履歴保存用の非同期文字起こし。既定は `gpt-4o-mini-transcribe`。音声理解とは別に課金されます。
 - `OPENAI_REALTIME_ENDPOINT`: テスト用のWebSocket接続先。通常は未指定にします。
 - `OPENAI_RESPONSES_MODEL`: 長い履歴の要約・メモリ抽出の既定モデル・検索に使用します。
-- `TTS_PROVIDER`: 既定は `voicevox`。`VOICEVOX_ENDPOINT` は既定で `http://voicevox:50021`。
+- `TTS_PROVIDER`: 既定は `voicevox`。`VOICEVOX_ENDPOINT` は既定で `http://voicevox:50021`。 `elevenlabs` を明示すればElevenLabsも選択できます。
+- ComposeのVOICEVOXは正式安定版 `cpu-0.26.0` に固定し、実行環境に合うamd64 / arm64を自動選択します。
 - `CONVERSATION_IDLE_TIMEOUT_SECONDS`: 会話終了までの無操作時間。既定は300秒、0で無効。
 
 発話の区切りはAPIのVADで判断します。アプリは入力確定と履歴補正の後に応答生成を要求します。
@@ -56,6 +57,8 @@ API接続は55分経過後の会話・送信の切れ目で更新し、切断時
 文字起こし未完了の音声や切断中の入力を完全に復元するものではありません。
 会話終了時は履歴のスナップショットを切り離して長期メモリを抽出します。
 ツールの開始済み・結果不明の操作は再接続で自動再実行しません。
+情報取得系ツールが成功した後は、次の応答でホワイトボードへの要約表示を要求し、その後に通常の会話へ戻ります。表示に失敗しても同じ取得結果について強制再試行を繰り返しません。
+受信音量表示は廃止し、発話検知はAPI内蔵VADに集約しています。再生音量はブラウザ側で調整できます。
 
 ### 外部APIを使わないローカル確認
 

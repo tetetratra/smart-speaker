@@ -2,15 +2,15 @@ package tts
 
 import "testing"
 
-func TestNewSynthesizerDefaultsToElevenLabs(t *testing.T) {
+func TestNewSynthesizerDefaultsToVoicevox(t *testing.T) {
 	synth, err := newSynthesizer(Config{
-		ElevenLabs: ElevenLabsConfig{APIKey: "key", Voice: "voice"},
+		Voicevox: VoicevoxConfig{Endpoint: "http://voicevox:50021"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if synth.Name() != ProviderElevenLabs {
-		t.Fatalf("provider = %s, want %s", synth.Name(), ProviderElevenLabs)
+	if synth.Name() != ProviderVoicevox {
+		t.Fatalf("provider = %s, want %s", synth.Name(), ProviderVoicevox)
 	}
 }
 
@@ -73,4 +73,14 @@ func TestNewSynthesizerRejectsInvalidVoicevoxConfig(t *testing.T) {
 
 func ptrFloat(v float64) *float64 {
 	return &v
+}
+
+func TestNewSynthesizerSupportsExplicitElevenLabs(t *testing.T) {
+	synth, err := newSynthesizer(Config{Provider: ProviderElevenLabs, ElevenLabs: ElevenLabsConfig{APIKey: "local-test", Voice: "voice"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if synth.Name() != ProviderElevenLabs {
+		t.Fatal(synth.Name())
+	}
 }

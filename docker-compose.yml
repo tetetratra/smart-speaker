@@ -54,8 +54,7 @@ services:
       - embedding-model-cache:/data
 
   voicevox:
-    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
-    platform: ${VOICEVOX_PLATFORM:-linux/amd64}
+    image: voicevox/voicevox_engine:cpu-0.26.0
     restart: unless-stopped
 
 volumes:
