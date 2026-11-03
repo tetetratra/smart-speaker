@@ -25,6 +25,7 @@ type GenerationChanged struct {
 	ItemID       string
 }
 type AudioFrame struct {
+	ItemID       string        `json:"item_id,omitempty"`
 	GenerationID GenerationID  `json:"generation_id"`
 	SegmentID    string        `json:"segment_id"`
 	Sequence     int           `json:"sequence"`
@@ -44,6 +45,8 @@ type RealtimeStatus struct {
 func EventGeneration(e Event) (uint64, bool) {
 	switch p := e.Payload.(type) {
 	case ResponseText:
+		return uint64(p.GenerationID), true
+	case ToolRequest:
 		return uint64(p.GenerationID), true
 	case TimelineItem:
 		return uint64(p.GenerationID), true

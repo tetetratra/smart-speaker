@@ -26,17 +26,18 @@ type Config struct {
 func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
 	holder := &connHolder{}
 	c := &chatWS{
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
+		upstream:   make(chan types.Event),
+		downstream: make(chan types.Event),
 		holder:     holder,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
-	return &graph.Stage{
+	c.node = &graph.Stage{
 		Upstream:   c.upstream,
 		Downstream: c.downstream,
 		Run:        c.run,
 		CloseFn:    c.close,
 	}
+	return c.node
 }
 
 type connHolder struct {
@@ -98,6 +99,7 @@ func (h *connHolder) clearAll() {
 }
 
 type chatWS struct {
+	node       *graph.Stage
 	upstream   chan types.Event
 	downstream chan types.Event
 	holder     *connHolder
@@ -119,16 +121,13 @@ func (c *chatWS) run(ctx context.Context) {
 
 func (c *chatWS) consume(ctx context.Context) {
 	for {
-		select {
-		case <-ctx.Done():
+		evt, ok := c.node.Receive(ctx)
+		if !ok {
 			return
-		case evt, ok := <-c.upstream:
-			if !ok {
-				return
-			}
-			c.handleEvent(ctx, evt)
 		}
+		c.handleEvent(ctx, evt)
 	}
+
 }
 
 func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
@@ -136,13 +135,39 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	if !ok {
 		return
 	}
-	c.writeMessage(ctx, msg, targetID)
+	if c.writeMessage(ctx, msg, targetID) && evt.Kind == types.EventAudioFrame {
+		select {
+		case <-ctx.Done():
+		case c.downstream <- types.Event{Kind: types.EventAudioSent, Payload: evt.Payload}:
+		}
+	}
 }
 
 func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	msg := map[string]any{}
 	targetID := ""
 	switch evt.Kind {
+	case types.EventAudioFrame:
+		p, ok := evt.Payload.(types.AudioFrame)
+		if !ok {
+			return nil, "", false
+		}
+		data, _ := json.Marshal(p)
+		_ = json.Unmarshal(data, &msg)
+		msg["type"] = "audio_frame"
+	case types.EventGenerationChanged:
+		p, ok := evt.Payload.(types.GenerationChanged)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{"type": "playback_stop", "generation_id": uint64(p.GenerationID)}
+	case types.EventRealtimeStatus:
+		p, ok := evt.Payload.(types.RealtimeStatus)
+		if !ok {
+			return nil, "", false
+		}
+		msg = map[string]any{"type": "realtime_status", "status": p.Status, "message": p.Message}
+
 	case types.EventRealtimeOutput:
 		line, ok := evt.Payload.(types.OutputLine)
 		if !ok {
@@ -234,24 +259,30 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	return msg, targetID, true
 }
 
-func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) {
+func (c *chatWS) writeMessage(ctx context.Context, msg map[string]any, targetID string) bool {
 	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("wschat: marshal error: %v", err)
-		return
+	if err != nil || c.holder == nil {
+		return false
 	}
-	if c.holder == nil {
-		return
-	}
+	conns := c.holder.snapshot()
 	if targetID != "" {
-		if conn := c.holder.get(targetID); conn != nil {
-			_ = conn.Write(ctx, websocket.MessageText, data)
+		conns = map[string]*websocket.Conn{targetID: c.holder.get(targetID)}
+	}
+	sent := false
+	for _, conn := range conns {
+		if conn == nil {
+			continue
 		}
-		return
+		writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := conn.Write(writeCtx, websocket.MessageText, data)
+		cancel()
+		if err == nil {
+			sent = true
+		} else {
+			conn.CloseNow()
+		}
 	}
-	for _, conn := range c.holder.snapshot() {
-		_ = conn.Write(ctx, websocket.MessageText, data)
-	}
+	return sent
 }
 
 func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {

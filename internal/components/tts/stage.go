@@ -17,6 +17,7 @@ type streamTTS struct {
 	upstream    chan types.Event
 	downstream  chan types.Event
 	once        sync.Once
+	node        *graph.Stage
 }
 
 func newStageWithSynthesizer(synthesizer speechSynthesizer) (*graph.Stage, error) {
@@ -25,47 +26,44 @@ func newStageWithSynthesizer(synthesizer speechSynthesizer) (*graph.Stage, error
 	}
 	t := &streamTTS{
 		synthesizer: synthesizer,
-		upstream:    make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream:  make(chan types.Event, graph.DefaultChannelBufferSize),
+		upstream:    make(chan types.Event),
+		downstream:  make(chan types.Event),
 	}
-	return &graph.Stage{
+	t.node = &graph.Stage{
 		Upstream:   t.upstream,
 		Downstream: t.downstream,
 		Run:        t.run,
 		CloseFn:    t.close,
-	}, nil
+	}
+	return t.node, nil
 }
 
 func (t *streamTTS) run(ctx context.Context) {
 	defer close(t.downstream)
 	for {
-		select {
-		case <-ctx.Done():
+		evt, ok := t.node.Receive(ctx)
+		if !ok {
 			return
-		case evt, ok := <-t.upstream:
-			if !ok {
-				return
-			}
-			if evt.Kind == types.EventAgentTimelineEnd {
-				t.emit(ctx, evt)
-				continue
-			}
-			if evt.Kind != types.EventTimelineItem {
-				continue
-			}
-			item, ok := evt.Payload.(types.TimelineItem)
-			if !ok {
-				continue
-			}
-			if item.Kind != types.TimelineKindSpeech {
-				t.emit(ctx, evt)
-				continue
-			}
-			if strings.TrimSpace(item.Text) == "" {
-				continue
-			}
-			t.handleSpeech(ctx, item)
 		}
+		if evt.Kind == types.EventAgentTimelineEnd {
+			t.emit(ctx, evt)
+			continue
+		}
+		if evt.Kind != types.EventTimelineItem {
+			continue
+		}
+		item, ok := evt.Payload.(types.TimelineItem)
+		if !ok {
+			continue
+		}
+		if item.Kind != types.TimelineKindSpeech {
+			t.emit(ctx, evt)
+			continue
+		}
+		if strings.TrimSpace(item.Text) == "" {
+			continue
+		}
+		t.handleSpeech(ctx, item)
 	}
 }
 

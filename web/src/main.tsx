@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
+import { createAudioReceiver, type AudioReceiver } from './audio'
 
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
@@ -744,10 +745,7 @@ function App() {
   const idRef = useRef(0)
   const adminLogRef = useRef<HTMLDivElement | null>(null)
   const shouldFollowAdminLogRef = useRef(true)
-  const remoteStreamRef = useRef<MediaStream | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const playbackGainRef = useRef<GainNode | null>(null)
+  const audioReceiverRef = useRef<AudioReceiver | null>(null)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -799,57 +797,13 @@ function App() {
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
 
   const stopRemoteAudioGraph = useCallback(() => {
-    if (remoteSourceRef.current) {
-      remoteSourceRef.current.disconnect()
-      remoteSourceRef.current = null
-    }
-    if (playbackGainRef.current) {
-      playbackGainRef.current.disconnect()
-      playbackGainRef.current = null
-    }
-    if (audioContextRef.current) {
-      void audioContextRef.current.close()
-      audioContextRef.current = null
-    }
+    audioReceiverRef.current?.close()
+    audioReceiverRef.current = null
   }, [])
 
-  const connectRemoteStreamToAudioGraph = useCallback(async () => {
-    const stream = remoteStreamRef.current
-    if (!stream) return
-
-    stopRemoteAudioGraph()
-    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) {
-      throw new Error('Web Audio APIを利用できません')
-    }
-
-    const audioContext = new AudioContextClass()
-    const source = audioContext.createMediaStreamSource(stream)
-    const gain = audioContext.createGain()
-    gain.gain.value = selectedPlaybackVolume.gain
-    source.connect(gain)
-    gain.connect(audioContext.destination)
-
-    audioContextRef.current = audioContext
-    remoteSourceRef.current = source
-    playbackGainRef.current = gain
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume()
-    }
-  }, [selectedPlaybackVolume.gain, stopRemoteAudioGraph])
-
   useEffect(() => {
-    if (!playbackGainRef.current) return
-    playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
+    audioReceiverRef.current?.volume(selectedPlaybackVolume.gain)
   }, [selectedPlaybackVolume.gain])
-
-  const interruptRemoteAudioPlayback = useCallback(() => {
-    stopRemoteAudioGraph()
-    if (!remoteStreamRef.current) return
-    void connectRemoteStreamToAudioGraph().catch((err) => {
-      setRtcError(err instanceof Error ? err.message : 'RTC audio reconnect error')
-    })
-  }, [connectRemoteStreamToAudioGraph, stopRemoteAudioGraph])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -924,8 +878,20 @@ function App() {
           })
           break
         }
+        case 'audio_frame': {
+          audioReceiverRef.current?.play(raw)
+          break
+        }
+        case 'playback_stop': {
+          audioReceiverRef.current?.stop(raw.generation_id)
+          break
+        }
+        case 'realtime_status': {
+          setSttStatus(raw.status === 'connected' ? '待機中' : raw.status === 'error' ? 'エラー' : '接続中')
+          if (raw.message) setSttError(raw.message)
+          break
+        }
         case 'speech_start': {
-          interruptRemoteAudioPlayback()
           setIsAiSpeaking(false)
           setSpeechDetectStatus('検出中')
           setSttStatus('認識中')
@@ -961,7 +927,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, resetConversationBubble, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, resetConversationBubble, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -976,7 +942,6 @@ function App() {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
       micStreamRef.current = null
     }
-    remoteStreamRef.current = null
     stopRemoteAudioGraph()
     pendingICERef.current = []
     lastAudioBytesSentRef.current = null
@@ -1037,15 +1002,7 @@ function App() {
         setRtcStatus('切断')
       }
     }
-    peer.ontrack = (event) => {
-      const stream = event.streams?.[0] ?? new MediaStream([event.track])
-      remoteStreamRef.current = stream
-      connectRemoteStreamToAudioGraph().catch((err) => {
-        setRtcStatus('失敗')
-        setRtcError(err instanceof Error ? err.message : 'audio playback error')
-        stopRTC()
-      })
-    }
+
 
     let stream: MediaStream
     try {
@@ -1086,7 +1043,7 @@ function App() {
       setRtcError(err instanceof Error ? err.message : 'RTC start error')
       stopRTC()
     }
-  }, [connectRemoteStreamToAudioGraph, stopRTC])
+  }, [stopRTC])
 
   const openConnection = useCallback(async (isAutoReconnect: boolean) => {
     if (connected || busy) return
@@ -1106,6 +1063,8 @@ function App() {
       })
 
       wsChatRef.current = wsChat
+      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking)
+      audioReceiverRef.current.volume(selectedPlaybackVolume.gain)
       setConnected(true)
       reconnectAttemptRef.current = 0
       clearReconnectTimer()

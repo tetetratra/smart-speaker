@@ -42,9 +42,11 @@ func TestStagePassesThroughNonSpeechTimelineItemsAndAgentTimelineEnd(t *testing.
 
 	waitItem := types.TimelineItem{Kind: types.TimelineKindWait, Sec: 1}
 	toolItem := types.TimelineItem{Kind: types.TimelineKindTool, ToolName: "timer"}
-	stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: waitItem}
-	stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: toolItem}
-	stage.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd}
+	go func() {
+		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: waitItem}
+		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: toolItem}
+		stage.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd}
+	}()
 
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: waitItem})
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: toolItem})

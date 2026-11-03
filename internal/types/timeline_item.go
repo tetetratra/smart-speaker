@@ -10,6 +10,7 @@ const (
 
 // TimelineItem は LLM が出力する順序付き item です。
 type TimelineItem struct {
+	ItemID       string
 	Kind         string
 	GenerationID GenerationID
 	SequenceID   string

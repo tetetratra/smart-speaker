@@ -1,59 +1,118 @@
-const SAMPLE_RATE = 24000
+export interface AudioFrame {
+  generation_id: number
+  segment_id: string
+  sequence: number
+  audio: string
+  sample_rate: number
+  final: boolean
+  end?: boolean
+}
+
+// キューが空でも世代を保持し、後着の旧音声や停止通知で巻き戻さない。
+export class GenerationQueue<T extends { generation_id: number }> {
+  generation = 0
+  private items: T[] = []
+  advance(generation: number): boolean {
+    if (!Number.isSafeInteger(generation) || generation <= this.generation) return false
+    this.generation = generation
+    this.items = []
+    return true
+  }
+  push(item: T): boolean {
+    if (!Number.isSafeInteger(item.generation_id) || item.generation_id < this.generation) return false
+    this.advance(item.generation_id)
+    this.items.push(item)
+    return true
+  }
+  shift(): T | undefined { return this.items.shift() }
+}
 
 export interface AudioReceiver {
-  play: (b64pcm: string) => void
-  stop: () => void
+  play(frame: AudioFrame): void
+  stop(generation: number): void
+  volume(gain: number): void
+  close(): void
 }
 
-export function createAudioReceiver(): AudioReceiver {
+// 先の音声を大量にAudioContextへ予約せず、一件ずつ再生する。
+export function createAudioReceiver(onPlaying: (playing: boolean) => void = () => {}): AudioReceiver {
   const ctx = new AudioContext()
-  let playhead = 0
+  const gain = ctx.createGain()
+  gain.connect(ctx.destination)
+  const queue = new GenerationQueue<AudioFrame>()
   const sources = new Set<AudioBufferSourceNode>()
-  return {
-    play: (b64pcm: string) => {
-      try {
-        const pcm = base64ToInt16(b64pcm)
-        const audioBuf = int16ToAudioBuffer(ctx, pcm, SAMPLE_RATE)
-        const src = ctx.createBufferSource()
-        src.buffer = audioBuf
-        src.connect(ctx.destination)
-        sources.add(src)
-        src.onended = () => {
-          sources.delete(src)
-        }
-        const startAt = Math.max(ctx.currentTime, playhead)
-        src.start(startAt)
-        playhead = startAt + audioBuf.duration
-      } catch (e) {
-        console.warn('audio play error:', (e as any)?.message)
+  let playhead = ctx.currentTime
+  let closed = false
+  let ending = false
+  const stopSources = () => {
+    for (const source of sources) {
+      source.onended = null
+      source.stop()
+      source.disconnect()
+    }
+    sources.clear()
+    playhead = ctx.currentTime
+    ending = false
+    onPlaying(false)
+  }
+  // ごく短い先読みだけを再生エンジンへ予約し、残りは世代付きキューに置く。
+  const drain = () => {
+    if (closed || ctx.state === 'suspended') return
+    let frame: AudioFrame | undefined
+    while (playhead < ctx.currentTime + 0.1 && (frame = queue.shift())) {
+      if (frame.generation_id !== queue.generation) continue
+      if (frame.end) {
+        ending = true
+        if (!sources.size) onPlaying(false)
+        continue
       }
+      try {
+        const raw = atob(frame.audio)
+        if (raw.length === 0 || raw.length % 2 || frame.sample_rate !== 24000) continue
+        const buffer = ctx.createBuffer(1, raw.length / 2, frame.sample_rate)
+        const pcm = buffer.getChannelData(0)
+        for (let i = 0; i < pcm.length; i++) {
+          let sample = raw.charCodeAt(i * 2) | raw.charCodeAt(i * 2 + 1) << 8
+          if (sample & 0x8000) sample -= 0x10000
+          pcm[i] = sample / 32768
+        }
+        const source = ctx.createBufferSource()
+        source.buffer = buffer
+        source.connect(gain)
+        sources.add(source)
+        source.onended = () => {
+          source.disconnect()
+          sources.delete(source)
+          if (ending && !sources.size) onPlaying(false)
+          drain()
+        }
+        const startAt = Math.max(ctx.currentTime + 0.02, playhead)
+        playhead = startAt + buffer.duration
+        ending = false
+        onPlaying(true)
+        source.start(startAt)
+      } catch (error) { console.warn('音声データを再生できませんでした', error) }
+    }
+  }
+  const timer = window.setInterval(drain, 10)
+  void ctx.resume().catch(() => {})
+  return {
+    play(frame) {
+      if (closed) return
+      if (frame.generation_id > queue.generation) stopSources()
+      if (!queue.push(frame)) return
+      drain()
     },
-    stop: () => {
-      sources.forEach((src) => {
-        try {
-          src.stop()
-        } catch {}
-      })
-      sources.clear()
-      playhead = ctx.currentTime
+    stop(generation) {
+      if (queue.advance(generation)) stopSources()
+    },
+    volume(value) { gain.gain.value = value },
+    close() {
+      closed = true
+      window.clearInterval(timer)
+      stopSources()
+      gain.disconnect()
+      void ctx.close()
     },
   }
-}
-
-function base64ToInt16(b64: string): Int16Array {
-  const binary = atob(b64)
-  const buf = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    buf[i] = binary.charCodeAt(i)
-  }
-  return new Int16Array(buf.buffer)
-}
-
-function int16ToAudioBuffer(ctx: AudioContext, data: Int16Array, sampleRate: number): AudioBuffer {
-  const audioBuffer = ctx.createBuffer(1, data.length, sampleRate)
-  const channel = audioBuffer.getChannelData(0)
-  for (let i = 0; i < data.length; i++) {
-    channel[i] = data[i] / 0x7fff
-  }
-  return audioBuffer
 }
