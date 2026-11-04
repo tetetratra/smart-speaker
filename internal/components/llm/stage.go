@@ -67,7 +67,8 @@ func (s *stage) run(parent context.Context) {
 }
 
 func (s *stage) consume(ctx context.Context) {
-	defer close(s.downstream)
+	var tasks sync.WaitGroup
+	defer func() { tasks.Wait(); close(s.downstream) }()
 	for {
 		select {
 		case <-ctx.Done():
@@ -83,7 +84,8 @@ func (s *stage) consume(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			go s.handleRequest(ctx, req)
+			tasks.Add(1)
+			go func() { defer tasks.Done(); s.handleRequest(ctx, req) }()
 		}
 	}
 }

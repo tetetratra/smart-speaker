@@ -33,6 +33,7 @@ type SessionResetEvent struct {
 
 // AgentTimelineEnd は LLM が当該 generation の timeline item をすべて発行し終えたことを表します。
 type AgentTimelineEnd struct {
+	ItemID       string
 	GenerationID GenerationID
 }
 

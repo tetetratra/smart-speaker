@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
+import { conversationBubble } from './conversation'
+import { createAudioReceiver, type AudioReceiver } from './audio'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string }
+  | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
 type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
@@ -38,7 +40,6 @@ const nightModeStartHour = 22
 const nightModeEndHour = 6
 const minuteMs = 60 * 1000
 const toolToastDurationMs = 5000
-const receivedVolumeMeterMax = 1000
 const serverEventLogLimit = 1000
 
 type PlaybackVolumeLevel = 'mute' | 'quiet' | 'low' | 'normal' | 'boost'
@@ -52,11 +53,6 @@ const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: 
 }
 const playbackVolumeLevels: PlaybackVolumeLevel[] = ['mute', 'quiet', 'low', 'normal', 'boost']
 const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'boost'
-
-function meterPercent(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(receivedVolumeMeterMax, value)) / receivedVolumeMeterMax * 100
-}
 
 const liveRootStyle = `
   :root {
@@ -280,33 +276,6 @@ const liveRootStyle = `
   .live-playback-slider-row .live-volume-slider {
     flex: 1;
     min-width: 0;
-  }
-  .live-received-volume-meter {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    height: 4px;
-    border-radius: 999px;
-    background: var(--live-toggle-bg);
-    overflow: visible;
-  }
-  .live-received-volume-fill {
-    position: absolute;
-    inset-block: 0;
-    left: 0;
-    border-radius: inherit;
-    background: var(--live-toggle-on);
-    transition: width 90ms linear;
-  }
-  .live-received-volume-threshold {
-    position: absolute;
-    top: -1px;
-    bottom: -1px;
-    width: 2px;
-    border-radius: 999px;
-    background: var(--live-muted);
-    box-shadow: 0 0 0 1px var(--live-panel-soft);
-    transform: translateX(-1px);
   }
   .live-status-grid {
     display: grid;
@@ -559,11 +528,6 @@ function isNightModeTime(date: Date): boolean {
   return hour >= nightModeStartHour || hour < nightModeEndHour
 }
 
-function isSTTUserMessage(raw: any, role: ChatMessage['type']): boolean {
-  if (role !== 'user') return false
-  return raw.source === 'stt' || raw.source === 'server-stt'
-}
-
 function isBinaryLikeValue(value: unknown): boolean {
   return value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob
 }
@@ -646,8 +610,6 @@ type LiveViewProps = {
   connecting: boolean
   speechDetectStatus: string
   sttStatus: string
-  inputLevel: number
-  speechThreshold: number
   lastAssistantMessage: string
   lastUserMessage: string
   isAiSpeaking: boolean
@@ -674,8 +636,6 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
-  const [inputLevel, setInputLevel] = useState(0)
-  const [speechThreshold, setSpeechThreshold] = useState(0)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
@@ -739,15 +699,12 @@ function App() {
         }
       })
   }, [])
-  const [isConversationBubbleHidden, setIsConversationBubbleHidden] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
+  const currentGenerationRef = useRef(0)
   const idRef = useRef(0)
   const adminLogRef = useRef<HTMLDivElement | null>(null)
   const shouldFollowAdminLogRef = useRef(true)
-  const remoteStreamRef = useRef<MediaStream | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const playbackGainRef = useRef<GainNode | null>(null)
+  const audioReceiverRef = useRef<AudioReceiver | null>(null)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -771,7 +728,6 @@ function App() {
   const resetConversationBubble = useCallback(() => {
     setIsAiSpeaking(false)
     setMessages([])
-    setIsConversationBubbleHidden(true)
   }, [])
 
   const updateAdminLogFollow = useCallback(() => {
@@ -799,57 +755,13 @@ function App() {
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
 
   const stopRemoteAudioGraph = useCallback(() => {
-    if (remoteSourceRef.current) {
-      remoteSourceRef.current.disconnect()
-      remoteSourceRef.current = null
-    }
-    if (playbackGainRef.current) {
-      playbackGainRef.current.disconnect()
-      playbackGainRef.current = null
-    }
-    if (audioContextRef.current) {
-      void audioContextRef.current.close()
-      audioContextRef.current = null
-    }
+    audioReceiverRef.current?.close()
+    audioReceiverRef.current = null
   }, [])
 
-  const connectRemoteStreamToAudioGraph = useCallback(async () => {
-    const stream = remoteStreamRef.current
-    if (!stream) return
-
-    stopRemoteAudioGraph()
-    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) {
-      throw new Error('Web Audio APIを利用できません')
-    }
-
-    const audioContext = new AudioContextClass()
-    const source = audioContext.createMediaStreamSource(stream)
-    const gain = audioContext.createGain()
-    gain.gain.value = selectedPlaybackVolume.gain
-    source.connect(gain)
-    gain.connect(audioContext.destination)
-
-    audioContextRef.current = audioContext
-    remoteSourceRef.current = source
-    playbackGainRef.current = gain
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume()
-    }
-  }, [selectedPlaybackVolume.gain, stopRemoteAudioGraph])
-
   useEffect(() => {
-    if (!playbackGainRef.current) return
-    playbackGainRef.current.gain.value = selectedPlaybackVolume.gain
+    audioReceiverRef.current?.volume(selectedPlaybackVolume.gain)
   }, [selectedPlaybackVolume.gain])
-
-  const interruptRemoteAudioPlayback = useCallback(() => {
-    stopRemoteAudioGraph()
-    if (!remoteStreamRef.current) return
-    void connectRemoteStreamToAudioGraph().catch((err) => {
-      setRtcError(err instanceof Error ? err.message : 'RTC audio reconnect error')
-    })
-  }, [connectRemoteStreamToAudioGraph, stopRemoteAudioGraph])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -887,6 +799,9 @@ function App() {
     (raw: any) => {
       appendServerEventLog(raw)
       if (!raw || typeof raw !== 'object') return
+      const generation = Number.isSafeInteger(raw.generation_id) ? raw.generation_id as number : undefined
+      if (generation !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, generation)
+      const isCurrentGeneration = generation === undefined || generation === currentGenerationRef.current
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
         return
@@ -904,14 +819,13 @@ function App() {
           if (role === 'tool_call' || role === 'tool_result') {
             showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
           }
-          if (role === 'agent') {
+          if (role === 'agent' && isCurrentGeneration) {
             setIsAiSpeaking(true)
           }
-          if (isSTTUserMessage(raw, role)) {
+          if (role === 'user' && isCurrentGeneration) {
             setIsAiSpeaking(false)
             setSttStatus('完了')
             setSpeechDetectStatus('待機中')
-            setIsConversationBubbleHidden(false)
           }
           const displayText = raw.role ? text : `(roleなし) ${text}`
           appendMessage({
@@ -921,11 +835,24 @@ function App() {
             responseId: raw.response_id,
             final: raw.final,
             source: typeof raw.source === 'string' ? raw.source : undefined,
+            generationId: generation,
           })
           break
         }
+        case 'audio_frame': {
+          audioReceiverRef.current?.play(raw)
+          break
+        }
+        case 'playback_stop': {
+          audioReceiverRef.current?.stop(raw.generation_id)
+          break
+        }
+        case 'realtime_status': {
+          setSttStatus(raw.status === 'connected' ? '待機中' : raw.status === 'error' ? 'エラー' : '接続中')
+          setSttError(raw.message || '')
+          break
+        }
         case 'speech_start': {
-          interruptRemoteAudioPlayback()
           setIsAiSpeaking(false)
           setSpeechDetectStatus('検出中')
           setSttStatus('認識中')
@@ -944,13 +871,6 @@ function App() {
           resetConversationBubble()
           break
         }
-        case 'rtc_vad_status': {
-          const nextInputLevel = typeof raw.input_level === 'number' ? Math.max(0, Math.round(raw.input_level)) : 0
-          const nextThreshold = typeof raw.threshold === 'number' ? Math.max(0, Math.round(raw.threshold)) : 0
-          setInputLevel(nextInputLevel)
-          setSpeechThreshold(nextThreshold)
-          break
-        }
         case 'whiteboard_update': {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
@@ -961,7 +881,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, interruptRemoteAudioPlayback, nextMessageId, resetConversationBubble, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, resetConversationBubble, showToolToast],
   )
 
   const stopRTC = useCallback(() => {
@@ -976,7 +896,6 @@ function App() {
       micStreamRef.current.getTracks().forEach((t) => t.stop())
       micStreamRef.current = null
     }
-    remoteStreamRef.current = null
     stopRemoteAudioGraph()
     pendingICERef.current = []
     lastAudioBytesSentRef.current = null
@@ -985,8 +904,6 @@ function App() {
     setSpeechDetectStatus('待機中')
     setRtcError('')
     setSttStatus('停止中')
-    setInputLevel(0)
-    setSpeechThreshold(0)
   }, [stopRemoteAudioGraph])
 
   const clearReconnectTimer = useCallback(() => {
@@ -1037,15 +954,7 @@ function App() {
         setRtcStatus('切断')
       }
     }
-    peer.ontrack = (event) => {
-      const stream = event.streams?.[0] ?? new MediaStream([event.track])
-      remoteStreamRef.current = stream
-      connectRemoteStreamToAudioGraph().catch((err) => {
-        setRtcStatus('失敗')
-        setRtcError(err instanceof Error ? err.message : 'audio playback error')
-        stopRTC()
-      })
-    }
+
 
     let stream: MediaStream
     try {
@@ -1086,12 +995,15 @@ function App() {
       setRtcError(err instanceof Error ? err.message : 'RTC start error')
       stopRTC()
     }
-  }, [connectRemoteStreamToAudioGraph, stopRTC])
+  }, [stopRTC])
 
   const openConnection = useCallback(async (isAutoReconnect: boolean) => {
     if (connected || busy) return
     setBusy(true)
     try {
+      // 世代番号はサーバーの再起動で戻るため、比較範囲を接続ごとに区切る。
+      currentGenerationRef.current = 0
+      resetConversationBubble()
       const wsChat = createWS(chatWSUrl)
       await wsChat.connect((msg) => {
         handleChatMessage(msg)
@@ -1106,6 +1018,8 @@ function App() {
       })
 
       wsChatRef.current = wsChat
+      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking)
+      audioReceiverRef.current.volume(selectedPlaybackVolume.gain)
       setConnected(true)
       reconnectAttemptRef.current = 0
       clearReconnectTimer()
@@ -1127,7 +1041,7 @@ function App() {
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, busy, clearReconnectTimer, connected, handleChatMessage, scheduleReconnect, startRTC, stopRTC])
+  }, [appendMessage, busy, clearReconnectTimer, connected, handleChatMessage, resetConversationBubble, scheduleReconnect, selectedPlaybackVolume.gain, startRTC, stopRTC])
 
   openConnectionRef.current = openConnection
 
@@ -1209,20 +1123,9 @@ function App() {
       el.scrollTop = el.scrollHeight
     }
   }, [serverEventLogs])
-  const lastAssistantMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const msg = messages[i]
-      if (msg.type === 'agent') return msg.text
-    }
-    return ''
-  }, [messages])
-  const lastUserMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const msg = messages[i]
-      if (msg.type === 'user') return msg.text
-    }
-    return ''
-  }, [messages])
+  const bubble = useMemo(() => conversationBubble(messages), [messages])
+  const lastAssistantMessage = bubble.assistant
+  const lastUserMessage = bubble.user
   const [uiMode, setUiMode] = useState<UiMode>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ui') === 'admin') return 'admin'
@@ -1378,12 +1281,10 @@ function App() {
           connecting={busy}
           speechDetectStatus={speechDetectStatus}
           sttStatus={sttStatus}
-          inputLevel={inputLevel}
-          speechThreshold={speechThreshold}
           lastAssistantMessage={lastAssistantMessage}
           lastUserMessage={lastUserMessage}
           isAiSpeaking={isAiSpeaking}
-          isConversationBubbleHidden={isConversationBubbleHidden}
+          isConversationBubbleHidden={!bubble.visible}
           boardEntries={boardEntries}
           toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
@@ -1914,8 +1815,6 @@ function LiveView(props: LiveViewProps) {
     connecting,
     speechDetectStatus,
     sttStatus,
-    inputLevel,
-    speechThreshold,
     lastAssistantMessage,
     lastUserMessage,
     isAiSpeaking,
@@ -1953,8 +1852,6 @@ function LiveView(props: LiveViewProps) {
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
-  const inputLevelPercent = meterPercent(inputLevel)
-  const speechThresholdPercent = meterPercent(speechThreshold)
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1973,11 +1870,11 @@ function LiveView(props: LiveViewProps) {
               }
             </div>
             <div className="live-bubble-slot">
-              {lastAssistantMessage && !isConversationBubbleHidden && (
+              {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
                   <div className="live-bubble-content">
                     {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
-                    <div className="live-bubble-agent">{lastAssistantMessage}</div>
+                    {lastAssistantMessage && <div className="live-bubble-agent">{lastAssistantMessage}</div>}
                   </div>
                 </div>
               )}
@@ -2008,13 +1905,6 @@ function LiveView(props: LiveViewProps) {
                 <div className="live-status-card">
                   <div className="live-status-label">認識</div>
                   <div className="live-status-value">{sttStatus}</div>
-                </div>
-              </div>
-              <div className="live-playback-slider-row">
-                <span className="live-playback-slider-label">受信音量</span>
-                <div className="live-received-volume-meter" aria-label="受信音量">
-                  <div className="live-received-volume-fill" style={{ width: `${inputLevelPercent}%` }} />
-                  <div className="live-received-volume-threshold" style={{ left: `${speechThresholdPercent}%` }} />
                 </div>
               </div>
               <div className="live-playback-slider-row">

@@ -16,6 +16,9 @@ func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 	return map[types.EventKind]struct{}{
 		types.EventRTCVADStatus:      {},
 		types.EventRealtimeAudio:     {},
+		types.EventAudioFrame:        {},
+		types.EventAudioSent:         {},
+		types.EventResponseText:      {},
 		types.EventRTCPeerAudioFrame: {},
 		types.EventRTCSpeechAudio:    {},
 	}

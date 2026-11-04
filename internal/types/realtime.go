@@ -1,0 +1,61 @@
+package types
+
+import "time"
+
+const (
+	EventResponseText EventKind = 100 + iota
+	EventGenerationChanged
+	EventAudioFrame
+	EventAudioSent
+	EventRealtimeStatus
+)
+
+// ResponseText はAPI応答の差分。識別子は接続更新後も別応答と混ざらない。
+type ResponseText struct {
+	GenerationID GenerationID
+	ResponseID   string
+	ItemID       string
+	Text         string
+	Done         bool
+}
+
+type GenerationChanged struct {
+	GenerationID GenerationID
+	ItemID       string
+}
+type AudioFrame struct {
+	ItemID       string        `json:"item_id,omitempty"`
+	GenerationID GenerationID  `json:"generation_id"`
+	SegmentID    string        `json:"segment_id"`
+	Sequence     int           `json:"sequence"`
+	Audio        string        `json:"audio"`
+	SampleRate   int           `json:"sample_rate"`
+	Text         string        `json:"text,omitempty"`
+	Final        bool          `json:"final"`
+	End          bool          `json:"end,omitempty"`
+	Duration     time.Duration `json:"-"`
+}
+type RealtimeStatus struct {
+	Status  string
+	Message string
+}
+
+// EventGeneration は応答出力の世代だけを取り出す。履歴・ツール結果は破棄対象にしない。
+func EventGeneration(e Event) (uint64, bool) {
+	switch p := e.Payload.(type) {
+	case ResponseText:
+		return uint64(p.GenerationID), true
+	case ToolRequest:
+		return uint64(p.GenerationID), true
+	case TimelineItem:
+		return uint64(p.GenerationID), true
+	case PlayableSpeech:
+		return uint64(p.GenerationID), true
+	case AudioFrame:
+		return uint64(p.GenerationID), true
+	case AgentTimelineEnd:
+		return uint64(p.GenerationID), true
+	default:
+		return 0, false
+	}
+}

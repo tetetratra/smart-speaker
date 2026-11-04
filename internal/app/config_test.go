@@ -95,8 +95,8 @@ func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
 	if cfg.OpenAISTTModel != "gpt-realtime-whisper" {
 		t.Fatalf("OpenAISTTModel = %q, want gpt-realtime-whisper", cfg.OpenAISTTModel)
 	}
-	if cfg.TTSProvider != "elevenlabs" {
-		t.Fatalf("TTSProvider = %q, want elevenlabs", cfg.TTSProvider)
+	if cfg.TTSProvider != "voicevox" {
+		t.Fatalf("TTSProvider = %q, want voicevox", cfg.TTSProvider)
 	}
 	if cfg.Voicevox.SpeakerID != 1 {
 		t.Fatalf("Voicevox.SpeakerID = %d, want 1", cfg.Voicevox.SpeakerID)

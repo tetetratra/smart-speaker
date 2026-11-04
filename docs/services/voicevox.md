@@ -7,18 +7,14 @@ VOICEVOX は `tts` component から利用できるローカル TTS provider で�
 `docker-compose.yml` には次の service を追加しています。
 
 - service 名: `voicevox`
-- image: `voicevox/voicevox_engine:cpu-ubuntu20.04-latest`
-- platform: `${VOICEVOX_PLATFORM:-linux/amd64}`
+- image: `voicevox/voicevox_engine:cpu-0.26.0`
+- platform: 実行環境に合わせてDockerが選択（amd64 / arm64）
 - 接続元: `server`
 - endpoint: `http://voicevox:50021`
 
-VOICEVOX Engine の CPU image は arm64 環境でそのまま pull できない場合があるため、Compose では既定で `linux/amd64` を指定しています。Linux amd64 ではネイティブに動作し、Apple Silicon Mac では Docker Desktop の amd64 emulation で動作します。
-
-arm64 対応 image へ切り替える場合や、別 platform を明示したい場合は次のように上書きします。
-
-```sh
-VOICEVOX_PLATFORM=linux/arm64 docker compose up
-```
+正式安定版の[VOICEVOX Engine 0.26.0](https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.26.0)へ固定しています。
+[公式CPUイメージ](https://hub.docker.com/r/voicevox/voicevox_engine/tags?name=cpu-0.26.0)はamd64とarm64に対応するため、既定ではplatformを固定しません。
+Apple Silicon Macではarm64、Linuxのx86 PCではamd64版が選択されます。
 
 `server.depends_on` には `voicevox` を追加していますが、これは起動順の補助です。VOICEVOX Engine の readiness 保証や詳細なヘルスチェックは今回の実装範囲には含めていません。
 
@@ -33,7 +29,7 @@ VOICEVOX_SPEAKER_ID=1
 VOICEVOX_SPEED_SCALE=1.1
 ```
 
-- `TTS_PROVIDER`: `voicevox` を指定すると VOICEVOX provider を使います。未指定時は `elevenlabs` です。
+- `TTS_PROVIDER`: `voicevox` を指定すると VOICEVOX provider を使います。未指定時も `voicevox` です。ElevenLabsを利用する場合は `TTS_PROVIDER=elevenlabs` とAPI key / voice idを設定します。
 - `VOICEVOX_ENDPOINT`: VOICEVOX Engine の HTTP endpoint です。Compose 内では `http://voicevox:50021` を使います。
 - `VOICEVOX_SPEAKER_ID`: VOICEVOX の speaker ID です。未指定時は `1` です。
 - `VOICEVOX_SPEED_SCALE`: 任意です。指定した場合は `/audio_query` の `speedScale` を上書きします。未指定時は engine が返した query をそのまま使います。

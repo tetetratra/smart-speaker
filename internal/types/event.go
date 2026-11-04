@@ -44,6 +44,17 @@ type Event struct {
 
 func (k EventKind) String() string {
 	switch k {
+	case EventResponseText:
+		return "EventResponseText"
+	case EventGenerationChanged:
+		return "EventGenerationChanged"
+	case EventAudioFrame:
+		return "EventAudioFrame"
+	case EventAudioSent:
+		return "EventAudioSent"
+	case EventRealtimeStatus:
+		return "EventRealtimeStatus"
+
 	case EventHumanUtterance:
 		return "EventHumanUtterance"
 	case EventHumanInterimUtterance:

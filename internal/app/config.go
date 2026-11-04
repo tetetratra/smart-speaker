@@ -13,26 +13,29 @@ import (
 
 // Config holds runtime settings.
 type Config struct {
-	APIKey                  string
-	ResponsesModel          string
-	Memory                  MemoryConfig
-	SystemPrompt            string
-	ConversationIdleTimeout time.Duration
-	AutoPromptMessage       string
-	STTProvider             string
-	OpenAISTTModel          string
-	TTSProvider             string
-	ElevenLabs              ElevenLabsConfig
-	Voicevox                VoicevoxConfig
-	SwitchBot               SwitchBotConfig
-	GoogleCloudProject      string
-	GoogleRecognizer        string
-	GoogleLanguage          string
-	GoogleCredentials       string
-	STTPhrases              []string
-	RTCIceAdvertiseIPs      []string
-	WSAddr                  string
-	WebDistDir              string
+	APIKey                     string
+	ResponsesModel             string
+	RealtimeModel              string
+	RealtimeEndpoint           string
+	RealtimeTranscriptionModel string
+	Memory                     MemoryConfig
+	SystemPrompt               string
+	ConversationIdleTimeout    time.Duration
+	AutoPromptMessage          string
+	STTProvider                string
+	OpenAISTTModel             string
+	TTSProvider                string
+	ElevenLabs                 ElevenLabsConfig
+	Voicevox                   VoicevoxConfig
+	SwitchBot                  SwitchBotConfig
+	GoogleCloudProject         string
+	GoogleRecognizer           string
+	GoogleLanguage             string
+	GoogleCredentials          string
+	STTPhrases                 []string
+	RTCIceAdvertiseIPs         []string
+	WSAddr                     string
+	WebDistDir                 string
 }
 
 type MemoryConfig struct {
@@ -69,7 +72,7 @@ func LoadConfig(promptPath string) Config {
 	}
 	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
 	if responsesModel == "" {
-		// realtime系のapiはコンテキストウィンドウが小さいのと高いため、response系のモデルを使う
+		// Responsesは履歴の要約・長期メモリ・検索用に使用する。
 		responsesModel = "gpt-5.4-nano-2026-03-17"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
@@ -110,7 +113,7 @@ func LoadConfig(promptPath string) Config {
 
 	ttsProvider := strings.TrimSpace(os.Getenv("TTS_PROVIDER"))
 	if ttsProvider == "" {
-		ttsProvider = "elevenlabs"
+		ttsProvider = "voicevox"
 	}
 	voicevox := VoicevoxConfig{
 		Endpoint:   strings.TrimSpace(os.Getenv("VOICEVOX_ENDPOINT")),
@@ -118,6 +121,17 @@ func LoadConfig(promptPath string) Config {
 		SpeedScale: optionalPositiveFloatFromEnv("VOICEVOX_SPEED_SCALE"),
 	}
 
+	if voicevox.Endpoint == "" {
+		voicevox.Endpoint = "http://voicevox:50021"
+	}
+	realtimeModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_MODEL"))
+	if realtimeModel == "" {
+		realtimeModel = "gpt-realtime-2.1-mini"
+	}
+	transcriptionModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_TRANSCRIPTION_MODEL"))
+	if transcriptionModel == "" {
+		transcriptionModel = "gpt-4o-mini-transcribe"
+	}
 	rtcIceAdvertiseIPs := splitComma(os.Getenv("RTC_ICE_ADVERTISE_IPS"))
 	googleProject := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
 	googleRecognizer := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_RECOGNIZER"))
@@ -140,26 +154,29 @@ func LoadConfig(promptPath string) Config {
 	}
 
 	return Config{
-		APIKey:                  apiKey,
-		ResponsesModel:          responsesModel,
-		Memory:                  memoryCfg,
-		SystemPrompt:            prompt,
-		ConversationIdleTimeout: conversationIdleTimeout,
-		AutoPromptMessage:       message,
-		STTProvider:             sttProvider,
-		OpenAISTTModel:          openAISTTModel,
-		TTSProvider:             ttsProvider,
-		ElevenLabs:              elv,
-		Voicevox:                voicevox,
-		SwitchBot:               switchCfg,
-		GoogleCloudProject:      googleProject,
-		GoogleRecognizer:        googleRecognizer,
-		GoogleLanguage:          googleLanguage,
-		GoogleCredentials:       googleCredentials,
-		STTPhrases:              sttPhrases,
-		RTCIceAdvertiseIPs:      rtcIceAdvertiseIPs,
-		WSAddr:                  wsAddr,
-		WebDistDir:              webDistDir,
+		APIKey:                     apiKey,
+		RealtimeModel:              realtimeModel,
+		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
+		RealtimeTranscriptionModel: transcriptionModel,
+		ResponsesModel:             responsesModel,
+		Memory:                     memoryCfg,
+		SystemPrompt:               prompt,
+		ConversationIdleTimeout:    conversationIdleTimeout,
+		AutoPromptMessage:          message,
+		STTProvider:                sttProvider,
+		OpenAISTTModel:             openAISTTModel,
+		TTSProvider:                ttsProvider,
+		ElevenLabs:                 elv,
+		Voicevox:                   voicevox,
+		SwitchBot:                  switchCfg,
+		GoogleCloudProject:         googleProject,
+		GoogleRecognizer:           googleRecognizer,
+		GoogleLanguage:             googleLanguage,
+		GoogleCredentials:          googleCredentials,
+		STTPhrases:                 sttPhrases,
+		RTCIceAdvertiseIPs:         rtcIceAdvertiseIPs,
+		WSAddr:                     wsAddr,
+		WebDistDir:                 webDistDir,
 	}
 }
 

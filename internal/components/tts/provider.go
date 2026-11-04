@@ -44,7 +44,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 func newSynthesizer(cfg Config) (speechSynthesizer, error) {
 	provider := strings.TrimSpace(cfg.Provider)
 	if provider == "" {
-		provider = ProviderElevenLabs
+		provider = ProviderVoicevox
 	}
 	switch provider {
 	case ProviderElevenLabs:
