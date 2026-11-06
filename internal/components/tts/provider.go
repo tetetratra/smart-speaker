@@ -19,6 +19,7 @@ const (
 )
 
 type Config struct {
+	Selector   *Selector
 	Provider   string
 	ElevenLabs ElevenLabsConfig
 	Voicevox   VoicevoxConfig
@@ -34,6 +35,9 @@ type speechSynthesizer interface {
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
+	if cfg.Selector != nil {
+		return newStageWithSource(cfg.Selector.current), nil
+	}
 	synthesizer, err := newSynthesizer(cfg)
 	if err != nil {
 		return nil, err

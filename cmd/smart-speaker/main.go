@@ -50,13 +50,17 @@ func main() {
 		log.Fatalf("failed to init memory store: %v", err)
 	}
 
-	server, chatStage, err := buildHTTPServer(cfg, memoryStore)
+	ttsSelector, err := tts.NewSelector(ttsConfig(cfg))
+	if err != nil {
+		log.Fatal(err)
+	}
+	server, chatStage, err := buildHTTPServer(cfg, memoryStore, ttsSelector)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage, memoryStore)
+	stages, err := buildStages(cfg, chatStage, memoryStore, ttsSelector)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -107,7 +111,15 @@ func (s appStages) all() []*graph.Stage {
 	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store) (appStages, error) {
+func ttsConfig(cfg app.Config) tts.Config {
+	return tts.Config{
+		Provider:   cfg.TTSProvider,
+		ElevenLabs: tts.ElevenLabsConfig{APIKey: cfg.ElevenLabs.APIKey, Voice: cfg.ElevenLabs.VoiceID, Model: cfg.ElevenLabs.Model},
+		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeedScale: cfg.Voicevox.SpeedScale},
+	}
+}
+
+func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store, selector *tts.Selector) (appStages, error) {
 	var stages appStages
 	stages.chat = chatStage
 	if chatStage != nil {
@@ -169,11 +181,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tts, err = tts.NewStage(tts.Config{
-		Provider:   cfg.TTSProvider,
-		ElevenLabs: tts.ElevenLabsConfig{APIKey: cfg.ElevenLabs.APIKey, Voice: cfg.ElevenLabs.VoiceID, Model: cfg.ElevenLabs.Model},
-		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeedScale: cfg.Voicevox.SpeedScale},
-	})
+	ttsCfg := ttsConfig(cfg)
+	ttsCfg.Selector = selector
+	stages.tts, err = tts.NewStage(ttsCfg)
 	if err != nil {
 		return appStages{}, err
 	}

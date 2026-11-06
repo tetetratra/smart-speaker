@@ -31,7 +31,7 @@ func TestRealtimeConversationLocal(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	chat := wschat.NewStage(mux, wschat.Config{})
-	stages, err := buildStages(cfg, chat, memory)
+	stages, err := buildStages(cfg, chat, memory, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

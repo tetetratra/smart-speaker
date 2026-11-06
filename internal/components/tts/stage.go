@@ -13,7 +13,7 @@ import (
 )
 
 type streamTTS struct {
-	synthesizer speechSynthesizer
+	synthesizer func() speechSynthesizer
 	upstream    chan types.Event
 	downstream  chan types.Event
 	once        sync.Once
@@ -24,8 +24,12 @@ func newStageWithSynthesizer(synthesizer speechSynthesizer) (*graph.Stage, error
 	if synthesizer == nil {
 		return nil, fmt.Errorf("tts: synthesizer is required")
 	}
+	return newStageWithSource(func() speechSynthesizer { return synthesizer }), nil
+}
+
+func newStageWithSource(source func() speechSynthesizer) *graph.Stage {
 	t := &streamTTS{
-		synthesizer: synthesizer,
+		synthesizer: source,
 		upstream:    make(chan types.Event),
 		downstream:  make(chan types.Event),
 	}
@@ -35,7 +39,7 @@ func newStageWithSynthesizer(synthesizer speechSynthesizer) (*graph.Stage, error
 		Run:        t.run,
 		CloseFn:    t.close,
 	}
-	return t.node, nil
+	return t.node
 }
 
 func (t *streamTTS) run(ctx context.Context) {
@@ -75,15 +79,17 @@ func (t *streamTTS) emit(ctx context.Context, evt types.Event) {
 }
 
 func (t *streamTTS) handleSpeech(ctx context.Context, item types.TimelineItem) {
-	speech, err := t.synthesizer.SynthesizeSpeech(ctx, item.Text)
+	// 生成開始時の選択を保持し、実行中の合成は切り替えで中断しない。
+	synthesizer := t.synthesizer()
+	speech, err := synthesizer.SynthesizeSpeech(ctx, item.Text)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("%s: synthesize error: %v", t.synthesizer.Name(), err)
+			log.Printf("%s: synthesize error: %v", synthesizer.Name(), err)
 		}
 		return
 	}
 	duration := ttsDurationSeconds(int64(len(speech.PCM)))
-	log.Printf("%s: tts duration=%.3fs bytes=%d", t.synthesizer.Name(), duration, len(speech.PCM))
+	log.Printf("%s: tts duration=%.3fs bytes=%d", synthesizer.Name(), duration, len(speech.PCM))
 	playable := types.PlayableSpeech{
 		GenerationID:     item.GenerationID,
 		SequenceID:       item.SequenceID,

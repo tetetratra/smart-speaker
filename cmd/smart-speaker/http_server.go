@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/tetetratra/smart-speaker/internal/app"
+	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
@@ -16,7 +17,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 )
 
-func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, selector *tts.Selector) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
 		BaseURL: cfg.Memory.EmbeddingBaseURL,
@@ -40,6 +41,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store) (*http.Serv
 	})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
 	registerLocationAPI(mux, &userlocation.Store{})
+	registerTTSAPI(mux, selector)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{

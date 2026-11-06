@@ -1823,6 +1823,71 @@ function SwitchBotSceneView(props: {
   )
 }
 
+type TTSSelection = {
+  provider: string
+  providers: { id: string; label: string; available: boolean }[]
+}
+
+function TTSControl() {
+  const [selection, setSelection] = useState<TTSSelection | null>(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const requestID = useRef(0)
+  const request = useCallback(async (provider?: string) => {
+    const id = ++requestID.current
+    setPending(true)
+    setError('')
+    try {
+      const response = await fetch(new URL('/api/tts', backendURL), {
+        method: provider === undefined ? 'GET' : 'PUT',
+        headers: provider === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: provider === undefined ? undefined : JSON.stringify({ provider }),
+        cache: 'no-store',
+      })
+      if (!response.ok) throw new Error(await response.text() || 'TTSの設定を取得・変更できませんでした')
+      const next = await response.json() as TTSSelection
+      if (id === requestID.current) setSelection(next)
+    } catch (err) {
+      if (id === requestID.current) setError(err instanceof Error ? err.message : 'TTSを変更できませんでした')
+    } finally {
+      if (id === requestID.current) setPending(false)
+    }
+  }, [])
+  useEffect(() => {
+    const refresh = () => { void request() }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      requestID.current++
+    }
+  }, [request])
+  return (
+    <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        読み上げ音声
+        <select
+          aria-label="読み上げ音声"
+          value={selection?.provider ?? ''}
+          disabled={pending || !selection}
+          onChange={(event) => void request(event.currentTarget.value)}
+          style={{ background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 6, padding: 4 }}
+        >
+          {!selection && <option value="">{pending ? '読み込み中' : '取得できません'}</option>}
+          {selection?.providers.map((provider) => (
+            <option key={provider.id} value={provider.id} disabled={!provider.available}>
+              {provider.label}{provider.available ? '' : '（未設定）'}
+            </option>
+          ))}
+        </select>
+        {error && <button className="live-admin-btn" onClick={() => void request()} disabled={pending}>再取得</button>}
+      </label>
+      <span style={{ color: 'var(--live-muted)' }}>{pending ? '設定を確認中…' : '次の音声生成から反映・全端末共通'}</span>
+      {error && <span role="alert">{error}</span>}
+    </div>
+  )
+}
+
 function LiveView(props: LiveViewProps) {
   const {
     connected,
@@ -1914,6 +1979,7 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
+              <TTSControl />
               <div className="live-playback-slider-row">
                 <span className="live-playback-slider-label">再生音量</span>
                 <input

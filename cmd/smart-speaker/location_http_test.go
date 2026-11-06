@@ -16,7 +16,7 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 	newServer := func() *http.Server {
 		cfg := app.Config{APIKey: "test-key", WebDistDir: t.TempDir()}
 		cfg.Memory.Model = "test-model"
-		server, chat, err := buildHTTPServer(cfg, nil)
+		server, chat, err := buildHTTPServer(cfg, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
