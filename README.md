@@ -40,6 +40,8 @@ docker compose up
 - `OPENAI_REALTIME_ENDPOINT`: テスト用のWebSocket接続先。通常は未指定にします。
 - `OPENAI_RESPONSES_MODEL`: 長い履歴の要約・メモリ抽出の既定モデル・検索に使用します。
 - `TTS_PROVIDER`: 既定は `voicevox`。`VOICEVOX_ENDPOINT` は既定で `http://voicevox:50021`。 `elevenlabs` を明示すればElevenLabsも選択できます。
+- メイン画面の「読み上げ音声」でVOICEVOX／ElevenLabsを切り替えられます。設定済みの候補だけ選択でき、生成中・再生待ちの音声は保持し、次に生成する音声から反映します。選択は全端末で共有し、サーバー再起動時は`TTS_PROVIDER`の値に戻ります。
+- `GET /api/tts`で現在の選択と設定済み候補を取得し、`PUT /api/tts`に`{"provider":"voicevox"}`または`{"provider":"elevenlabs"}`を送ると切り替えられます。候補の利用可否は設定の有無を示し、外部サービスへの疎通を保証するものではありません。
 - ComposeのVOICEVOXは正式安定版 `cpu-0.26.0` に固定し、実行環境に合うamd64 / arm64を自動選択します。
 - `CONVERSATION_IDLE_TIMEOUT_SECONDS`: 会話終了までの無操作時間。既定は300秒、0で無効。
 
