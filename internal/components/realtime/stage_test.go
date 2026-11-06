@@ -107,6 +107,29 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 	if vad["create_response"] != false || vad["interrupt_response"] != true {
 		t.Fatal(vad)
 	}
+	if cfg.TurnDetection == "server_vad" {
+		if vad["type"] != "server_vad" || vad["silence_duration_ms"] != float64(800) || vad["eagerness"] != nil {
+			t.Fatalf("従来の発話区切り設定が違います: %v", vad)
+		}
+	} else if vad["type"] != "semantic_vad" || vad["eagerness"] != "auto" || vad["silence_duration_ms"] != nil {
+		t.Fatalf("Semantic VADの設定が違います: %v", vad)
+	}
+	if _, specified := session["reasoning"]; specified {
+		t.Fatal("推論量はAPIのデフォルトに任せます", session)
+	}
+	foundWait := false
+	for _, definition := range session["tools"].([]any) {
+		if definition.(map[string]any)["name"] == waitToolName {
+			foundWait = true
+		}
+	}
+	if !foundWait {
+		t.Fatal("待機ツールがAPIに渡されていません")
+	}
+	instructions, _ := session["instructions"].(string)
+	if !strings.Contains(instructions, "Asia/Tokyo") || !strings.Contains(instructions, cfg.Instructions) {
+		t.Fatalf("日本時間または元の指示がありません: %s", instructions)
+	}
 	r.send(map[string]any{"type": "session.updated"})
 	r.event(types.EventRealtimeStatus)
 	return r
@@ -363,7 +386,7 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 }
 
 func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
-	r := newRig(t)
+	r := newRig(t, func(cfg *Config) { cfg.Instructions = "元のシステム指示" })
 	r.utterance("user1")
 	r.wait("response.create")
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "前の会話を覚えて"})
@@ -388,6 +411,12 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 	request := r.wait("response.create")
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
+	}
+	instructions, _ := request["response"].(map[string]any)["instructions"].(string)
+	for _, want := range []string{"元のシステム指示", "前の会話を覚えて", "Asia/Tokyo", "今日:"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("応答ごとの指示に %q がありません: %s", want, instructions)
+		}
 	}
 }
 func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
@@ -445,5 +474,18 @@ func TestReadResultForcesWhiteboardAndThenReturnsToSpeech(t *testing.T) {
 	speech := r.wait("response.create")
 	if _, forced := speech["response"].(map[string]any)["tool_choice"]; forced {
 		t.Fatal("表示後もホワイトボードを繰り返す", speech)
+	}
+	created("r3", speech)
+	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "r3"}})
+	r.utterance("user2")
+	manual := r.wait("response.create")
+	if manual["response"].(map[string]any)["tool_choice"] != nil {
+		t.Fatal("追加の表示依頼で不要なツールが強制されました", manual)
+	}
+	created("r4", manual)
+	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r4", "call_id": "board-detail", "name": "set_whiteboard", "arguments": `{"content":"取得済みの予報を詳しく表示"}`})
+	detail := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	if detail.Name != "set_whiteboard" || detail.GenerationID != 2 || string(detail.Arguments) != `{"content":"取得済みの予報を詳しく表示"}` {
+		t.Fatalf("追加表示の呼び出しが受理されませんでした: %#v", detail)
 	}
 }

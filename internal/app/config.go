@@ -16,6 +16,7 @@ type Config struct {
 	APIKey                     string
 	ResponsesModel             string
 	RealtimeModel              string
+	RealtimeVAD                string
 	RealtimeEndpoint           string
 	RealtimeTranscriptionModel string
 	Memory                     MemoryConfig
@@ -126,7 +127,11 @@ func LoadConfig(promptPath string) Config {
 	}
 	realtimeModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_MODEL"))
 	if realtimeModel == "" {
-		realtimeModel = "gpt-realtime-2.1-mini"
+		realtimeModel = "gpt-realtime-2.1"
+	}
+	realtimeVAD := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_VAD"))
+	if realtimeVAD == "" {
+		realtimeVAD = "semantic_vad"
 	}
 	transcriptionModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_TRANSCRIPTION_MODEL"))
 	if transcriptionModel == "" {
@@ -156,6 +161,7 @@ func LoadConfig(promptPath string) Config {
 	return Config{
 		APIKey:                     apiKey,
 		RealtimeModel:              realtimeModel,
+		RealtimeVAD:                realtimeVAD,
 		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,

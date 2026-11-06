@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientSearchSendsHostedWebSearchRequest(t *testing.T) {
@@ -18,7 +19,7 @@ func TestClientSearchSendsHostedWebSearchRequest(t *testing.T) {
 			t.Fatalf("Decode request body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output_text":"回答本文"}`))
+		_, _ = w.Write([]byte(`{"status":"completed","output_text":"回答本文","output":[{"type":"web_search_call","status":"completed"}]}`))
 	}))
 	defer srv.Close()
 
@@ -28,6 +29,7 @@ func TestClientSearchSendsHostedWebSearchRequest(t *testing.T) {
 		HTTPClient: srv.Client(),
 		Endpoint:   srv.URL,
 	})
+	before := time.Now()
 	got, err := client.Search(context.Background(), "今日のニュース")
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
@@ -47,6 +49,22 @@ func TestClientSearchSendsHostedWebSearchRequest(t *testing.T) {
 	instructions, ok := payload["instructions"].(string)
 	if !ok || !strings.Contains(instructions, "逆質問") {
 		t.Fatalf("instructions = %#v", payload["instructions"])
+	}
+	_, timestamp, ok := strings.Cut(instructions, "現在日時: ")
+	if !ok {
+		t.Fatal("検索に現在日時が渡されていません")
+	}
+	timestamp, _, _ = strings.Cut(timestamp, "\n")
+	now, err := time.Parse(time.RFC3339, timestamp)
+	_, offset := now.Zone()
+	if err != nil || offset != 9*60*60 || now.Before(before.Truncate(time.Second)) || now.After(time.Now()) {
+		t.Fatalf("検索の日時が日本時間の現在日時ではありません: %s, %v", timestamp, err)
+	}
+	if !strings.Contains(instructions, "今日: "+now.Format(time.DateOnly)) {
+		t.Fatalf("検索の対象日がありません: %s", instructions)
+	}
+	if payload["tool_choice"] != "required" {
+		t.Fatalf("Web検索が必須になっていません: %#v", payload["tool_choice"])
 	}
 	tools, ok := payload["tools"].([]any)
 	if !ok || len(tools) != 1 {
@@ -83,6 +101,7 @@ func TestClientSearchReturnsHTTPError(t *testing.T) {
 func TestReadSearchResponseFallsBackToMessageContent(t *testing.T) {
 	raw := `{
 		"output": [
+			{"type": "web_search_call", "status": "completed"},
 			{
 				"type": "message",
 				"content": [
@@ -101,8 +120,26 @@ func TestReadSearchResponseFallsBackToMessageContent(t *testing.T) {
 }
 
 func TestReadSearchResponseFailsWhenEmpty(t *testing.T) {
-	_, err := readSearchResponse(strings.NewReader(`{"output":[]}`))
+	_, err := readSearchResponse(strings.NewReader(`{"output":[{"type":"web_search_call","status":"completed"}]}`))
 	if err == nil || !strings.Contains(err.Error(), "result is empty") {
 		t.Fatalf("err = %v, want result is empty", err)
+	}
+}
+
+func TestReadSearchResponseRejectsUnverifiedOrIncompleteSearch(t *testing.T) {
+	for _, tc := range []struct{ name, raw string }{
+		{"検索なしの本文", `{"output_text":"今日の東京は晴れです","output":[]}`},
+		{"別のツールだけ完了", `{"output_text":"晴れ","output":[{"type":"function_call","status":"completed"}]}`},
+		{"検索失敗", `{"output_text":"晴れ","output":[{"type":"web_search_call","status":"failed"}]}`},
+		{"検索未完了", `{"output_text":"晴れ","output":[{"type":"web_search_call","status":"in_progress"}]}`},
+		{"本文が途中", `{"status":"incomplete","output_text":"晴れ","output":[{"type":"web_search_call","status":"completed"}]}`},
+		{"APIエラー", `{"error":{"message":"検索失敗"},"output_text":"晴れ","output":[{"type":"web_search_call","status":"completed"}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := readSearchResponse(strings.NewReader(tc.raw))
+			if err == nil || got != "" {
+				t.Fatalf("未確認の検索結果を採用しました: %q, %v", got, err)
+			}
+		})
 	}
 }
