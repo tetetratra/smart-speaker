@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
-import { createAudioReceiver, type AudioReceiver } from './audio'
+import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
@@ -627,6 +627,7 @@ type LiveViewProps = {
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [playbackSpeech, setPlaybackSpeech] = useState<PlaybackSpeech>()
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [rtcStatus, setRtcStatus] = useState('停止中')
@@ -727,6 +728,7 @@ function App() {
 
   const resetConversationBubble = useCallback(() => {
     setIsAiSpeaking(false)
+    setPlaybackSpeech(undefined)
     setMessages([])
   }, [])
 
@@ -819,9 +821,6 @@ function App() {
           if (role === 'tool_call' || role === 'tool_result') {
             showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
           }
-          if (role === 'agent' && isCurrentGeneration) {
-            setIsAiSpeaking(true)
-          }
           if (role === 'user' && isCurrentGeneration) {
             setIsAiSpeaking(false)
             setSttStatus('完了')
@@ -845,6 +844,7 @@ function App() {
         }
         case 'playback_stop': {
           audioReceiverRef.current?.stop(raw.generation_id)
+          setPlaybackSpeech((speech) => speech && speech.generationId < raw.generation_id ? undefined : speech)
           break
         }
         case 'realtime_status': {
@@ -1018,7 +1018,7 @@ function App() {
       })
 
       wsChatRef.current = wsChat
-      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking)
+      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking, setPlaybackSpeech)
       audioReceiverRef.current.volume(selectedPlaybackVolume.gain)
       setConnected(true)
       reconnectAttemptRef.current = 0
@@ -1123,7 +1123,7 @@ function App() {
       el.scrollTop = el.scrollHeight
     }
   }, [serverEventLogs])
-  const bubble = useMemo(() => conversationBubble(messages), [messages])
+  const bubble = useMemo(() => conversationBubble(messages, playbackSpeech), [messages, playbackSpeech])
   const lastAssistantMessage = bubble.assistant
   const lastUserMessage = bubble.user
   const [uiMode, setUiMode] = useState<UiMode>(() => {
