@@ -15,10 +15,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
+	Scheduled                                                 <-chan types.ScheduledPrompt
 	ToolHistory                                               *toolhistory.Store
 	ToolModes                                                 map[string]string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
@@ -33,11 +35,13 @@ type Config struct {
 }
 
 type response struct {
+	silent             bool
 	whiteboardRevision uint64
 	generation         types.GenerationID
 	items              map[string]bool
 }
 type assistantItem struct {
+	silent          bool
 	generation      types.GenerationID
 	generated, sent string
 }
@@ -48,6 +52,8 @@ type call struct {
 	finished           bool
 }
 type stage struct {
+	scheduled                                 []types.ScheduledPrompt
+	silentGeneration                          types.GenerationID
 	whiteboard                                *conversation.WhiteboardPolicy
 	itemOrder                                 []string
 	pendingText                               []types.LLMRequest
@@ -117,6 +123,19 @@ func (s *stage) status(ctx context.Context, status, message string) {
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeStatus, Payload: types.RealtimeStatus{Status: status, Message: message}})
 }
 func (s *stage) run(ctx context.Context) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case prompt, ok := <-s.cfg.Scheduled:
+				if !ok {
+					return
+				}
+				s.queue.Push(incoming{event: prompt})
+			}
+		}
+	}()
 	defer close(s.node.Downstream)
 	defer func() {
 		if s.transport != nil {
@@ -153,6 +172,9 @@ func (s *stage) run(ctx context.Context) {
 			switch e := in.event.(type) {
 			case types.Event:
 				s.handle(ctx, e)
+			case types.ScheduledPrompt:
+				s.queueScheduled(e)
+				s.startScheduled(ctx)
 			case time.Time:
 				s.tick(ctx, e)
 			}
@@ -290,13 +312,25 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		change, _ := s.controller.Start(id)
 		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
 		s.lastActivity = time.Now()
-		s.record(ctx, id, types.RoleUser, p.Text, change.GenerationID, "text")
+		s.silentGeneration = 0
+		if p.Silent {
+			s.silentGeneration = change.GenerationID
+		}
+		role, source := types.RoleUser, "text"
+		if strings.HasPrefix(p.Source, "automation/") {
+			role = "system"
+			source = p.Source
+		}
+		s.record(ctx, id, role, p.Text, change.GenerationID, source)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})
 		s.wantResponse = true
 		s.maybeRespond(ctx)
 	}
 }
 func (s *stage) tick(ctx context.Context, now time.Time) {
+	if s.startScheduled(ctx) {
+		return
+	}
 	if s.speaking || s.active != "" || s.wantResponse || len(s.repairs) > 0 || s.pendingTools() || s.hasPendingOutput() {
 		return
 	}
@@ -318,7 +352,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 		return
 	}
 	if s.transport == nil {
-		if len(s.peers) > 0 && !s.connecting && now.Sub(s.lastActivity) > time.Second {
+		if (len(s.peers) > 0 || len(s.pendingText) > 0) && !s.connecting && now.Sub(s.lastActivity) > time.Second {
 			s.connect(ctx)
 		}
 		return

@@ -15,6 +15,7 @@ import (
 type Config struct {
 	APIKey                     string
 	ResponsesModel             string
+	AutomationStorePath        string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -77,6 +78,10 @@ func LoadConfig(promptPath string) Config {
 		responsesModel = "gpt-5.4-nano-2026-03-17"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
+	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
+	if automationPath == "" {
+		automationPath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "automations.json")
+	}
 
 	prompt := readSystemPrompt(promptPath)
 
@@ -165,6 +170,7 @@ func LoadConfig(promptPath string) Config {
 		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,
+		AutomationStorePath:        automationPath,
 		Memory:                     memoryCfg,
 		SystemPrompt:               prompt,
 		ConversationIdleTimeout:    conversationIdleTimeout,

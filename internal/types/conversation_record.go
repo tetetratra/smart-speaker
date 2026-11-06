@@ -52,6 +52,8 @@ type ConversationCommitRequest struct {
 
 // LLMRequest は LLM component への推論要求です。
 type LLMRequest struct {
+	Source       string
+	Silent       bool
 	RequestID    string
 	Role         string
 	Text         string
