@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { ToolHistoryView } from './ToolHistoryView'
+import { SubagentApproval } from './SubagentApproval'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 
 type ChatMessage =
@@ -1373,6 +1374,7 @@ function App() {
           app画面
         </button>
       </div>
+      <SubagentApproval backendURL={backendURL} />
       <ToolHistoryView visible={uiMode === 'tools'} backendURL={backendURL} goApp={() => setMode('app')} />
       <MemoryView
         visible={uiMode === 'memory'}
