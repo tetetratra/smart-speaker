@@ -15,6 +15,7 @@ import (
 type Config struct {
 	APIKey                     string
 	ResponsesModel             string
+	AutomationStorePath        string
 	SubagentModel              string
 	RealtimeModel              string
 	RealtimeVAD                string
@@ -82,6 +83,10 @@ func LoadConfig(promptPath string) Config {
 		subagentModel = "gpt-5.4"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
+	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
+	if automationPath == "" {
+		automationPath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "automations.json")
+	}
 
 	prompt := readSystemPrompt(promptPath)
 
@@ -170,6 +175,7 @@ func LoadConfig(promptPath string) Config {
 		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,
+		AutomationStorePath:        automationPath,
 		SubagentModel:              subagentModel,
 		Memory:                     memoryCfg,
 		SystemPrompt:               prompt,

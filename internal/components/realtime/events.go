@@ -61,6 +61,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.handle(ctx, types.Event{Payload: text})
 		}
 	case "input_audio_buffer.speech_started":
+		s.silentGeneration = 0
 		s.speaking = true
 		s.lastActivity = time.Now()
 		s.wantResponse = false
@@ -102,7 +103,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.status(ctx, "error", "応答の世代情報を確認できませんでした")
 			return
 		}
-		s.responses[e.Response.ID] = &response{generation: types.GenerationID(gen64), items: map[string]bool{}, whiteboardRevision: s.whiteboard.Revision(types.GenerationID(gen64))}
+		s.responses[e.Response.ID] = &response{silent: s.silentGeneration != 0 && s.silentGeneration == types.GenerationID(gen64), generation: types.GenerationID(gen64), items: map[string]bool{}, whiteboardRevision: s.whiteboard.Revision(types.GenerationID(gen64))}
 		s.active = e.Response.ID
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
@@ -111,15 +112,19 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		}
 		item := s.items[e.ItemID]
 		if item == nil {
-			item = &assistantItem{generation: r.generation}
+			item = &assistantItem{generation: r.generation, silent: r.silent}
 			s.items[e.ItemID] = item
 			s.itemOrder = append(s.itemOrder, e.ItemID)
 		}
-		s.pendingOutput[e.ItemID] = true
+		if !r.silent {
+			s.pendingOutput[e.ItemID] = true
+		}
 		r.items[e.ItemID] = true
 		item.generated += e.Delta
 		s.saveAssistant(e.ItemID, item)
-		s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
+		if !r.silent {
+			s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
+		}
 	case "response.output_text.done":
 		r := s.responses[e.ResponseID]
 		if r == nil {
@@ -133,7 +138,9 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			}
 			s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleAgent, Text: item.generated, GenerationID: r.generation, ResponseID: e.ResponseID, Final: true}})
 		}
-		s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
+		if !r.silent {
+			s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
+		}
 	case "response.function_call_arguments.done":
 		r := s.responses[e.ResponseID]
 		if r == nil {
@@ -163,6 +170,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 	}
 }
 func (s *stage) saveAssistant(itemID string, item *assistantItem) {
+	if item.silent {
+		s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, itemID), Role: types.RoleAgent, Text: item.generated, GenerationID: item.generation, Source: "automation", CreatedAt: time.Now(), Metadata: map[string]any{"silent": true}})
+		return
+	}
 	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, itemID), Role: types.RoleAgent, Text: item.sent, GenerationID: item.generation, Source: "realtime", CreatedAt: time.Now(), Metadata: map[string]any{"generated_text": item.generated, "interrupted": !sameSpokenText(item.sent, item.generated)}})
 }
 func (s *stage) sent(frame types.AudioFrame) {
@@ -193,7 +204,7 @@ func (s *stage) maybeRespond(ctx context.Context) {
 		if item == nil {
 			continue
 		}
-		if item.generation >= s.cfg.Generation.Current() || sameSpokenText(item.generated, item.sent) {
+		if item.silent || item.generation >= s.cfg.Generation.Current() || sameSpokenText(item.generated, item.sent) {
 			continue
 		}
 		replacement := "item_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24]

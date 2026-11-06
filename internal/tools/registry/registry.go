@@ -1,7 +1,9 @@
 package registry
 
 import (
+	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/subagent"
+	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	subagenttool "github.com/tetetratra/smart-speaker/internal/tools/functions/subagent"
 	"strings"
 
@@ -25,6 +27,7 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
+	Automations        *automations.Service
 	Subagent           *subagent.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
@@ -61,6 +64,12 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
+	}
+	if cfg.Automations != nil {
+		for _, operation := range []string{"register_job", "list_jobs", "update_job", "set_job_enabled", "delete_job"} {
+			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
+			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
+		}
 	}
 	if cfg.Subagent != nil {
 		t := &subagenttool.Tool{Service: cfg.Subagent}
