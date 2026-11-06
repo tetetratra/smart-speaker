@@ -28,6 +28,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
+	"github.com/tetetratra/smart-speaker/internal/subagent"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
@@ -55,7 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200), Subagent: subagent.New(&subagent.OpenAIClient{APIKey: cfg.APIKey, Model: cfg.SubagentModel})}
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
@@ -163,7 +164,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
+	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
@@ -236,7 +237,7 @@ func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
 	}
 }
 
-func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[string]string) {
+func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -244,6 +245,7 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[str
 	}
 
 	reg := registry.New(registry.Config{
+		Subagent:        services.Subagent,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,

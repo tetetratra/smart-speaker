@@ -193,3 +193,13 @@ https://tailscale.com/docs/reference/tailscale-cli
 ### ツール呼び出し履歴
 
 メイン画面の「ツール履歴」または`/?ui=tools`で、呼び出しと結果を対応付けて確認できます。実行中・成功・失敗、引数と返り値の全文を表示します。サーバーが最新200件をメモリに保持するため、画面の再読み込み後も参照できますが、サーバー再起動で消去されます。`GET /api/tool-history`からも取得できます。
+
+### 会話で利用を確認するサブエージェント
+
+簡単な質問はRealtimeエージェント自身で対応します。難しい質問・調査・複雑な作業では、会話で「サブエージェントを使って調べていい？」と確認し、了承を得てから`ask_subagent`を呼び出すようプロンプトで指示します。許可画面やサーバー側の許可制限は設けません。
+
+サブエージェントには、自分が補助役であり、ユーザーとの会話はRealtimeエージェントが通訳・仲介することを毎回の初期指示で伝えます。返答は`summary`（口頭用の要点、1〜3文・200文字以内）と`details`（ホワイトボード用の補足、通常5〜10行以内、最大10行・各120文字）に分けます。Realtimeエージェントには要点だけを読み上げ、詳細を`set_whiteboard`で残すよう指示します。発話の選択や会話での了承確認はモデルのプロンプト方針です。
+
+初回は`session_id`を空文字にし、返されたIDを次の呼び出しで指定すると同じ会話を継続します。親の会話履歴は自動転送しません。`OPENAI_SUBAGENT_MODEL`の既定は`gpt-5.4`、推論量は`high`で、外部ツールは付与しません。Responses APIとStructured Outputsに対応するモデルが必要です。
+
+セッションは最新の利用から24時間、最大32件をメモリに保持し、サーバー再起動で失われます。API側への保存を有効にし、`previous_response_id`で継続します。[会話状態](https://developers.openai.com/api/docs/guides/conversation-state)と[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)の公式仕様を使用しています。失敗時は直前に成功した会話から再開します。
