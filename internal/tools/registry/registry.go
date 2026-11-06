@@ -2,7 +2,9 @@ package registry
 
 import (
 	"github.com/tetetratra/smart-speaker/internal/automations"
+	"github.com/tetetratra/smart-speaker/internal/subagent"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
+	subagenttool "github.com/tetetratra/smart-speaker/internal/tools/functions/subagent"
 	"strings"
 
 	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
@@ -26,6 +28,7 @@ type entry struct {
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
 	Automations        *automations.Service
+	Subagent           *subagent.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
 	SwitchBotDeviceMap string
@@ -67,6 +70,10 @@ func New(cfg Config) *Registry {
 			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
+	}
+	if cfg.Subagent != nil {
+		t := &subagenttool.Tool{Service: cfg.Subagent}
+		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})

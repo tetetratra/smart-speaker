@@ -197,3 +197,13 @@ https://tailscale.com/docs/reference/tailscale-cli
 ### 自然言語の予約ジョブ
 
 「10分後に起こして」「平日8時に処理して。音声通知は不要」などと会話から登録できます。指定時間後・日時指定・5項目のcron式に対応し、指示と予定はファイルに保存します。実行時ごとにAIが自然言語の指示を解釈し、必要なツールを呼び出します。「予約」画面で確認・変更・停止・削除できます。`speak=false`の指示は音声合成へ送らず、読み上げません。保持範囲・失敗時の扱い・APIの引数は[予約ジョブの仕様](docs/automations.md)を参照してください。
+
+### 会話で利用を確認するサブエージェント
+
+簡単な質問はRealtimeエージェント自身で対応します。難しい質問・調査・複雑な作業では、会話で「サブエージェントを使って調べていい？」と確認し、了承を得てから`ask_subagent`を呼び出すようプロンプトで指示します。許可画面やサーバー側の許可制限は設けません。
+
+サブエージェントには、自分が補助役であり、ユーザーとの会話はRealtimeエージェントが通訳・仲介することを毎回の初期指示で伝えます。返答は`summary`（口頭用の要点、1〜3文・200文字以内）と`details`（ホワイトボード用の補足、通常5〜10行以内、最大10行・各120文字）に分けます。Realtimeエージェントには要点だけを読み上げ、詳細を`set_whiteboard`で残すよう指示します。発話の選択や会話での了承確認はモデルのプロンプト方針です。
+
+初回は`session_id`を空文字にし、返されたIDを次の呼び出しで指定すると同じ会話を継続します。親の会話履歴は自動転送しません。`OPENAI_SUBAGENT_MODEL`の既定は`gpt-5.4`、推論量は`high`で、外部ツールは付与しません。Responses APIとStructured Outputsに対応するモデルが必要です。
+
+セッションは最新の利用から24時間、最大32件をメモリに保持し、サーバー再起動で失われます。API側への保存を有効にし、`previous_response_id`で継続します。[会話状態](https://developers.openai.com/api/docs/guides/conversation-state)と[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)の公式仕様を使用しています。失敗時は直前に成功した会話から再開します。

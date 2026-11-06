@@ -16,6 +16,7 @@ type Config struct {
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
+	SubagentModel              string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -76,6 +77,10 @@ func LoadConfig(promptPath string) Config {
 	if responsesModel == "" {
 		// Responsesは履歴の要約・長期メモリ・検索用に使用する。
 		responsesModel = "gpt-5.4-nano-2026-03-17"
+	}
+	subagentModel := strings.TrimSpace(os.Getenv("OPENAI_SUBAGENT_MODEL"))
+	if subagentModel == "" {
+		subagentModel = "gpt-5.4"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
 	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
@@ -171,6 +176,7 @@ func LoadConfig(promptPath string) Config {
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,
 		AutomationStorePath:        automationPath,
+		SubagentModel:              subagentModel,
 		Memory:                     memoryCfg,
 		SystemPrompt:               prompt,
 		ConversationIdleTimeout:    conversationIdleTimeout,
