@@ -13,6 +13,7 @@ require (
 	cloud.google.com/go/speech v1.30.0
 	github.com/google/uuid v1.6.0
 	github.com/pion/interceptor v0.1.48
+	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.265.0
 	google.golang.org/grpc v1.78.0

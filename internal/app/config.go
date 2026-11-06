@@ -17,6 +17,8 @@ type Config struct {
 	LocalSTTEndpoint           string
 	APIKey                     string
 	ResponsesModel             string
+	AutomationStorePath        string
+	SubagentModel              string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -78,6 +80,10 @@ func LoadConfig(promptPath string) Config {
 		// Responsesは履歴の要約・長期メモリ・検索用に使用する。
 		responsesModel = "gpt-5.4-nano-2026-03-17"
 	}
+	subagentModel := strings.TrimSpace(os.Getenv("OPENAI_SUBAGENT_MODEL"))
+	if subagentModel == "" {
+		subagentModel = "gpt-5.4"
+	}
 	memoryCfg := loadMemoryConfig(responsesModel)
 	wakePath := strings.TrimSpace(os.Getenv("WAKE_MODE_STORE_PATH"))
 	if wakePath == "" {
@@ -86,6 +92,10 @@ func LoadConfig(promptPath string) Config {
 	localSTT := strings.TrimSpace(os.Getenv("LOCAL_STT_ENDPOINT"))
 	if localSTT == "" {
 		localSTT = "http://localhost:8000/transcribe"
+	}
+	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
+	if automationPath == "" {
+		automationPath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "automations.json")
 	}
 
 	prompt := readSystemPrompt(promptPath)
@@ -177,6 +187,8 @@ func LoadConfig(promptPath string) Config {
 		ResponsesModel:             responsesModel,
 		WakeModeStorePath:          wakePath,
 		LocalSTTEndpoint:           localSTT,
+		AutomationStorePath:        automationPath,
+		SubagentModel:              subagentModel,
 		Memory:                     memoryCfg,
 		SystemPrompt:               prompt,
 		ConversationIdleTimeout:    conversationIdleTimeout,

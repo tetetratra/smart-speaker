@@ -43,6 +43,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	registerToolHistoryAPI(mux, services.ToolHistory)
+	registerAutomationsAPI(mux, services.Automations)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	server := &http.Server{

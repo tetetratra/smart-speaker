@@ -68,3 +68,9 @@ type LocalWakeUtterance struct {
 	Revision               uint64
 	Confidence, Similarity float64
 }
+
+// ScheduledPrompt は登録済みの自然言語ジョブを会話処理へ渡す。
+type ScheduledPrompt struct {
+	ID, Name, Instruction string
+	Speak                 bool
+}

@@ -4,6 +4,7 @@ import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { ToolHistoryView } from './ToolHistoryView'
 import { WakeModeControl } from './WakeModeControl'
+import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 
 type ChatMessage =
@@ -13,7 +14,7 @@ type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'tools'
+type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'tools' | 'jobs'
 type MemoryItem = {
   id: string
   content: string
@@ -160,6 +161,7 @@ const liveRootStyle = `
   }
   .live-controls-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
     align-items: center;
@@ -640,6 +642,7 @@ type LiveViewProps = {
   goMemory: () => void
   goAdmin: () => void
   goTools: () => void
+  goJobs: () => void
 }
 
 function App() {
@@ -1145,6 +1148,7 @@ function App() {
   const lastUserMessage = bubble.user
   const [uiMode, setUiMode] = useState<UiMode>(() => {
     const params = new URLSearchParams(window.location.search)
+    if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) return 'jobs'
     if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) return 'tools'
     if (params.get('ui') === 'admin') return 'admin'
     if (params.get('ui') === 'memory') return 'memory'
@@ -1157,6 +1161,7 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const params = new URLSearchParams(window.location.search)
+      if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) {setUiMode('jobs');return}
       if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) {
         setUiMode('tools')
         return
@@ -1280,7 +1285,7 @@ function App() {
   }, [])
   const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
-    if (mode === 'tools') {
+    if (mode === 'jobs') {params.set('ui', 'jobs')} else if (mode === 'tools') {
       params.set('ui', 'tools')
     } else if (mode === 'admin') {
       params.set('ui', 'admin')
@@ -1319,6 +1324,7 @@ function App() {
           goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
           goTools={() => setMode('tools')}
+          goJobs={() => setMode('jobs')}
         />
       </div>
       <div
@@ -1375,6 +1381,7 @@ function App() {
         </button>
       </div>
       <WakeModeControl backendURL={backendURL} />
+      <AutomationView visible={uiMode === 'jobs'} backendURL={backendURL} goApp={() => setMode('app')} />
       <ToolHistoryView visible={uiMode === 'tools'} backendURL={backendURL} goApp={() => setMode('app')} />
       <MemoryView
         visible={uiMode === 'memory'}
@@ -1921,6 +1928,7 @@ function LiveView(props: LiveViewProps) {
     goMemory,
     goAdmin,
     goTools,
+    goJobs,
   } = props
   const boardRef = useRef<HTMLDivElement | null>(null)
   const handleToggle = useCallback(() => {
@@ -1978,6 +1986,7 @@ function LiveView(props: LiveViewProps) {
                   <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                   <button onClick={goTools} className="live-admin-btn">ツール履歴</button>
+                  <button onClick={goJobs} className="live-admin-btn">予約</button>
                 </div>
               </div>
               <div className="live-status-grid">

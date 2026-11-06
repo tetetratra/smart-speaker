@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/app"
+	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
@@ -30,6 +31,7 @@ import (
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/subagent"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
@@ -57,7 +59,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200), Subagent: subagent.New(&subagent.OpenAIClient{APIKey: cfg.APIKey, Model: cfg.SubagentModel})}
+	scheduled := make(chan types.ScheduledPrompt, 100)
+	services.Scheduled = scheduled
+	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case scheduled <- types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction, Speak: delivery.Speak}:
+			return nil
+		}
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath)
 	if err != nil {
 		log.Fatal(err)
@@ -79,6 +94,9 @@ func main() {
 
 	wireGraph(g, stages)
 	runHTTPServer(server)
+	schedulerDone := make(chan struct{})
+	go func() { defer close(schedulerDone); services.Automations.Run(ctx) }()
+	defer func() { cancel(); <-schedulerDone }()
 
 	log.Printf("main ctx err: %v", ctx.Err())
 
@@ -173,6 +191,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
+		Scheduled:   services.Scheduled,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolModes: toolModes,
@@ -253,6 +272,8 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 
 	reg := registry.New(registry.Config{
 		WakeMode:        services.WakeMode,
+		Automations:     services.Automations,
+		Subagent:        services.Subagent,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,

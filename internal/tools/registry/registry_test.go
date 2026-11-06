@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"github.com/tetetratra/smart-speaker/internal/subagent"
 	"testing"
 
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
@@ -183,5 +184,15 @@ func assertToolMode(t *testing.T, reg *Registry, name, want string) {
 	}
 	if def["x_tool_mode"] != want {
 		t.Fatalf("DefinitionByName(%q)[x_tool_mode] = %v, want %q", name, def["x_tool_mode"], want)
+	}
+}
+
+func TestSubagentIsOnlyRegisteredWithService(t *testing.T) {
+	reg := New(Config{Subagent: subagent.New(nil)})
+	if _, ok := reg.Handlers()["ask_subagent"]; !ok {
+		t.Fatal("サブエージェントが登録されませんでした")
+	}
+	if _, ok := New(Config{}).Handlers()["ask_subagent"]; ok {
+		t.Fatal("未設定のサブエージェントが公開されました")
 	}
 }

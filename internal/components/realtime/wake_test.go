@@ -1,7 +1,9 @@
 package realtime
 
 import (
+	"encoding/json"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"path/filepath"
 	"testing"
@@ -30,4 +32,61 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	if len(records) != 1 || records[0].Source != "local-stt" {
 		t.Fatal(records)
 	}
+}
+
+// 予約は内部指示なので呼びかけなしで実行でき、モード変更の返答も読み上げない。
+func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
+	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Set(true, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	scheduled := make(chan types.ScheduledPrompt, 1)
+	r := newRig(t, func(c *Config) { c.WakeMode = store; c.Scheduled = scheduled })
+	scheduled <- types.ScheduledPrompt{ID: "end-work", Name: "仕事終了", Instruction: "呼びかけ必須モードを解除して。読み上げ不要", Speak: false}
+	request := r.wait("response.create")
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})
+	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "job", "call_id": "mode-call", "name": "set_wake_mode", "arguments": `{"required":false}`})
+	req := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	var args map[string]any
+	if err = json.Unmarshal(req.Arguments, &args); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&waketool.Tool{Store: store}).Run(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, _ := json.Marshal(result)
+	record := types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: output}
+	r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &record}}
+	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "job", "status": "completed"}})
+	update := r.wait("session.update")
+	select {
+	case r.conn = <-r.connections:
+	case <-r.ctx.Done():
+		t.Fatal(r.ctx.Err())
+	}
+	input := update["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)
+	if input["turn_detection"].(map[string]any)["interrupt_response"] != true || store.Snapshot(time.Now()).Required {
+		t.Fatal("予約によるモード解除が反映されませんでした")
+	}
+	r.send(map[string]any{"type": "session.updated"})
+	timer := time.NewTimer(50 * time.Millisecond)
+	defer timer.Stop()
+check:
+	for {
+		select {
+		case e := <-r.events:
+			if e.Kind == types.EventResponseText {
+				t.Fatal("無音の予約が音声合成へ届きました")
+			}
+		case <-timer.C:
+			break check
+		}
+	}
+	// 解除後は呼びかけのない通常の発話で応答を開始できる。
+	r.utterance("ordinary")
+	r.wait("response.create")
 }
