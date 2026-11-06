@@ -83,7 +83,9 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		for _, text := range pending {
 			s.handle(ctx, types.Event{Payload: text})
 		}
+		s.maybeRespond(ctx)
 	case "input_audio_buffer.speech_started":
+		s.awaitingInputCommit = e.ItemID
 		s.silentGeneration = 0
 		s.speaking = true
 		s.lastActivity = time.Now()
@@ -102,6 +104,9 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.lastActivity = time.Now()
 		s.emit(ctx, types.Event{Kind: types.EventSpeechEnd, Payload: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
 	case "input_audio_buffer.committed":
+		if s.awaitingInputCommit == e.ItemID {
+			s.awaitingInputCommit = ""
+		}
 		// 発話終了だけでなく、APIが入力itemを確定した後に応答を要求する。
 		s.wantResponse = true
 		s.maybeRespond(ctx)
@@ -126,7 +131,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.status(ctx, "error", "応答の世代情報を確認できませんでした")
 			return
 		}
-		s.responses[e.Response.ID] = &response{silent: s.silentGeneration != 0 && s.silentGeneration == types.GenerationID(gen64), generation: types.GenerationID(gen64), items: map[string]bool{}, whiteboardRevision: s.whiteboard.Revision(types.GenerationID(gen64))}
+		s.responses[e.Response.ID] = &response{silent: s.silentGeneration != 0 && s.silentGeneration == types.GenerationID(gen64), generation: types.GenerationID(gen64), items: map[string]bool{}}
 		s.active = e.Response.ID
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
@@ -175,7 +180,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if !s.cfg.Generation.IsCurrent(r.generation) {
 			return
 		}
-		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, whiteboardRevision: r.whiteboardRevision}
+		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, silent: r.silent}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
 		s.record(ctx, "call/"+e.CallID, types.RoleToolCall, e.Name+": "+e.Arguments, r.generation, e.Name)
 		if e.Name == waitToolName {
@@ -217,7 +222,8 @@ func (s *stage) sent(frame types.AudioFrame) {
 	}
 }
 func (s *stage) maybeRespond(ctx context.Context) {
-	if !s.ready || !s.wantResponse || s.speaking || s.active != "" || len(s.repairs) > 0 {
+	s.discardOldSilentToolResponses()
+	if !s.ready || (!s.wantResponse && len(s.pendingToolResponses) == 0) || s.speaking || s.awaitingInputCommit != "" || s.active != "" || len(s.repairs) > 0 {
 		return
 	}
 	// 旧応答の未送信テキストを補正し、APIの反映通知が届くまで次の生成を始めない。
@@ -266,13 +272,10 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
 	// 接続を維持したまま日付が変わっても、復元文脈と指示を保って日時を更新する。
-	response["instructions"] = conversation.WithCurrentTime(s.instructions, time.Now())
-	if s.whiteboard.Pending(s.cfg.Generation.Current()) {
-		// 既存のツール結果後の応答を、情報を画面へ残す呼び出しに限定する。
-		response["tool_choice"] = map[string]any{"type": "function", "name": "set_whiteboard"}
-		s.whiteboard.Request(s.cfg.Generation.Current())
-	}
+	response["instructions"] = conversation.WithCurrentTime(s.toolResultInstructions(), time.Now())
 	s.transport.send(map[string]any{"type": "response.create", "response": response})
+	// 送信まで保持する一回用の指示。報告完了を管理するキューではない。
+	s.pendingToolResponses = nil
 	// response.createdを受信するまでの二重開始を防ぐ。
 	s.active = "pending"
 }
@@ -282,20 +285,20 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
-	s.whiteboard.Observe(result, c.whiteboardRevision)
 	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: result.Name, CreatedAt: time.Now()})
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
 	if c.epoch != s.epoch || s.transport == nil {
 		if s.ready && s.transport != nil {
 			s.sendResultContext(result)
-		} else if s.connecting || s.transport != nil {
+		} else {
 			s.contextResults = append(s.contextResults, result)
 		}
-		return
+	} else {
+		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "function_call_output", "call_id": result.ToolCallID, "output": string(result.Output)}})
 	}
-	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "function_call_output", "call_id": result.ToolCallID, "output": string(result.Output)}})
-	if s.cfg.Generation.IsCurrent(c.generation) {
-		s.wantResponse = true
+	// 無音ジョブの旧結果を、新しい通常会話へ読み上げとして持ち込まない。
+	if (!c.silent || s.cfg.Generation.IsCurrent(c.generation)) && s.respondAfterTool(result) {
+		s.pendingToolResponses = append(s.pendingToolResponses, toolCompletion{CallID: result.ToolCallID, Name: result.Name, generation: c.generation, silent: c.silent})
 	}
 	s.maybeRespond(ctx)
 }
@@ -317,6 +320,6 @@ func sameSpokenText(a, b string) bool {
 
 // 再接続前のcall_idを新接続へ再送せず、確定した操作結果だけを文脈に追加する。
 func (s *stage) sendResultContext(result types.ToolResultRecord) {
-	text := "過去の操作の実行結果（操作を再実行しない）: " + result.Name + " " + string(result.Output)
+	text := "過去の操作の実行結果（操作を再実行しない）: call_id=" + result.ToolCallID + " name=" + result.Name + " " + string(result.Output)
 	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}}})
 }

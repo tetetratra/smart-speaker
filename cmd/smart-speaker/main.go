@@ -187,14 +187,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, services)
+	toolSchemas, toolHandlers, toolModes, responsePolicies := buildToolRegistry(cfg, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
 		Scheduled:   services.Scheduled,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolModes: toolModes,
+		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolResponsePolicies: responsePolicies,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		Context:     conversation.ContextBuilder{APIKey: cfg.APIKey, Model: cfg.ResponsesModel},
 		MemoryContext: func(ctx context.Context) (string, error) {
@@ -263,7 +263,7 @@ func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
 	}
 }
 
-func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string) {
+func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -279,7 +279,7 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ToolModes()
+	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ToolModes(), reg.ResponsePolicies()
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {

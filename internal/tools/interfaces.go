@@ -8,10 +8,31 @@ import (
 )
 
 const (
-	ToolModeKey   = "x_tool_mode"
-	ToolModeRead  = "read"
-	ToolModeWrite = "write"
+	ToolModeKey       = "x_tool_mode"
+	ToolModeRead      = "read"
+	ToolModeWrite     = "write"
+	ResponsePolicyKey = "x_response_policy"
 )
+
+// ResponsePolicy はツール結果後の再応答と、応答に添える指示を設定する。
+// 失敗時はOnSuccessによらず説明を促す。
+type ResponsePolicy struct {
+	OnSuccess    bool
+	Instructions string
+}
+
+func DefinitionWithResponsePolicy(def map[string]any, policy ResponsePolicy) map[string]any {
+	def[ResponsePolicyKey] = policy
+	return def
+}
+
+// ResponsePolicyFromDefinition は未指定なら従来どおり再応答を有効にする。
+func ResponsePolicyFromDefinition(def map[string]any) ResponsePolicy {
+	if policy, ok := def[ResponsePolicyKey].(ResponsePolicy); ok {
+		return policy
+	}
+	return ResponsePolicy{OnSuccess: true}
+}
 
 func DefinitionWithMode(def map[string]any, mode string) map[string]any {
 	def[ToolModeKey] = mode

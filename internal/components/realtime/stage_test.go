@@ -235,7 +235,7 @@ func TestRepairCompletesBeforeNextResponse(t *testing.T) {
 		t.Fatal(next)
 	}
 }
-func TestOldToolResultIsRecordedWithoutStartingOldResponse(t *testing.T) {
+func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	r := newRig(t)
 	r.utterance("user1")
 	req := r.wait("response.create")
@@ -243,13 +243,16 @@ func TestOldToolResultIsRecordedWithoutStartingOldResponse(t *testing.T) {
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "test", "arguments": "{}"})
 	r.event(types.EventToolRequest)
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "r1"}})
-	r.send(map[string]any{"type": "input_audio_buffer.speech_started", "item_id": "user2"})
+	r.utterance("user2")
 	for {
 		change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
 		if change.GenerationID == 2 {
 			break
 		}
 	}
+	ack := r.wait("response.create")
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": ack["response"].(map[string]any)["metadata"]}})
+	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "test", GenerationID: 1, Output: json.RawMessage(`{"ok":true}`)}
 	r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &result}}
 	r.wait("conversation.item.create")
@@ -269,10 +272,9 @@ func TestOldToolResultIsRecordedWithoutStartingOldResponse(t *testing.T) {
 	if !found {
 		t.Fatal(records)
 	}
-	select {
-	case cmd := <-r.commands:
-		t.Fatal("旧結果で応答開始した", cmd)
-	case <-time.After(30 * time.Millisecond):
+	next := r.wait("response.create")["response"].(map[string]any)
+	if next["metadata"].(map[string]any)["generation"] != "2" || !strings.Contains(next["instructions"].(string), "call1") {
+		t.Fatal("旧結果を現在の世代で説明する指示がありません", next)
 	}
 }
 
@@ -440,9 +442,8 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 	r.send(map[string]any{"type": "session.updated"})
 }
 
-func TestReadResultForcesWhiteboardAndThenReturnsToSpeech(t *testing.T) {
+func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T) {
 	r := newRig(t, func(cfg *Config) {
-		cfg.ToolModes = map[string]string{"web_search": "read", "set_whiteboard": "write"}
 		cfg.Tools = []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}}}
 	})
 	r.utterance("user1")
@@ -464,9 +465,9 @@ func TestReadResultForcesWhiteboardAndThenReturnsToSpeech(t *testing.T) {
 	call("r1", "search1", "web_search")
 	result("search1", "web_search", `{"result":"明日の天気"}`)
 	required := r.wait("response.create")
-	choice, ok := required["response"].(map[string]any)["tool_choice"].(map[string]any)
-	if !ok || choice["type"] != "function" || choice["name"] != "set_whiteboard" {
-		t.Fatal(required)
+	followup := required["response"].(map[string]any)
+	if followup["tool_choice"] != nil || !strings.Contains(followup["instructions"].(string), "口頭説明より先に") {
+		t.Fatal("表示の必要性を判断する指示がありません", required)
 	}
 	created("r2", required)
 	call("r2", "board1", "set_whiteboard")

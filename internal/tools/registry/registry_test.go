@@ -2,10 +2,29 @@ package registry
 
 import (
 	"github.com/tetetratra/smart-speaker/internal/subagent"
+	"github.com/tetetratra/smart-speaker/internal/tools"
+	"strings"
 	"testing"
 
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
+
+func TestToolResponsePoliciesStayLocalAndReachRegistry(t *testing.T) {
+	reg := New(Config{})
+	policies := reg.ResponsePolicies()
+	board := policies["set_whiteboard"]
+	if !board.OnSuccess || !strings.Contains(board.Instructions, "まだ説明していない") {
+		t.Fatal("表示後の説明方針がありません", board)
+	}
+	if !policies["google_calendar_list"].OnSuccess {
+		t.Fatal("未指定ツールの再応答が無効です")
+	}
+	for _, definition := range reg.DefinitionsForRealtime() {
+		if _, ok := definition.(map[string]any)[tools.ResponsePolicyKey]; ok {
+			t.Fatal("アプリ専用設定をAPIのツール定義へ送っています")
+		}
+	}
+}
 
 func TestRegistrySwitchBotTools(t *testing.T) {
 	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)

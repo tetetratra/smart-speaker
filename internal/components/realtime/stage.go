@@ -13,6 +13,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
@@ -24,7 +25,7 @@ type Config struct {
 	WakeMode                                                  *wakemode.Store
 	Scheduled                                                 <-chan types.ScheduledPrompt
 	ToolHistory                                               *toolhistory.Store
-	ToolModes                                                 map[string]string
+	ToolResponsePolicies                                      map[string]tools.ResponsePolicy
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection                                             string
 	Tools                                                     []any
@@ -37,10 +38,9 @@ type Config struct {
 }
 
 type response struct {
-	silent             bool
-	whiteboardRevision uint64
-	generation         types.GenerationID
-	items              map[string]bool
+	silent     bool
+	generation types.GenerationID
+	items      map[string]bool
 }
 type assistantItem struct {
 	silent          bool
@@ -48,17 +48,18 @@ type assistantItem struct {
 	generated, sent string
 }
 type call struct {
-	whiteboardRevision uint64
-	epoch              uint64
-	generation         types.GenerationID
-	finished           bool
+	silent     bool
+	epoch      uint64
+	generation types.GenerationID
+	finished   bool
 }
 type stage struct {
 	wakeModeRequired                          bool
 	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
 	silentGeneration                          types.GenerationID
-	whiteboard                                *conversation.WhiteboardPolicy
+	pendingToolResponses                      []toolCompletion
+	awaitingInputCommit                       string
 	itemOrder                                 []string
 	pendingText                               []types.LLMRequest
 	contextResults                            []types.ToolResultRecord
@@ -108,13 +109,6 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		cfg.RotateAfter = 55 * time.Minute
 	}
 	s := &stage{cfg: cfg, queue: eventqueue.New[incoming](nil), controller: generationcontroller.New(cfg.Generation), peers: map[string]bool{}, calls: map[string]*call{}}
-	hasWhiteboard := false
-	for _, definition := range cfg.Tools {
-		if tool, ok := definition.(map[string]any); ok && tool["name"] == "set_whiteboard" {
-			hasWhiteboard = true
-		}
-	}
-	s.whiteboard = conversation.NewWhiteboardPolicy(cfg.ToolModes, hasWhiteboard)
 	s.node = &graph.Stage{Name: "realtime", Upstream: make(chan types.Event), Downstream: make(chan types.Event), Run: s.run, CloseFn: func() error { return nil }}
 	return s.node, nil
 }
@@ -259,6 +253,7 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 	s.ready = false
 	s.active = ""
 	s.speaking = false
+	s.awaitingInputCommit = ""
 	s.wantResponse = false
 	s.pendingAudio = nil
 	s.pendingWake = nil
@@ -347,6 +342,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	if s.refreshWakeMode(ctx) {
 		return
 	}
+	s.maybeRespond(ctx)
 	if s.startScheduled(ctx) {
 		return
 	}
@@ -384,6 +380,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	}
 }
 func (s *stage) rotate(ctx context.Context) {
+	s.awaitingInputCommit = ""
 	if s.transport != nil {
 		s.transport.close()
 	}
