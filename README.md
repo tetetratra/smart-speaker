@@ -189,3 +189,7 @@ https://tailscale.com/docs/reference/tailscale-cli
 ```sh
 ./scripts/deploy.sh
 ```
+
+### ツール呼び出し履歴
+
+メイン画面の「ツール履歴」または`/?ui=tools`で、呼び出しと結果を対応付けて確認できます。実行中・成功・失敗、引数と返り値の全文を表示します。サーバーが最新200件をメモリに保持するため、画面の再読み込み後も参照できますが、サーバー再起動で消去されます。`GET /api/tool-history`からも取得できます。

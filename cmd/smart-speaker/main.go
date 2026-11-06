@@ -27,6 +27,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
@@ -54,13 +55,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	server, chatStage, err := buildHTTPServer(cfg, memoryStore, ttsSelector)
+	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeHTTPServer(server)
 
-	stages, err := buildStages(cfg, chatStage, memoryStore, ttsSelector)
+	stages, err := buildStages(cfg, chatStage, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -119,7 +121,7 @@ func ttsConfig(cfg app.Config) tts.Config {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store, selector *tts.Selector) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store, services runtimeServices) (appStages, error) {
 	var stages appStages
 	stages.chat = chatStage
 	if chatStage != nil {
@@ -163,7 +165,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 
 	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
-		APIKey: cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
+		ToolHistory: services.ToolHistory,
+		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolModes: toolModes,
 		IdleTimeout: cfg.ConversationIdleTimeout,
@@ -182,7 +185,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, err
 	}
 	ttsCfg := ttsConfig(cfg)
-	ttsCfg.Selector = selector
+	ttsCfg.Selector = services.TTS
 	stages.tts, err = tts.NewStage(ttsCfg)
 	if err != nil {
 		return appStages{}, err
@@ -190,7 +193,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.segment = speechsegment.NewStage()
 	stages.frame = audioframe.NewStage()
 	stages.pace = audiopace.NewStage()
-	stages.tool = toolcaller.NewStage(toolHandlers, toolModes)
+	stages.tool = toolcaller.NewStageWithHistory(toolHandlers, toolModes, services.ToolHistory)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)

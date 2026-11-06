@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -220,4 +221,76 @@ func (h *countingHandler) Name() string { return "count" }
 func (h *countingHandler) Run(map[string]any) (map[string]any, error) {
 	h.calls++
 	return map[string]any{"ok": true}, nil
+}
+
+type blockingHandler struct{ started, release chan struct{} }
+
+func (h *blockingHandler) Name() string { return "blocked" }
+func (h *blockingHandler) Run(map[string]any) (map[string]any, error) {
+	close(h.started)
+	<-h.release
+	return map[string]any{"result": "結果の全文"}, nil
+}
+
+func TestHistoryTracksRunningResultAndDuplicateCall(t *testing.T) {
+	history := toolhistory.NewStore(200)
+	handler := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
+	stage := NewStageWithHistory(map[string]tools.Handler{"blocked": handler}, nil, history)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stage.Run(ctx)
+	defer stage.Close()
+	req := types.ToolRequest{ToolCallID: "call-id", Name: "blocked", Arguments: json.RawMessage(`{"text":"引数の全文"}`), GenerationID: 4}
+	stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+	select {
+	case <-handler.started:
+	case <-ctx.Done():
+		t.Fatal("ツールが開始されませんでした")
+	}
+	entries := history.Snapshot()
+	if len(entries) != 1 || entries[0].Status != "running" || entries[0].Arguments != string(req.Arguments) {
+		t.Fatal(entries)
+	}
+	close(handler.release)
+	select {
+	case <-stage.Downstream:
+	case <-ctx.Done():
+		t.Fatal("結果が届きませんでした")
+	}
+	stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+	select {
+	case <-stage.Downstream:
+	case <-ctx.Done():
+		t.Fatal("再送の結果が届きませんでした")
+	}
+	entries = history.Snapshot()
+	if len(entries) != 1 || entries[0].Status != "succeeded" || entries[0].FinishedAt.IsZero() || entries[0].Output != `{"result":"結果の全文"}` {
+		t.Fatal(entries)
+	}
+}
+
+func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
+	for _, req := range []types.ToolRequest{
+		{ToolCallID: "invalid", Name: "count", Arguments: json.RawMessage(`{"broken"`)},
+		{ToolCallID: "unknown", Name: "unknown", Arguments: json.RawMessage(`{}`)},
+		{ToolCallID: "failed", Name: "failed", Arguments: json.RawMessage(`{}`)},
+	} {
+		t.Run(req.ToolCallID, func(t *testing.T) {
+			history := toolhistory.NewStore(200)
+			stage := NewStageWithHistory(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, nil, history)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			stage.Run(ctx)
+			defer stage.Close()
+			stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+			select {
+			case <-stage.Downstream:
+			case <-ctx.Done():
+				t.Fatal("結果が届きませんでした")
+			}
+			if history.Snapshot()[0].Status != "failed" {
+				t.Fatal(history.Snapshot())
+			}
+		})
+	}
 }
