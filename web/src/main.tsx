@@ -36,9 +36,6 @@ const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
 const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
-const nightModeStartHour = 22
-const nightModeEndHour = 6
-const minuteMs = 60 * 1000
 const toolToastDurationMs = 5000
 const serverEventLogLimit = 1000
 
@@ -56,6 +53,14 @@ const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'boost'
 
 const liveRootStyle = `
   :root {
+    color-scheme: light;
+    --ui-accent: #2563eb;
+    --ui-accent-text: #ffffff;
+    --ui-accent-soft: #dbeafe;
+    --ui-accent-soft-text: #1d4ed8;
+    --ui-danger-bg: #fef2f2;
+    --ui-danger-line: #fecaca;
+    --ui-danger-text: #991b1b;
     --live-bg: #f6f6f4;
     --live-panel: #ffffff;
     --live-panel-soft: #fafafa;
@@ -89,20 +94,34 @@ const liveRootStyle = `
     background: var(--live-bg);
     color: var(--live-text);
   }
-  .live-frame.live-night-mode {
-    --live-bg: #050608;
-    --live-panel: #101217;
-    --live-panel-soft: #171a21;
-    --live-panel-raised: #1b1f28;
-    --live-text: #f4f7fb;
-    --live-muted: #aab2c0;
-    --live-line: #2a2f3a;
-    --live-line-strong: #3a4250;
-    --live-shadow: rgba(0,0,0,0.38);
-    --live-inset-line: #202632;
-    --live-toggle-bg: #303643;
-    --live-toggle-on: #4f8cff;
-    --live-toggle-knob: #f4f7fb;
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --ui-accent: #2563eb;
+      --ui-accent-text: #ffffff;
+      --ui-accent-soft: #1e3558;
+      --ui-accent-soft-text: #bfdbfe;
+      --ui-danger-bg: #381c26;
+      --ui-danger-line: #864354;
+      --ui-danger-text: #fecdd3;
+      --live-bg: #050608;
+      --live-panel: #101217;
+      --live-panel-soft: #171a21;
+      --live-panel-raised: #1b1f28;
+      --live-text: #f4f7fb;
+      --live-muted: #aab2c0;
+      --live-line: #2a2f3a;
+      --live-line-strong: #3a4250;
+      --live-shadow: rgba(0,0,0,0.38);
+      --live-inset-line: #202632;
+      --live-toggle-bg: #303643;
+      --live-toggle-on: #4f8cff;
+      --live-toggle-knob: #f4f7fb;
+    }
+  }
+  textarea, input, select {
+    background: var(--live-panel);
+    color: var(--live-text);
   }
   .live-main {
     width: 100%;
@@ -182,14 +201,14 @@ const liveRootStyle = `
     animation: live-tool-toast-slide 5000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .live-tool-toast.call {
-    background: #fff7ed;
-    border-color: #fdba74;
-    color: #9a3412;
+    background: var(--live-panel-soft);
+    border-color: var(--live-line-strong);
+    color: var(--live-text);
   }
   .live-tool-toast.result {
-    background: #eff6ff;
-    border-color: #93c5fd;
-    color: #1d4ed8;
+    background: var(--ui-accent-soft);
+    border-color: var(--live-toggle-on);
+    color: var(--ui-accent-soft-text);
   }
   .live-tool-toast-tool {
     min-width: 0;
@@ -522,11 +541,6 @@ const liveRootStyle = `
     }
   }
 `
-
-function isNightModeTime(date: Date): boolean {
-  const hour = date.getHours()
-  return hour >= nightModeStartHour || hour < nightModeEndHour
-}
 
 function isBinaryLikeValue(value: unknown): boolean {
   return value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob
@@ -1313,12 +1327,12 @@ function App() {
             flex: '1 1 auto',
             minHeight: 0,
             height: '100%',
-            border: '2px solid #e2e8f0',
+            border: '2px solid var(--live-line)',
             borderRadius: 10,
             padding: '10px 12px',
             overflow: 'auto',
-            background: '#fafafa',
-            boxShadow: 'inset 0 0 0 1px #f0f0f0',
+            background: 'var(--live-panel-soft)',
+            boxShadow: 'inset 0 0 0 1px var(--live-inset-line)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
             fontSize: 12,
             lineHeight: 1.5,
@@ -1337,9 +1351,9 @@ function App() {
           style={{
             alignSelf: 'flex-start',
             borderRadius: 8,
-            border: '1px solid #cbd5e1',
-            background: '#ffffff',
-            color: '#334155',
+            border: '1px solid var(--live-line-strong)',
+            background: 'var(--live-panel)',
+            color: 'var(--live-text)',
             padding: '10px 14px',
             fontSize: 14,
             fontWeight: 700,
@@ -1444,10 +1458,10 @@ function MemoryView(props: {
       {error && (
         <div
           style={{
-            border: '1px solid #fecaca',
+            border: '1px solid var(--ui-danger-line)',
             borderRadius: 8,
-            background: '#fef2f2',
-            color: '#991b1b',
+            background: 'var(--ui-danger-bg)',
+            color: 'var(--ui-danger-text)',
             padding: '10px 12px',
             fontSize: 13,
             lineHeight: 1.4,
@@ -1462,9 +1476,9 @@ function MemoryView(props: {
           flex: '1 1 auto',
           minHeight: 0,
           overflow: 'auto',
-          border: '2px solid #e2e8f0',
+          border: '2px solid var(--live-line)',
           borderRadius: 10,
-          background: '#fafafa',
+          background: 'var(--live-panel-soft)',
           padding: 12,
         }}
       >
@@ -1473,9 +1487,9 @@ function MemoryView(props: {
             style={{
               display: 'grid',
               gap: 8,
-              border: '2px solid #e2e8f0',
+              border: '2px solid var(--live-line)',
               borderRadius: 8,
-              background: '#ffffff',
+              background: 'var(--live-panel)',
               padding: 12,
             }}
           >
@@ -1487,10 +1501,10 @@ function MemoryView(props: {
               style={{
                 width: '100%',
                 resize: 'vertical',
-                border: '1px solid #cbd5e1',
+                border: '1px solid var(--live-line-strong)',
                 borderRadius: 8,
                 padding: '10px 12px',
-                color: '#0f172a',
+                color: 'var(--live-text)',
                 fontSize: 14,
                 lineHeight: 1.5,
                 fontFamily: 'inherit',
@@ -1502,9 +1516,9 @@ function MemoryView(props: {
               style={{
                 justifySelf: 'start',
                 borderRadius: 8,
-                border: '1px solid #2563eb',
-                background: !newContent.trim() || pendingAction === 'create' ? '#dbeafe' : '#2563eb',
-                color: !newContent.trim() || pendingAction === 'create' ? '#1d4ed8' : '#ffffff',
+                border: '1px solid var(--ui-accent)',
+                background: !newContent.trim() || pendingAction === 'create' ? 'var(--ui-accent-soft)' : 'var(--ui-accent)',
+                color: !newContent.trim() || pendingAction === 'create' ? 'var(--ui-accent-soft-text)' : 'var(--ui-accent-text)',
                 padding: '9px 13px',
                 fontSize: 14,
                 fontWeight: 800,
@@ -1515,15 +1529,15 @@ function MemoryView(props: {
             </button>
           </div>
           {!loading && !error && memories.length === 0 && (
-            <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
+            <div style={{ color: 'var(--live-muted)', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
           )}
           {memories.map((memory) => (
             <div
               key={memory.id}
               style={{
-                border: '1px solid #e2e8f0',
+                border: '1px solid var(--live-line)',
                 borderRadius: 8,
-                background: '#ffffff',
+                background: 'var(--live-panel)',
                 padding: 12,
                 display: 'grid',
                 gap: 8,
@@ -1537,17 +1551,17 @@ function MemoryView(props: {
                   style={{
                     width: '100%',
                     resize: 'vertical',
-                    border: '1px solid #cbd5e1',
+                    border: '1px solid var(--live-line-strong)',
                     borderRadius: 8,
                     padding: '10px 12px',
-                    color: '#0f172a',
+                    color: 'var(--live-text)',
                     fontSize: 14,
                     lineHeight: 1.5,
                     fontFamily: 'inherit',
                   }}
                 />
               ) : (
-                <div style={{ color: '#0f172a', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                <div style={{ color: 'var(--live-text)', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                   {memory.content}
                 </div>
               )}
@@ -1557,11 +1571,11 @@ function MemoryView(props: {
                     <span
                       key={`${memory.id}-${tag}`}
                       style={{
-                        border: '1px solid #cbd5e1',
+                        border: '1px solid var(--live-line-strong)',
                         borderRadius: 999,
                         padding: '3px 8px',
-                        background: '#f8fafc',
-                        color: '#475569',
+                        background: 'var(--live-panel-soft)',
+                        color: 'var(--live-muted)',
                         fontSize: 12,
                         lineHeight: 1.2,
                         fontWeight: 700,
@@ -1572,7 +1586,7 @@ function MemoryView(props: {
                   ))}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#64748b', fontSize: 12 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--live-muted)', fontSize: 12 }}>
                 <span>作成: {formatMemoryDate(memory.created_at)}</span>
                 <span>更新: {formatMemoryDate(memory.updated_at)}</span>
               </div>
@@ -1584,9 +1598,9 @@ function MemoryView(props: {
                       disabled={!editingContent.trim() || pendingAction === `update:${memory.id}`}
                       style={{
                         borderRadius: 8,
-                        border: '1px solid #2563eb',
-                        background: !editingContent.trim() || pendingAction === `update:${memory.id}` ? '#dbeafe' : '#2563eb',
-                        color: !editingContent.trim() || pendingAction === `update:${memory.id}` ? '#1d4ed8' : '#ffffff',
+                        border: '1px solid var(--ui-accent)',
+                        background: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft)' : 'var(--ui-accent)',
+                        color: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft-text)' : 'var(--ui-accent-text)',
                         padding: '8px 12px',
                         fontSize: 13,
                         fontWeight: 800,
@@ -1600,9 +1614,9 @@ function MemoryView(props: {
                       disabled={pendingAction === `update:${memory.id}`}
                       style={{
                         borderRadius: 8,
-                        border: '1px solid #cbd5e1',
-                        background: '#ffffff',
-                        color: '#334155',
+                        border: '1px solid var(--live-line-strong)',
+                        background: 'var(--live-panel)',
+                        color: 'var(--live-text)',
                         padding: '8px 12px',
                         fontSize: 13,
                         fontWeight: 800,
@@ -1619,9 +1633,9 @@ function MemoryView(props: {
                       disabled={pendingAction !== ''}
                       style={{
                         borderRadius: 8,
-                        border: '1px solid #cbd5e1',
-                        background: '#ffffff',
-                        color: '#334155',
+                        border: '1px solid var(--live-line-strong)',
+                        background: 'var(--live-panel)',
+                        color: 'var(--live-text)',
                         padding: '8px 12px',
                         fontSize: 13,
                         fontWeight: 800,
@@ -1635,9 +1649,9 @@ function MemoryView(props: {
                       disabled={pendingAction === `delete:${memory.id}`}
                       style={{
                         borderRadius: 8,
-                        border: '1px solid #fecaca',
-                        background: '#fff1f2',
-                        color: '#be123c',
+                        border: '1px solid var(--ui-danger-line)',
+                        background: 'var(--ui-danger-bg)',
+                        color: 'var(--ui-danger-text)',
                         padding: '8px 12px',
                         fontSize: 13,
                         fontWeight: 800,
@@ -1658,9 +1672,9 @@ function MemoryView(props: {
         style={{
           alignSelf: 'flex-start',
           borderRadius: 8,
-          border: '1px solid #cbd5e1',
-          background: '#ffffff',
-          color: '#334155',
+          border: '1px solid var(--live-line-strong)',
+          background: 'var(--live-panel)',
+          color: 'var(--live-text)',
           padding: '10px 14px',
           fontSize: 14,
           fontWeight: 700,
@@ -1717,7 +1731,7 @@ function SwitchBotSceneView(props: {
           min-width: 0;
           min-height: 42px;
           border-radius: 8px;
-          border: 1px solid #cbd5e1;
+          border: 1px solid var(--live-line-strong);
           padding: 4px 8px;
           font-size: 21px;
           font-weight: 800;
@@ -1736,10 +1750,10 @@ function SwitchBotSceneView(props: {
       {error && (
         <div
           style={{
-            border: '1px solid #fecaca',
+            border: '1px solid var(--ui-danger-line)',
             borderRadius: 8,
-            background: '#fef2f2',
-            color: '#991b1b',
+            background: 'var(--ui-danger-bg)',
+            color: 'var(--ui-danger-text)',
             padding: '10px 12px',
             fontSize: 13,
             lineHeight: 1.4,
@@ -1754,17 +1768,17 @@ function SwitchBotSceneView(props: {
           flex: '1 1 auto',
           minHeight: 0,
           overflow: 'auto',
-          border: '2px solid #e2e8f0',
+          border: '2px solid var(--live-line)',
           borderRadius: 10,
-          background: '#fafafa',
+          background: 'var(--live-panel-soft)',
           padding: 12,
         }}
       >
         {loading && (
-          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>シーンを読み込み中です</div>
+          <div style={{ color: 'var(--live-muted)', fontSize: 14, fontWeight: 700 }}>シーンを読み込み中です</div>
         )}
         {!loading && !error && scenes.length === 0 && (
-          <div style={{ color: '#64748b', fontSize: 14, fontWeight: 700 }}>利用できるシーンはありません</div>
+          <div style={{ color: 'var(--live-muted)', fontSize: 14, fontWeight: 700 }}>利用できるシーンはありません</div>
         )}
         <div
           className="switchbot-scene-grid"
@@ -1778,8 +1792,8 @@ function SwitchBotSceneView(props: {
                 disabled={pendingSceneID !== ''}
                 className="switchbot-scene-button"
                 style={{
-                  background: pending ? '#dbeafe' : '#ffffff',
-                  color: pending ? '#1d4ed8' : '#0f172a',
+                  background: pending ? 'var(--ui-accent-soft)' : 'var(--live-panel)',
+                  color: pending ? 'var(--ui-accent-soft-text)' : 'var(--live-text)',
                   cursor: pendingSceneID !== '' ? 'not-allowed' : 'pointer',
                 }}
               >
@@ -1794,9 +1808,9 @@ function SwitchBotSceneView(props: {
         style={{
           alignSelf: 'flex-start',
           borderRadius: 8,
-          border: '1px solid #cbd5e1',
-          background: '#ffffff',
-          color: '#334155',
+          border: '1px solid var(--live-line-strong)',
+          background: 'var(--live-panel)',
+          color: 'var(--live-text)',
           padding: '10px 14px',
           fontSize: 14,
           fontWeight: 700,
@@ -1829,7 +1843,6 @@ function LiveView(props: LiveViewProps) {
     goMemory,
     goAdmin,
   } = props
-  const [isNightMode, setIsNightMode] = useState(() => isNightModeTime(new Date()))
   const boardRef = useRef<HTMLDivElement | null>(null)
   const handleToggle = useCallback(() => {
     if (connected) {
@@ -1838,12 +1851,6 @@ function LiveView(props: LiveViewProps) {
     }
     void connect()
   }, [connected, connect, disconnect])
-  useEffect(() => {
-    const updateNightMode = () => setIsNightMode(isNightModeTime(new Date()))
-    updateNightMode()
-    const timer = window.setInterval(updateNightMode, minuteMs)
-    return () => window.clearInterval(timer)
-  }, [])
   useEffect(() => {
     const board = boardRef.current
     if (!board) return
@@ -1855,7 +1862,7 @@ function LiveView(props: LiveViewProps) {
   return (
     <>
       <style>{liveRootStyle}</style>
-      <div className={`live-frame ${isNightMode ? 'live-night-mode' : ''}`}>
+      <div className="live-frame">
         <div className="live-main">
           <div className="live-left">
             <div className="live-board" ref={boardRef}>
