@@ -18,7 +18,7 @@ func TestTTSAPIThroughHTTPServer(t *testing.T) {
 	}
 	cfg := app.Config{APIKey: "test-key", WebDistDir: t.TempDir()}
 	cfg.Memory.Model = "test-model"
-	server, chat, err := buildHTTPServer(cfg, nil, selector)
+	server, chat, err := buildHTTPServer(cfg, nil, runtimeServices{TTS: selector})
 	if err != nil {
 		t.Fatal(err)
 	}

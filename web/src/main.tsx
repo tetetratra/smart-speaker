@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
+import { ToolHistoryView } from './ToolHistoryView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 
 type ChatMessage =
@@ -11,7 +12,7 @@ type BoardEntry = { id: number; content: string }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory' | 'scenes'
+type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'tools'
 type MemoryItem = {
   id: string
   content: string
@@ -637,6 +638,7 @@ type LiveViewProps = {
   goScenes: () => void
   goMemory: () => void
   goAdmin: () => void
+  goTools: () => void
 }
 
 function App() {
@@ -1142,6 +1144,7 @@ function App() {
   const lastUserMessage = bubble.user
   const [uiMode, setUiMode] = useState<UiMode>(() => {
     const params = new URLSearchParams(window.location.search)
+    if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) return 'tools'
     if (params.get('ui') === 'admin') return 'admin'
     if (params.get('ui') === 'memory') return 'memory'
     if (params.get('ui') === 'scenes') return 'scenes'
@@ -1153,6 +1156,10 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const params = new URLSearchParams(window.location.search)
+      if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) {
+        setUiMode('tools')
+        return
+      }
       if (params.get('ui') === 'admin') {
         setUiMode('admin')
         return
@@ -1272,7 +1279,9 @@ function App() {
   }, [])
   const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
-    if (mode === 'admin') {
+    if (mode === 'tools') {
+      params.set('ui', 'tools')
+    } else if (mode === 'admin') {
       params.set('ui', 'admin')
     } else if (mode === 'memory') {
       params.set('ui', 'memory')
@@ -1308,6 +1317,7 @@ function App() {
           goScenes={() => setMode('scenes')}
           goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
+          goTools={() => setMode('tools')}
         />
       </div>
       <div
@@ -1363,6 +1373,7 @@ function App() {
           app画面
         </button>
       </div>
+      <ToolHistoryView visible={uiMode === 'tools'} backendURL={backendURL} goApp={() => setMode('app')} />
       <MemoryView
         visible={uiMode === 'memory'}
         memories={memories}
@@ -1907,6 +1918,7 @@ function LiveView(props: LiveViewProps) {
     goScenes,
     goMemory,
     goAdmin,
+    goTools,
   } = props
   const boardRef = useRef<HTMLDivElement | null>(null)
   const handleToggle = useCallback(() => {
@@ -1963,6 +1975,7 @@ function LiveView(props: LiveViewProps) {
                   <button onClick={goScenes} className="live-admin-btn">リモコン</button>
                   <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
+                  <button onClick={goTools} className="live-admin-btn">ツール履歴</button>
                 </div>
               </div>
               <div className="live-status-grid">

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -24,9 +25,14 @@ type toolCaller struct {
 	toolModes map[string]string
 	node      *graph.Stage
 	results   map[string]types.ToolResultRecord
+	history   *toolhistory.Store
 }
 
 func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *graph.Stage {
+	return NewStageWithHistory(handlers, toolModes, nil)
+}
+
+func NewStageWithHistory(handlers map[string]tools.Handler, toolModes map[string]string, history *toolhistory.Store) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
@@ -39,6 +45,7 @@ func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *g
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
 		toolModes:  toolModes,
+		history:    history,
 	}
 	s.node = &graph.Stage{
 		Upstream:   s.upstream,
@@ -88,7 +95,14 @@ func (s *toolCaller) run(parent context.Context) {
 func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	result, exists := s.results[req.ToolCallID]
 	if !exists {
+		var entryID string
+		if s.history != nil {
+			entryID = s.history.Begin(req)
+		}
 		result = s.executeTool(req)
+		if s.history != nil {
+			s.history.Finish(entryID, result)
+		}
 		s.results[req.ToolCallID] = result
 	}
 	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}})

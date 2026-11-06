@@ -11,6 +11,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 )
 
 type Config struct {
+	ToolHistory                                               *toolhistory.Store
 	ToolModes                                                 map[string]string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection                                             string
