@@ -94,7 +94,7 @@ func (t *transport) close() {
 }
 
 func sessionUpdate(cfg Config, instructions string) map[string]any {
-	turnDetection := map[string]any{"type": cfg.TurnDetection, "create_response": false, "interrupt_response": true}
+	turnDetection := map[string]any{"type": cfg.TurnDetection, "create_response": false, "interrupt_response": cfg.WakeMode == nil || !cfg.WakeMode.Snapshot(time.Now()).Required}
 	if cfg.TurnDetection == "server_vad" {
 		turnDetection["silence_duration_ms"] = 800
 	} else {

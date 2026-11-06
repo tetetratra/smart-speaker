@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
 	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
@@ -23,6 +25,7 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
+	WakeMode           *wakemode.Store
 	SwitchBotToken     string
 	SwitchBotSecret    string
 	SwitchBotDeviceMap string
@@ -58,6 +61,12 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
+	}
+	if cfg.WakeMode != nil {
+		for _, readOnly := range []bool{true, false} {
+			t := &waketool.Tool{Store: cfg.WakeMode, ReadOnly: readOnly}
+			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
+		}
 	}
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})

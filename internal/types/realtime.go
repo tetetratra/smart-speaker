@@ -59,3 +59,12 @@ func EventGeneration(e Event) (uint64, bool) {
 		return 0, false
 	}
 }
+
+const EventLocalWakeUtterance EventKind = 120
+
+// LocalWakeUtteranceはローカルの認識・呼びかけ判定を通過した1回の発話。
+type LocalWakeUtterance struct {
+	PeerID, Text           string
+	Revision               uint64
+	Confidence, Similarity float64
+}

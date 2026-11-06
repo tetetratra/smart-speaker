@@ -44,6 +44,8 @@ type Event struct {
 
 func (k EventKind) String() string {
 	switch k {
+	case EventLocalWakeUtterance:
+		return "EventLocalWakeUtterance"
 	case EventResponseText:
 		return "EventResponseText"
 	case EventGenerationChanged:

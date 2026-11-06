@@ -39,6 +39,21 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 	if json.Unmarshal(data, &e) != nil {
 		return
 	}
+	if s.refreshWakeMode(ctx) {
+		return
+	}
+	// クラウド側に残った音声イベントは呼びかけ判定には使わない。
+	if s.wakeRequired() {
+		switch e.Type {
+		case "input_audio_buffer.committed":
+			if e.ItemID != "" {
+				s.transport.send(map[string]any{"type": "conversation.item.delete", "item_id": e.ItemID})
+			}
+			return
+		case "input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped", "conversation.item.input_audio_transcription.completed", "conversation.item.input_audio_transcription.failed":
+			return
+		}
+	}
 	switch e.Type {
 	case "session.updated":
 		if s.ready {
@@ -47,9 +62,17 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.ready = true
 		s.started = time.Now()
 		for _, pcm := range s.pendingAudio {
+			if s.wakeRequired() {
+				break
+			}
 			s.transport.send(map[string]any{"type": "input_audio_buffer.append", "audio": encodeAudio(pcm)})
 		}
 		s.pendingAudio = nil
+		pendingWake := s.pendingWake
+		s.pendingWake = nil
+		for _, utterance := range pendingWake {
+			s.localWake(ctx, utterance)
+		}
 		s.status(ctx, "connected", "")
 		for _, result := range s.contextResults {
 			s.sendResultContext(result)

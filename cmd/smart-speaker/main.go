@@ -20,6 +20,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
+	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
@@ -28,6 +29,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
@@ -56,6 +58,10 @@ func main() {
 		log.Fatal(err)
 	}
 	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath)
+	if err != nil {
+		log.Fatal(err)
+	}
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
@@ -106,11 +112,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, segment, tts, frame, pace, tool *graph.Stage
+	chat, rtcpeer, realtime, segment, tts, frame, pace, tool, wakegate *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -163,9 +169,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg)
+	toolSchemas, toolHandlers, toolModes := buildToolRegistry(cfg, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
+		WakeMode:    services.WakeMode,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolModes: toolModes,
@@ -200,6 +207,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		}
 	}
 	generationfilter.AttachToolRequests(stages.tool, generationStore)
+	stages.wakegate = wakegate.NewStage(wakegate.Config{Store: services.WakeMode, STT: &wakegate.HTTPClient{Endpoint: cfg.LocalSTTEndpoint}})
 	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs, InputOnly: true})
 	if err != nil {
 		closeStages(stages.all()...)
@@ -236,7 +244,7 @@ func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
 	}
 }
 
-func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[string]string) {
+func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -244,6 +252,7 @@ func buildToolRegistry(cfg app.Config) ([]any, map[string]tools.Handler, map[str
 	}
 
 	reg := registry.New(registry.Config{
+		WakeMode:        services.WakeMode,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,
@@ -282,7 +291,9 @@ func wireGraph(g *graph.Graph, s appStages) {
 	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
 	connectKinds(g, chat, peer, types.EventRTCSignal)
 	connectKinds(g, peer, chat, types.EventRTCSignal)
-	connectKinds(g, peer, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
+	wake := add(s.wakegate)
+	connectKinds(g, peer, wake, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
+	connectKinds(g, wake, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink, types.EventLocalWakeUtterance)
 	connectKinds(g, rt, segment, types.EventResponseText)
 	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
