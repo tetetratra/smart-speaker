@@ -13,6 +13,8 @@ import (
 
 // Config holds runtime settings.
 type Config struct {
+	WakeModeStorePath          string
+	LocalSTTEndpoint           string
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
@@ -83,6 +85,14 @@ func LoadConfig(promptPath string) Config {
 		subagentModel = "gpt-5.4"
 	}
 	memoryCfg := loadMemoryConfig(responsesModel)
+	wakePath := strings.TrimSpace(os.Getenv("WAKE_MODE_STORE_PATH"))
+	if wakePath == "" {
+		wakePath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "wake-mode.json")
+	}
+	localSTT := strings.TrimSpace(os.Getenv("LOCAL_STT_ENDPOINT"))
+	if localSTT == "" {
+		localSTT = "http://localhost:8000/transcribe"
+	}
 	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
 	if automationPath == "" {
 		automationPath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "automations.json")
@@ -175,6 +185,8 @@ func LoadConfig(promptPath string) Config {
 		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,
+		WakeModeStorePath:          wakePath,
+		LocalSTTEndpoint:           localSTT,
 		AutomationStorePath:        automationPath,
 		SubagentModel:              subagentModel,
 		Memory:                     memoryCfg,

@@ -6,6 +6,7 @@ services:
     depends_on:
       - embedding
       - voicevox
+      - local-stt
     # コンテナが落ちたら自動で再起動する
     # Dockerデーモン再起動後も自動起動する
     # Ctrl+C や docker stop で手動停止した場合は再起動せずに停止する
@@ -24,6 +25,8 @@ services:
       OPENAI_REALTIME_VAD: ${OPENAI_REALTIME_VAD:-semantic_vad}
       OPENAI_REALTIME_TRANSCRIPTION_MODEL: ${OPENAI_REALTIME_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
       OPENAI_MEMORY_MODEL: ${OPENAI_MEMORY_MODEL:-}
+      WAKE_MODE_STORE_PATH: ${WAKE_MODE_STORE_PATH:-/app/data/wake-mode.json}
+      LOCAL_STT_ENDPOINT: ${LOCAL_STT_ENDPOINT:-http://local-stt:8000/transcribe}
       MEMORY_STORE_PATH: ${MEMORY_STORE_PATH:-/app/data/memories.json}
       AUTOMATIONS_STORE_PATH: ${AUTOMATIONS_STORE_PATH:-/app/data/automations.json}
       MEMORY_EMBEDDING_BASE_URL: ${MEMORY_EMBEDDING_BASE_URL:-http://embedding:80}
@@ -60,5 +63,15 @@ services:
     image: voicevox/voicevox_engine:cpu-0.26.0
     restart: unless-stopped
 
+  local-stt:
+    build: ./services/local-stt
+    restart: unless-stopped
+    environment:
+      LOCAL_STT_MODEL: ${LOCAL_STT_MODEL:-small}
+      LOCAL_STT_THREADS: ${LOCAL_STT_THREADS:-4}
+    volumes:
+      - local-stt-model-cache:/models
+
 volumes:
+  local-stt-model-cache:
   embedding-model-cache:

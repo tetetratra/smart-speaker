@@ -104,7 +104,7 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 	update := r.wait("session.update")
 	session := update["session"].(map[string]any)
 	vad := session["audio"].(map[string]any)["input"].(map[string]any)["turn_detection"].(map[string]any)
-	if vad["create_response"] != false || vad["interrupt_response"] != true {
+	if vad["create_response"] != false || vad["interrupt_response"] != (cfg.WakeMode == nil || !cfg.WakeMode.Snapshot(time.Now()).Required) {
 		t.Fatal(vad)
 	}
 	if cfg.TurnDetection == "server_vad" {

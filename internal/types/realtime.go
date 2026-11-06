@@ -60,6 +60,15 @@ func EventGeneration(e Event) (uint64, bool) {
 	}
 }
 
+const EventLocalWakeUtterance EventKind = 120
+
+// LocalWakeUtteranceはローカルの認識・呼びかけ判定を通過した1回の発話。
+type LocalWakeUtterance struct {
+	PeerID, Text           string
+	Revision               uint64
+	Confidence, Similarity float64
+}
+
 // ScheduledPrompt は登録済みの自然言語ジョブを会話処理へ渡す。
 type ScheduledPrompt struct {
 	ID, Name, Instruction string

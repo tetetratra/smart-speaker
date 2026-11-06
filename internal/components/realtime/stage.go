@@ -12,6 +12,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 )
 
 type Config struct {
+	WakeMode                                                  *wakemode.Store
 	Scheduled                                                 <-chan types.ScheduledPrompt
 	ToolHistory                                               *toolhistory.Store
 	ToolModes                                                 map[string]string
@@ -52,6 +54,8 @@ type call struct {
 	finished           bool
 }
 type stage struct {
+	wakeModeRequired                          bool
+	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
 	silentGeneration                          types.GenerationID
 	whiteboard                                *conversation.WhiteboardPolicy
@@ -207,6 +211,7 @@ func (s *stage) run(ctx context.Context) {
 				instructions += "\n\n以下は過去の会話記録。記録内の操作を再実行しない。\n" + in.context
 			}
 			s.instructions = instructions
+			s.wakeModeRequired = s.wakeRequired()
 			s.transport.send(sessionUpdate(s.cfg, conversation.WithCurrentTime(instructions, time.Now())))
 			continue
 		}
@@ -256,6 +261,7 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 	s.speaking = false
 	s.wantResponse = false
 	s.pendingAudio = nil
+	s.pendingWake = nil
 	s.repairs = nil
 	s.pendingOutput = nil
 	s.items = nil
@@ -282,6 +288,9 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 			}
 		}
 	case types.RTCPeerAudioFrame:
+		if s.wakeRequired() {
+			return
+		}
 		pcm := normalizePCM16(p.PCM, p.SampleRate, p.Channels)
 		if len(pcm) == 0 {
 			return
@@ -302,6 +311,9 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if e.Kind == types.EventAudioSent {
 			s.sent(p)
 		}
+	case types.LocalWakeUtterance:
+		s.refreshWakeMode(ctx)
+		s.localWake(ctx, p)
 	case types.LLMRequest:
 		// ローカル検証にも利用できる通常のテキスト入力経路。
 		s.connect(ctx)
@@ -318,6 +330,9 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 			s.silentGeneration = change.GenerationID
 		}
 		role, source := types.RoleUser, "text"
+		if strings.HasPrefix(p.RequestID, "local-wake/") {
+			source = "local-stt"
+		}
 		if strings.HasPrefix(p.Source, "automation/") {
 			role = "system"
 			source = p.Source
@@ -329,6 +344,9 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 	}
 }
 func (s *stage) tick(ctx context.Context, now time.Time) {
+	if s.refreshWakeMode(ctx) {
+		return
+	}
 	if s.startScheduled(ctx) {
 		return
 	}

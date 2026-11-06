@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { ToolHistoryView } from './ToolHistoryView'
+import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 
@@ -1379,6 +1380,7 @@ function App() {
           app画面
         </button>
       </div>
+      <WakeModeControl backendURL={backendURL} />
       <AutomationView visible={uiMode === 'jobs'} backendURL={backendURL} goApp={() => setMode('app')} />
       <ToolHistoryView visible={uiMode === 'tools'} backendURL={backendURL} goApp={() => setMode('app')} />
       <MemoryView
