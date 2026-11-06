@@ -38,8 +38,8 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"session_id": result.SessionID, "text": result.Text}, nil
+	return map[string]any{"session_id": result.SessionID, "summary": result.Summary, "details": result.Details}, nil
 }
 func (t *Tool) Definition() map[string]any {
-	return tools.DefinitionWithMode(map[string]any{"type": "function", "name": t.Name(), "description": "複雑な質問・作業を高性能なテキスト専用エージェントへ依頼します。ユーザーの了承がある場合だけ呼び出してください。依頼ごとに画面の許可を待ち、許可前には送信しません。初回はsession_idを空にし、続きは返されたIDを指定します。親の会話履歴は自動で渡らないため、inputに必要な内容を記載してください。", "parameters": map[string]any{"type": "object", "properties": map[string]any{"input": map[string]any{"type": "string", "description": "送信する依頼文"}, "session_id": map[string]any{"type": "string", "description": "初回は空文字、継続時は前回のID"}}, "required": []string{"input", "session_id"}, "additionalProperties": false}}, tools.ToolModeRead)
+	return tools.DefinitionWithMode(map[string]any{"type": "function", "name": t.Name(), "description": "複雑な質問・作業を高性能なテキスト専用エージェントへ依頼します。ユーザーの了承がある場合だけ呼び出してください。簡単な質問は自分で対応し、複雑な質問・調査・作業では先に会話で利用の了承を得てください。返り値のsummaryだけを口頭で伝え、detailsはset_whiteboardで最大10行の補足として残してください。初回はsession_idを空にし、続きは返されたIDを指定します。親の会話履歴は自動で渡らないため、inputに必要な内容を記載してください。", "parameters": map[string]any{"type": "object", "properties": map[string]any{"input": map[string]any{"type": "string", "description": "送信する依頼文"}, "session_id": map[string]any{"type": "string", "description": "初回は空文字、継続時は前回のID"}}, "required": []string{"input", "session_id"}, "additionalProperties": false}}, tools.ToolModeRead)
 }

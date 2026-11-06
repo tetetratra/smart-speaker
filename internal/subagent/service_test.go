@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,97 +17,25 @@ type fakeClient struct{ calls atomic.Int32 }
 
 func (c *fakeClient) Respond(context.Context, string, string) (Answer, error) {
 	n := c.calls.Add(1)
-	return Answer{ID: fmt.Sprint(n), Text: "回答"}, nil
+	return Answer{ID: fmt.Sprint(n), Summary: "要点", Details: []string{"補足"}}, nil
 }
-func pending(t *testing.T, s *Service) Request {
-	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("許可要求が作られませんでした")
-		default:
-		}
-		if requests := s.Pending(); len(requests) > 0 {
-			return requests[0]
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-func TestNoModelCallWithoutPerRequestApproval(t *testing.T) {
+func TestDirectCallWithoutPermissionGate(t *testing.T) {
 	client := &fakeClient{}
 	s := New(client)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	denied := make(chan error, 1)
-	go func() { _, err := s.Call(ctx, "複雑な質問", ""); denied <- err }()
-	req := pending(t, s)
-	if client.calls.Load() != 0 {
-		t.Fatal("許可前にモデルを呼び出しました")
+	first, err := s.Call(context.Background(), "複雑な質問", "")
+	if err != nil || first.SessionID == "" || first.Summary != "要点" || client.calls.Load() != 1 {
+		t.Fatal(first, err)
 	}
-	if err := s.Resolve(req.ID, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-denied; err == nil {
-		t.Fatal("拒否が反映されませんでした")
-	}
-	if client.calls.Load() != 0 {
-		t.Fatal("拒否後にモデルを呼び出しました")
-	}
-	if err := s.Resolve(req.ID, true); err == nil {
-		t.Fatal("古い許可要求を再利用できました")
-	}
-	first := make(chan Result, 1)
-	go func() {
-		r, err := s.Call(ctx, "初回", "")
-		if err != nil {
-			denied <- err
-			return
-		}
-		first <- r
-	}()
-	req = pending(t, s)
-	_ = s.Resolve(req.ID, true)
-	var result Result
-	select {
-	case result = <-first:
-	case err := <-denied:
-		t.Fatal(err)
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	}
-	if result.SessionID == "" || result.Text != "回答" || client.calls.Load() != 1 {
-		t.Fatal(result, client.calls.Load())
-	}
-	go func() { _, err := s.Call(ctx, "続き", result.SessionID); denied <- err }()
-	req = pending(t, s)
-	if client.calls.Load() != 1 {
-		t.Fatal("継続時の許可を省略しました")
-	}
-	_ = s.Resolve(req.ID, false)
-	if err := <-denied; err == nil {
-		t.Fatal("継続時の拒否が反映されませんでした")
-	}
-}
-func TestApprovalTimeoutCancellationAndUnknownSession(t *testing.T) {
-	client := &fakeClient{}
-	s := New(client)
-	s.ApprovalTimeout = 5 * time.Millisecond
-	if _, err := s.Call(context.Background(), "依頼", ""); err == nil {
-		t.Fatal("期限切れが成功しました")
-	}
-	if len(s.Pending()) != 0 || client.calls.Load() != 0 {
-		t.Fatal("期限切れ後に要求が残りました")
+	second, err := s.Call(context.Background(), "続き", first.SessionID)
+	if err != nil || second.SessionID != first.SessionID || client.calls.Load() != 2 {
+		t.Fatal(second, err)
 	}
 	if _, err := s.Call(context.Background(), "依頼", "missing"); err == nil {
 		t.Fatal("不明なIDが受理されました")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := s.Call(ctx, "依頼", ""); err == nil {
-		t.Fatal("中止が成功しました")
-	}
-	if len(s.Pending()) != 0 || client.calls.Load() != 0 {
+	if _, err := s.Call(ctx, "依頼", ""); err == nil || client.calls.Load() != 2 {
 		t.Fatal("中止後に送信されました")
 	}
 }
@@ -128,7 +57,7 @@ func TestResponsesConversationChainingAndFailurePreservesPriorID(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":"失敗"}`))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": fmt.Sprintf("resp-%d", n), "status": "completed", "output": []any{map[string]any{"type": "reasoning"}, map[string]any{"type": "message", "content": []any{map[string]any{"type": "output_text", "text": "回答の全文"}}}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": fmt.Sprintf("resp-%d", n), "status": "completed", "output": []any{map[string]any{"type": "reasoning"}, map[string]any{"type": "message", "content": []any{map[string]any{"type": "output_text", "text": `{"summary":"短い要点","details":["補足1","補足2"]}`}}}}})
 	}))
 	defer api.Close()
 	s := New(&OpenAIClient{APIKey: "test-key", Model: "test-model", Endpoint: api.URL})
@@ -136,16 +65,7 @@ func TestResponsesConversationChainingAndFailurePreservesPriorID(t *testing.T) {
 	defer cancel()
 	var id string
 	for n := 1; n <= 3; n++ {
-		done := make(chan struct{})
-		var result Result
-		var err error
-		go func() { result, err = s.Call(ctx, fmt.Sprintf("依頼%d", n), id); close(done) }()
-		req := pending(t, s)
-		if req.Input != fmt.Sprintf("依頼%d", n) {
-			t.Fatal(req)
-		}
-		_ = s.Resolve(req.ID, true)
-		<-done
+		result, err := s.Call(ctx, fmt.Sprintf("依頼%d", n), id)
 		if n == 2 {
 			if err == nil {
 				t.Fatal("APIエラーが成功しました")
@@ -169,7 +89,7 @@ func TestResponsesConversationChainingAndFailurePreservesPriorID(t *testing.T) {
 		t.Fatal(payloads)
 	}
 	for _, p := range payloads {
-		if p["instructions"] == nil || p["tools"] != nil {
+		if !strings.Contains(p["instructions"].(string), "サブエージェント") || !strings.Contains(p["instructions"].(string), "仲介") || p["text"] == nil || p["tools"] != nil {
 			t.Fatal("テキスト専用の設定が不正です")
 		}
 	}
@@ -178,5 +98,23 @@ func TestResponsesConversationChainingAndFailurePreservesPriorID(t *testing.T) {
 	s.mu.Unlock()
 	if _, err := s.Call(ctx, "期限切れ", id); err == nil {
 		t.Fatal("期限切れセッションが再開されました")
+	}
+}
+
+func TestRejectLongOrMalformedAnswer(t *testing.T) {
+	for _, answer := range []any{
+		map[string]any{"summary": strings.Repeat("長", 201), "details": []string{}},
+		map[string]any{"summary": "要点", "details": []string{"複数\n行"}},
+		map[string]any{"summary": "要点", "details": make([]string, 11)},
+	} {
+		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			text, _ := json.Marshal(answer)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "r1", "status": "completed", "output": []any{map[string]any{"type": "message", "content": []any{map[string]any{"type": "output_text", "text": string(text)}}}}})
+		}))
+		client := &OpenAIClient{Endpoint: api.URL}
+		if _, err := client.Respond(context.Background(), "質問", ""); err == nil {
+			t.Error("不正な回答を受理しました")
+		}
+		api.Close()
 	}
 }
