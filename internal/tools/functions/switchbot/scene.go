@@ -54,11 +54,11 @@ func (t *SceneTool) Run(args map[string]any) (map[string]any, error) {
 	}
 	sceneName := strings.TrimSpace(asString(args["scene_name"]))
 	if sceneName == "" {
-		return nil, fmt.Errorf("scene_name を指定してください。利用可能なシーン: %s", strings.Join(t.sceneNames, ", "))
+		return nil, fmt.Errorf("scene_name を指定してください。引数の検証で中止し、外部操作は実行していません。利用可能なシーン: %s", strings.Join(t.sceneNames, ", "))
 	}
 	scene, ok := t.scenesByName[sceneName]
 	if !ok {
-		return nil, fmt.Errorf("未登録のシーンです: %s。利用可能なシーン: %s", sceneName, strings.Join(t.sceneNames, ", "))
+		return nil, fmt.Errorf("未登録のシーン名です: %s。引数の検証で中止し、外部操作は実行していません。登録済みの候補から依頼に一致する名前を選んでください。利用可能なシーン: %s", sceneName, strings.Join(t.sceneNames, ", "))
 	}
 	ctx := t.ctx
 	if ctx == nil {
@@ -78,6 +78,7 @@ func (t *SceneTool) Definition() map[string]any {
 				"scene_name": map[string]any{
 					"type":        "string",
 					"description": "起動時に取得したSwitchBotシーン名",
+					"enum":        append([]string(nil), t.sceneNames...),
 				},
 			},
 			"required":             []string{"scene_name"},

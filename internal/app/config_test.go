@@ -120,6 +120,22 @@ func TestLoadConfigReadsSTTProviderConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRealtimeModelAndVADDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "local")
+	t.Setenv("OPENAI_REALTIME_MODEL", "")
+	t.Setenv("OPENAI_REALTIME_VAD", "")
+	cfg := LoadConfig("")
+	if cfg.RealtimeModel != "gpt-realtime-2.1" || cfg.RealtimeVAD != "semantic_vad" {
+		t.Fatalf("会話モデルまたは発話区切りの既定値が違います: %q, %q", cfg.RealtimeModel, cfg.RealtimeVAD)
+	}
+	t.Setenv("OPENAI_REALTIME_MODEL", "comparison-model")
+	t.Setenv("OPENAI_REALTIME_VAD", "server_vad")
+	cfg = LoadConfig("")
+	if cfg.RealtimeModel != "comparison-model" || cfg.RealtimeVAD != "server_vad" {
+		t.Fatalf("比較用の環境変数が反映されていません: %q, %q", cfg.RealtimeModel, cfg.RealtimeVAD)
+	}
+}
+
 func TestLoadConfigReadsRTCIceAdvertiseIPs(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai")
 	t.Setenv("RTC_ICE_ADVERTISE_IPS", " 192.168.0.100,100.64.0.1, ,192.168.0.101 ")

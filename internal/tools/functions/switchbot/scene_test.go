@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestSceneToolDefinition(t *testing.T) {
-	tool := NewScene(&Client{}, []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}})
+	tool := NewScene(&Client{}, []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}, {SceneID: "scene-2", SceneName: "【エアコン】オフ"}})
 	def := tool.Definition()
 
 	if def["name"] != sceneToolName {
@@ -30,6 +31,10 @@ func TestSceneToolDefinition(t *testing.T) {
 	}
 	if _, ok := props["scene_name"]; !ok {
 		t.Fatalf("scene_name property is missing: %#v", props)
+	}
+	property := props["scene_name"].(map[string]any)
+	if !reflect.DeepEqual(property["enum"], []string{"換気扇をつける", "【エアコン】オフ"}) {
+		t.Fatalf("登録済みシーンの候補が一致しません: %#v", property["enum"])
 	}
 }
 
@@ -75,6 +80,29 @@ func TestSceneToolRunRejectsUnknownScene(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "換気扇をつける") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSceneToolCanCorrectNameAfterValidationWithoutExecutingWrongScene(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"statusCode": 100, "message": "success", "body": map[string]any{}})
+	}))
+	defer server.Close()
+	tool := NewScene(newTestClient(server), []Scene{{SceneID: "aircon-off", SceneName: "【エアコン】オフ"}})
+	_, err := tool.Run(map[string]any{"scene_name": "エアコン"})
+	if err == nil || !strings.Contains(err.Error(), "外部操作は実行していません") || !strings.Contains(err.Error(), "【エアコン】オフ") {
+		t.Fatalf("引数エラーに未実行と修正候補がありません: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("誤ったシーン名で外部操作が実行されました: %v", paths)
+	}
+	if _, err := tool.Run(map[string]any{"scene_name": "【エアコン】オフ"}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(paths, []string{"/v1.1/scenes/aircon-off/execute"}) {
+		t.Fatalf("正しいシーンが一度だけ実行されていません: %v", paths)
 	}
 }
 

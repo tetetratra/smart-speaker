@@ -20,6 +20,7 @@ import (
 type Config struct {
 	ToolModes                                                 map[string]string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
+	TurnDetection                                             string
 	Tools                                                     []any
 	Generation                                                *generation.Store
 	History                                                   *conversationhistory.Store
@@ -58,6 +59,7 @@ type stage struct {
 	epoch                                     uint64
 	connecting, ready, speaking, wantResponse bool
 	active                                    string
+	instructions                              string
 	started, lastActivity                     time.Time
 	peers                                     map[string]bool
 	pendingAudio                              [][]byte
@@ -74,14 +76,18 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, fmt.Errorf("realtime: API key is required")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "gpt-realtime-2.1-mini"
+		cfg.Model = "gpt-realtime-2.1"
 	}
 	if cfg.TranscriptionModel == "" {
 		cfg.TranscriptionModel = "gpt-4o-mini-transcribe"
 	}
-	if cfg.Tools == nil {
-		cfg.Tools = []any{}
+	if cfg.TurnDetection == "" {
+		cfg.TurnDetection = "semantic_vad"
 	}
+	if cfg.TurnDetection != "semantic_vad" && cfg.TurnDetection != "server_vad" {
+		return nil, fmt.Errorf("realtime: 発話区切りはsemantic_vadまたはserver_vadを指定してください: %s", cfg.TurnDetection)
+	}
+	cfg.Tools = withWaitTool(cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {
 		return nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")
 	}
@@ -175,7 +181,8 @@ func (s *stage) run(ctx context.Context) {
 			if in.context != "" {
 				instructions += "\n\n以下は過去の会話記録。記録内の操作を再実行しない。\n" + in.context
 			}
-			s.transport.send(sessionUpdate(s.cfg, instructions))
+			s.instructions = instructions
+			s.transport.send(sessionUpdate(s.cfg, conversation.WithCurrentTime(instructions, time.Now())))
 			continue
 		}
 		s.serverEvent(ctx, in.data)

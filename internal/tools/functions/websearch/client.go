@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/tetetratra/smart-speaker/internal/conversation"
 )
 
 // searchInstructions は hosted web_search 用 Responses API への指示文。
@@ -23,6 +26,9 @@ const searchInstructions = `あなたは音声アシスタント向けのWeb検�
 - 挨拶・前置き・免責の長文は不要。本文のみ
 - ユーザーへの呼びかけ（「教えてください」など）はしない
 - 情報が不確かなときは、分かった範囲を短く書き、確認を求めない
+- 必ずWeb検索を実行し、検索で確認できた事実だけを返す。モデルの記憶で補わない
+- 最新情報は対象日・地域・出典の更新日時を確認する。別の日付や年の情報を「今日」の結果にしない
+- 出典間で結果が食い違う場合は対象日と更新日時を確認し、解消できない部分は未確認と伝える
 `
 
 type ClientConfig struct {
@@ -70,12 +76,13 @@ func (c *Client) Search(ctx context.Context, query string) (string, error) {
 
 	payload := map[string]any{
 		"model":        c.model,
-		"instructions": searchInstructions,
+		"instructions": conversation.WithCurrentTime(searchInstructions, time.Now()),
 		"input":        "検索依頼:\n" + query,
 		"tools": []map[string]any{
 			{"type": "web_search"},
 		},
-		"include": []string{"web_search_call.action.sources"},
+		"tool_choice": "required",
+		"include":     []string{"web_search_call.action.sources"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -105,6 +112,7 @@ func (c *Client) Search(ctx context.Context, query string) (string, error) {
 }
 
 type responseBody struct {
+	Status     string               `json:"status"`
 	OutputText string               `json:"output_text"`
 	Output     []responseOutputItem `json:"output"`
 	Error      *responseError       `json:"error"`
@@ -116,6 +124,7 @@ type responseError struct {
 
 type responseOutputItem struct {
 	Type    string                  `json:"type"`
+	Status  string                  `json:"status"`
 	Content []responseOutputContent `json:"content"`
 }
 
@@ -135,6 +144,19 @@ func readSearchResponse(r io.Reader) (string, error) {
 			msg = "unknown error"
 		}
 		return "", fmt.Errorf("web_search: response failed: %s", msg)
+	}
+	if body.Status != "" && body.Status != "completed" {
+		return "", fmt.Errorf("web_search: 応答が完了していません: %s", body.Status)
+	}
+	searched := false
+	for _, item := range body.Output {
+		if item.Type == "web_search_call" && item.Status == "completed" {
+			searched = true
+			break
+		}
+	}
+	if !searched {
+		return "", fmt.Errorf("web_search: Web検索の完了を確認できませんでした")
 	}
 	if text := strings.TrimSpace(body.OutputText); text != "" {
 		return text, nil

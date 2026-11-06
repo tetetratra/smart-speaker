@@ -94,12 +94,18 @@ func (t *transport) close() {
 }
 
 func sessionUpdate(cfg Config, instructions string) map[string]any {
+	turnDetection := map[string]any{"type": cfg.TurnDetection, "create_response": false, "interrupt_response": true}
+	if cfg.TurnDetection == "server_vad" {
+		turnDetection["silence_duration_ms"] = 800
+	} else {
+		turnDetection["eagerness"] = "auto"
+	}
 	return map[string]any{"type": "session.update", "session": map[string]any{
 		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions, "tools": cfg.Tools, "tool_choice": "auto",
 		"audio": map[string]any{"input": map[string]any{
 			"format":         map[string]any{"type": "audio/pcm", "rate": 24000},
 			"transcription":  map[string]any{"model": cfg.TranscriptionModel, "language": "ja"},
-			"turn_detection": map[string]any{"type": "server_vad", "create_response": false, "interrupt_response": true},
+			"turn_detection": turnDetection,
 		}},
 	}}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"strconv"
 	"strings"
@@ -147,6 +148,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, whiteboardRevision: r.whiteboardRevision}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
 		s.record(ctx, "call/"+e.CallID, types.RoleToolCall, e.Name+": "+e.Arguments, r.generation, e.Name)
+		if e.Name == waitToolName {
+			s.waitForUser(ctx, req)
+			return
+		}
 		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: req})
 	case "response.done":
 		if s.active == e.Response.ID {
@@ -226,6 +231,8 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	}
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
+	// 接続を維持したまま日付が変わっても、復元文脈と指示を保って日時を更新する。
+	response["instructions"] = conversation.WithCurrentTime(s.instructions, time.Now())
 	if s.whiteboard.Pending(s.cfg.Generation.Current()) {
 		// 既存のツール結果後の応答を、情報を画面へ残す呼び出しに限定する。
 		response["tool_choice"] = map[string]any{"type": "function", "name": "set_whiteboard"}
