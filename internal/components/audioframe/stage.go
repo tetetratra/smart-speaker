@@ -41,7 +41,8 @@ func NewStage() *graph.Stage {
 				for offset := 0; offset < len(pcm); offset += 960 {
 					end := min(offset+960, len(pcm))
 					frame := types.AudioFrame{GenerationID: p.GenerationID, SegmentID: p.SequenceID, ItemID: p.OriginalTimeline.ItemID, Sequence: offset / 960, Audio: base64.StdEncoding.EncodeToString(pcm[offset:end]), SampleRate: 24000, Final: end == len(pcm), Duration: time.Duration(end-offset) * time.Second / 48000}
-					if frame.Final {
+					// 表示用に先頭フレームへ添え、送信済み履歴用の末尾にも保持する。
+					if frame.Sequence == 0 || frame.Final {
 						frame.Text = p.Text
 					}
 					if !emit(frame) {

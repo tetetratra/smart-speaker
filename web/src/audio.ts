@@ -6,6 +6,13 @@ export interface AudioFrame {
   sample_rate: number
   final: boolean
   end?: boolean
+  text?: string
+}
+
+export interface PlaybackSpeech {
+  generationId: number
+  segmentId: string
+  text: string
 }
 
 // キューが空でも世代を保持し、後着の旧音声や停止通知で巻き戻さない。
@@ -35,16 +42,22 @@ export interface AudioReceiver {
 }
 
 // 先の音声を大量にAudioContextへ予約せず、一件ずつ再生する。
-export function createAudioReceiver(onPlaying: (playing: boolean) => void = () => {}): AudioReceiver {
+export function createAudioReceiver(
+  onPlaying: (playing: boolean) => void = () => {},
+  onSpeech: (speech: PlaybackSpeech) => void = () => {},
+): AudioReceiver {
   const ctx = new AudioContext()
   const gain = ctx.createGain()
   gain.connect(ctx.destination)
   const queue = new GenerationQueue<AudioFrame>()
   const sources = new Set<AudioBufferSourceNode>()
+  const speechTimers = new Set<number>()
   let playhead = ctx.currentTime
   let closed = false
   let ending = false
   const stopSources = () => {
+    for (const timer of speechTimers) window.clearTimeout(timer)
+    speechTimers.clear()
     for (const source of sources) {
       source.onended = null
       source.stop()
@@ -91,6 +104,15 @@ export function createAudioReceiver(onPlaying: (playing: boolean) => void = () =
         ending = false
         onPlaying(true)
         source.start(startAt)
+        if (frame.sequence === 0 && frame.text) {
+          const speech: PlaybackSpeech = { generationId: frame.generation_id, segmentId: frame.segment_id, text: frame.text }
+          // 受信や生成の完了ではなく、この区間の再生開始に合わせて表示する。
+          const timer = window.setTimeout(() => {
+            speechTimers.delete(timer)
+            if (!closed && speech.generationId === queue.generation) onSpeech(speech)
+          }, Math.max(0, (startAt - ctx.currentTime) * 1000))
+          speechTimers.add(timer)
+        }
       } catch (error) { console.warn('音声データを再生できませんでした', error) }
     }
   }
