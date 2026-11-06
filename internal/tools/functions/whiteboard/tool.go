@@ -14,7 +14,7 @@ const (
 	toolDescription = `アプリ画面のホワイトボード表示へ情報を追記します。
 予定・注意事項・要点など、口頭だけでは伝わりにくい情報を画面に残したいときに使ってください。
 「ここをもっと詳しく書いて」などの追加表示にも使えます。既存の取得結果で足りる場合は、その情報を使って説明を追加してください。
-また、カレンダー情報や部屋の情報の取得などのGET系のツールを使った場合もこのツールを呼び出して情報を残してください。
+情報取得ツールの結果も、画面に残す必要があれば口頭説明より先にこのツールで要点を残してください。
 返答や感想ではなく、表示用の簡潔な内容だけを書いてください。
 `
 	contentDescription = `ホワイトボードに追記する文章。7行程度を目安にし、URLやリンク付きテキストは含めないでください。`
@@ -56,7 +56,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *Tool) Definition() map[string]any {
-	return tools.DefinitionWithMode(map[string]any{
+	return tools.DefinitionWithResponsePolicy(tools.DefinitionWithMode(map[string]any{
 		"type":        "function",
 		"name":        toolName,
 		"description": toolDescription,
@@ -71,7 +71,10 @@ func (t *Tool) Definition() map[string]any {
 			"required":             []string{"content"},
 			"additionalProperties": false,
 		},
-	}, tools.ToolModeWrite)
+	}, tools.ToolModeWrite), tools.ResponsePolicy{
+		OnSuccess:    true,
+		Instructions: "ホワイトボード更新の結果です。成功した場合、表示完了そのものの報告や同じ内容の再更新は不要です。まだ説明していない取得結果があれば、その要点を短く説明してください。既に説明済み、または表示だけの依頼ならwait_for_userで待機してください。失敗時はその旨を短く伝え、同じ更新を自動で繰り返さないでください。",
+	})
 }
 
 func asString(v any) string {

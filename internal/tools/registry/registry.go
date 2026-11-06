@@ -200,6 +200,20 @@ func (r *Registry) ToolModes() map[string]string {
 	return modes
 }
 
+// ResponsePolicies はアプリ内で使うツール結果後の応答方針を返す。
+func (r *Registry) ResponsePolicies() map[string]tools.ResponsePolicy {
+	policies := map[string]tools.ResponsePolicy{}
+	if r == nil {
+		return policies
+	}
+	for _, e := range r.entries {
+		if name, ok := e.def["name"].(string); ok {
+			policies[name] = tools.ResponsePolicyFromDefinition(e.def)
+		}
+	}
+	return policies
+}
+
 // DefinitionsForRealtime は全ツールをfunction calling用に返す。
 func (r *Registry) DefinitionsForRealtime() []any {
 	defs := make([]any, 0, len(r.entries))

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 )
@@ -19,7 +18,6 @@ func TestResponseRefreshesTimeWithoutReusingSessionTimestamp(t *testing.T) {
 		wantResponse: true,
 		instructions: "元の指示と再接続時の履歴",
 		transport:    &transport{commands: commands},
-		whiteboard:   conversation.NewWhiteboardPolicy(nil, false),
 		started:      time.Date(2024, 11, 5, 0, 0, 0, 0, time.UTC),
 	}
 	before := time.Now()
