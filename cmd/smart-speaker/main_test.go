@@ -50,25 +50,21 @@ func TestBuildSTTStageRejectsUnknownProvider(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIListsMemoriesWithoutEmbeddings(t *testing.T) {
+func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldRecord, _, err := store.Upsert(memorystate.UpsertInput{
-		Content:                "朝はコーヒーを飲む",
-		Tags:                   []string{"coffee"},
-		Embedding:              []float64{0.1, 0.2},
-		DuplicateMinSimilarity: 2,
+		Content: "朝はコーヒーを飲む",
+		Tags:    []string{"coffee"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	newRecord, _, err := store.Upsert(memorystate.UpsertInput{
-		Content:                "辛い料理が苦手",
-		Tags:                   []string{"food"},
-		Embedding:              []float64{0.3, 0.4},
-		DuplicateMinSimilarity: 2,
+		Content: "辛い料理が苦手",
+		Tags:    []string{"food"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,9 +80,6 @@ func TestRegisterMemoryAPIListsMemoriesWithoutEmbeddings(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
 		t.Fatalf("Content-Type = %q, want application/json", got)
-	}
-	if strings.Contains(rec.Body.String(), "embedding") {
-		t.Fatalf("response contains embedding: %s", rec.Body.String())
 	}
 	var got memoryListResponse
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
@@ -233,19 +226,13 @@ func TestRegisterMemoryAPIReportsWriteErrors(t *testing.T) {
 	}
 }
 
-func TestManualMemoryServiceCreatesWithRecalculatedTagsAndEmbedding(t *testing.T) {
+func TestManualMemoryServiceCreatesWithRecalculatedTags(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tagger := &fakeMemoryTagger{tags: []string{"coffee", "morning"}}
-	embedder := &fakeMemoryEmbedder{embedding: []float64{0.1, 0.2}}
-	service := &manualMemoryService{
-		store:                  store,
-		tagger:                 tagger,
-		embedder:               embedder,
-		duplicateMinSimilarity: 0.98,
-	}
+	service := &manualMemoryService{store: store, tagger: tagger}
 
 	record, result, err := service.Create(context.Background(), "ユーザーは朝にコーヒーを飲む")
 	if err != nil {
@@ -257,15 +244,12 @@ func TestManualMemoryServiceCreatesWithRecalculatedTagsAndEmbedding(t *testing.T
 	if tagger.content != "ユーザーは朝にコーヒーを飲む" {
 		t.Fatalf("tagger content = %q", tagger.content)
 	}
-	if embedder.text != "ユーザーは朝にコーヒーを飲む coffee morning" {
-		t.Fatalf("embed text = %q", embedder.text)
-	}
-	if !reflect.DeepEqual(record.Embedding, []float64{0.1, 0.2}) {
-		t.Fatalf("embedding = %#v", record.Embedding)
+	if !reflect.DeepEqual(record.Tags, []string{"coffee", "morning"}) {
+		t.Fatalf("tags = %#v", record.Tags)
 	}
 }
 
-func TestManualMemoryServiceUpdatesWithRecalculatedTagsAndEmbedding(t *testing.T) {
+func TestManualMemoryServiceUpdatesWithRecalculatedTags(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -275,8 +259,7 @@ func TestManualMemoryServiceUpdatesWithRecalculatedTagsAndEmbedding(t *testing.T
 		t.Fatal(err)
 	}
 	tagger := &fakeMemoryTagger{tags: []string{"tea"}}
-	embedder := &fakeMemoryEmbedder{embedding: []float64{0.3, 0.4}}
-	service := &manualMemoryService{store: store, tagger: tagger, embedder: embedder}
+	service := &manualMemoryService{store: store, tagger: tagger}
 
 	updated, err := service.Update(context.Background(), record.ID, "ユーザーは朝に紅茶を飲む")
 	if err != nil {
@@ -285,14 +268,8 @@ func TestManualMemoryServiceUpdatesWithRecalculatedTagsAndEmbedding(t *testing.T
 	if tagger.content != "ユーザーは朝に紅茶を飲む" {
 		t.Fatalf("tagger content = %q", tagger.content)
 	}
-	if embedder.text != "ユーザーは朝に紅茶を飲む tea" {
-		t.Fatalf("embed text = %q", embedder.text)
-	}
 	if !reflect.DeepEqual(updated.Tags, []string{"tea"}) {
 		t.Fatalf("tags = %#v", updated.Tags)
-	}
-	if !reflect.DeepEqual(updated.Embedding, []float64{0.3, 0.4}) {
-		t.Fatalf("embedding = %#v", updated.Embedding)
 	}
 }
 
@@ -397,20 +374,6 @@ func (f *fakeMemoryTagger) CreateTags(ctx context.Context, content string) ([]st
 		return nil, f.err
 	}
 	return append([]string(nil), f.tags...), nil
-}
-
-type fakeMemoryEmbedder struct {
-	text      string
-	embedding []float64
-	err       error
-}
-
-func (f *fakeMemoryEmbedder) Embed(ctx context.Context, text string) ([]float64, error) {
-	f.text = text
-	if f.err != nil {
-		return nil, f.err
-	}
-	return append([]float64(nil), f.embedding...), nil
 }
 
 type fakeSwitchBotSceneClient struct {

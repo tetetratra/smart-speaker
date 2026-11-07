@@ -52,27 +52,20 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 		return Record{}, UpsertResult{}, ErrEmptyContent
 	}
 	tags := normalizeTags(input.Tags)
-	embedding := cloneFloat64s(input.Embedding)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
-	if idx, result, ok := s.findDuplicateLocked(DuplicateInput{
-		Content:       content,
-		Tags:          tags,
-		Embedding:     embedding,
-		MinSimilarity: input.DuplicateMinSimilarity,
-	}); ok {
-		result.Created = false
-		return cloneRecord(s.records[idx]), result, nil
+	// 言い換えの重複は抽出時に LLM が既存メモリを見て防ぐので、ここでは同じ本文だけを弾く。
+	if idx, ok := s.findSameContentLocked(content); ok {
+		return cloneRecord(s.records[idx]), UpsertResult{Created: false}, nil
 	}
 
 	record := Record{
 		ID:        newRecordID(now, len(s.records)+1),
 		Content:   content,
 		Tags:      tags,
-		Embedding: embedding,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -83,16 +76,6 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 	return cloneRecord(record), UpsertResult{Created: true}, nil
 }
 
-func (s *Store) FindDuplicate(input DuplicateInput) (Record, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	idx, _, ok := s.findDuplicateLocked(normalizeDuplicateInput(input))
-	if !ok {
-		return Record{}, false
-	}
-	return cloneRecord(s.records[idx]), true
-}
-
 func (s *Store) Update(id string, input UpdateInput) (Record, error) {
 	id = strings.TrimSpace(id)
 	content := strings.TrimSpace(input.Content)
@@ -100,7 +83,6 @@ func (s *Store) Update(id string, input UpdateInput) (Record, error) {
 		return Record{}, ErrEmptyContent
 	}
 	tags := normalizeTags(input.Tags)
-	embedding := cloneFloat64s(input.Embedding)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,7 +93,6 @@ func (s *Store) Update(id string, input UpdateInput) (Record, error) {
 		}
 		s.records[i].Content = content
 		s.records[i].Tags = tags
-		s.records[i].Embedding = embedding
 		s.records[i].UpdatedAt = time.Now().UTC()
 		if err := s.saveLocked(); err != nil {
 			return Record{}, err
@@ -147,29 +128,18 @@ func (s *Store) Reset() error {
 	return s.saveLocked()
 }
 
-func (s *Store) findDuplicateLocked(input DuplicateInput) (int, UpsertResult, bool) {
-	normalized := normalizeDuplicateInput(input)
+func (s *Store) findSameContentLocked(content string) (int, bool) {
 	for i, record := range s.records {
-		if strings.EqualFold(strings.TrimSpace(record.Content), normalized.Content) {
-			return i, UpsertResult{DuplicateReason: "content"}, true
+		if SameContent(record.Content, content) {
+			return i, true
 		}
 	}
-	if len(normalized.Tags) > 0 {
-		for i, record := range s.records {
-			if tagsEqual(normalizeTags(record.Tags), normalized.Tags) {
-				return i, UpsertResult{DuplicateReason: "tags"}, true
-			}
-		}
-	}
-	if normalized.MinSimilarity > 0 {
-		for i, record := range s.records {
-			similarity, ok := cosineSimilarity(normalized.Embedding, record.Embedding)
-			if ok && similarity >= normalized.MinSimilarity {
-				return i, UpsertResult{DuplicateReason: "embedding", Similarity: similarity}, true
-			}
-		}
-	}
-	return 0, UpsertResult{}, false
+	return 0, false
+}
+
+// SameContent は前後の空白と英字の大文字小文字を無視して本文が同じかを判定する。
+func SameContent(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func (s *Store) saveLocked() error {
@@ -195,7 +165,6 @@ func loadRecords(path string) ([]Record, error) {
 	for i := range records {
 		records[i].Content = strings.TrimSpace(records[i].Content)
 		records[i].Tags = normalizeTags(records[i].Tags)
-		records[i].Embedding = cloneFloat64s(records[i].Embedding)
 	}
 	return records, nil
 }
@@ -233,13 +202,6 @@ func cloneRecords(records []Record) []Record {
 	return cloned
 }
 
-func normalizeDuplicateInput(input DuplicateInput) DuplicateInput {
-	input.Content = strings.TrimSpace(input.Content)
-	input.Tags = normalizeTags(input.Tags)
-	input.Embedding = cloneFloat64s(input.Embedding)
-	return input
-}
-
 func normalizeTags(tags []string) []string {
 	seen := map[string]struct{}{}
 	normalized := make([]string, 0, len(tags))
@@ -259,18 +221,6 @@ func normalizeTags(tags []string) []string {
 		return strings.ToLower(normalized[i]) < strings.ToLower(normalized[j])
 	})
 	return normalized
-}
-
-func tagsEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !strings.EqualFold(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
 }
 
 func newRecordID(now time.Time, seq int) string {
