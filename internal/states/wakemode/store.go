@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -17,19 +16,36 @@ import (
 // ConversationTimeoutは、呼びかけ後に呼びかけなしで話せる時間。最後のユーザー発話から数える。
 const ConversationTimeout = time.Minute
 
-// DefaultPatternsは既定の呼びかけ。文頭から4文字以内の前置き（「ねえ」など）を許す。
-var DefaultPatterns = []string{`^.{0,4}(起きて|おきて|オキテ|掟)`}
+// DefaultWordsは既定の呼びかけ。STTが漢字・かなのどちらで書き起こしても通るよう両方を持つ。
+var DefaultWords = []string{"おきて", "起きて"}
 
 const (
-	maxPatterns      = 16
-	maxPatternLength = 200
+	maxWords      = 16
+	maxWordLength = 64
+	maxPrefixMax  = 20
 )
 
 type Config struct {
-	Required      bool     `json:"required"`
-	Patterns      []string `json:"patterns"`
-	MinConfidence float64  `json:"min_confidence"`
+	Required bool     `json:"required"`
+	Words    []string `json:"words"`
+	// MaxPrefixは、呼びかけの前に許す文字数（「ねえ」などの前置き）。正規化後の文字数で数える。
+	MaxPrefix     int     `json:"max_prefix"`
+	MinConfidence float64 `json:"min_confidence"`
+	MinSimilarity float64 `json:"min_similarity"`
 }
+
+// Optionsは設定の部分更新。nilの項目は変更しない。
+type Options struct {
+	Words         []string
+	MaxPrefix     *int
+	MinConfidence *float64
+	MinSimilarity *float64
+}
+
+func defaultConfig() Config {
+	return Config{Words: append([]string(nil), DefaultWords...), MaxPrefix: 4, MinConfidence: 0.55, MinSimilarity: 0.65}
+}
+
 type Snapshot struct {
 	Config
 	Last     *Decision `json:"last,omitempty"`
@@ -46,14 +62,13 @@ type Store struct {
 	mu         sync.Mutex
 	path       string
 	config     Config
-	patterns   []*regexp.Regexp
 	last       *Decision
 	revision   uint64
 	awakeUntil time.Time
 }
 
 func NewStore(path string) (*Store, error) {
-	s := &Store{path: path, config: Config{Patterns: append([]string(nil), DefaultPatterns...), MinConfidence: 0.55}, revision: 1}
+	s := &Store{path: path, config: defaultConfig(), revision: 1}
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -62,12 +77,17 @@ func NewStore(path string) (*Store, error) {
 		if err = json.Unmarshal(data, &s.config); err != nil {
 			return nil, err
 		}
-		// 旧形式（word・min_similarity）の保存内容は呼びかけを持たないため、既定の呼びかけを使う。
-		if len(s.config.Patterns) == 0 {
-			s.config.Patterns = append([]string(nil), DefaultPatterns...)
+		// 旧形式（wordやpatterns）の保存内容は言葉を持たないため、既定の呼びかけと許容文字数を使う。
+		if len(s.config.Words) == 0 {
+			defaults := defaultConfig()
+			s.config.Words = defaults.Words
+			s.config.MaxPrefix = defaults.MaxPrefix
+		}
+		if s.config.MinSimilarity == 0 {
+			s.config.MinSimilarity = defaultConfig().MinSimilarity
 		}
 	}
-	if s.patterns, err = validConfig(s.config); err != nil {
+	if err = validConfig(s.config); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -89,43 +109,28 @@ func toHiragana(r rune) rune {
 	return r
 }
 
-// {,n} はGoの正規表現では繰り返しにならず文字列として扱われ、呼びかけが一致しなくなる。
-var unsupportedRepeat = regexp.MustCompile(`(^|[^\\])\{,\d*\}`)
-
-// compilePatternは、認識テキストと同じくカタカナをひらがなへそろえ、英字の大小を区別せずに解釈する。
-func compilePattern(pattern string) (*regexp.Regexp, error) {
-	if strings.TrimSpace(pattern) == "" || utf8.RuneCountInString(pattern) > maxPatternLength {
-		return nil, fmt.Errorf("呼びかけのパターンを1〜%d文字で指定してください", maxPatternLength)
+func validConfig(c Config) error {
+	if len(c.Words) == 0 || len(c.Words) > maxWords {
+		return fmt.Errorf("呼びかけの言葉を1〜%d件で指定してください", maxWords)
 	}
-	if unsupportedRepeat.MatchString(pattern) {
-		return nil, fmt.Errorf("呼びかけのパターン %q の {,n} は繰り返しとして扱われません。{0,n} と書いてください", pattern)
-	}
-	re, err := regexp.Compile("(?i)" + strings.Map(toHiragana, pattern))
-	if err != nil {
-		return nil, fmt.Errorf("呼びかけのパターン %q を解釈できません: %w", pattern, err)
-	}
-	return re, nil
-}
-func validConfig(c Config) ([]*regexp.Regexp, error) {
-	if len(c.Patterns) == 0 || len(c.Patterns) > maxPatterns {
-		return nil, fmt.Errorf("呼びかけのパターンを1〜%d件で指定してください", maxPatterns)
-	}
-	patterns := make([]*regexp.Regexp, 0, len(c.Patterns))
-	for _, pattern := range c.Patterns {
-		re, err := compilePattern(pattern)
-		if err != nil {
-			return nil, err
+	for _, word := range c.Words {
+		if normalize(word) == "" || utf8.RuneCountInString(word) > maxWordLength {
+			return fmt.Errorf("呼びかけの言葉を1〜%d文字で指定してください", maxWordLength)
 		}
-		patterns = append(patterns, re)
 	}
-	if math.IsNaN(c.MinConfidence) || math.IsInf(c.MinConfidence, 0) || c.MinConfidence <= 0 || c.MinConfidence > 1 {
-		return nil, fmt.Errorf("信頼度のしきい値は0より大きく1以下で指定してください")
+	if c.MaxPrefix < 0 || c.MaxPrefix > maxPrefixMax {
+		return fmt.Errorf("呼びかけの前に許す文字数は0〜%dで指定してください", maxPrefixMax)
 	}
-	return patterns, nil
+	for _, v := range []float64{c.MinConfidence, c.MinSimilarity} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 || v > 1 {
+			return fmt.Errorf("判定のしきい値は0より大きく1以下で指定してください")
+		}
+	}
+	return nil
 }
 func (s *Store) snapshotLocked(now time.Time) Snapshot {
 	snapshot := Snapshot{Config: s.config, Last: s.last, Revision: s.revision}
-	snapshot.Patterns = append([]string(nil), s.config.Patterns...)
+	snapshot.Words = append([]string(nil), s.config.Words...)
 	if s.config.Required && now.Before(s.awakeUntil) {
 		until := s.awakeUntil
 		snapshot.Awake = true
@@ -138,24 +143,32 @@ func (s *Store) Snapshot(now time.Time) Snapshot {
 	defer s.mu.Unlock()
 	return s.snapshotLocked(now)
 }
-func (s *Store) Set(required bool, patterns []string, now time.Time) (Snapshot, error) {
-	return s.SetOptions(required, patterns, nil, now)
+func (s *Store) Set(required bool, words []string, now time.Time) (Snapshot, error) {
+	return s.SetOptions(required, Options{Words: words}, now)
 }
 
-// SetOptionsは設定を保存する。patternsが空なら呼びかけを変更しない。設定を変えると会話中の状態は終わる。
-func (s *Store) SetOptions(required bool, patterns []string, confidence *float64, now time.Time) (Snapshot, error) {
+// SetOptionsは設定を保存する。指定のない項目は変更しない。設定を変えると会話中の状態は終わる。
+func (s *Store) SetOptions(required bool, options Options, now time.Time) (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.config
 	next.Required = required
-	if len(patterns) > 0 {
-		next.Patterns = append([]string(nil), patterns...)
+	if len(options.Words) > 0 {
+		next.Words = make([]string, 0, len(options.Words))
+		for _, word := range options.Words {
+			next.Words = append(next.Words, strings.TrimSpace(word))
+		}
 	}
-	if confidence != nil {
-		next.MinConfidence = *confidence
+	if options.MaxPrefix != nil {
+		next.MaxPrefix = *options.MaxPrefix
 	}
-	compiled, err := validConfig(next)
-	if err != nil {
+	if options.MinConfidence != nil {
+		next.MinConfidence = *options.MinConfidence
+	}
+	if options.MinSimilarity != nil {
+		next.MinSimilarity = *options.MinSimilarity
+	}
+	if err := validConfig(next); err != nil {
 		return Snapshot{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
@@ -185,7 +198,6 @@ func (s *Store) SetOptions(required bool, patterns []string, confidence *float64
 		return Snapshot{}, err
 	}
 	s.config = next
-	s.patterns = compiled
 	s.last = nil
 	s.awakeUntil = time.Time{}
 	s.revision++
@@ -194,7 +206,9 @@ func (s *Store) SetOptions(required bool, patterns []string, confidence *float64
 
 type Decision struct {
 	Confidence float64 `json:"confidence"`
-	// Matchedは呼びかけのパターンに一致したか。会話中は一致しなくても受け付ける。
+	// Similarityは文頭付近で最も呼びかけに近い部分の類似度（0〜1）。
+	Similarity float64 `json:"similarity"`
+	// Matchedは類似度がしきい値以上だったか。会話中は一致しなくても受け付ける。
 	Matched  bool `json:"matched"`
 	Accepted bool `json:"accepted"`
 	Failed   bool `json:"failed"`
@@ -208,7 +222,8 @@ func (s *Store) Evaluate(text string, confidence float64, revision uint64, faile
 	defer s.mu.Unlock()
 	d := Decision{Confidence: confidence, Failed: failed}
 	if !failed {
-		d.Matched, d.WakeOnly = match(s.patterns, text)
+		d.Similarity, d.WakeOnly = match(text, s.config.Words, s.config.MaxPrefix, s.config.MinSimilarity)
+		d.Matched = d.Similarity >= s.config.MinSimilarity
 	}
 	awake := now.Before(s.awakeUntil)
 	d.Accepted = s.config.Required && s.revision == revision && !failed && confidence >= s.config.MinConfidence && confidence <= 1 && (d.Matched || awake)
@@ -230,21 +245,46 @@ func (s *Store) Touch(now time.Time) {
 	}
 }
 
-// matchは正規化したテキストを各パターンで調べ、一致した部分より後に本文が残らなければ呼びかけだけとみなす。
-func match(patterns []*regexp.Regexp, text string) (matched, wakeOnly bool) {
-	normalized := normalize(text)
-	if normalized == "" {
-		return false, false
-	}
-	for _, re := range patterns {
-		loc := re.FindStringIndex(normalized)
-		if loc == nil {
+// matchは、正規化したテキストの先頭maxPrefix文字以内から始まる部分と各言葉の類似度を調べ、最大値を返す。
+// しきい値以上の部分がテキストの末尾まで届いていれば、本文のない呼びかけだけの発話とみなす。
+func match(text string, words []string, maxPrefix int, minSimilarity float64) (best float64, wakeOnly bool) {
+	a := []rune(normalize(text))
+	for _, word := range words {
+		b := []rune(normalize(word))
+		if len(a) == 0 || len(b) == 0 {
 			continue
 		}
-		if loc[1] == len(normalized) {
-			return true, true
+		for start := 0; start <= maxPrefix && start < len(a); start++ {
+			// 書き起こしの脱字・余分な文字を許すため、言葉の長さ±2文字の部分を比べる。
+			for length := max(1, len(b)-2); length <= len(b)+2 && start+length <= len(a); length++ {
+				score := similarity(a[start:start+length], b)
+				best = max(best, score)
+				if score >= minSimilarity && start+length == len(a) {
+					wakeOnly = true
+				}
+			}
 		}
-		matched = true
 	}
-	return matched, false
+	return best, wakeOnly
+}
+
+// similarityは編集距離を長いほうの文字数で割り、0〜1の類似度へ変換する。
+func similarity(x, b []rune) float64 {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i, r := range x {
+		next := make([]int, len(b)+1)
+		next[0] = i + 1
+		for j, q := range b {
+			cost := 0
+			if r != q {
+				cost = 1
+			}
+			next[j+1] = min(next[j]+1, prev[j+1]+1, prev[j]+cost)
+		}
+		prev = next
+	}
+	return 1 - float64(prev[len(b)])/float64(max(len(x), len(b)))
 }
