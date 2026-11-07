@@ -1,2 +1,4 @@
 # 秘密情報を含むローカル設定をビルドコンテキストから除外する
 .envrc
+# Mac用のブリッジの依存はイメージに不要
+services/agent-bridge/node_modules

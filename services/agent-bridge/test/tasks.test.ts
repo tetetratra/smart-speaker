@@ -1,0 +1,141 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { Options, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { EventInput } from "../src/protocol.ts";
+import { PermissionBroker } from "../src/permissions.ts";
+import { TaskManager, interpret, childEnv } from "../src/tasks.ts";
+
+const SESSION = "11111111-2222-4333-8444-555555555555";
+
+function success(structured: unknown): SDKResultMessage {
+  return { type: "result", subtype: "success", is_error: false, result: "raw", structured_output: structured, permission_denials: [] } as unknown as SDKResultMessage;
+}
+
+function setup(run: (options: Options) => AsyncIterable<SDKMessage>, exists = true) {
+  const events: EventInput[] = [];
+  const queries: Options[] = [];
+  const tags: string[] = [];
+  let done!: () => void;
+  const finished = new Promise<void>((resolve) => (done = resolve));
+  const notify = async (event: EventInput) => {
+    events.push(event);
+    if (event.type !== "permission_request") done();
+    return true;
+  };
+  const broker = new PermissionBroker(notify, 1000);
+  const manager = new TaskManager({
+    query: ({ options }) => (queries.push(options!), run(options!)),
+    tagSession: async (id, tag) => void tags.push(`${id}:${tag}`),
+    sessionExists: async () => exists,
+    broker,
+    notify,
+    workdir: "/work",
+    maxTasks: 1,
+    taskTimeoutMs: 60_000,
+    log: () => {},
+  });
+  return { manager, broker, events, queries, tags, finished };
+}
+
+test("新しい依頼は sessionId を発行し、完了したらタグを付けて通知する", async () => {
+  const { manager, events, queries, tags, finished } = setup(async function* () {
+    yield success({ summary: "終わりました", details: ["a.txt を作成"] });
+  });
+  const accepted = await manager.start("ファイルを作って");
+  await finished;
+  const options = queries[0];
+  assert.equal(options.sessionId, accepted.session_id);
+  assert.equal(options.resume, undefined);
+  assert.equal(options.permissionMode, "auto");
+  assert.equal(options.cwd, "/work");
+  assert.deepEqual(tags, [`${accepted.session_id}:smart-speaker`]);
+  assert.deepEqual(events[0], { type: "completed", summary: "終わりました", details: ["a.txt を作成"], task_id: accepted.task_id, session_id: accepted.session_id, request: "ファイルを作って" });
+  assert.deepEqual(options.disallowedTools, ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"]);
+});
+
+test("続きの依頼は resume を使い、タグは付け直さない", async () => {
+  const { manager, queries, tags, finished } = setup(async function* () {
+    yield success({ summary: "ok", details: [] });
+  });
+  const accepted = await manager.start("続き", SESSION);
+  await finished;
+  assert.equal(accepted.session_id, SESSION);
+  assert.equal(queries[0].resume, SESSION);
+  assert.equal(queries[0].sessionId, undefined);
+  assert.deepEqual(tags, []);
+});
+
+test("canUseTool の承認依頼は、作業とセッションのIDを付けて通知する", async () => {
+  const { manager, broker, events, finished } = setup(async function* (options) {
+    const result = await options.canUseTool!("Bash", { command: "rm a" }, { signal: new AbortController().signal, toolUseID: "u1", title: "Claude wants to run rm a" } as never);
+    yield success({ summary: result?.behavior, details: [] });
+  });
+  const accepted = await manager.start("消して");
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = events[0] as Extract<EventInput, { type: "permission_request" }>;
+  assert.equal(request.type, "permission_request");
+  assert.equal(request.task_id, accepted.task_id);
+  assert.equal(request.title, "Claude wants to run rm a");
+  assert.equal(manager.pendingCount(accepted.session_id), 1);
+  broker.answer(request.request_id, true);
+  await finished;
+  assert.equal((events[1] as { summary: string }).summary, "allow");
+});
+
+test("入力の誤り・実行中・上限・存在しないセッションを断る", async () => {
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => (release = resolve));
+  const { manager, finished } = setup(async function* () {
+    await blocker;
+    yield success({ summary: "ok", details: [] });
+  });
+  await assert.rejects(manager.start("  "), { status: 400 });
+  await assert.rejects(manager.start("x", "not-a-uuid"), { status: 400 });
+  await manager.start("x", SESSION);
+  await assert.rejects(manager.start("y", SESSION), { status: 409 });
+  await assert.rejects(manager.start("z"), { status: 429 });
+  release();
+  await finished;
+
+  const missing = setup(async function* () {}, false);
+  await assert.rejects(missing.manager.start("x", SESSION), { status: 404 });
+});
+
+test("中止すると失敗として通知する", async () => {
+  const { manager, events, finished } = setup(async function* (options) {
+    await new Promise((resolve) => options.abortController!.signal.addEventListener("abort", resolve));
+    throw new Error("aborted");
+  });
+  const accepted = await manager.start("長い作業");
+  manager.cancel(accepted.task_id);
+  await finished;
+  assert.deepEqual(events[0], { type: "failed", error: "作業を中止しました", task_id: accepted.task_id, session_id: accepted.session_id, request: "長い作業" });
+  assert.throws(() => manager.cancel("unknown"), { status: 404 });
+  assert.throws(() => manager.cancelSession(accepted.session_id), { status: 404 });
+});
+
+test("セッションIDでも実行中の作業を止められる", async () => {
+  const { manager, events, finished } = setup(async function* (options) {
+    await new Promise((resolve) => options.abortController!.signal.addEventListener("abort", resolve));
+    throw new Error("aborted");
+  });
+  const accepted = await manager.start("長い作業");
+  assert.equal(manager.runningTask(accepted.session_id)?.id, accepted.task_id);
+  manager.cancelSession(accepted.session_id);
+  await finished;
+  assert.equal(events[0].type, "failed");
+  assert.equal(manager.runningTask(accepted.session_id), undefined);
+});
+
+test("interpret は失敗や構造化出力の欠落を扱う", () => {
+  assert.deepEqual(interpret(undefined, new Error("aborted"), true, true), { type: "failed", error: "時間の上限に達したので作業を止めました" });
+  assert.deepEqual(interpret(undefined, new Error("boom"), false), { type: "failed", error: "Error: boom" });
+  const error = { type: "result", subtype: "error_max_turns", is_error: true, errors: ["too many"], permission_denials: [] } as unknown as SDKResultMessage;
+  assert.deepEqual(interpret(error, undefined, false), { type: "failed", error: "too many" });
+  const denied = { ...success(undefined), permission_denials: [{ tool_name: "Bash", tool_use_id: "u", tool_input: { command: "rm" } }] } as SDKResultMessage;
+  assert.deepEqual(interpret(denied, undefined, false), { type: "completed", summary: "raw", details: [], permission_denials: ['Bash: {"command":"rm"}'] });
+});
+
+test("childEnv は Claude 系の環境変数を渡さない", () => {
+  assert.deepEqual(childEnv({ HOME: "/h", PATH: "/bin", DRIVE_TOKEN: "t", ANTHROPIC_BASE_URL: "x", CLAUDECODE: "1", CLAUDE_CODE_ENTRYPOINT: "y" }), { HOME: "/h", PATH: "/bin", DRIVE_TOKEN: "t" });
+});
