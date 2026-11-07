@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-type WakeMode = { required: boolean }
+// awakeは呼びかけ後の会話中で、最後の発話から1分間は呼びかけなしで話せる状態。
+type WakeMode = { required: boolean, awake?: boolean }
 
 export function WakeModeControl({ backendURL }: { backendURL: URL }) {
   const [mode, setMode] = useState<WakeMode>()
@@ -76,7 +77,7 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
         aria-label="ウェイクアップワード必須"
         aria-checked={mode?.required ?? false}
         aria-busy={pending}
-        className="live-control-btn"
+        className={`live-control-btn ${mode?.required && mode.awake ? 'live-control-btn-awake' : ''}`}
         disabled={!mode || pending}
         onClick={() => { if (mode) void save(!mode.required) }}
       >
