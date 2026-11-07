@@ -154,3 +154,23 @@ func TestLegacySavedSettingsAreIgnored(t *testing.T) {
 		t.Fatal(mode)
 	}
 }
+
+func TestAwakenStartsConversationOnlyWhenRequired(t *testing.T) {
+	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
+	now := time.Now()
+	s.Awaken(now)
+	if s.Snapshot(now).Awake {
+		t.Fatal("呼びかけ不要のときに会話中になりました")
+	}
+	if _, err := s.SetRequired(true, now); err != nil {
+		t.Fatal(err)
+	}
+	// アシスタントから質問したときは、呼びかけなしで返事を受け付ける。
+	s.Awaken(now)
+	if s.Snapshot(now.Add(59 * time.Second)).Gated() {
+		t.Fatal("質問の後に会話中になりません")
+	}
+	if !s.Snapshot(now.Add(61 * time.Second)).Gated() {
+		t.Fatal("1分たっても会話中のままです")
+	}
+}

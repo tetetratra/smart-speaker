@@ -1,0 +1,128 @@
+package claudecode
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/types"
+)
+
+func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		switch {
+		case r.URL.Path == "/tasks":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"task_id":"t1","session_id":"s1"}`))
+		case r.URL.Path == "/sessions":
+			_, _ = w.Write([]byte(`{"sessions":[{"session_id":"s1","title":"PDFの要約","created_at":"2026-11-07T08:00:00.000Z","last_modified":"2026-11-07T09:30:00.000Z","first_prompt":"PDFを読んで","running":false,"from_smart_speaker":true}]}`))
+		case strings.HasPrefix(r.URL.Path, "/sessions/"):
+			_, _ = w.Write([]byte(`{"session_id":"s1","total":5,"offset":0,"messages":[{"role":"assistant","text":"読みました","tools":["[Read] a.pdf"],"at":"2026-11-07T09:30:00.000Z"}]}`))
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(server.Close)
+	service := agentbridge.NewService(agentbridge.NewClient(server.URL, "token"), func(context.Context, types.ScheduledPrompt) error { return nil })
+	byName := map[string]*Tool{}
+	for _, op := range Operations {
+		byName[op] = &Tool{Service: service, Operation: op}
+	}
+	return byName, service, &requests
+}
+
+func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
+	tools, _, requests := newTools(t)
+	result, err := tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": ""})
+	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" {
+		t.Fatal(result, err)
+	}
+	if _, err := tools[OpAsk].Run(map[string]any{"input": " ", "session_id": ""}); err == nil {
+		t.Fatal("空の依頼を受け付けました")
+	}
+	if (*requests)[0] != "POST /tasks" {
+		t.Fatal(*requests)
+	}
+}
+
+func TestListAndReadFormatForVoice(t *testing.T) {
+	time.Local = time.FixedZone("JST", 9*60*60)
+	tools, _, requests := newTools(t)
+	list, err := tools[OpList].Run(map[string]any{"limit": float64(3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := list["sessions"].([]map[string]any)[0]
+	if session["title"] != "PDFの要約" || session["last_modified"] != "2026-11-07 18:30" || session["created_at"] != "2026-11-07 17:00" || list["count"] != 1 {
+		t.Fatal(list)
+	}
+	read, err := tools[OpRead].Run(map[string]any{"session_id": "s1", "limit": float64(2), "offset": float64(0)})
+	if err != nil || read["has_older"] != true || read["messages"].([]map[string]any)[0]["at"] != "2026-11-07 18:30" {
+		t.Fatal(read, err)
+	}
+	if _, err := tools[OpList].Run(map[string]any{"limit": float64(100)}); err == nil {
+		t.Fatal("範囲外の件数を受け付けました")
+	}
+	if _, err := tools[OpRead].Run(map[string]any{"session_id": "s1", "limit": 1.5}); err == nil {
+		t.Fatal("小数を受け付けました")
+	}
+	want := []string{"GET /sessions?limit=3", "GET /sessions/s1/messages?limit=2&offset=0"}
+	if strings.Join(*requests, ",") != strings.Join(want, ",") {
+		t.Fatal(*requests)
+	}
+}
+
+func TestAnswerAndCancel(t *testing.T) {
+	tools, service, requests := newTools(t)
+	event := agentbridge.Event{Type: agentbridge.EventPermissionRequest, EventID: "e1", TaskID: "t1", SessionID: "s1", RequestID: "r1", Tool: "Bash", Input: json.RawMessage(`{}`), ExpiresAt: time.Now().Add(time.Minute)}
+	if err := service.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools[OpAnswer].Run(map[string]any{"request_id": "r1", "allow": "yes"}); err == nil {
+		t.Fatal("文字列のallowを受け付けました")
+	}
+	result, err := tools[OpAnswer].Run(map[string]any{"request_id": "r1", "allow": true})
+	if err != nil || result["status"] != "answered" {
+		t.Fatal(result, err)
+	}
+	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "t1", "session_id": ""}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "", "session_id": "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "", "session_id": ""}); err == nil {
+		t.Fatal("止める対象がないのに受け付けました")
+	}
+	want := []string{"POST /permissions/r1", "POST /tasks/t1/cancel", "POST /sessions/s1/cancel"}
+	if strings.Join(*requests, ",") != strings.Join(want, ",") {
+		t.Fatal(*requests)
+	}
+}
+
+func TestDefinitionsDeclareModesAndPolicies(t *testing.T) {
+	for _, op := range Operations {
+		def := (&Tool{Operation: op}).Definition()
+		params := def["parameters"].(map[string]any)
+		if def["name"] != op || len(params["required"].([]string)) != len(params["properties"].(map[string]any)) {
+			t.Fatal(def)
+		}
+	}
+	if tools.ModeFromDefinition((&Tool{Operation: OpAnswer}).Definition()) != tools.ToolModeWrite {
+		t.Fatal("承認の返事は書き込み操作です")
+	}
+	if tools.ResponsePolicyFromDefinition((&Tool{Operation: OpList}).Definition()).Instructions == "" {
+		t.Fatal("一覧の伝え方の指示がありません")
+	}
+	if _, err := (&Tool{Operation: OpList}).Run(map[string]any{}); err == nil {
+		t.Fatal("設定がないのに動きました")
+	}
+}

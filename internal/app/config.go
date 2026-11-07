@@ -44,6 +44,13 @@ type Config struct {
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
+	AgentBridge                AgentBridgeConfig
+}
+
+// AgentBridgeConfig は手元のMacで動く agent-bridge への接続設定。どちらかが空ならClaude Code連携を無効にする。
+type AgentBridgeConfig struct {
+	URL   string
+	Token string
 }
 
 type MemoryConfig struct {
@@ -208,6 +215,10 @@ func LoadConfig(promptPath string) Config {
 		RTCIceAdvertiseIPs:         rtcIceAdvertiseIPs,
 		WSAddr:                     wsAddr,
 		WebDistDir:                 webDistDir,
+		AgentBridge: AgentBridgeConfig{
+			URL:   strings.TrimSpace(os.Getenv("AGENT_BRIDGE_URL")),
+			Token: strings.TrimSpace(os.Getenv("AGENT_BRIDGE_TOKEN")),
+		},
 	}
 }
 

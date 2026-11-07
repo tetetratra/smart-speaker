@@ -220,6 +220,15 @@ func (s *Store) Touch(now time.Time) {
 	}
 }
 
+// Awakenは、アシスタントから質問して返事を待つときに会話中にする。起動ワード必須でなければ何もしない。
+func (s *Store) Awaken(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.config.Required {
+		s.awakeUntil = now.Add(ConversationTimeout)
+	}
+}
+
 // matchは、正規化したテキストの先頭maxPrefix文字以内から始まる部分と各言葉の類似度を調べ、最大値を返す。
 // しきい値以上の部分がテキストの末尾まで届いていれば、本文のない呼びかけだけの発話とみなす。
 func match(text string, words []string, maxPrefix int, minSimilarity float64) (best float64, wakeOnly bool) {

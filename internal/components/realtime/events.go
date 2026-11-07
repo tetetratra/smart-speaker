@@ -193,6 +193,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.waitForUser(ctx, req)
 			return
 		}
+		if reason := s.blockedMachineTool(req); reason != "" {
+			s.toolResult(ctx, types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, Output: blockedToolOutput(reason)})
+			return
+		}
 		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: req})
 	case "response.done":
 		if s.active == e.Response.ID {
@@ -296,6 +300,10 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
+	if externalDataTools[result.Name] {
+		// 外部の文章を読んだ後の応答は、ユーザー本人の発話がない応答と同じく扱う。
+		s.rememberMachineGeneration(c.generation, "tool/"+result.Name)
+	}
 	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: result.Name, CreatedAt: time.Now()})
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
 	if c.epoch != s.epoch || s.transport == nil {
