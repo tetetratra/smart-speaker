@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestJobsAPIRegistersUpdatesStopsAndDeletes(t *testing.T) {
+func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 	service, _ := automations.New(filepath.Join(t.TempDir(), "jobs.json"), nil)
 	mux := http.NewServeMux()
 	registerAutomationsAPI(mux, service)
@@ -33,8 +33,8 @@ func TestJobsAPIRegistersUpdatesStopsAndDeletes(t *testing.T) {
 	if rec = request("GET", "/api/jobs", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), id) || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal(rec.Code, rec.Body)
 	}
-	if rec = request("PATCH", "/api/jobs/"+id, `{"enabled":false}`); rec.Code != 200 || service.List()[0].Enabled {
-		t.Fatal(rec.Code, rec.Body)
+	if rec = request("PATCH", "/api/jobs/"+id, `{"enabled":false}`); rec.Code != 405 {
+		t.Fatal("停止・再開は提供しません", rec.Code)
 	}
 	if rec = request("PUT", "/api/jobs/"+id, `{"name":"変更","instruction":"変更後の指示","speak":true,"schedule":{"after_seconds":600}}`); rec.Code != 200 || !service.List()[0].Speak {
 		t.Fatal(rec.Code, rec.Body)

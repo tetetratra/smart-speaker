@@ -75,7 +75,7 @@ func New(cfg Config) *Registry {
 		}
 	}
 	if cfg.Automations != nil {
-		for _, operation := range []string{"register_job", "list_jobs", "update_job", "set_job_enabled", "delete_job"} {
+		for _, operation := range []string{"register_job", "list_jobs", "update_job", "delete_job"} {
 			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}

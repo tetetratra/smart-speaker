@@ -56,9 +56,15 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 	if len(jobs) > 100 {
 		return nil, fmt.Errorf("予約ジョブが100件を超えています")
 	}
+	dropped := false
 	for _, job := range jobs {
 		if job.ID == "" {
 			return nil, fmt.Errorf("予約ジョブのIDが空です")
+		}
+		// 以前の版で実行済みのまま残した日時指定の予約は読み込まない。
+		if job.Schedule.Cron == "" && !job.Enabled {
+			dropped = true
+			continue
 		}
 		if _, err := validate(job.Spec, time.Now(), false); err != nil {
 			return nil, err
@@ -67,6 +73,11 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 			return nil, fmt.Errorf("予約ジョブのIDまたは次回日時が不正です")
 		}
 		s.jobs[job.ID] = job
+	}
+	if dropped {
+		if err := s.saveLocked(); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
@@ -165,33 +176,10 @@ func (s *Service) Update(id string, spec Spec, now time.Time) (Job, error) {
 	}
 	job := old
 	job.Spec = spec
+	job.Enabled = true
 	job.NextRunAt = next
 	job.LastStatus = "scheduled"
 	job.LastError = ""
-	s.jobs[id] = job
-	if err := s.saveLocked(); err != nil {
-		s.jobs[id] = old
-		return Job{}, err
-	}
-	return job, nil
-}
-func (s *Service) Enable(id string, enabled bool, now time.Time) (Job, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	old, ok := s.jobs[id]
-	if !ok {
-		return Job{}, os.ErrNotExist
-	}
-	job := old
-	job.Enabled = enabled
-	if enabled {
-		next, err := job.Schedule.next(now, true)
-		if err != nil {
-			return Job{}, err
-		}
-		job.NextRunAt = next
-		job.LastStatus = "scheduled"
-	}
 	s.jobs[id] = job
 	if err := s.saveLocked(); err != nil {
 		s.jobs[id] = old
@@ -240,12 +228,12 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 		job.LastRunAt = now
 		job.LastStatus = "queued"
 		job.LastError = ""
-		if job.Schedule.Cron != "" {
-			job.NextRunAt, _ = job.Schedule.next(now, false)
-		} else {
-			job.Enabled = false
-			job.NextRunAt = time.Time{}
+		if job.Schedule.Cron == "" {
+			// 日時指定の予約は一度きりなので、実行時に一覧から削除する。
+			delete(s.jobs, job.ID)
+			continue
 		}
+		job.NextRunAt, _ = job.Schedule.next(now, false)
 		s.jobs[job.ID] = job
 	}
 	if len(due) > 0 {
@@ -267,6 +255,10 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 			deliveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction, Speak: job.Speak})
 			cancel()
+		}
+		if err != nil && job.Schedule.Cron == "" {
+			// 削除済みの一度きりの予約は画面に失敗を残せないため、ログへ出す。
+			fmt.Fprintf(os.Stderr, "予約ジョブの送信失敗 id=%s name=%s: %v\n", job.ID, job.Name, err)
 		}
 		s.mu.Lock()
 		current, ok := s.jobs[job.ID]

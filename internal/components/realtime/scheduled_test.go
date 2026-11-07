@@ -14,7 +14,7 @@ func TestQuietScheduledJobDoesNotEmitSpeechAndNormalSpeechStillWorks(t *testing.
 	scheduled <- types.ScheduledPrompt{ID: "job1", Name: "無音の仕事モード", Instruction: "状態を切り替えて", Speak: false}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
-	if !strings.Contains(text, "状態を切り替えて") || !strings.Contains(text, "音声通知不要") {
+	if !strings.Contains(text, "状態を切り替えて") || !strings.Contains(text, "音声通知不要") || !strings.Contains(text, "今すぐ実行") {
 		t.Fatal(text)
 	}
 	req := r.wait("response.create")

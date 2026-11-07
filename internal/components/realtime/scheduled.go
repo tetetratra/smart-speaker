@@ -31,7 +31,8 @@ func (s *stage) startScheduled(ctx context.Context) bool {
 	}
 	prompt := s.scheduled[index]
 	s.scheduled = append(s.scheduled[:index], s.scheduled[index+1:]...)
-	text := "[アプリの予約ジョブ: " + prompt.Name + "]\n" + prompt.Instruction
+	// 予約時の文言が指示に残っていても、復唱や再予約をせず今実行させる。
+	text := "[アプリの予約ジョブ: " + prompt.Name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + prompt.Instruction
 	if !prompt.Speak {
 		text += "\nこのジョブは音声通知不要です。必要な処理を実行し、ユーザーへの発話や完了の読み上げは行わないでください。"
 	}
