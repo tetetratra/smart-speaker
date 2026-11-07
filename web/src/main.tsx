@@ -58,9 +58,12 @@ const liveRootStyle = `
     --ui-accent-text: #ffffff;
     --ui-accent-soft: #dbeafe;
     --ui-accent-soft-text: #1d4ed8;
-    --ui-tool-call-bg: #dcfce7;
-    --ui-tool-call-line: #86efac;
-    --ui-tool-call-text: #166534;
+    --ui-tool-call-bg: #f0fdf4;
+    --ui-tool-call-line: #d1fae5;
+    --ui-tool-call-text: #15803d;
+    --ui-tool-done-bg: #eff6ff;
+    --ui-tool-done-line: #dbeafe;
+    --ui-tool-done-text: #1d4ed8;
     --ui-danger-bg: #fef2f2;
     --ui-danger-line: #fecaca;
     --ui-danger-text: #991b1b;
@@ -105,9 +108,12 @@ const liveRootStyle = `
       --ui-accent-text: #ffffff;
       --ui-accent-soft: #1e3558;
       --ui-accent-soft-text: #bfdbfe;
-      --ui-tool-call-bg: #143322;
-      --ui-tool-call-line: #357a4c;
-      --ui-tool-call-text: #bbf7d0;
+      --ui-tool-call-bg: #121f19;
+      --ui-tool-call-line: #1f3a2a;
+      --ui-tool-call-text: #a7d8b8;
+      --ui-tool-done-bg: #131a26;
+      --ui-tool-done-line: #22324a;
+      --ui-tool-done-text: #b4cdf0;
       --ui-danger-bg: #381c26;
       --ui-danger-line: #864354;
       --ui-danger-text: #fecdd3;
@@ -183,10 +189,10 @@ const liveRootStyle = `
     flex: 1;
   }
   .live-tool-toast {
-    min-height: 32px;
+    min-height: 24px;
     border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 7px 9px;
+    border-radius: 6px;
+    padding: 3px 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -194,7 +200,7 @@ const liveRootStyle = `
     font-size: 12px;
     line-height: 1.2;
     font-weight: 700;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transition: background-color 0.3s, border-color 0.3s, color 0.3s;
   }
   .live-tool-toast.call {
     background: var(--ui-tool-call-bg);
@@ -202,9 +208,9 @@ const liveRootStyle = `
     color: var(--ui-tool-call-text);
   }
   .live-tool-toast.result {
-    background: var(--ui-accent-soft);
-    border-color: var(--live-toggle-on);
-    color: var(--ui-accent-soft-text);
+    background: var(--ui-tool-done-bg);
+    border-color: var(--ui-tool-done-line);
+    color: var(--ui-tool-done-text);
   }
   .live-tool-toast-tool {
     min-width: 0;
@@ -431,7 +437,7 @@ const liveRootStyle = `
     border: 2px solid var(--live-line-strong);
     border-radius: 10px;
     padding: 10px 12px;
-    font-size: 13px;
+    font-size: 20px;
     line-height: 1.4;
     color: var(--live-text);
     box-shadow: inset 0 0 0 1px var(--live-inset-line);
