@@ -164,9 +164,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
 	}
 	memoryOperationCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Memory.Model,
-		MaxTags: cfg.Memory.MaxTags,
+		APIKey: cfg.APIKey,
+		Model:  cfg.Memory.Model,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory operation creator: %w", err)

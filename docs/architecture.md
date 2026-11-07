@@ -142,7 +142,7 @@ agent status は `internal/states/agentstatus` が保持する。
 LLM が `{"items":[]}` を返した場合は timeline event が発行されないため、agent status は `idle` のまま維持される。
 
 メモリは `internal/states/memory` が保持する。
-メモリStoreは、メモリ本文、関連タグ、作成更新時刻を JSON file に永続化する。
+メモリStoreは、メモリ本文と作成更新時刻を JSON file に永続化する。
 `memory.Store.Upsert()` は前後の空白と英字の大文字小文字を無視して同じ本文だけを重複として扱う。言い換えによる重複は、メモリ作成時に LLM が保存済みメモリを見て `update` / `delete` を選ぶことで防ぐ。
 session reset hook は保存済みメモリと reset 前の発話から add / update / delete を生成して適用し、LLM は応答生成前に保存済みメモリを全件取得して system message として注入する。
 

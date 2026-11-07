@@ -19,7 +19,6 @@ type memoryListResponse struct {
 type memoryListItem struct {
 	ID        string    `json:"id"`
 	Content   string    `json:"content"`
-	Tags      []string  `json:"tags"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -149,14 +148,9 @@ func writeMemoryError(w http.ResponseWriter, err error) {
 }
 
 func memoryItemFromRecord(record memorystate.Record) memoryListItem {
-	tags := record.Tags
-	if tags == nil {
-		tags = []string{}
-	}
 	return memoryListItem{
 		ID:        record.ID,
 		Content:   record.Content,
-		Tags:      tags,
 		CreatedAt: record.CreatedAt,
 		UpdatedAt: record.UpdatedAt,
 	}

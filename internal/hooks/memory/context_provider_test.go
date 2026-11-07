@@ -12,10 +12,10 @@ import (
 
 func TestContextProviderBuildsContextFromAllMemories(t *testing.T) {
 	memory := &fakeMemoryReader{records: []memorystate.Record{
-		{Content: "ユーザーは朝にコーヒーを飲む", Tags: []string{"coffee"}},
-		{Content: "ユーザーは辛い料理が苦手", Tags: []string{"food"}},
-		{Content: "ユーザーは週末にジョギングする", Tags: []string{"exercise"}},
-		{Content: "ユーザーは猫を飼っている", Tags: []string{"pet"}},
+		{Content: "ユーザーは朝にコーヒーを飲む"},
+		{Content: "ユーザーは辛い料理が苦手"},
+		{Content: "ユーザーは週末にジョギングする"},
+		{Content: "ユーザーは猫を飼っている"},
 	}}
 	provider := mustContextProvider(t, memory)
 

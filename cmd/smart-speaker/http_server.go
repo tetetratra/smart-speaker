@@ -3,14 +3,12 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
@@ -18,18 +16,7 @@ import (
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
-	memoryTagger, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Memory.Model,
-		MaxTags: cfg.Memory.MaxTags,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init memory api tagger: %w", err)
-	}
-	registerMemoryAPI(mux, memoryStore, &manualMemoryService{
-		store:  memoryStore,
-		tagger: memoryTagger,
-	})
+	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
 	registerLocationAPI(mux, &userlocation.Store{})
 	registerTTSAPI(mux, services.TTS)
