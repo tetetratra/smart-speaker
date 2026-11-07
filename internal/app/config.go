@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -69,18 +70,77 @@ type VoicevoxConfig struct {
 // DefaultConfigPathは設定ファイルの既定の場所。作業ディレクトリからの相対パス。
 const DefaultConfigPath = "config.yaml"
 
+// ConfigPathEnvは設定ファイルの場所を変えるための環境変数。検証用の設定を読ませるときなどに使う。
+const ConfigPathEnv = "SMART_SPEAKER_CONFIG"
+
+// legacyEnvVarsは、config.yamlへ移したため読まなくなった環境変数と、移行先の項目。
+// 設定したまま移行を忘れると既定値で動いてしまうため、起動時に警告する。
+var legacyEnvVars = map[string]string{
+	"OPENAI_RESPONSES_MODEL":              "openai.responses_model",
+	"OPENAI_SUBAGENT_MODEL":               "openai.subagent_model",
+	"OPENAI_REALTIME_MODEL":               "openai.realtime.model",
+	"OPENAI_REALTIME_VAD":                 "openai.realtime.vad",
+	"OPENAI_REALTIME_TRANSCRIPTION_MODEL": "openai.realtime.transcription_model",
+	"OPENAI_REALTIME_ENDPOINT":            "openai.realtime.endpoint",
+	"OPENAI_MEMORY_MODEL":                 "memory.model",
+	"MEMORY_STORE_PATH":                   "memory.store_path",
+	"AUTOMATIONS_STORE_PATH":              "automations.store_path",
+	"CONVERSATION_IDLE_TIMEOUT_SECONDS":   "conversation.idle_timeout_seconds",
+	"TTS_PROVIDER":                        "tts.provider",
+	"VOICEVOX_ENDPOINT":                   "tts.voicevox.endpoint",
+	"VOICEVOX_SPEAKER_ID":                 "tts.voicevox.speaker_id",
+	"VOICEVOX_SPEED_SCALE":                "tts.voicevox.speed_scale",
+	"ELEVENLABS_VOICE_ID":                 "tts.elevenlabs.voice_id",
+	"ELEVENLABS_MODEL_ID":                 "tts.elevenlabs.model",
+	"WAKE_MODE_STORE_PATH":                "wake.store_path",
+	"LOCAL_STT_ENDPOINT":                  "wake.local_stt_endpoint",
+	"WAKE_WORDS":                          "wake.words",
+	"WAKE_MAX_PREFIX":                     "wake.max_prefix",
+	"WAKE_MIN_CONFIDENCE":                 "wake.min_confidence",
+	"WAKE_MIN_SIMILARITY":                 "wake.min_similarity",
+	"SWITCHBOT_DEVICE_MAP":                "switchbot.device_map",
+	"GOOGLE_REDIRECT_URL":                 "google_calendar.redirect_url",
+	"GOOGLE_OAUTH_SCOPE":                  "google_calendar.scope",
+	"GOOGLE_OAUTH_TOKEN_PATH":             "google_calendar.token_path",
+	"WS_ADDR":                             "server.ws_addr",
+	"WEB_DIST_DIR":                        "server.web_dist_dir",
+}
+
 // LoadConfigはシークレットを環境変数から、それ以外の設定値をconfig.yamlから読み込む。
 // config.yamlが無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使う。
 func LoadConfig() Config {
-	file, err := readConfigFile(DefaultConfigPath)
+	path := DefaultConfigPath
+	if p := strings.TrimSpace(os.Getenv(ConfigPathEnv)); p != "" {
+		path = p
+	}
+	file, err := readConfigFile(path)
 	if err != nil {
 		log.Fatal(err)
+	}
+	for _, warning := range legacyEnvWarnings(os.Getenv) {
+		log.Print(warning)
 	}
 	cfg, err := buildConfig(file, os.Getenv)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return cfg
+}
+
+// legacyEnvWarningsは、設定されている旧環境変数ごとの警告文を名前順に返す。
+func legacyEnvWarnings(getenv func(string) string) []string {
+	names := make([]string, 0, len(legacyEnvVars))
+	for name := range legacyEnvVars {
+		if strings.TrimSpace(getenv(name)) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	warnings := make([]string, 0, len(names))
+	for _, name := range names {
+		warnings = append(warnings, fmt.Sprintf("config: warning: %s is no longer read; set %s in config.yaml instead", name, legacyEnvVars[name]))
+	}
+	return warnings
 }
 
 // configFileはconfig.yamlの構造。項目の説明はconfig.sample.yamlに書く。

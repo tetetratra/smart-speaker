@@ -13,10 +13,10 @@
   - Node `20` 以降
   - `OPENAI_API_KEY`
 - TTS provider ごとの設定
-  - `tts.provider: elevenlabs` または未指定の場合: `ELEVENLABS_API_KEY` / `tts.elevenlabs.voice_id`
-  - `tts.provider: voicevox` の場合: 起動済みの VOICEVOX Engine と `tts.voicevox.endpoint`
+  - `tts.provider: voicevox` または未指定の場合: 起動済みの VOICEVOX Engine と `tts.voicevox.endpoint`
+  - `tts.provider: elevenlabs` の場合: `ELEVENLABS_API_KEY` / `tts.elevenlabs.voice_id`
 - 任意の設定（`config.yaml`。全項目は `config.sample.yaml` を参照）:
-  - `tts.provider`（未指定時は `elevenlabs`）
+  - `tts.provider`（未指定時は `voicevox`）
   - `tts.elevenlabs.model`
   - `tts.voicevox.speaker_id`
   - `tts.voicevox.speed_scale`

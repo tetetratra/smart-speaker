@@ -286,3 +286,11 @@ func TestBuildConfigAppendsAdditionalSystemPrompt(t *testing.T) {
 		t.Fatalf("SystemPrompt の末尾 = %q", cfg.SystemPrompt[len(cfg.SystemPrompt)-40:])
 	}
 }
+
+func TestLegacyEnvWarnings(t *testing.T) {
+	env := map[string]string{"TTS_PROVIDER": "voicevox", "SWITCHBOT_DEVICE_MAP": "{}", "WS_ADDR": " ", "OPENAI_API_KEY": "secret"}
+	got := legacyEnvWarnings(func(name string) string { return env[name] })
+	if len(got) != 2 || !strings.Contains(got[0], "SWITCHBOT_DEVICE_MAP") || !strings.Contains(got[0], "switchbot.device_map") || !strings.Contains(got[1], "TTS_PROVIDER") {
+		t.Fatalf("warnings = %#v", got)
+	}
+}

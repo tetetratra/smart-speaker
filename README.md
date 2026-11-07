@@ -31,8 +31,8 @@
 cp config.sample.yaml config.yaml
 ```
 
-`config.yaml` には、変更したい項目だけを書き込みます。全項目と既定値は [config.sample.yaml](config.sample.yaml) を参照してください。
-`config.yaml` が無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使います。未知のキーや型の誤りがあると起動時にエラーになります。
+`config.yaml` には、変更したい項目だけを書き込みます。リポジトリ直下（作業ディレクトリ）の `config.yaml` を読み込み、環境変数 `SMART_SPEAKER_CONFIG` で別の場所を指定することもできます。全項目と既定値は [config.sample.yaml](config.sample.yaml) を参照してください。
+`config.yaml` が無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使います。未知のキーや型の誤りがあると起動時にエラーになります。以前の環境変数（`TTS_PROVIDER` など）が設定されたままの場合は、移行先の項目名を起動時に警告します。
 `config.yaml` は `.gitignore` 済みです。本番用のイメージには、デプロイ元にある `config.yaml` が含まれます。
 
 システムプロンプトは `internal/app/system_prompt.go` に定義しています。家族構成や家電の呼び名など、環境ごとに追記したい内容は `config.yaml` の `additional_system_prompt` に書きます（既定のプロンプトの末尾に追記されます）。
@@ -192,7 +192,7 @@ iPhoneのショートカットでは「URLの内容を取得」に次を設定�
 
 ### 準備
 予め開発環境側で `production` Docker context を作成してください。
-また、デプロイ元のリポジトリ直下に `config.yaml` を用意し、シークレットを環境変数に設定してください（「設定」を参照）。`config.yaml` はイメージに含めて本番サーバーへ送られます。
+また、デプロイ元のリポジトリ直下に `config.yaml` を用意し（無い場合、デプロイスクリプトは中断します）、シークレットを環境変数に設定してください（「設定」を参照）。`config.yaml` はイメージに含めて本番サーバーへ送られます。
 
 ```sh
 docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
