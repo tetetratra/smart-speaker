@@ -144,7 +144,7 @@ const liveRootStyle = `
     border-radius: 14px;
     padding: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(248px, 30%);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 30%);
     gap: 12px;
     min-height: 0;
   }
