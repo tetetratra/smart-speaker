@@ -11,7 +11,7 @@
 - `google_calendar_update`
   - `action=update`
   - `action=delete`
-- 通常起動では local tool registry 経由で `google_calendar_list`（`x_tool_mode: read`）/ `google_calendar_create`（`x_tool_mode: write`）/ `google_calendar_update`（`x_tool_mode: write`）の定義が LLM に渡り、handler が `toolcaller` に登録される。
+- 通常起動では local tool registry 経由で `google_calendar_list`（`x_tool_mode: read`）/ `google_calendar_create`（`x_tool_mode: write`）/ `google_calendar_update`（`x_tool_mode: write`）の定義が Realtime API に渡り、handler が `toolcaller` に登録される。
 - 会話文脈注入は旧 `conversation` component 削除により現在未接続
 - `internal/googlecalendar/*` の共通 client
 - `internal/oauth/googlecalendar/*` の認証前提
@@ -29,7 +29,7 @@
 | `internal/oauth/googlecalendar` | OAuth 設定読み込み、認可 URL 生成、callback 処理、token 保存、access token 更新を担う。 |
 | `internal/googlecalendar.Client` | Google Calendar REST API の共通 client。一覧取得、作成、更新、削除と一覧 cache を持つ。 |
 | `internal/tools/functions/googlecalendar` | tool 引数を解釈し、共通 client を呼ぶ薄い adapter。 |
-| `cmd/smart-speaker/main.go` | Google OAuth handler を登録し、通常 pipeline 用の local tool registry を構築して `llm` と `toolcaller` に接続する。 |
+| `cmd/smart-speaker/main.go` | Google OAuth handler を登録し、local tool registry を構築して `realtime`（ツール定義）と `toolcaller`（handler）に接続する。 |
 
 ## 5. tool 一覧
 ### `google_calendar_list`
@@ -167,8 +167,8 @@
 
 ## 8. 主要データフロー
 ### シナリオ: 認証済み状態で予定一覧を取得する
-1. 通常起動時に `cmd/smart-speaker/main.go` が registry を構築し、`google_calendar_list` の schema を LLM へ、handler を `toolcaller` へ渡す。
-2. LLM が JSON timeline の `{"type":"tool","name":"google_calendar_list","args":{...}}` item を出力する。
+1. 通常起動時に `cmd/smart-speaker/main.go` が registry を構築し、`google_calendar_list` の定義を Realtime API へ、handler を `toolcaller` へ渡す。
+2. Realtime API が `google_calendar_list` の function call を返し、realtime が `toolcaller` に渡す。
 3. scheduler / router が tool item を `EventToolRequest` に変換し、toolcaller が `google_calendar_list` を実行する。
 4. tool が引数を解釈し、`ListEventsRequest` を組み立てる。
 5. 共通 client が access token を取得する。
@@ -180,20 +180,20 @@
 2. tool が日時文字列を `EventTime` に変換する。
 3. 共通 client が `CreateEvent` を実行する。
 4. 成功時、共通 client が一覧 cache を全破棄する。
-5. write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われない。エラー時のみ tool result が LLM へ返る。
+5. 成功・失敗のどちらでも、tool result は realtime に返り、会話履歴への記録と `function_call_output` による API への返却が行われる。
 
 ### シナリオ: 予定を更新または削除する
 1. tool caller が `google_calendar_update` を実行する。
 2. `action=delete` なら `DeleteEvent`、それ以外は `UpdateEvent` を呼ぶ。
 3. 成功時、共通 client が一覧 cache を全破棄する。
-4. write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われない。エラー時のみ tool result が LLM へ返る。
+4. 成功・失敗のどちらでも、tool result は realtime に返り、会話履歴への記録と `function_call_output` による API への返却が行われる。
 
 ### シナリオ: 会話時に予定を文脈へ注入する
 旧 `conversation` component の削除により、この経路は現在未接続です。
-再導入する場合は、`llm` component の prompt 構築または会話履歴Storeへの system record 追加として設計します。
+再導入する場合は、realtime が接続時に渡す文脈（会話の要約やメモリと同じ経路）への追加として設計します。
 
 ## 9. 再設計で維持したい性質
-- calendar 文脈注入を再導入する場合は、LLM prompt 構築と tool が同じ共通 client を共有すること。
+- calendar 文脈注入を再導入する場合は、文脈の構築と tool が同じ共通 client を共有すること。
 - 一覧取得 cache の無効化責務を client 側に寄せること。
 - OAuth token 更新時に refresh token を失わないこと。
 - 認証されていない場合、calendar 文脈注入を静かにスキップできること。

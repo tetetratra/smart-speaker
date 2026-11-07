@@ -116,7 +116,7 @@
 - 値は `string` として返ります。
 - 取得に失敗した場合は `"取得不可"` を返します。
 - 副作用はありません。
-- read 系 tool のため、成功結果は会話履歴へ保存され LLM へ再投入されます。
+- 成功・失敗のどちらでも、tool result は realtime に返り、会話履歴への記録と `function_call_output` による Realtime API への返却が行われます。
 - 内部では `GET /v1.1/devices/{deviceId}/status` を呼び出します。
 
 ### `switchbot_execute_scene`
@@ -134,7 +134,7 @@
 
 - `body` の詳細構造は SwitchBot API 応答に依存します。
 - 副作用として、対象 scene が実行されます。
-- write 系 tool のため、成功結果は会話履歴へ commit されず LLM への再投入も行われません。エラー時のみ tool result が LLM へ返ります。
+- 成功・失敗のどちらでも、tool result は realtime に返り、会話履歴への記録と `function_call_output` による Realtime API への返却が行われます。
 - 内部では `POST /v1.1/scenes/{sceneId}/execute` を呼び出します。
 
 ## エラーと制約

@@ -2,61 +2,22 @@
 
 ## 概要
 
-この文書は、ホワイトボード追記機能の現行実装を整理したものです。LLM 向けの出力契約（root 追加フィールド）と、内部で利用する `set_whiteboard` tool の挙動（入力・出力・`EventWhiteboardUpdate`・UI 反映）を対象とします。
+この文書は、ホワイトボード追記機能の現行実装を整理したものです。`set_whiteboard` は Realtime API の function calling で呼び出す通常の local tool で、入力・出力・`EventWhiteboardUpdate`・UI 反映を対象とします。
 
-## LLM 出力契約
+## 呼び出し方
 
-ホワイトボード追記は、JSON timeline の **root 追加フィールド** `set_whiteboard` で行います。`items` 配列内の tool としては出しません。
-
-更新しない場合の例:
-
-```json
-{
-  "set_whiteboard": null,
-  "items": [
-    { "type": "speech", "text": "..." }
-  ]
-}
-```
-
-更新する場合の例:
-
-```json
-{
-  "set_whiteboard": { "content": "表示用テキスト" },
-  "items": [
-    { "type": "speech", "text": "..." }
-  ]
-}
-```
-
-| 観点 | 内容 |
-|------|------|
-| フィールド位置 | root object（`items` と同階層） |
-| JSON schema 上の必須 | はい（`required` に含まれる。OpenAI strict schema の制約） |
-| 更新の有無 | 更新しない場合は `null`、更新する場合は `{ "content": "..." }` |
-| 形状（更新時） | `{ "content": "..." }`（非空文字列。前後空白は trim 後に検証） |
-| `items` 内 tool | **禁止**（パーサがエラーにする） |
-| Structured Outputs schema | root に `set_whiteboard`（`type: ["object","null"]`）を定義。`items` の tool `anyOf` には含めない |
-
-### パース時の統合
-
-`internal/components/llm/contract.go` の `parseTimelineJSON` は、`set_whiteboard` が非 `null` の object の場合、検証後に `items` の **先頭** へ `TimelineKindTool`（`tool_name=set_whiteboard`）を挿入し、全 item の `SequenceID` を `1` から振り直します。`null` は無視します。
-
-- 下流（scheduler / toolcaller / whiteboard handler）は、従来どおり tool として処理します。
-- #158 対応により、先頭 tool は他 item より先に実行され、ホワイトボード反映を早めます。
-- LLM 向け tool 定義は `registry.DefinitionsForLLM()` で `set_whiteboard` を除外します。handler は `registry.Handlers()` に残します。
+- ツール定義は `internal/tools/functions/whiteboard/tool.go` の `Definition` で、`registry.DefinitionsForRealtime()` を通して `session.update` で Realtime API に渡します。
+- Realtime API が `set_whiteboard` の function call を返すと、realtime が `EventToolRequest` として `toolcaller` に渡し、`toolcaller` が handler を実行します。他の local tool と同じ経路です。
+- 応答方針（`tools.DefinitionWithResponsePolicy`）は、成功後も再び応答を生成する設定（`OnSuccess: true`）です。あわせて、表示完了そのものの報告や同じ内容の再更新はせず、未説明の取得結果だけを短く説明し、表示だけの依頼なら `wait_for_user` で待つよう追加指示します。
 
 ## できること
 
 - アプリ画面のホワイトボード表示へ情報を追記します。
 - 用途としては、予定、注意事項、要点など、口頭だけでは伝わりにくい情報を画面に残すことが想定されています。
 - system prompt では、返答や感想ではなく、表示用の簡潔な内容だけを書くよう案内されています。
-- GET 系 tool の結果を画面に残す場合は、root の `set_whiteboard` に書き、続けて `items` に speech や他 tool を並べる運用を推奨しています。
+- 情報取得系 tool の結果を画面に残す場合は、口頭で説明するより先に `set_whiteboard` を呼ぶよう案内されています。
 
-## 内部 tool の入力（handler）
-
-パース後、内部では次の tool として実行されます。
+## 入力（handler）
 
 - tool 名: `set_whiteboard`
 - 必須引数: `content`
@@ -99,9 +60,8 @@
 
 - `content` には、正規化後の文字列がそのまま入ります。
 - `updated` は常に `true` です。
-- tool 定義の `x_tool_mode` は `write` です。
-- 成功時の tool result は `toolcaller` が会話履歴へ commit せず、LLM への再投入も行いません。画面反映は `EventWhiteboardUpdate` 経路で行われます。
-- エラー時は従来どおり tool result が LLM へ返ります。
+- tool 定義の `x_tool_mode` は `write` です（現在の処理では参照されていません）。
+- 成功・失敗のどちらでも、tool result は `toolcaller` から realtime に返り、会話履歴への記録と `function_call_output` による API への返却が行われます。画面反映は、これとは別の `EventWhiteboardUpdate` 経路で行われます。
 
 ## EventWhiteboardUpdate
 
@@ -123,8 +83,8 @@ types.Event{
 
 ## UI 反映経路
 
-1. LLM が root に `set_whiteboard` を `content` 付きで出力します（またはパース後の内部表現として先頭 tool item になる）。
-2. `internal/components/llm/contract.go` が必要に応じて先頭へ tool item を挿入します。
+1. Realtime API が `set_whiteboard` の function call を返し、realtime が `toolcaller` に渡します。
+2. `toolcaller` が handler を実行します。
 3. `internal/tools/functions/whiteboard/tool.go` の `Run` が入力を正規化します。
 4. `Run` が `EventWhiteboardUpdate` を emit します。
 5. `internal/components/wschat/wschat.go` の `handleEvent` が `EventWhiteboardUpdate` を受け取ります。
@@ -147,12 +107,11 @@ WebSocket で送られるメッセージ形式:
 - tool description では 7 行程度を目安にするよう案内されていますが、コード上で行数制限はしていません。
 - tool description では URL やリンク付きテキストを含めないよう案内されていますが、コード上で検証はしていません。
 - WebSocket payload は差分ではなく、1回の追記内容だけを表します。
-- `items` 内の `set_whiteboard` tool は後方互換なく拒否します。
 
 ## 参照元
 
-- [internal/components/llm/contract.go](/internal/components/llm/contract.go)
-- [internal/components/llm/schema.go](/internal/components/llm/schema.go)
+- [internal/components/realtime/events.go](/internal/components/realtime/events.go)
+- [internal/components/toolcaller/toolcaller.go](/internal/components/toolcaller/toolcaller.go)
 - [internal/tools/registry/registry.go](/internal/tools/registry/registry.go)
 - [internal/tools/functions/whiteboard/tool.go](/internal/tools/functions/whiteboard/tool.go)
 - [internal/components/wschat/wschat.go](/internal/components/wschat/wschat.go)

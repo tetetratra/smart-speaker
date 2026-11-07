@@ -19,8 +19,8 @@
   - 1 reset あたりの操作数は最大 5 件（設定では変更できない）
   - ユーザーとアシスタントの発話が無い場合は OpenAI API を呼ばず、操作なしとして返す
 - **`internal/hooks/memory.CreatorHook`**
-  - `sessionreset.Hook` として reset 前に同期実行される
-  - 会話終了時は `ExecRecords` が終了時点で固定した会話を受け取る。`Exec` は `conversationhistory.Store.Snapshot()` から履歴を読んで `ExecRecords` を呼ぶ
+  - realtime の `OnConversationEnd` として、無操作によるセッションリセットの時に別 goroutine で実行される
+  - `ExecRecords` が、realtime が取り出して空にした時点の会話履歴を受け取る（`Exec` は旧 `sessionreset` 用で、現在は使われていない）
   - `memory.Store.Snapshot()` から保存済みメモリを読み、store の ID の代わりに `"1"`, `"2"` … の短い参照番号を付けて `OpenAIClient` に渡す。LLM が長い ID を書き写し間違えるのを防ぐためで、Mem0 と同じ手法
   - `add` は `memory.Store.Upsert` に保存を委譲する
   - `update` は `memory.Store.Update` で `target_id` の記憶を置き換える。更新後の本文が別の記憶と同じになる場合は、重複を作らないよう対象を削除する
@@ -38,7 +38,7 @@
   - ID 指定で record を削除する
 - **`internal/hooks/memory.ContextProvider`**
   - `memory.Store.Snapshot()` から保存済みメモリを全件取得する
-  - メモリ本文だけを `memory_context` system message として LLM の入力に追加する
+  - メモリ本文を返し、realtime が Realtime API への接続時にシステムプロンプトの後ろに付けて渡す
 - **`GET /api/memories`**
   - 管理画面から保存済みメモリ一覧を確認するための HTTP API
   - 会話処理と同じ `memory.Store` インスタンスの `Snapshot()` から一覧を取得する
@@ -66,25 +66,26 @@ Docker Compose ではコンテナの作業ディレクトリが `/app` のため
 
 ## 4. 主要なデータフロー
 
-### シナリオ: session reset 前の会話からメモリを追加・更新・削除する
+### シナリオ: 会話終了時の会話からメモリを追加・更新・削除する
 
-1. reset 発火: `sessionreset` が idle timeout 到達時に登録済み hook を reset 前に実行する。
-2. 履歴取得: `CreatorHook` が `conversationhistory.Store.Snapshot()` で reset 前履歴を取得する。
+1. 会話終了: realtime が無操作時間の到達を判定し、`conversationhistory.Store.Drain()` で会話履歴を取り出して空にする。
+2. hook 起動: realtime が取り出した履歴を渡して `CreatorHook.ExecRecords` を別 goroutine で実行する。
 3. 操作生成: `OpenAIClient` が保存済みメモリ（参照番号と `content`）と、ユーザー・アシスタントの発話だけに絞った会話を JSON 文字列として Responses API に送り、`action`、`target_id`、`content` を持つ操作の配列を受け取る。
 4. 正規化: `add` / `update` で空の `content`、`update` / `delete` で空の `target_id`、未知または空の `action` は除外し、最大件数で切り詰める。
 5. 適用: `CreatorHook` が参照番号を store の ID に戻し、`add` は `memory.Store.Upsert`、`update` は `memory.Store.Update`、`delete` は `memory.Store.Delete` で適用する。存在しない参照番号、同じ記憶への2件目以降の操作、生成中に手動で変更された記憶への操作はスキップする。
-6. reset 継続: hook が error を返しても、`sessionreset` の既存仕様により履歴 reset、世代更新、agent status idle 化は継続される。
+6. リセット継続: メモリ抽出は別 goroutine で動くため、結果を待たずに realtime はリセットを進め（`EventSessionReset` の発行、Realtime API への再接続）、hook の error はログに残すだけにする。
 
 ```mermaid
 sequenceDiagram
-    participant SR as sessionreset
-    participant Hook as CreatorHook
+    participant RT as realtime
     participant Hist as conversationhistory.Store
+    participant Hook as CreatorHook
     participant OpenAI as OpenAI Responses API
     participant Store as memory.Store
 
-    SR->>Hook: Exec(ctx)
-    Hook->>Hist: Snapshot()
+    RT->>Hist: Drain()
+    Hist-->>RT: 会話履歴（取り出して空にする）
+    RT->>Hook: ExecRecords(ctx, records)（別 goroutine）
     Hook->>Store: Snapshot()
     Hook->>OpenAI: 保存済みメモリ（参照番号付き） + reset前の発話から operations を生成
     OpenAI-->>Hook: [{action, target_id, content}]
@@ -95,30 +96,27 @@ sequenceDiagram
             Hook->>Store: Delete(target_id)
         end
     end
-    SR->>Hist: Reset()
 ```
 
-### シナリオ: 保存済みメモリを全件取得して LLM に注入する
+### シナリオ: 保存済みメモリを Realtime API への接続時に渡す
 
-1. user 発話が履歴へ保存される。
-2. `llm` が応答生成前に保存済み履歴 snapshot を読む。
-3. `ContextProvider` が `memory.Store.Snapshot()` から保存済みメモリを全件取得する。
-4. `llm` が全メモリの `content` を `memory_context` system message として通常の会話履歴より前に追加する。
+1. realtime が Realtime API へ接続する（初回、55分ごとの張り直し、セッションリセット後の再接続）。
+2. realtime が `ContextProvider.BuildContext` を呼び、`ContextProvider` が `memory.Store.Snapshot()` から保存済みメモリを全件取得する。
+3. realtime が会話履歴の要約とメモリ本文を、システムプロンプトの後ろに付けて `session.update` で送る。
+4. 接続中に追加・更新されたメモリは、次に接続するまで会話には反映されない。
 
 ```mermaid
 sequenceDiagram
-    participant LLM as llm
-    participant Hist as conversationhistory.Store
+    participant RT as realtime
     participant Provider as ContextProvider
     participant Store as memory.Store
-    participant OpenAI as OpenAI Responses API
+    participant API as Realtime API
 
-    LLM->>Hist: Snapshot()
-    LLM->>Provider: BuildContext(ctx, records)
+    RT->>Provider: BuildContext(ctx, nil)
     Provider->>Store: Snapshot()
     Store-->>Provider: all memories
-    Provider-->>LLM: memory_context system message
-    LLM->>OpenAI: memory_context + conversation history
+    Provider-->>RT: メモリ本文
+    RT->>API: session.update（システムプロンプト + 会話の要約 + メモリ）
 ```
 
 ### シナリオ: 管理画面から保存済みメモリを確認・手動更新する
@@ -149,7 +147,7 @@ sequenceDiagram
 
 ## 5. 失敗時の扱い
 
-- メモリ操作の生成で OpenAI Responses API が失敗した場合、`CreatorHook` は error を返しますが、`sessionreset` は error をログに残して reset 処理を継続します。
+- メモリ操作の生成で OpenAI Responses API が失敗した場合、`CreatorHook` は error を返しますが、realtime は error をログ（`会話終了のメモリ抽出: ...`）に残すだけで、リセット処理は継続します。
 - 操作単位の保存・更新・削除に失敗した場合や、上記の理由で操作をスキップした場合、`CreatorHook` は残りの処理を継続し、最後に error を集約して返します。
 - store file が読めない、または不正な version の JSON がある場合は通常起動時の store 初期化に失敗します。
 - `GET /api/memories` が `memory.Store` を参照できない場合は 500 を返します。

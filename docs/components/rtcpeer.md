@@ -10,8 +10,8 @@
 - offer 受信時に `PeerConnection` と下り audio track を作成し、answer と local ICE candidate を `EventRTCSignal` として返す。
 - `RTC_ICE_ADVERTISE_IPS` で指定された到達可能なIPv4アドレスを、PionのAddress Rewrite Rulesでlocal ICE candidateへ追加する。
 - ICE connection stateと選択されたcandidate pairをログへ出力し、LAN経路またはTailscale経路のどちらで接続されたかを確認できるようにする。
-- remote audio track の RTP/Opus を decode し、mono PCM frame を `EventRTCPeerAudioFrame` として `rtcvad` へ渡す。
-- 下り audio track に書き込める sink を `EventRTCPeerOutputSink` として `rtcout` へ通知する。
+- remote audio track の RTP/Opus を decode し、PCM frame を `EventRTCPeerAudioFrame` として `wakegate` 経由で `realtime` へ渡す。
+- 下り audio track に書き込める sink を `EventRTCPeerOutputSink` として `rtcout` と `wakegate`（経由で `realtime`）へ通知する。
 
 ## ICE candidate
 
@@ -54,6 +54,7 @@ rtcpeer: connection state=connected client_id=...
 flowchart LR
   WS["wschat"] -->|"EventRTCSignal"| RTCPeer["rtcpeer"]
   RTCPeer -->|"EventRTCSignal"| WS
-  RTCPeer -->|"EventRTCPeerAudioFrame"| VAD["rtcvad"]
+  RTCPeer -->|"EventRTCPeerAudioFrame<br/>EventRTCPeerOutputSink"| Wake["wakegate"]
+  Wake --> RT["realtime"]
   RTCPeer -->|"EventRTCPeerOutputSink"| Out["rtcout"]
 ```
