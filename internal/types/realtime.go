@@ -34,6 +34,8 @@ type AudioFrame struct {
 	Final        bool          `json:"final"`
 	End          bool          `json:"end,omitempty"`
 	Duration     time.Duration `json:"-"`
+	// SegmentDuration は読み上げ区間全体の再生時間。区間の先頭フレームだけに設定する。
+	SegmentDuration time.Duration `json:"-"`
 }
 type RealtimeStatus struct {
 	Status  string

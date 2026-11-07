@@ -30,6 +30,9 @@ func TestFramesPreserveIdentityAndPartialTail(t *testing.T) {
 			if i == 2 && p.Duration != time.Second*80/48000 {
 				t.Fatal(p)
 			}
+			if want := map[bool]time.Duration{true: time.Second * 2000 / 48000, false: 0}[i == 0]; p.SegmentDuration != want {
+				t.Fatalf("SegmentDuration = %v, want %v", p.SegmentDuration, want)
+			}
 		case <-ctx.Done():
 			t.Fatal("タイムアウト")
 		}

@@ -56,3 +56,23 @@ func TestMessageForEventSessionReset(t *testing.T) {
 		t.Fatalf("requested_at = %v, want %s", got, requestedAt.Format(time.RFC3339Nano))
 	}
 }
+
+func TestMessageForAudioSentIncludesSegmentDuration(t *testing.T) {
+	msg, _, ok := messageForEvent(types.Event{
+		Kind:    types.EventAudioSent,
+		Payload: types.AudioFrame{GenerationID: 2, SegmentID: "item/1", Text: "こんにちは", SegmentDuration: 1500 * time.Millisecond},
+	})
+	if !ok {
+		t.Fatal("messageForEvent returned ok=false")
+	}
+	if got := msg["duration_ms"]; got != int64(1500) {
+		t.Fatalf("duration_ms = %v, want 1500", got)
+	}
+	msg, _, ok = messageForEvent(types.Event{Kind: types.EventAudioSent, Payload: types.AudioFrame{GenerationID: 2, End: true}})
+	if !ok {
+		t.Fatal("messageForEvent returned ok=false")
+	}
+	if _, exists := msg["duration_ms"]; exists {
+		t.Fatal("区間の長さが不明な通知に duration_ms を含めません")
+	}
+}
