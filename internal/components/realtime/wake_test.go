@@ -6,6 +6,7 @@ import (
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,35 +92,27 @@ check:
 	r.wait("response.create")
 }
 
-// 呼びかけだけの発話には、LLMへ送らずに短い返事を読み上げる。
-func TestWakeOnlyUtteranceGetsShortReplyWithoutLLM(t *testing.T) {
+// 呼びかけだけの発話もRealtimeへ送り、その応答にだけ起きていることを伝える指示を付ける。
+func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
 	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
 	m, _ := s.Set(true, nil, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
 	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
-	change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
-	text := r.event(types.EventResponseText).Payload.(types.ResponseText)
-	if text.Text != "はい" || text.GenerationID != change.GenerationID {
-		t.Fatal(text)
+	item := r.wait("conversation.item.create")["item"].(map[string]any)
+	if text := item["content"].([]any)[0].(map[string]any)["text"]; text != "起きて" {
+		t.Fatal(item)
 	}
-	if done := r.event(types.EventResponseText).Payload.(types.ResponseText); !done.Done {
-		t.Fatal(done)
+	request := r.wait("response.create")["response"].(map[string]any)
+	if !strings.Contains(request["instructions"].(string), "呼びかけの言葉だけを言いました") {
+		t.Fatal("呼びかけだけの発話への指示がありません", request["instructions"])
 	}
-	timer := time.NewTimer(80 * time.Millisecond)
-	defer timer.Stop()
-	for {
-		select {
-		case c := <-r.commands:
-			if c["type"] == "conversation.item.create" || c["type"] == "response.create" {
-				t.Fatal("呼びかけだけの発話をLLMへ送りました", c)
-			}
-		case <-timer.C:
-			records := r.history.Snapshot()
-			if len(records) != 2 || records[0].Text != "起きて" || records[1].Text != "はい" {
-				t.Fatal(records)
-			}
-			return
-		}
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": request["metadata"]}})
+	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
+	// 本文のある次の発話には指示を持ち越さない。
+	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、天気は", Revision: m.Revision, Confidence: 0.9}}
+	next := r.wait("response.create")["response"].(map[string]any)
+	if strings.Contains(next["instructions"].(string), "呼びかけの言葉だけを言いました") {
+		t.Fatal("本文のある発話に呼びかけだけの指示を付けました")
 	}
 }
 

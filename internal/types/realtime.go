@@ -67,7 +67,7 @@ type LocalWakeUtterance struct {
 	PeerID, Text string
 	Revision     uint64
 	Confidence   float64
-	// WakeOnlyは呼びかけだけで依頼の本文がない発話。短い返事だけを返す。
+	// WakeOnlyは呼びかけだけで依頼の本文がない発話。起きていることを短く伝える応答にする。
 	WakeOnly bool
 }
 
