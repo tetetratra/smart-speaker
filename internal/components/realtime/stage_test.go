@@ -278,6 +278,25 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestToolCallArrivingAfterGenerationChangeIsExecuted(t *testing.T) {
+	r := newRig(t)
+	r.utterance("user1")
+	req := r.wait("response.create")
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
+	// 引数が確定する前にユーザーが話し始め、世代が進む。
+	r.utterance("user2")
+	for {
+		change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
+		if change.GenerationID == 2 {
+			break
+		}
+	}
+	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
+	tool := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	if tool.ToolCallID != "call1" || tool.GenerationID != 1 {
+		t.Fatal(tool)
+	}
+}
 func TestInitialTextIsRetainedWhileConnecting(t *testing.T) {
 	r := newRigWithInitialText(t, "初回の質問")
 	cmd := r.wait("conversation.item.create")
