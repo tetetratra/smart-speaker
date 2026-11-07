@@ -71,11 +71,19 @@ func (r *gateRig) sink(t *testing.T, connected bool) {
 }
 func (r *gateRig) frame(t *testing.T, voiced bool) {
 	t.Helper()
-	pcm := make([]byte, 1600)
+	amplitude := uint16(0)
 	if voiced {
-		for i := 0; i < len(pcm); i += 2 {
-			binary.LittleEndian.PutUint16(pcm[i:], 4000)
-		}
+		amplitude = 4000
+	}
+	r.frameAt(t, amplitude)
+}
+
+// frameAtは指定した振幅の100ms（8kHz）の音声を送る。
+func (r *gateRig) frameAt(t *testing.T, amplitude uint16) {
+	t.Helper()
+	pcm := make([]byte, 1600)
+	for i := 0; i < len(pcm); i += 2 {
+		binary.LittleEndian.PutUint16(pcm[i:], amplitude)
 	}
 	select {
 	case r.node.Upstream <- types.Event{Kind: types.EventRTCPeerAudioFrame, Payload: types.RTCPeerAudioFrame{PeerID: "a", PCM: pcm, SampleRate: 8000, Channels: 1}}:
@@ -204,5 +212,29 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 			r.stt.answers <- result{transcript: Transcript{Text: "起きて、今何時", Confidence: 0.9}}
 			r.noEvent(t)
 		})
+	}
+}
+
+// 小さめの声の短い「起きて」（RMS約0.009・有声100ms）もSTTへ送り、それより小さい音は送らない。
+func TestShortQuietUtteranceIsSentToSTT(t *testing.T) {
+	r := newGate(t, true)
+	// RMS約0.003はしきい値（0.006）未満なので発話とみなさない。
+	r.frameAt(t, 100)
+	for i := 0; i < 8; i++ {
+		r.frame(t, false)
+	}
+	select {
+	case <-r.stt.calls:
+		t.Fatal("しきい値未満の音をSTTへ送りました")
+	case <-time.After(80 * time.Millisecond):
+	}
+	r.frameAt(t, 300)
+	for i := 0; i < 8; i++ {
+		r.frame(t, false)
+	}
+	select {
+	case <-r.stt.calls:
+	case <-r.ctx.Done():
+		t.Fatal("短い小さめの発話をSTTへ送りませんでした")
 	}
 }

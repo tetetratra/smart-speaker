@@ -13,9 +13,12 @@ import (
 )
 
 type Config struct {
-	Store           *wakemode.Store
-	STT             Transcriber
+	Store *wakemode.Store
+	STT   Transcriber
+	// EnergyThresholdは発話とみなす音量（RMS）、MinVoicedは発話とみなす最短の有声時間。
+	// スマホのマイクで短い「起きて」が捨てられないよう、実測（最大RMS 0.02前後・有声60〜120ms）をもとに決めた。
 	EnergyThreshold float64
+	MinVoiced       time.Duration
 }
 
 // levelLogIntervalは、呼びかけ必須モード中にマイクの音量を記録する間隔。
@@ -46,7 +49,10 @@ type result struct {
 func NewStage(cfg Config) *graph.Stage {
 	node := &graph.Stage{Name: "wakegate", Upstream: make(chan types.Event), Downstream: make(chan types.Event), CloseFn: func() error { return nil }}
 	if cfg.EnergyThreshold <= 0 {
-		cfg.EnergyThreshold = 0.012
+		cfg.EnergyThreshold = 0.006
+	}
+	if cfg.MinVoiced <= 0 {
+		cfg.MinVoiced = 60 * time.Millisecond
 	}
 	node.Run = func(ctx context.Context) {
 		defer close(node.Downstream)
@@ -188,7 +194,7 @@ func NewStage(cfg Config) *graph.Stage {
 					if b.quiet >= b.rate*8/10 {
 						length := time.Duration(len(b.pcm)/2) * time.Second / time.Duration(b.rate)
 						voicedLength := time.Duration(b.voiced) * time.Second / time.Duration(b.rate)
-						if !b.overflow && b.voiced >= b.rate/5 {
+						if !b.overflow && voicedLength >= cfg.MinVoiced {
 							j := job{peer: p.PeerID, revision: mode.Revision, epoch: b.epoch, rate: b.rate, pcm: b.pcm, queuedAt: time.Now()}
 							select {
 							case jobs <- j:
@@ -198,7 +204,7 @@ func NewStage(cfg Config) *graph.Stage {
 								cfg.Store.Evaluate("", 0, mode.Revision, true, time.Now())
 							}
 						} else if !b.overflow {
-							log.Printf("wakegate: 有声部分が200ms未満のため無視 peer=%s 有声=%s 最大RMS=%.4f", p.PeerID, voicedLength.Round(time.Millisecond), b.peak)
+							log.Printf("wakegate: 有声部分が%s未満のため無視 peer=%s 有声=%s 最大RMS=%.4f", cfg.MinVoiced, p.PeerID, voicedLength.Round(time.Millisecond), b.peak)
 						}
 						b.peak = 0
 						b.pcm = nil
