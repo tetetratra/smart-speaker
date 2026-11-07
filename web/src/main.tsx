@@ -58,9 +58,12 @@ const liveRootStyle = `
     --ui-accent-text: #ffffff;
     --ui-accent-soft: #dbeafe;
     --ui-accent-soft-text: #1d4ed8;
-    --ui-tool-call-bg: #dcfce7;
-    --ui-tool-call-line: #86efac;
-    --ui-tool-call-text: #166534;
+    --ui-tool-call-bg: #f0fdf4;
+    --ui-tool-call-line: #d1fae5;
+    --ui-tool-call-text: #15803d;
+    --ui-tool-done-bg: #eff6ff;
+    --ui-tool-done-line: #dbeafe;
+    --ui-tool-done-text: #1d4ed8;
     --ui-danger-bg: #fef2f2;
     --ui-danger-line: #fecaca;
     --ui-danger-text: #991b1b;
@@ -105,9 +108,12 @@ const liveRootStyle = `
       --ui-accent-text: #ffffff;
       --ui-accent-soft: #1e3558;
       --ui-accent-soft-text: #bfdbfe;
-      --ui-tool-call-bg: #143322;
-      --ui-tool-call-line: #357a4c;
-      --ui-tool-call-text: #bbf7d0;
+      --ui-tool-call-bg: #121f19;
+      --ui-tool-call-line: #1f3a2a;
+      --ui-tool-call-text: #a7d8b8;
+      --ui-tool-done-bg: #131a26;
+      --ui-tool-done-line: #22324a;
+      --ui-tool-done-text: #b4cdf0;
       --ui-danger-bg: #381c26;
       --ui-danger-line: #864354;
       --ui-danger-text: #fecdd3;
@@ -138,7 +144,7 @@ const liveRootStyle = `
     border-radius: 14px;
     padding: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(248px, 40%);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 30%);
     gap: 12px;
     min-height: 0;
   }
@@ -156,21 +162,27 @@ const liveRootStyle = `
     grid-template-rows: auto 1fr auto;
     gap: 8px;
   }
-  .live-controls-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
+  .live-controls-toggles,
+  .live-controls-nav {
+    display: grid;
+    gap: 4px;
     width: 100%;
-    align-items: center;
-  }
-  .live-controls-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
-    align-items: center;
-    flex: 1 1 0;
     min-width: 0;
+  }
+  .live-controls-toggles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .live-controls-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .live-controls-toggles .live-control-btn,
+  .live-controls-nav .live-admin-btn {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 4px;
+  }
+  .live-controls-toggles .live-control-btn {
+    justify-content: center;
   }
   .live-volume-control {
     border: 1px solid var(--live-line);
@@ -183,10 +195,10 @@ const liveRootStyle = `
     flex: 1;
   }
   .live-tool-toast {
-    min-height: 32px;
+    min-height: 24px;
     border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 7px 9px;
+    border-radius: 6px;
+    padding: 3px 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -194,7 +206,7 @@ const liveRootStyle = `
     font-size: 12px;
     line-height: 1.2;
     font-weight: 700;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transition: background-color 0.3s, border-color 0.3s, color 0.3s;
   }
   .live-tool-toast.call {
     background: var(--ui-tool-call-bg);
@@ -202,9 +214,9 @@ const liveRootStyle = `
     color: var(--ui-tool-call-text);
   }
   .live-tool-toast.result {
-    background: var(--ui-accent-soft);
-    border-color: var(--live-toggle-on);
-    color: var(--ui-accent-soft-text);
+    background: var(--ui-tool-done-bg);
+    border-color: var(--ui-tool-done-line);
+    color: var(--ui-tool-done-text);
   }
   .live-tool-toast-tool {
     min-width: 0;
@@ -394,7 +406,7 @@ const liveRootStyle = `
   }
   .live-bubble-user {
     color: var(--live-muted);
-    font-size: 18px;
+    font-size: 9px;
     line-height: 1.35;
     opacity: 0.72;
     overflow-wrap: anywhere;
@@ -431,7 +443,7 @@ const liveRootStyle = `
     border: 2px solid var(--live-line-strong);
     border-radius: 10px;
     padding: 10px 12px;
-    font-size: 13px;
+    font-size: 20px;
     line-height: 1.4;
     color: var(--live-text);
     box-shadow: inset 0 0 0 1px var(--live-inset-line);
@@ -492,7 +504,7 @@ const liveRootStyle = `
       font-size: clamp(14px, 4vw, 20px);
     }
     .live-bubble-user {
-      font-size: clamp(12px, 3.2vw, 16px);
+      font-size: clamp(6px, 1.6vw, 8px);
     }
     .live-bubble::after {
       right: auto;
@@ -1835,14 +1847,14 @@ function TTSControl() {
     }
   }, [request])
   return (
-    <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div style={{ display: 'grid', gap: 4, fontSize: 12, minWidth: 0 }}>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
         <select
           aria-label="読み上げ音声"
           value={selection?.provider ?? ''}
           disabled={pending || !selection}
           onChange={(event) => void request(event.currentTarget.value)}
-          style={{ background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 6, padding: 4 }}
+          style={{ flex: 1, minWidth: 0, minHeight: 30, background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 8, padding: 4 }}
         >
           {!selection && <option value="">{pending ? '読み込み中' : '取得できません'}</option>}
           {selection?.providers.map((provider) => (
@@ -1908,17 +1920,19 @@ function LiveView(props: LiveViewProps) {
           </div>
           <div className="live-right">
             <div className="live-controls-panel">
-              <div className="live-controls-row">
-                <div className="live-controls-actions">
-                  <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
-                    <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
-                    接続
-                  </button>
-                  <button onClick={goScenes} className="live-admin-btn">リモコン</button>
-                  <button onClick={goMemory} className="live-admin-btn">メモリ</button>
-                  <button onClick={goAdmin} className="live-admin-btn">ログ</button>
-                  <button onClick={goJobs} className="live-admin-btn">予約</button>
-                </div>
+              {/* 切り替えスイッチと画面遷移ボタンを行で分け、狭い幅でも折り返しで崩れないようにする */}
+              <div className="live-controls-toggles">
+                <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                  <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                  接続
+                </button>
+                <WakeModeControl backendURL={backendURL} />
+              </div>
+              <div className="live-controls-nav">
+                <button onClick={goScenes} className="live-admin-btn">リモコン</button>
+                <button onClick={goMemory} className="live-admin-btn">メモリ</button>
+                <button onClick={goAdmin} className="live-admin-btn">ログ</button>
+                <button onClick={goJobs} className="live-admin-btn">予約</button>
               </div>
               <div className="live-status-grid">
                 <div className="live-status-card">
@@ -1934,10 +1948,7 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <TTSControl />
-                <WakeModeControl backendURL={backendURL} />
-              </div>
+              <TTSControl />
               <div className="live-playback-slider-row">
                 <span className="live-playback-slider-label">再生音量</span>
                 <input
