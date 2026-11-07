@@ -64,9 +64,11 @@ type stage struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu     sync.Mutex
-	peers  map[string]*peerState
-	closed bool
+	emitMu         sync.RWMutex
+	emittingClosed bool
+	mu             sync.Mutex
+	peers          map[string]*peerState
+	closed         bool
 }
 
 func (s *stage) run(parent context.Context) {
@@ -75,7 +77,12 @@ func (s *stage) run(parent context.Context) {
 }
 
 func (s *stage) consume() {
-	defer close(s.downstream)
+	defer func() {
+		s.emitMu.Lock()
+		s.emittingClosed = true
+		close(s.downstream)
+		s.emitMu.Unlock()
+	}()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -97,6 +104,11 @@ func (s *stage) consume() {
 }
 
 func (s *stage) emit(evt types.Event) {
+	s.emitMu.RLock()
+	defer s.emitMu.RUnlock()
+	if s.emittingClosed {
+		return
+	}
 	select {
 	case <-s.ctx.Done():
 		return

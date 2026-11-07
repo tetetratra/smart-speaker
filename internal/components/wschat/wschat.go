@@ -135,26 +135,20 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 	if !ok {
 		return
 	}
-	if c.writeMessage(ctx, msg, targetID) && evt.Kind == types.EventAudioFrame {
-		select {
-		case <-ctx.Done():
-		case c.downstream <- types.Event{Kind: types.EventAudioSent, Payload: evt.Payload}:
-		}
-	}
+	c.writeMessage(ctx, msg, targetID)
 }
 
 func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	msg := map[string]any{}
 	targetID := ""
 	switch evt.Kind {
-	case types.EventAudioFrame:
+	case types.EventAudioSent:
 		p, ok := evt.Payload.(types.AudioFrame)
-		if !ok {
+		if !ok || (!p.End && p.Sequence != 0) {
 			return nil, "", false
 		}
-		data, _ := json.Marshal(p)
-		_ = json.Unmarshal(data, &msg)
-		msg["type"] = "audio_frame"
+		// 音声はWebRTCで送り、画面には区間の開始と終了だけ通知する。
+		msg = map[string]any{"type": "playback_progress", "generation_id": uint64(p.GenerationID), "segment_id": p.SegmentID, "text": p.Text, "end": p.End}
 	case types.EventGenerationChanged:
 		p, ok := evt.Payload.(types.GenerationChanged)
 		if !ok {
@@ -311,6 +305,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		}
 		var msg struct {
 			Type      string                 `json:"type"`
+			Gain      *float64               `json:"gain"`
 			SDP       string                 `json:"sdp"`
 			Candidate *types.RTCIceCandidate `json:"candidate"`
 		}
@@ -321,6 +316,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(msg.Type, "webrtc.") {
 			sig := types.RTCSignal{
 				Type:      msg.Type,
+				Gain:      msg.Gain,
 				SDP:       msg.SDP,
 				Candidate: msg.Candidate,
 				ClientID:  connID,

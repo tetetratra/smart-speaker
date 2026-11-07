@@ -4,121 +4,89 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"log"
+	"math"
 	"time"
 
 	"github.com/pion/webrtc/v4/pkg/media"
+	"github.com/tetetratra/smart-speaker/internal/types"
 	opus "gopkg.in/hraban/opus.v2"
-
-	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func (s *stage) sendLoop() {
-	ticker := time.NewTicker(time.Millisecond * opusFrameMs)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-ticker.C:
-			s.sendOpusFrame()
-		}
+func (s *stage) sendFrame(frame types.AudioFrame) bool {
+	if frame.End {
+		return len(s.sinks) > 0
 	}
-}
-
-func (s *stage) sendOpusFrame() {
-	s.mu.Lock()
-	sinks := make([]*peerSink, 0, len(s.sinks))
+	raw, err := base64.StdEncoding.DecodeString(frame.Audio)
+	if err != nil || len(raw) == 0 || len(raw)%2 != 0 || len(raw) > 960 || frame.SampleRate != 24000 {
+		return false
+	}
+	// 末尾の20ms未満の音声だけ無音で埋め、次の文章や世代へ持ち越さない。
+	pcm := make([]int16, webrtcSampleRate*opusFrameMs/1000)
+	copy(pcm, upsampleBy2(bytesToInt16(raw)))
+	sent := false
 	for _, sink := range s.sinks {
-		sinks = append(sinks, sink)
-	}
-	s.mu.Unlock()
-
-	for _, sink := range sinks {
-		sink.mu.Lock()
-		if sink.writer == nil || sink.encoder == nil || !sink.connected {
-			sink.mu.Unlock()
-			continue
+		samples := make([]int16, len(pcm))
+		for i, sample := range pcm {
+			samples[i] = int16(max(-32768, min(32767, int(float64(sample)*sink.gain))))
 		}
-		frameSize := webrtcSampleRate * opusFrameMs / 1000 * max(1, sink.opusChannels)
-		if len(sink.audioBuf) < frameSize {
-			sink.mu.Unlock()
-			continue
-		}
-		frame := make([]int16, frameSize)
-		copy(frame, sink.audioBuf[:frameSize])
-		sink.audioBuf = sink.audioBuf[frameSize:]
-		writer := sink.writer
-		encoder := sink.encoder
-		sink.mu.Unlock()
-
-		opusBuf := make([]byte, 4000)
-		n, err := encoder.Encode(frame, opusBuf)
-		if err != nil {
-			continue
-		}
-		_ = writer.WriteSample(media.Sample{Data: opusBuf[:n], Duration: time.Millisecond * opusFrameMs})
-	}
-}
-
-func (s *stage) handleTTSAudio(audio types.OutputAudio) {
-	raw, err := base64.StdEncoding.DecodeString(audio.Audio)
-	if err != nil {
-		return
-	}
-	pcm := bytesToInt16(raw)
-	if len(pcm) == 0 {
-		return
-	}
-	pcm = upsampleBy2(pcm)
-	if len(pcm) == 0 {
-		return
-	}
-	s.mu.Lock()
-	sinks := make([]*peerSink, 0, len(s.sinks))
-	for _, sink := range s.sinks {
-		sinks = append(sinks, sink)
-	}
-	s.mu.Unlock()
-	for _, sink := range sinks {
-		sink.mu.Lock()
-		if sink.writer == nil || sink.encoder == nil || !sink.connected {
-			sink.mu.Unlock()
-			continue
-		}
-		localPCM := pcm
 		if sink.opusChannels == 2 {
-			localPCM = upmixToStereo(pcm)
+			samples = upmixToStereo(samples)
 		}
-		sink.audioBuf = append(sink.audioBuf, localPCM...)
-		sink.mu.Unlock()
+		packet := make([]byte, 4000)
+		n, err := sink.encoder.Encode(samples, packet)
+		if err != nil {
+			log.Printf("rtcout: 音声圧縮失敗: %v", err)
+			continue
+		}
+		if err := sink.writer.WriteSample(media.Sample{Data: packet[:n], Duration: opusFrameMs * time.Millisecond}); err != nil {
+			log.Printf("rtcout: 音声送信失敗: %v", err)
+			continue
+		}
+		sent = true
 	}
+	return sent
 }
 
 func (s *stage) handlePeerOutputSink(evt types.RTCPeerOutputSink) {
 	if evt.PeerID == "" {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if !evt.Connected || evt.Writer == nil {
 		delete(s.sinks, evt.PeerID)
+		delete(s.gains, evt.PeerID)
 		return
 	}
-	opusChannels := evt.OpusChannels
-	if opusChannels <= 0 {
-		opusChannels = 1
+	channels := evt.OpusChannels
+	if channels != 2 {
+		channels = 1
 	}
-	encoder, err := opus.NewEncoder(webrtcSampleRate, opusChannels, opus.AppVoIP)
+	encoder, err := opus.NewEncoder(webrtcSampleRate, channels, opus.AppVoIP)
 	if err != nil {
 		log.Printf("rtcout: opus encoder error: %v", err)
 		return
 	}
-	s.sinks[evt.PeerID] = &peerSink{
-		id:           evt.PeerID,
-		writer:       evt.Writer,
-		encoder:      encoder,
-		connected:    true,
-		opusChannels: opusChannels,
+	gain, ok := s.gains[evt.PeerID]
+	if !ok {
+		gain = 1
+	}
+	s.sinks[evt.PeerID] = &peerSink{writer: evt.Writer, encoder: encoder, opusChannels: channels, gain: gain}
+}
+
+// ブラウザの音声をWeb Audioへ回さず、端末別の音量と1.5倍の増幅を送信前に適用する。
+func (s *stage) handleVolume(sig types.RTCSignal) {
+	if sig.Type != "webrtc.volume" || sig.Gain == nil || sig.ClientID == "" {
+		return
+	}
+	gain := *sig.Gain
+	if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < 0 || gain > 1.5 {
+		return
+	}
+	if s.gains == nil {
+		s.gains = map[string]float64{}
+	}
+	s.gains[sig.ClientID] = gain
+	if sink := s.sinks[sig.ClientID]; sink != nil {
+		sink.gain = gain
 	}
 }
 

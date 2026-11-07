@@ -693,6 +693,7 @@ function App() {
   const adminLogRef = useRef<HTMLDivElement | null>(null)
   const shouldFollowAdminLogRef = useRef(true)
   const audioReceiverRef = useRef<AudioReceiver | null>(null)
+  const playbackGainRef = useRef(playbackVolumePresets[defaultPlaybackVolumeLevel].gain)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -740,6 +741,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    playbackGainRef.current = selectedPlaybackVolume.gain
     audioReceiverRef.current?.volume(selectedPlaybackVolume.gain)
   }, [selectedPlaybackVolume.gain])
 
@@ -813,8 +815,8 @@ function App() {
           })
           break
         }
-        case 'audio_frame': {
-          audioReceiverRef.current?.play(raw)
+        case 'playback_progress': {
+          audioReceiverRef.current?.progress(raw)
           break
         }
         case 'playback_stop': {
@@ -917,9 +919,15 @@ function App() {
       if (!event.candidate) return
       ws.send({ type: 'webrtc.ice', candidate: event.candidate.toJSON() })
     }
+    peer.ontrack = (event) => {
+      if (peerRef.current !== peer || event.track.kind !== 'audio') return
+      audioReceiverRef.current?.attach(event.streams[0] ?? new MediaStream([event.track]))
+    }
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState
       if (state === 'connected') {
+        // 音量はWeb Audio側だけで調整し、サーバーとの二重増幅を避ける。
+        ws.send({ type: 'webrtc.volume', gain: 1 })
         setRtcStatus('接続済み')
       } else if (state === 'connecting') {
         setRtcStatus('接続中')
@@ -993,8 +1001,8 @@ function App() {
       })
 
       wsChatRef.current = wsChat
-      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking, setPlaybackSpeech)
-      audioReceiverRef.current.volume(selectedPlaybackVolume.gain)
+      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking, setPlaybackSpeech, setRtcError)
+      audioReceiverRef.current.volume(playbackGainRef.current)
       setConnected(true)
       reconnectAttemptRef.current = 0
       clearReconnectTimer()

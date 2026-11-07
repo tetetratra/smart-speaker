@@ -16,6 +16,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/openaistt"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
+	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/speechsegment"
 	"github.com/tetetratra/smart-speaker/internal/components/stt"
@@ -130,11 +131,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, segment, tts, frame, pace, tool, wakegate *graph.Stage
+	chat, rtcpeer, realtime, segment, tts, frame, pace, tool, wakegate, output *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -219,15 +220,19 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.segment = speechsegment.NewStage()
 	stages.frame = audioframe.NewStage()
 	stages.pace = audiopace.NewStage()
+	stages.output, err = rtcout.NewStage(rtcout.Config{})
+	if err != nil {
+		return appStages{}, err
+	}
 	stages.tool = toolcaller.NewStageWithHistory(toolHandlers, toolModes, services.ToolHistory)
-	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat} {
+	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)
 		}
 	}
 	generationfilter.AttachToolRequests(stages.tool, generationStore)
 	stages.wakegate = wakegate.NewStage(wakegate.Config{Store: services.WakeMode, STT: &wakegate.HTTPClient{Endpoint: cfg.LocalSTTEndpoint}})
-	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs, InputOnly: true})
+	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs})
 	if err != nil {
 		closeStages(stages.all()...)
 		return appStages{}, err
@@ -309,6 +314,9 @@ func wireGraph(g *graph.Graph, s appStages) {
 		return g.AddNode(st)
 	}
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
+	output := add(s.output)
+	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
+	connectKinds(g, chat, output, types.EventRTCSignal)
 	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
 	connectKinds(g, chat, peer, types.EventRTCSignal)
 	connectKinds(g, peer, chat, types.EventRTCSignal)
@@ -319,12 +327,13 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
 	connectKinds(g, frame, pace, types.EventAudioFrame)
-	connectKinds(g, pace, chat, types.EventAudioFrame)
+	connectKinds(g, pace, output, types.EventAudioFrame)
+	connectKinds(g, output, chat, types.EventAudioSent)
+	connectKinds(g, output, rt, types.EventAudioSent)
 	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus, types.EventSessionReset)
 	connectKinds(g, rt, tool, types.EventToolRequest)
 	connectKinds(g, tool, rt, types.EventConversationCommitRequest)
 	connectKinds(g, tool, chat, types.EventWhiteboardUpdate)
-	connectKinds(g, chat, rt, types.EventAudioSent)
 }
 
 func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {
