@@ -2,7 +2,10 @@ package rtcout
 
 import (
 	"encoding/base64"
+	"errors"
+	opus "gopkg.in/hraban/opus.v2"
 	"testing"
+	"time"
 
 	"github.com/pion/webrtc/v4/pkg/media"
 
@@ -47,7 +50,7 @@ func TestUpmixToStereo(t *testing.T) {
 }
 
 func TestHandlePeerOutputSinkAddsAndRemovesSink(t *testing.T) {
-	s := &stage{sinks: map[string]*peerSink{}}
+	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
 	writer := &sampleWriter{}
 
 	s.handlePeerOutputSink(types.RTCPeerOutputSink{
@@ -76,46 +79,76 @@ func TestHandlePeerOutputSinkAddsAndRemovesSink(t *testing.T) {
 	}
 }
 
-func TestHandleTTSAudioAppendsPCMToConnectedSinks(t *testing.T) {
-	s := &stage{sinks: map[string]*peerSink{}}
-	s.handlePeerOutputSink(types.RTCPeerOutputSink{
-		PeerID:       "mono",
-		Writer:       &sampleWriter{},
-		Connected:    true,
-		OpusChannels: 1,
-	})
-	s.handlePeerOutputSink(types.RTCPeerOutputSink{
-		PeerID:       "stereo",
-		Writer:       &sampleWriter{},
-		Connected:    true,
-		OpusChannels: 2,
-	})
-
-	pcm := int16ToBytes([]int16{10, 30})
-	s.handleTTSAudio(types.OutputAudio{Audio: base64.StdEncoding.EncodeToString(pcm)})
-
-	mono := s.sinks["mono"].audioBuf
-	if want := []int16{10, 20, 30, 30}; !equalInt16(mono, want) {
-		t.Fatalf("mono audioBuf = %#v, want %#v", mono, want)
-	}
-	stereo := s.sinks["stereo"].audioBuf
-	if want := []int16{10, 10, 20, 20, 30, 30, 30, 30}; !equalInt16(stereo, want) {
-		t.Fatalf("stereo audioBuf = %#v, want %#v", stereo, want)
+func TestSendFrameEncodesOnePacketPerPeerWithoutBuffering(t *testing.T) {
+	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
+	for _, channels := range []int{1, 2} {
+		writer := &sampleWriter{}
+		s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "peer", Writer: writer, Connected: true, OpusChannels: channels})
+		frame := types.AudioFrame{SampleRate: 24000, Audio: base64.StdEncoding.EncodeToString(make([]byte, 960))}
+		if !s.sendFrame(frame) || len(writer.samples) != 1 {
+			t.Fatal("一フレームを即送信できなかった")
+		}
+		decoder, err := opus.NewDecoder(48000, channels)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, err := decoder.Decode(writer.samples[0].Data, make([]int16, 960*channels))
+		if err != nil || n != 960 || writer.samples[0].Duration != 20*time.Millisecond {
+			t.Fatalf("20msのOpus音声ではない: %d %v", n, err)
+		}
+		// 端数を次の文章へ蓄積せず、独立した20msのパケットとして送る。
+		frame.Audio = base64.StdEncoding.EncodeToString([]byte{1, 0})
+		if !s.sendFrame(frame) || len(writer.samples) != 2 {
+			t.Fatal("末尾の音声を送れなかった")
+		}
 	}
 }
 
-func TestHandleTTSAudioIgnoresInvalidAudio(t *testing.T) {
+func TestInvalidFrameAndFailedWriteDoNotCountAsSent(t *testing.T) {
 	s := &stage{sinks: map[string]*peerSink{}}
-	s.handlePeerOutputSink(types.RTCPeerOutputSink{
-		PeerID:    "peer-1",
-		Writer:    &sampleWriter{},
-		Connected: true,
-	})
+	writer := &sampleWriter{}
+	s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "peer", Writer: writer, Connected: true})
+	for _, frame := range []types.AudioFrame{
+		{SampleRate: 24000, Audio: "not-base64"},
+		{SampleRate: 24000, Audio: base64.StdEncoding.EncodeToString([]byte{1})},
+		{SampleRate: 48000, Audio: base64.StdEncoding.EncodeToString(make([]byte, 960))},
+		{SampleRate: 24000, Audio: base64.StdEncoding.EncodeToString(make([]byte, 1920))},
+	} {
+		if s.sendFrame(frame) {
+			t.Fatal("不正な音声を送信済みにした")
+		}
+	}
+	if len(writer.samples) != 0 {
+		t.Fatal("不正な音声が送信された")
+	}
+	s.sinks["peer"].writer = failingWriter{}
+	if s.sendFrame(types.AudioFrame{SampleRate: 24000, Audio: base64.StdEncoding.EncodeToString(make([]byte, 960))}) {
+		t.Fatal("書き込み失敗を送信済みにした")
+	}
+}
 
-	s.handleTTSAudio(types.OutputAudio{Audio: "not-base64"})
+type failingWriter struct{}
 
-	if got := s.sinks["peer-1"].audioBuf; len(got) != 0 {
-		t.Fatalf("expected no buffered audio, got %#v", got)
+func (failingWriter) WriteSample(media.Sample) error { return errors.New("送信失敗") }
+
+func TestVolumeIsAppliedPerPeerIncludingBeforeConnection(t *testing.T) {
+	s := &stage{sinks: map[string]*peerSink{}}
+	gain := 1.5
+	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
+	s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "a", Writer: &sampleWriter{}, Connected: true})
+	s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "b", Writer: &sampleWriter{}, Connected: true})
+	if s.sinks["a"].gain != 1.5 || s.sinks["b"].gain != 1 {
+		t.Fatal("端末別の音量が保持されなかった")
+	}
+	gain = 0
+	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
+	if s.sinks["a"].gain != 0 {
+		t.Fatal("ミュートが反映されなかった")
+	}
+	gain = 100
+	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
+	if s.sinks["a"].gain != 0 {
+		t.Fatal("範囲外の増幅が反映された")
 	}
 }
 

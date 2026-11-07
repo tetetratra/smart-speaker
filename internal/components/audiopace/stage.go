@@ -27,7 +27,12 @@ func NewStage() *graph.Stage {
 			if next.IsZero() || now.Sub(next) > 100*time.Millisecond {
 				next = now
 			}
-			next = next.Add(p.Duration)
+			// Opusの末尾パディングも含め、20ms未満の間隔で音声を先送りしない。
+			duration := max(p.Duration, 20*time.Millisecond)
+			if p.End {
+				duration = 0
+			}
+			next = next.Add(duration)
 			timer := time.NewTimer(max(0, time.Until(next)))
 			select {
 			case <-ctx.Done():

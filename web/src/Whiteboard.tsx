@@ -81,7 +81,7 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
         .live-board-event + .live-board-event { margin-top: 8px; }
         .live-board-event.live-board-entry + .live-board-entry { border-top: 1px solid var(--live-line); padding-top: 10px; }
         .live-tool-entry { min-width: 0; }
-        .live-tool-entry > summary.live-tool-toast { animation: none; pointer-events: auto; cursor: pointer; list-style: none; }
+        .live-tool-entry > summary.live-tool-toast { cursor: pointer; list-style: none; }
         .live-tool-entry > summary::-webkit-details-marker { display: none; }
         .live-tool-entry > summary::marker { content: ''; }
         .live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }

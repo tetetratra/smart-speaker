@@ -1,6 +1,10 @@
 package rtcpeer
 
-import "testing"
+import (
+	"context"
+	"github.com/tetetratra/smart-speaker/internal/types"
+	"testing"
+)
 
 func TestValidateICEAdvertiseIPs(t *testing.T) {
 	tests := []struct {
@@ -27,5 +31,16 @@ func TestValidateICEAdvertiseIPs(t *testing.T) {
 				t.Fatalf("validateICEAdvertiseIPs() error = %v, want nil", err)
 			}
 		})
+	}
+}
+
+// 切断後にもPionの非同期コールバックが届き得るため、閉じた通知先へ送信しない。
+func TestLatePeerCallbackAfterShutdownIsIgnored(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &stage{ctx: ctx, upstream: make(chan types.Event), downstream: make(chan types.Event)}
+	cancel()
+	s.consume()
+	for i := 0; i < 100; i++ {
+		s.emit(types.Event{Kind: types.EventRTCPeerOutputSink})
 	}
 }

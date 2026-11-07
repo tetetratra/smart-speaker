@@ -2,12 +2,10 @@ package rtcout
 
 import (
 	"context"
-	"sync"
-
-	opus "gopkg.in/hraban/opus.v2"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	types "github.com/tetetratra/smart-speaker/internal/types"
+	"github.com/tetetratra/smart-speaker/internal/types"
+	opus "gopkg.in/hraban/opus.v2"
 )
 
 const (
@@ -17,92 +15,51 @@ const (
 
 type Config struct{}
 
+// NewStage は送信時刻の調整を終えた一フレームだけを圧縮・送信する。
+// 待機音声を内部に蓄積せず、受け取り直後の世代フィルターを有効にする。
 func NewStage(cfg Config) (*graph.Stage, error) {
-	s := &stage{
-		upstream:   make(chan types.Event, graph.DefaultChannelBufferSize),
-		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		sinks:      map[string]*peerSink{},
-	}
-	return &graph.Stage{
-		Upstream:   s.upstream,
-		Downstream: s.downstream,
-		Run:        s.run,
-		CloseFn:    s.close,
-	}, nil
+	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
+	s.node = &graph.Stage{Name: "rtcout", Upstream: make(chan types.Event), Downstream: make(chan types.Event)}
+	s.node.Run = s.run
+	s.node.CloseFn = func() error { close(s.node.Upstream); return nil }
+	return s.node, nil
 }
 
 type stage struct {
-	upstream   chan types.Event
-	downstream chan types.Event
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	mu     sync.Mutex
-	sinks  map[string]*peerSink
-	closed bool
+	node  *graph.Stage
+	sinks map[string]*peerSink
+	gains map[string]float64
 }
 
 type peerSink struct {
-	id string
-	mu sync.Mutex
-
 	writer       types.RTCPeerOutputWriter
 	encoder      *opus.Encoder
-	audioBuf     []int16
-	connected    bool
 	opusChannels int
+	gain         float64
 }
 
-func (s *stage) run(parent context.Context) {
-	s.ctx, s.cancel = context.WithCancel(parent)
-	go s.consume()
-	go s.sendLoop()
-}
-
-func (s *stage) consume() {
-	defer close(s.downstream)
+func (s *stage) run(ctx context.Context) {
+	defer close(s.node.Downstream)
 	for {
-		select {
-		case <-s.ctx.Done():
+		e, ok := s.node.Receive(ctx)
+		if !ok {
 			return
-		case evt, ok := <-s.upstream:
-			if !ok {
-				return
+		}
+		switch p := e.Payload.(type) {
+		case types.RTCPeerOutputSink:
+			s.handlePeerOutputSink(p)
+		case types.RTCSignal:
+			s.handleVolume(p)
+		case types.AudioFrame:
+			if !s.sendFrame(p) {
+				continue
 			}
-			switch evt.Kind {
-			case types.EventRealtimeAudio:
-				audio, ok := evt.Payload.(types.OutputAudio)
-				if ok {
-					s.handleTTSAudio(audio)
-				}
-			case types.EventRTCPeerOutputSink:
-				sink, ok := evt.Payload.(types.RTCPeerOutputSink)
-				if ok {
-					s.handlePeerOutputSink(sink)
-				}
+			// 履歴の送信実績はWebSocket通知の成功ではなく、音声トラックへの書き込み成功で記録する。
+			select {
+			case <-ctx.Done():
+				return
+			case s.node.Downstream <- types.Event{Kind: types.EventAudioSent, Payload: p}:
 			}
 		}
 	}
-}
-
-func (s *stage) close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.cancel != nil {
-		s.cancel()
-	}
-	close(s.upstream)
-	return nil
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

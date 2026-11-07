@@ -11,8 +11,6 @@ type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
 type BoardEntry = { id: number; content: string; timestamp: number }
-type ToolToastKind = 'call' | 'result'
-type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
 type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
 type MemoryItem = {
@@ -39,7 +37,6 @@ const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
 const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
-const toolToastDurationMs = 5000
 const serverEventLogLimit = 1000
 
 type PlaybackVolumeLevel = 'mute' | 'quiet' | 'low' | 'normal' | 'boost'
@@ -185,15 +182,6 @@ const liveRootStyle = `
     min-height: 0;
     flex: 1;
   }
-  .live-tool-toast-stack {
-    position: absolute;
-    top: 8px;
-    left: 10px;
-    right: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
   .live-tool-toast {
     min-height: 32px;
     border: 1px solid transparent;
@@ -207,10 +195,6 @@ const liveRootStyle = `
     line-height: 1.2;
     font-weight: 700;
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    transform-origin: top center;
-    will-change: transform, opacity;
-    pointer-events: none;
-    animation: live-tool-toast-slide 5000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .live-tool-toast.call {
     background: var(--ui-tool-call-bg);
@@ -227,28 +211,6 @@ const liveRootStyle = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  @keyframes live-tool-toast-slide {
-    0% {
-      opacity: 0;
-      transform: translateY(-10px) scale(0.98);
-    }
-    18% {
-      opacity: 1;
-      transform: translateY(1px) scale(1);
-    }
-    28% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-    76% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(-6px) scale(0.985);
-    }
   }
   .live-volume-slider {
     width: 100%;
@@ -641,7 +603,6 @@ type LiveViewProps = {
   isAiSpeaking: boolean
   isConversationBubbleHidden: boolean
   boardEntries: BoardEntry[]
-  toolToasts: ToolToast[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
@@ -665,7 +626,6 @@ function App() {
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
-  const [toolToasts, setToolToasts] = useState<ToolToast[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
@@ -733,6 +693,7 @@ function App() {
   const adminLogRef = useRef<HTMLDivElement | null>(null)
   const shouldFollowAdminLogRef = useRef(true)
   const audioReceiverRef = useRef<AudioReceiver | null>(null)
+  const playbackGainRef = useRef(playbackVolumePresets[defaultPlaybackVolumeLevel].gain)
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -772,15 +733,6 @@ function App() {
     })
   }, [nextMessageId, updateAdminLogFollow])
 
-  const showToolToast = useCallback((kind: ToolToastKind, toolName: string) => {
-    const normalizedToolName = toolName.trim() || 'unknown_tool'
-    const id = nextMessageId()
-    setToolToasts((prev) => [{ id, kind, toolName: normalizedToolName }, ...prev.slice(0, 1)])
-    window.setTimeout(() => {
-      setToolToasts((prev) => prev.filter((toast) => toast.id !== id))
-    }, toolToastDurationMs)
-  }, [nextMessageId])
-
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
 
   const stopRemoteAudioGraph = useCallback(() => {
@@ -789,6 +741,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    playbackGainRef.current = selectedPlaybackVolume.gain
     audioReceiverRef.current?.volume(selectedPlaybackVolume.gain)
   }, [selectedPlaybackVolume.gain])
 
@@ -845,9 +798,6 @@ function App() {
           else if (raw.role === 'agent') role = 'agent'
           else if (raw.role === 'tool_call') role = 'tool_call'
           else if (raw.role === 'tool_result') role = 'tool_result'
-          if (role === 'tool_call' || role === 'tool_result') {
-            showToolToast(role === 'tool_call' ? 'call' : 'result', typeof raw.source === 'string' ? raw.source : '')
-          }
           if (role === 'user' && isCurrentGeneration) {
             setIsAiSpeaking(false)
             setSttStatus('完了')
@@ -865,8 +815,8 @@ function App() {
           })
           break
         }
-        case 'audio_frame': {
-          audioReceiverRef.current?.play(raw)
+        case 'playback_progress': {
+          audioReceiverRef.current?.progress(raw)
           break
         }
         case 'playback_stop': {
@@ -908,7 +858,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, resetConversationBubble, showToolToast],
+    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, resetConversationBubble],
   )
 
   const stopRTC = useCallback(() => {
@@ -969,9 +919,15 @@ function App() {
       if (!event.candidate) return
       ws.send({ type: 'webrtc.ice', candidate: event.candidate.toJSON() })
     }
+    peer.ontrack = (event) => {
+      if (peerRef.current !== peer || event.track.kind !== 'audio') return
+      audioReceiverRef.current?.attach(event.streams[0] ?? new MediaStream([event.track]))
+    }
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState
       if (state === 'connected') {
+        // 音量はWeb Audio側だけで調整し、サーバーとの二重増幅を避ける。
+        ws.send({ type: 'webrtc.volume', gain: 1 })
         setRtcStatus('接続済み')
       } else if (state === 'connecting') {
         setRtcStatus('接続中')
@@ -1045,8 +1001,8 @@ function App() {
       })
 
       wsChatRef.current = wsChat
-      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking, setPlaybackSpeech)
-      audioReceiverRef.current.volume(selectedPlaybackVolume.gain)
+      audioReceiverRef.current = createAudioReceiver(setIsAiSpeaking, setPlaybackSpeech, setRtcError)
+      audioReceiverRef.current.volume(playbackGainRef.current)
       setConnected(true)
       reconnectAttemptRef.current = 0
       clearReconnectTimer()
@@ -1315,7 +1271,6 @@ function App() {
           isAiSpeaking={isAiSpeaking}
           isConversationBubbleHidden={!bubble.visible}
           boardEntries={boardEntries}
-          toolToasts={toolToasts}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
@@ -1914,7 +1869,6 @@ function LiveView(props: LiveViewProps) {
     isAiSpeaking,
     isConversationBubbleHidden,
     boardEntries,
-    toolToasts,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
     connect,
@@ -1999,15 +1953,7 @@ function LiveView(props: LiveViewProps) {
               </div>
             </div>
             <div className="live-character-area">
-              <div className="live-volume-control" aria-label="キャラクターエリア">
-                <div className="live-tool-toast-stack">
-                  {toolToasts.map((toast) => (
-                    <div key={toast.id} className={`live-tool-toast ${toast.kind}`}>
-                      <span className="live-tool-toast-tool">{toast.kind === 'call' ? 'call' : 'result'}: {toast.toolName}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <div className="live-volume-control" aria-label="キャラクターエリア" />
             </div>
           </div>
         </div>
