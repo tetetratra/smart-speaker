@@ -116,7 +116,7 @@ flowchart LR
 
 ### 設定
 
-- `CONVERSATION_IDLE_TIMEOUT_SECONDS`
+- `conversation.idle_timeout_seconds`
   - 秒数で指定する。
   - 未設定時は 300 秒。
   - `0` は idle reset 無効。

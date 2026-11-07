@@ -1,0 +1,127 @@
+# smart-speaker の設定ファイルのサンプルです。
+#
+# 使い方:
+#   cp config.sample.yaml config.yaml
+#   変更したい項目のコメントを外して値を書き込みます。
+#
+# - config.yaml は .gitignore 済みです。リポジトリへコミットしないでください。
+# - config.yaml が無い場合や、項目が書かれていない場合は、各項目に記載した既定値を使います。
+# - 未知のキー（書き間違い）や型の誤りがあると起動時にエラーになります。
+# - APIキーなどのシークレットはこのファイルに書かず、環境変数で渡します（README の「設定」を参照）。
+
+# システムプロンプトの末尾に追記する内容。環境ごとの事情（家族構成、家電の呼び名など）を書きます。既定: なし
+# 既定のシステムプロンプトは internal/app/system_prompt.go にあります。
+# additional_system_prompt: |
+#   ユーザーの名前は太郎です。
+#   リビングのエアコンは「エアコン」と呼びます。
+
+server:
+  # HTTP / WebSocket サーバーの待ち受けアドレス。既定: ":8081"
+  # ws_addr: ":8081"
+
+  # ビルド済みフロントエンドの配信ディレクトリ。既定: "web/dist"
+  # web_dist_dir: "web/dist"
+
+rtc:
+  # ブラウザから到達できるサーバーのIPv4アドレス。既定: なし（Pionが検出したアドレスだけを使う）
+  # RFC 1918 のプライベートIPv4と、Tailscale の 100.64.0.0/10 だけを指定できます。
+  # 環境変数 RTC_ICE_ADVERTISE_IPS（カンマ区切り）があれば、そちらを優先します。
+  # 本番ではデプロイスクリプトがこの環境変数を設定します。
+  # ice_advertise_ips:
+  #   - 192.168.0.10
+
+openai:
+  # 長い履歴の要約・メモリ抽出の既定モデル・Web検索に使う Responses API のモデル。
+  # 既定: "gpt-5.4-nano-2026-03-17"
+  # responses_model: "gpt-5.4-nano-2026-03-17"
+
+  # サブエージェントに使うモデル。Responses API と Structured Outputs に対応するモデルが必要です。既定: "gpt-5.4"
+  # subagent_model: "gpt-5.4"
+
+  realtime:
+    # 会話モデル。既定: "gpt-realtime-2.1"
+    # model: "gpt-realtime-2.1"
+
+    # 発話の区切り。"semantic_vad" または "server_vad"。未対応の値は起動時にエラーになります。既定: "semantic_vad"
+    # vad: "semantic_vad"
+
+    # 履歴保存用の非同期文字起こしモデル。音声理解とは別に課金されます。既定: "gpt-4o-mini-transcribe"
+    # transcription_model: "gpt-4o-mini-transcribe"
+
+    # テスト用の WebSocket 接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
+    # endpoint: ""
+
+conversation:
+  # 会話終了（履歴リセット）までの無操作時間（秒）。0 で無効。既定: 300
+  # idle_timeout_seconds: 300
+
+memory:
+  # メモリの追加・更新・削除の判断に使う Responses API のモデル。既定: openai.responses_model と同じ
+  # model: ""
+
+  # メモリの保存先。既定: "data/memories.json"
+  # wake.store_path、automations.store_path、google_calendar.token_path の既定値は、このファイルと同じディレクトリになります。
+  # store_path: "data/memories.json"
+
+automations:
+  # 予約ジョブの保存先。既定: memory.store_path と同じディレクトリの "automations.json"
+  # store_path: "data/automations.json"
+
+tts:
+  # 音声合成のプロバイダ。"voicevox" または "elevenlabs"。既定: "voicevox"
+  # 画面から切り替えた場合も、サーバー再起動時はこの値に戻ります。
+  # provider: "voicevox"
+
+  voicevox:
+    # VOICEVOX Engine の HTTP エンドポイント。既定: "http://voicevox:50021"（Docker Compose 内の VOICEVOX）
+    # endpoint: "http://voicevox:50021"
+
+    # スタイルID（docs/services/voicevox.md の一覧を参照）。既定: 1
+    # speaker_id: 1
+
+    # 話速。指定した場合だけ /audio_query の speedScale を上書きします。0 以下は無視します。既定: なし
+    # speed_scale: 1.1
+
+  elevenlabs:
+    # ElevenLabs の voice ID。APIキー（ELEVENLABS_API_KEY）と両方そろうと ElevenLabs を選べます。既定: なし
+    # voice_id: ""
+
+    # ElevenLabs のモデル。既定: "eleven_v3"
+    # model: "eleven_v3"
+
+wake:
+  # 呼びかけ必須モードのオン・オフの保存先。既定: memory.store_path と同じディレクトリの "wake-mode.json"
+  # store_path: "data/wake-mode.json"
+
+  # 呼びかけ判定に使うローカルSTTのエンドポイント。既定: "http://local-stt:8000/transcribe"（Docker Compose 内の local-stt）
+  # local_stt_endpoint: "http://local-stt:8000/transcribe"
+
+  # 呼びかけの言葉。既定: [おきて, 起きて, オッケー]
+  # words:
+  #   - おきて
+  #   - 起きて
+  #   - オッケー
+
+  # 呼びかけの前に許す文字数（0〜20）。既定: 4
+  # max_prefix: 4
+
+  # STT信頼度の下限（0より大きく1以下）。既定: 0.55
+  # min_confidence: 0.55
+
+  # 言葉との類似度の下限（0より大きく1以下）。既定: 0.65
+  # min_similarity: 0.65
+
+switchbot:
+  # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
+  # device_map:
+  #   hub2: "XXXXXXXXXXXX"
+
+google_calendar:
+  # OAuth のコールバックURL。既定: "http://localhost:8081/oauth/google/callback"
+  # redirect_url: "http://localhost:8081/oauth/google/callback"
+
+  # OAuth のスコープ。既定: "https://www.googleapis.com/auth/calendar.events"
+  # scope: "https://www.googleapis.com/auth/calendar.events"
+
+  # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
+  # token_path: "data/google_oauth_token.json"

@@ -158,4 +158,4 @@ WebSocket で送られるメッセージ形式:
 - [internal/components/wschat/wschat.go](/internal/components/wschat/wschat.go)
 - [internal/types/event.go](/internal/types/event.go)
 - [internal/types/types.go](/internal/types/types.go)
-- [system_prompt.txt](/system_prompt.txt)
+- [internal/app/system_prompt.go](/internal/app/system_prompt.go)

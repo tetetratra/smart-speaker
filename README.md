@@ -23,6 +23,31 @@
 
 ## 開発環境
 
+### 設定
+
+設定は、シークレットを環境変数で、それ以外の設定値を `config.yaml` で渡します。
+
+```sh
+cp config.sample.yaml config.yaml
+```
+
+`config.yaml` には、変更したい項目だけを書き込みます。リポジトリ直下（作業ディレクトリ）の `config.yaml` を読み込み、環境変数 `SMART_SPEAKER_CONFIG` で別の場所を指定することもできます。全項目と既定値は [config.sample.yaml](config.sample.yaml) を参照してください。
+`config.yaml` が無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使います。未知のキーや型の誤りがあると起動時にエラーになります。以前の環境変数（`TTS_PROVIDER` など）が設定されたままの場合は、移行先の項目名を起動時に警告します。
+`config.yaml` は `.gitignore` 済みです。本番用のイメージには、デプロイ元にある `config.yaml` が含まれます。
+
+システムプロンプトは `internal/app/system_prompt.go` に定義しています。家族構成や家電の呼び名など、環境ごとに追記したい内容は `config.yaml` の `additional_system_prompt` に書きます（既定のプロンプトの末尾に追記されます）。
+
+環境変数で渡すシークレットは以下です。`OPENAI_API_KEY` だけが必須で、それ以外は使う機能に応じて設定します。
+
+| 環境変数 | 用途 |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI API キー（必須） |
+| `ELEVENLABS_API_KEY` | ElevenLabs で読み上げる場合の API キー |
+| `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合の認証情報 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar の OAuth クライアント |
+
+例外として、`RTC_ICE_ADVERTISE_IPS` はシークレットではありませんが、デプロイスクリプトが本番サーバーのIPを取得して渡すため、環境変数でも指定できます。指定した場合は `config.yaml` の `rtc.ice_advertise_ips` より優先します。
+
 ### 起動
 
 ```sh
@@ -34,16 +59,18 @@ docker compose up
 
 ### Realtime APIによる会話
 
-- `OPENAI_REALTIME_MODEL`: 会話モデル。既定は `gpt-realtime-2.1`。推論量はAPIへ指定せず、APIのデフォルトを使います（現在の公式仕様では`low`）。
-- `OPENAI_REALTIME_VAD`: 発話の区切り。既定は`semantic_vad`、`eagerness`は`auto`。比較用に`server_vad`を指定すると、従来の800ms無音で終了する方式へ戻せます。未対応の値は起動時にエラーにします。
-- `OPENAI_REALTIME_TRANSCRIPTION_MODEL`: 履歴保存用の非同期文字起こし。既定は `gpt-4o-mini-transcribe`。音声理解とは別に課金されます。
-- `OPENAI_REALTIME_ENDPOINT`: テスト用のWebSocket接続先。通常は未指定にします。
-- `OPENAI_RESPONSES_MODEL`: 長い履歴の要約・メモリ抽出の既定モデル・検索に使用します。
-- `TTS_PROVIDER`: 既定は `voicevox`。`VOICEVOX_ENDPOINT` は既定で `http://voicevox:50021`。 `elevenlabs` を明示すればElevenLabsも選択できます。
-- メイン画面の「読み上げ音声」でVOICEVOX／ElevenLabsを切り替えられます。設定済みの候補だけ選択でき、生成中・再生待ちの音声は保持し、次に生成する音声から反映します。選択は全端末で共有し、サーバー再起動時は`TTS_PROVIDER`の値に戻ります。
+以下はいずれも `config.yaml` の項目です。
+
+- `openai.realtime.model`: 会話モデル。既定は `gpt-realtime-2.1`。推論量はAPIへ指定せず、APIのデフォルトを使います（現在の公式仕様では`low`）。
+- `openai.realtime.vad`: 発話の区切り。既定は`semantic_vad`、`eagerness`は`auto`。比較用に`server_vad`を指定すると、従来の800ms無音で終了する方式へ戻せます。未対応の値は起動時にエラーにします。
+- `openai.realtime.transcription_model`: 履歴保存用の非同期文字起こし。既定は `gpt-4o-mini-transcribe`。音声理解とは別に課金されます。
+- `openai.realtime.endpoint`: テスト用のWebSocket接続先。通常は未指定にします。
+- `openai.responses_model`: 長い履歴の要約・メモリ抽出の既定モデル・検索に使用します。
+- `tts.provider`: 既定は `voicevox`。`tts.voicevox.endpoint` は既定で `http://voicevox:50021`。 `elevenlabs` を明示すればElevenLabsも選択できます。
+- メイン画面の「読み上げ音声」でVOICEVOX／ElevenLabsを切り替えられます。設定済みの候補だけ選択でき、生成中・再生待ちの音声は保持し、次に生成する音声から反映します。選択は全端末で共有し、サーバー再起動時は`tts.provider`の値に戻ります。
 - `GET /api/tts`で現在の選択と設定済み候補を取得し、`PUT /api/tts`に`{"provider":"voicevox"}`または`{"provider":"elevenlabs"}`を送ると切り替えられます。候補の利用可否は設定の有無を示し、外部サービスへの疎通を保証するものではありません。
 - ComposeのVOICEVOXは正式安定版 `cpu-0.26.0` に固定し、実行環境に合うamd64 / arm64を自動選択します。
-- `CONVERSATION_IDLE_TIMEOUT_SECONDS`: 会話終了までの無操作時間。既定は300秒、0で無効。
+- `conversation.idle_timeout_seconds`: 会話終了までの無操作時間。既定は300秒、0で無効。
 
 発話の区切りは既定でAPIのSemantic VADにより内容から判断します。`auto`は`medium`相当で、言いよどみなどで終了が曖昧な場合の最大待ち時間は4秒です。常に4秒待つ意味ではなく、推論量の設定とも別です。アプリはAPIの自動応答を無効にしたまま、入力確定と履歴補正の後に応答生成を要求します。
 Semantic VADを使っても、音声開始の検知による現在の読み上げ停止は維持します。相槌や雑音で停止した読み上げを自動で再開する機能は含みません。
@@ -102,7 +129,7 @@ curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"割り込み後
 
 ### WebRTCのICE候補
 
-`RTC_ICE_ADVERTISE_IPS` には、ブラウザから到達できるサーバーのIPv4アドレスをカンマ区切りで指定します。
+`config.yaml` の `rtc.ice_advertise_ips` には、ブラウザから到達できるサーバーのIPv4アドレスを指定します。環境変数 `RTC_ICE_ADVERTISE_IPS`（カンマ区切り）でも指定でき、その場合は環境変数を優先します。
 ローカル開発では、開発PCのLAN IPを指定します。
 未指定の場合は、Pionが実行環境から検出したアドレスだけを使用します。
 
@@ -121,8 +148,8 @@ Docker Compose ではメモリ store を `/app/data/memories.json` に保存し�
 
 主な設定は以下です。
 
-- `OPENAI_MEMORY_MODEL`: メモリの追加・更新・削除の判断に使う Responses API model。未指定時は `OPENAI_RESPONSES_MODEL` を使います。
-- `MEMORY_STORE_PATH`: メモリ JSON file store の保存先。Compose 既定値は `/app/data/memories.json` です。
+- `memory.model`: メモリの追加・更新・削除の判断に使う Responses API model。未指定時は `openai.responses_model` を使います。
+- `memory.store_path`: メモリ JSON file store の保存先。既定値は `data/memories.json` で、Compose では作業ディレクトリが `/app` のため `/app/data/memories.json` になります。
 
 ### 現在地API
 
@@ -165,13 +192,14 @@ iPhoneのショートカットでは「URLの内容を取得」に次を設定�
 
 ### 準備
 予め開発環境側で `production` Docker context を作成してください。
+また、デプロイ元のリポジトリ直下に `config.yaml` を用意し（無い場合、デプロイスクリプトは中断します）、シークレットを環境変数に設定してください（「設定」を参照）。`config.yaml` はイメージに含めて本番サーバーへ送られます。
 
 ```sh
 docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
 ```
 
 デプロイスクリプトは `production` Docker contextのSSH接続先で、本番サーバー自身のLAN IPとTailscale IPを取得します。
-取得した値は `RTC_ICE_ADVERTISE_IPS` に割り当てられるため、本番用IPをデプロイ元PCへ設定する必要はありません。
+取得した値は環境変数 `RTC_ICE_ADVERTISE_IPS` に割り当てられ、`config.yaml` の `rtc.ice_advertise_ips` より優先されるため、本番用IPをデプロイ元PCへ設定する必要はありません。
 本番サーバーでは、`ip` コマンドと `tailscale ip -4` を実行できる必要があります。
 本番サーバーのLAN IPは、家庭用ルーターのDHCP予約などで固定してください。
 
@@ -194,7 +222,7 @@ https://tailscale.com/docs/reference/tailscale-cli
 
 ### 呼びかけ必須モード
 
-UIと`set_wake_mode`で、既定の呼びかけ不要モードから必須モードへ切り替えられます。必須モードでは、ローカルSTTの信頼度と、文頭付近と呼びかけの言葉（既定は「起きて」）との類似度を判定し、通過した発話のテキストだけをRealtimeへ渡します。呼びかけ後は最後の発話から1分間、呼びかけなしで会話でき、その間は音声をそのままRealtimeへ送ります。呼びかけだけの発話には、普段の口調で起きていることを短く伝えます。オン・オフは永続化します。呼びかけの言葉と判定のしきい値は、デプロイ時の環境変数（`WAKE_WORDS`など）で決めます。ローカルSTTの準備と精度上の制限は[呼びかけ必須モードの仕様](docs/wake-mode.md)を参照してください。
+UIと`set_wake_mode`で、既定の呼びかけ不要モードから必須モードへ切り替えられます。必須モードでは、ローカルSTTの信頼度と、文頭付近と呼びかけの言葉（既定は「起きて」）との類似度を判定し、通過した発話のテキストだけをRealtimeへ渡します。呼びかけ後は最後の発話から1分間、呼びかけなしで会話でき、その間は音声をそのままRealtimeへ送ります。呼びかけだけの発話には、普段の口調で起きていることを短く伝えます。オン・オフは永続化します。呼びかけの言葉と判定のしきい値は、`config.yaml` の `wake` の項目（`wake.words`など）で決めます。ローカルSTTの準備と精度上の制限は[呼びかけ必須モードの仕様](docs/wake-mode.md)を参照してください。
 
 ### 自然言語の予約ジョブ
 
@@ -206,6 +234,6 @@ UIと`set_wake_mode`で、既定の呼びかけ不要モードから必須モー
 
 サブエージェントには、自分が補助役であり、ユーザーとの会話はRealtimeエージェントが通訳・仲介することを毎回の初期指示で伝えます。返答は`summary`（口頭用の要点、1〜3文・200文字以内）と`details`（ホワイトボード用の補足、通常5〜10行以内、最大10行・各120文字）に分けます。Realtimeエージェントには要点だけを読み上げ、詳細を`set_whiteboard`で残すよう指示します。発話の選択や会話での了承確認はモデルのプロンプト方針です。
 
-初回は`session_id`を空文字にし、返されたIDを次の呼び出しで指定すると同じ会話を継続します。親の会話履歴は自動転送しません。`OPENAI_SUBAGENT_MODEL`の既定は`gpt-5.4`、推論量は`high`で、外部ツールは付与しません。Responses APIとStructured Outputsに対応するモデルが必要です。
+初回は`session_id`を空文字にし、返されたIDを次の呼び出しで指定すると同じ会話を継続します。親の会話履歴は自動転送しません。`openai.subagent_model`の既定は`gpt-5.4`、推論量は`high`で、外部ツールは付与しません。Responses APIとStructured Outputsに対応するモデルが必要です。
 
 セッションは最新の利用から24時間、最大32件をメモリに保持し、サーバー再起動で失われます。API側への保存を有効にし、`previous_response_id`で継続します。[会話状態](https://developers.openai.com/api/docs/guides/conversation-state)と[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)の公式仕様を使用しています。失敗時は直前に成功した会話から再開します。

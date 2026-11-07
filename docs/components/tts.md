@@ -5,7 +5,7 @@
 * **解決する課題**: LLM が生成した会話 timeline の `speech` item を、スマートスピーカーで再生できる音声データへ変換する。
 * **提供価値**: LLM の応答をテキスト表示ではなく音声としてユーザーへ届けつつ、`wait` や `tool` を含む timeline の順序を後段の `scheduler` へ渡せる。
 * **会話体験上の責務**: `speech` の音声化に加えて、音声の推定再生時間を `DurationSeconds` として付与する。後段の `scheduler` はこの値を使い、次の item へ進むタイミングを制御する。
-* **外部依存**: 音声合成 provider は `TTS_PROVIDER` で切り替える。未指定時は ElevenLabs API を使い、`voicevox` 指定時は VOICEVOX Engine HTTP API を使う。
+* **外部依存**: 音声合成 provider は `tts.provider` で切り替える。未指定時は ElevenLabs API を使い、`voicevox` 指定時は VOICEVOX Engine HTTP API を使う。
 * **対象外**: `tts` は `tool` を実行しない。`wait` の待機もしない。音声再生、会話履歴保存、tool 実行への振り分けも後段の責務である。
 
 ## 2. 論理構造・機能俯瞰
@@ -196,10 +196,10 @@ sequenceDiagram
 
 ### VOICEVOX 呼び出し設計
 
-- **endpoint**: `VOICEVOX_ENDPOINT`
+- **endpoint**: `tts.voicevox.endpoint`
 - **audio query**: `POST /audio_query?text={text}&speaker={speaker_id}`
 - **synthesis**: `POST /synthesis?speaker={speaker_id}`
-- **speedScale**: `VOICEVOX_SPEED_SCALE` が指定されている場合だけ、`/audio_query` response JSON の `speedScale` を上書きする。未指定時は engine の query 結果を尊重する。
+- **speedScale**: `tts.voicevox.speed_scale` が指定されている場合だけ、`/audio_query` response JSON の `speedScale` を上書きする。未指定時は engine の query 結果を尊重する。
 - **response**
   - `/synthesis` の response は WAV として扱う。
   - WAV は 24kHz / 16bit / mono PCM の場合だけ受け入れる。
@@ -238,7 +238,7 @@ sequenceDiagram
 
 ### 接続設計
 
-- 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`TTS_PROVIDER`、ElevenLabs 設定、VOICEVOX 設定が渡される。
+- 本番起動時は `cmd/smart-speaker/main.go` で `tts.NewStage` が呼ばれ、`tts.provider`、ElevenLabs 設定、VOICEVOX 設定が渡される。
 - VOICEVOX service の起動と設定は [docs/services/voicevox.md](/docs/services/voicevox.md) を参照する。
 - graph 接続は `llm -> generationfilter -> tts -> generationfilter -> scheduler` の順。
 - `tts` の出力として graph が下流へ接続する event kind は `EventTimelineItem` と `EventPlayableSpeech`。

@@ -20,7 +20,7 @@
 - Google Calendar tool 群は、保存済みの Google OAuth token がある前提で動く。
 - token 取得フローは `/oauth/google/start`、`/oauth/google/callback`、`/oauth/google/status` で提供される。
 - OAuth 設定として `GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` が必須。
-- token 保存先は `GOOGLE_OAUTH_TOKEN_PATH`、未指定時は `data/google_oauth_token.json`。
+- token 保存先は `config.yaml` の `google_calendar.token_path`、未指定時は `memory.store_path` と同じディレクトリの `google_oauth_token.json`。
 - 共通 client が access token を取得する際、token 更新があれば永続ファイルへ再保存される。
 
 ## 4. 主要コンポーネント

@@ -2,7 +2,7 @@
 
 ## 1. 目的
 - Google Calendar 連携で必要な認証処理の責務と流れを整理し、再設計時の判断材料を揃える。
-- 対象は Google OAuth の開始、callback、token 保存、認証状態確認、必要な環境変数に限定する。
+- 対象は Google OAuth の開始、callback、token 保存、認証状態確認、必要な設定に限定する。
 - Calendar tool 自体の引数仕様は本ドキュメントの対象外とする。
 
 ## 2. 対象範囲
@@ -10,16 +10,17 @@
 - `GET /oauth/google/callback`
 - `GET /oauth/google/status`
 - OAuth token の永続化と更新
-- Google OAuth に必要な環境変数
+- Google OAuth に必要な設定
 
 ## 3. 現状の構成
 **主要コンポーネント**
 
 - **設定読み込み**
-  - `internal/oauth/googlecalendar/config.go` が `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GOOGLE_REDIRECT_URL`、`GOOGLE_OAUTH_SCOPE` を読み込む。
+  - `internal/app/config.go` が環境変数の `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` と、`config.yaml` の `google_calendar.redirect_url`、`google_calendar.scope`、`google_calendar.token_path` を読み込む。
+  - 起動時に `cmd/smart-speaker/main.go` が `googlecalendar.Configure` で `internal/oauth/googlecalendar` へ登録する。
   - `GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` は必須。
-  - `GOOGLE_REDIRECT_URL` 未指定時は `http://localhost:8081/oauth/google/callback` を使う。
-  - `GOOGLE_OAUTH_SCOPE` 未指定時は `https://www.googleapis.com/auth/calendar.events` を使う。
+  - `google_calendar.redirect_url` 未指定時は `http://localhost:8081/oauth/google/callback` を使う。
+  - `google_calendar.scope` 未指定時は `https://www.googleapis.com/auth/calendar.events` を使う。
 
 - **OAuth 開始**
   - `internal/oauth/googlecalendar/http_handlers.go` の `handleOAuthStart` が state を生成する。
@@ -35,7 +36,7 @@
 
 - **token 保存**
   - `internal/oauth/googlecalendar/token_store.go` が token のメモリ cache と永続ファイル保存を担当する。
-  - 保存先は `GOOGLE_OAUTH_TOKEN_PATH`、未指定時は `data/google_oauth_token.json`。
+  - 保存先は `google_calendar.token_path`、未指定時は `memory.store_path` と同じディレクトリの `google_oauth_token.json`。
   - 保存時は既存 token の refresh token を引き継ぐ。
   - アクセストークン更新後に内容差分があれば再保存する。
 
@@ -72,30 +73,32 @@
 3. token があれば `authenticated: true` を返す。
 4. expiry が設定されていれば `expiry` も返す。
 
-## 5. 必要な環境変数
-- `GOOGLE_CLIENT_ID`
+## 5. 必要な設定
+シークレットは環境変数、それ以外は `config.yaml` で渡す。
+
+- `GOOGLE_CLIENT_ID`（環境変数）
   - 必須。
   - Google OAuth クライアント ID。
 
-- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_CLIENT_SECRET`（環境変数）
   - 必須。
   - Google OAuth クライアントシークレット。
 
-- `GOOGLE_REDIRECT_URL`
+- `google_calendar.redirect_url`（`config.yaml`）
   - 任意。
   - 未指定時は `http://localhost:8081/oauth/google/callback`。
 
-- `GOOGLE_OAUTH_SCOPE`
+- `google_calendar.scope`（`config.yaml`）
   - 任意。
   - 未指定時は `https://www.googleapis.com/auth/calendar.events`。
 
-- `GOOGLE_OAUTH_TOKEN_PATH`
+- `google_calendar.token_path`（`config.yaml`）
   - 任意。
-  - token 保存先パス。未指定時は `data/google_oauth_token.json`。
+  - token 保存先パス。未指定時は `memory.store_path` と同じディレクトリの `google_oauth_token.json`（既定では `data/google_oauth_token.json`）。
 
 ## 6. 再設計で維持したい性質
 - state を Cookie と query で照合してから token 交換すること。
-- token 保存先を環境変数で切り替えられること。
+- token 保存先を設定で切り替えられること。
 - refresh token が再発行されない更新時でも、既存 refresh token を失わないこと。
 - 認証状態確認 API から、少なくとも認証済みかどうかを取得できること。
 

@@ -1,15 +1,20 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 )
 
@@ -29,18 +34,11 @@ type Config struct {
 	Memory                     MemoryConfig
 	SystemPrompt               string
 	ConversationIdleTimeout    time.Duration
-	AutoPromptMessage          string
-	STTProvider                string
-	OpenAISTTModel             string
 	TTSProvider                string
 	ElevenLabs                 ElevenLabsConfig
 	Voicevox                   VoicevoxConfig
 	SwitchBot                  SwitchBotConfig
-	GoogleCloudProject         string
-	GoogleRecognizer           string
-	GoogleLanguage             string
-	GoogleCredentials          string
-	STTPhrases                 []string
+	GoogleCalendar             googlecalendar.Config
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
@@ -54,7 +52,7 @@ type MemoryConfig struct {
 type SwitchBotConfig struct {
 	Token     string
 	Secret    string
-	DeviceMap string
+	DeviceMap map[string]string
 }
 
 type ElevenLabsConfig struct {
@@ -69,226 +67,292 @@ type VoicevoxConfig struct {
 	SpeedScale *float64
 }
 
-func LoadConfig(promptPath string) Config {
-	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+// DefaultConfigPathは設定ファイルの既定の場所。作業ディレクトリからの相対パス。
+const DefaultConfigPath = "config.yaml"
+
+// ConfigPathEnvは設定ファイルの場所を変えるための環境変数。検証用の設定を読ませるときなどに使う。
+const ConfigPathEnv = "SMART_SPEAKER_CONFIG"
+
+// legacyEnvVarsは、config.yamlへ移したため読まなくなった環境変数と、移行先の項目。
+// 設定したまま移行を忘れると既定値で動いてしまうため、起動時に警告する。
+var legacyEnvVars = map[string]string{
+	"OPENAI_RESPONSES_MODEL":              "openai.responses_model",
+	"OPENAI_SUBAGENT_MODEL":               "openai.subagent_model",
+	"OPENAI_REALTIME_MODEL":               "openai.realtime.model",
+	"OPENAI_REALTIME_VAD":                 "openai.realtime.vad",
+	"OPENAI_REALTIME_TRANSCRIPTION_MODEL": "openai.realtime.transcription_model",
+	"OPENAI_REALTIME_ENDPOINT":            "openai.realtime.endpoint",
+	"OPENAI_MEMORY_MODEL":                 "memory.model",
+	"MEMORY_STORE_PATH":                   "memory.store_path",
+	"AUTOMATIONS_STORE_PATH":              "automations.store_path",
+	"CONVERSATION_IDLE_TIMEOUT_SECONDS":   "conversation.idle_timeout_seconds",
+	"TTS_PROVIDER":                        "tts.provider",
+	"VOICEVOX_ENDPOINT":                   "tts.voicevox.endpoint",
+	"VOICEVOX_SPEAKER_ID":                 "tts.voicevox.speaker_id",
+	"VOICEVOX_SPEED_SCALE":                "tts.voicevox.speed_scale",
+	"ELEVENLABS_VOICE_ID":                 "tts.elevenlabs.voice_id",
+	"ELEVENLABS_MODEL_ID":                 "tts.elevenlabs.model",
+	"WAKE_MODE_STORE_PATH":                "wake.store_path",
+	"LOCAL_STT_ENDPOINT":                  "wake.local_stt_endpoint",
+	"WAKE_WORDS":                          "wake.words",
+	"WAKE_MAX_PREFIX":                     "wake.max_prefix",
+	"WAKE_MIN_CONFIDENCE":                 "wake.min_confidence",
+	"WAKE_MIN_SIMILARITY":                 "wake.min_similarity",
+	"SWITCHBOT_DEVICE_MAP":                "switchbot.device_map",
+	"GOOGLE_REDIRECT_URL":                 "google_calendar.redirect_url",
+	"GOOGLE_OAUTH_SCOPE":                  "google_calendar.scope",
+	"GOOGLE_OAUTH_TOKEN_PATH":             "google_calendar.token_path",
+	"WS_ADDR":                             "server.ws_addr",
+	"WEB_DIST_DIR":                        "server.web_dist_dir",
+}
+
+// LoadConfigはシークレットを環境変数から、それ以外の設定値をconfig.yamlから読み込む。
+// config.yamlが無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使う。
+func LoadConfig() Config {
+	path := DefaultConfigPath
+	if p := strings.TrimSpace(os.Getenv(ConfigPathEnv)); p != "" {
+		path = p
+	}
+	file, err := readConfigFile(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, warning := range legacyEnvWarnings(os.Getenv) {
+		log.Print(warning)
+	}
+	cfg, err := buildConfig(file, os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return cfg
+}
+
+// legacyEnvWarningsは、設定されている旧環境変数ごとの警告文を名前順に返す。
+func legacyEnvWarnings(getenv func(string) string) []string {
+	names := make([]string, 0, len(legacyEnvVars))
+	for name := range legacyEnvVars {
+		if strings.TrimSpace(getenv(name)) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	warnings := make([]string, 0, len(names))
+	for _, name := range names {
+		warnings = append(warnings, fmt.Sprintf("config: warning: %s is no longer read; set %s in config.yaml instead", name, legacyEnvVars[name]))
+	}
+	return warnings
+}
+
+// configFileはconfig.yamlの構造。項目の説明はconfig.sample.yamlに書く。
+// 0や空文字を有効な値として扱う項目は、未指定と区別するためにポインタにする。
+type configFile struct {
+	AdditionalSystemPrompt string `yaml:"additional_system_prompt"`
+	Server                 struct {
+		WSAddr     string `yaml:"ws_addr"`
+		WebDistDir string `yaml:"web_dist_dir"`
+	} `yaml:"server"`
+	RTC struct {
+		ICEAdvertiseIPs []string `yaml:"ice_advertise_ips"`
+	} `yaml:"rtc"`
+	OpenAI struct {
+		ResponsesModel string `yaml:"responses_model"`
+		SubagentModel  string `yaml:"subagent_model"`
+		Realtime       struct {
+			Model              string `yaml:"model"`
+			VAD                string `yaml:"vad"`
+			TranscriptionModel string `yaml:"transcription_model"`
+			Endpoint           string `yaml:"endpoint"`
+		} `yaml:"realtime"`
+	} `yaml:"openai"`
+	Conversation struct {
+		IdleTimeoutSeconds *int `yaml:"idle_timeout_seconds"`
+	} `yaml:"conversation"`
+	Memory struct {
+		Model     string `yaml:"model"`
+		StorePath string `yaml:"store_path"`
+	} `yaml:"memory"`
+	Automations struct {
+		StorePath string `yaml:"store_path"`
+	} `yaml:"automations"`
+	TTS struct {
+		Provider string `yaml:"provider"`
+		Voicevox struct {
+			Endpoint   string   `yaml:"endpoint"`
+			SpeakerID  *int     `yaml:"speaker_id"`
+			SpeedScale *float64 `yaml:"speed_scale"`
+		} `yaml:"voicevox"`
+		ElevenLabs struct {
+			VoiceID string `yaml:"voice_id"`
+			Model   string `yaml:"model"`
+		} `yaml:"elevenlabs"`
+	} `yaml:"tts"`
+	Wake struct {
+		StorePath        string   `yaml:"store_path"`
+		LocalSTTEndpoint string   `yaml:"local_stt_endpoint"`
+		Words            []string `yaml:"words"`
+		MaxPrefix        *int     `yaml:"max_prefix"`
+		MinConfidence    *float64 `yaml:"min_confidence"`
+		MinSimilarity    *float64 `yaml:"min_similarity"`
+	} `yaml:"wake"`
+	SwitchBot struct {
+		DeviceMap map[string]string `yaml:"device_map"`
+	} `yaml:"switchbot"`
+	GoogleCalendar struct {
+		RedirectURL string `yaml:"redirect_url"`
+		Scope       string `yaml:"scope"`
+		TokenPath   string `yaml:"token_path"`
+	} `yaml:"google_calendar"`
+}
+
+// readConfigFileは設定ファイルを読む。ファイルが無い場合は全項目を既定値にする。
+// 書き間違いに気づけるよう、未知のキーや型の誤りはエラーにする。
+func readConfigFile(path string) (configFile, error) {
+	var file configFile
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("config: %s not found; using default settings", path)
+		return file, nil
+	}
+	if err != nil {
+		return file, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
+		return file, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	return file, nil
+}
+
+// buildConfigは設定ファイルの値と環境変数のシークレットから、既定値を補ったConfigを作る。
+func buildConfig(file configFile, getenv func(string) string) (Config, error) {
+	env := func(name string) string { return strings.TrimSpace(getenv(name)) }
+
+	apiKey := env("OPENAI_API_KEY")
 	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY is not set")
-	}
-	responsesModel := strings.TrimSpace(os.Getenv("OPENAI_RESPONSES_MODEL"))
-	if responsesModel == "" {
-		// Responsesは履歴の要約・長期メモリ・検索用に使用する。
-		responsesModel = "gpt-5.4-nano-2026-03-17"
-	}
-	subagentModel := strings.TrimSpace(os.Getenv("OPENAI_SUBAGENT_MODEL"))
-	if subagentModel == "" {
-		subagentModel = "gpt-5.4"
-	}
-	memoryCfg := loadMemoryConfig(responsesModel)
-	wakePath := strings.TrimSpace(os.Getenv("WAKE_MODE_STORE_PATH"))
-	if wakePath == "" {
-		wakePath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "wake-mode.json")
-	}
-	localSTT := strings.TrimSpace(os.Getenv("LOCAL_STT_ENDPOINT"))
-	if localSTT == "" {
-		localSTT = "http://localhost:8000/transcribe"
-	}
-	automationPath := strings.TrimSpace(os.Getenv("AUTOMATIONS_STORE_PATH"))
-	if automationPath == "" {
-		automationPath = filepath.Join(filepath.Dir(memoryCfg.StorePath), "automations.json")
+		return Config{}, errors.New("OPENAI_API_KEY is not set")
 	}
 
-	prompt := readSystemPrompt(promptPath)
+	// Responsesは履歴の要約・長期メモリ・検索用に使用する。
+	responsesModel := stringOr(file.OpenAI.ResponsesModel, "gpt-5.4-nano-2026-03-17")
+	memoryCfg := MemoryConfig{
+		Model:     stringOr(file.Memory.Model, responsesModel),
+		StorePath: stringOr(file.Memory.StorePath, "data/memories.json"),
+	}
+	dataDir := filepath.Dir(memoryCfg.StorePath)
 
-	wsAddr := strings.TrimSpace(os.Getenv("WS_ADDR"))
-	if wsAddr == "" {
-		wsAddr = ":8081"
-	}
-	webDistDir := strings.TrimSpace(os.Getenv("WEB_DIST_DIR"))
-	if webDistDir == "" {
-		webDistDir = "web/dist"
-	}
+	// 選択肢
+	// eleven_multilingual_v2: 漢字で読めないことが多い
+	// eleven_flash_v2_5: 未検証。数字や日付の読み上げが難点らしい。リアルタイム向け
+	// eleven_turbo_v2_5: 40,000 文字/リクエスト の上限あり
+	// eleven_v3: 高品質だがレイテンシは高め。HTTPストリーミングで利用する
+	elevenLabsModel := stringOr(file.TTS.ElevenLabs.Model, "eleven_v3")
 
-	conversationIdleTimeout := conversationIdleTimeoutFromEnv(os.Getenv("CONVERSATION_IDLE_TIMEOUT_SECONDS"))
-	message := strings.TrimSpace(os.Getenv("AUTO_PROMPT_MESSAGE"))
-
-	switchCfg := SwitchBotConfig{
-		Token:     os.Getenv("SWITCHBOT_TOKEN"),
-		Secret:    os.Getenv("SWITCHBOT_SECRET"),
-		DeviceMap: os.Getenv("SWITCHBOT_DEVICE_MAP"),
-	}
-
-	elv := ElevenLabsConfig{
-		APIKey:  strings.TrimSpace(os.Getenv("ELEVENLABS_API_KEY")),
-		VoiceID: strings.TrimSpace(os.Getenv("ELEVENLABS_VOICE_ID")),
-		Model:   strings.TrimSpace(os.Getenv("ELEVENLABS_MODEL_ID")),
-	}
-	if elv.Model == "" {
-		// 選択肢
-		// eleven_multilingual_v2: 漢字で読めないことが多い
-		// eleven_flash_v2_5: 未検証。数字や日付の読み上げが難点らしい。リアルタイム向け
-		// eleven_turbo_v2_5: 40,000 文字/リクエスト の上限あり
-		// eleven_v3: 高品質だがレイテンシは高め。HTTPストリーミングで利用する
-		elv.Model = "eleven_v3"
-	}
-
-	ttsProvider := strings.TrimSpace(os.Getenv("TTS_PROVIDER"))
-	if ttsProvider == "" {
-		ttsProvider = "voicevox"
-	}
-	voicevox := VoicevoxConfig{
-		Endpoint:   strings.TrimSpace(os.Getenv("VOICEVOX_ENDPOINT")),
-		SpeakerID:  intFromEnv("VOICEVOX_SPEAKER_ID", 1),
-		SpeedScale: optionalPositiveFloatFromEnv("VOICEVOX_SPEED_SCALE"),
-	}
-
-	if voicevox.Endpoint == "" {
-		voicevox.Endpoint = "http://voicevox:50021"
-	}
-	realtimeModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_MODEL"))
-	if realtimeModel == "" {
-		realtimeModel = "gpt-realtime-2.1"
-	}
-	realtimeVAD := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_VAD"))
-	if realtimeVAD == "" {
-		realtimeVAD = "semantic_vad"
-	}
-	transcriptionModel := strings.TrimSpace(os.Getenv("OPENAI_REALTIME_TRANSCRIPTION_MODEL"))
-	if transcriptionModel == "" {
-		transcriptionModel = "gpt-4o-mini-transcribe"
-	}
-	rtcIceAdvertiseIPs := splitComma(os.Getenv("RTC_ICE_ADVERTISE_IPS"))
-	googleProject := strings.TrimSpace(os.Getenv("GOOGLE_CLOUD_PROJECT"))
-	googleRecognizer := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_RECOGNIZER"))
-	if googleRecognizer == "" {
-		googleRecognizer = "_"
-	}
-	googleLanguage := strings.TrimSpace(os.Getenv("GOOGLE_SPEECH_LANGUAGE"))
-	if googleLanguage == "" {
-		googleLanguage = "ja-JP"
-	}
-	googleCredentials := strings.TrimSpace(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
-	sttPhrases := readSTTPhrases("stt_phrases.txt")
-	sttProvider := strings.TrimSpace(os.Getenv("STT_PROVIDER"))
-	if sttProvider == "" {
-		sttProvider = "google"
-	}
-	openAISTTModel := strings.TrimSpace(os.Getenv("OPENAI_STT_MODEL"))
-	if openAISTTModel == "" {
-		openAISTTModel = "gpt-realtime-whisper"
+	// デプロイスクリプトが本番サーバーのIPを取得して渡すため、環境変数があればそちらを優先する。
+	iceIPs := trimStrings(file.RTC.ICEAdvertiseIPs)
+	if raw := env("RTC_ICE_ADVERTISE_IPS"); raw != "" {
+		iceIPs = splitComma(raw)
 	}
 
 	return Config{
 		APIKey:                     apiKey,
-		RealtimeModel:              realtimeModel,
-		RealtimeVAD:                realtimeVAD,
-		RealtimeEndpoint:           strings.TrimSpace(os.Getenv("OPENAI_REALTIME_ENDPOINT")),
-		RealtimeTranscriptionModel: transcriptionModel,
+		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
+		RealtimeModel:              stringOr(file.OpenAI.Realtime.Model, "gpt-realtime-2.1"),
+		RealtimeVAD:                stringOr(file.OpenAI.Realtime.VAD, "semantic_vad"),
+		RealtimeEndpoint:           strings.TrimSpace(file.OpenAI.Realtime.Endpoint),
+		RealtimeTranscriptionModel: stringOr(file.OpenAI.Realtime.TranscriptionModel, "gpt-4o-mini-transcribe"),
 		ResponsesModel:             responsesModel,
-		WakeModeStorePath:          wakePath,
-		WakeSettings:               loadWakeSettings(),
-		LocalSTTEndpoint:           localSTT,
-		AutomationStorePath:        automationPath,
-		SubagentModel:              subagentModel,
+		SubagentModel:              stringOr(file.OpenAI.SubagentModel, "gpt-5.4"),
+		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
+		WakeSettings:               wakeSettings(file),
+		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
+		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
 		Memory:                     memoryCfg,
-		SystemPrompt:               prompt,
-		ConversationIdleTimeout:    conversationIdleTimeout,
-		AutoPromptMessage:          message,
-		STTProvider:                sttProvider,
-		OpenAISTTModel:             openAISTTModel,
-		TTSProvider:                ttsProvider,
-		ElevenLabs:                 elv,
-		Voicevox:                   voicevox,
-		SwitchBot:                  switchCfg,
-		GoogleCloudProject:         googleProject,
-		GoogleRecognizer:           googleRecognizer,
-		GoogleLanguage:             googleLanguage,
-		GoogleCredentials:          googleCredentials,
-		STTPhrases:                 sttPhrases,
-		RTCIceAdvertiseIPs:         rtcIceAdvertiseIPs,
-		WSAddr:                     wsAddr,
-		WebDistDir:                 webDistDir,
-	}
+		ConversationIdleTimeout:    conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds),
+		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
+		ElevenLabs: ElevenLabsConfig{
+			APIKey:  env("ELEVENLABS_API_KEY"),
+			VoiceID: strings.TrimSpace(file.TTS.ElevenLabs.VoiceID),
+			Model:   elevenLabsModel,
+		},
+		Voicevox: VoicevoxConfig{
+			Endpoint:   stringOr(file.TTS.Voicevox.Endpoint, "http://voicevox:50021"),
+			SpeakerID:  intOr(file.TTS.Voicevox.SpeakerID, 1),
+			SpeedScale: positiveFloat(file.TTS.Voicevox.SpeedScale),
+		},
+		SwitchBot: SwitchBotConfig{
+			Token:     env("SWITCHBOT_TOKEN"),
+			Secret:    env("SWITCHBOT_SECRET"),
+			DeviceMap: file.SwitchBot.DeviceMap,
+		},
+		GoogleCalendar: googlecalendar.Config{
+			ClientID:     env("GOOGLE_CLIENT_ID"),
+			ClientSecret: env("GOOGLE_CLIENT_SECRET"),
+			RedirectURL:  stringOr(file.GoogleCalendar.RedirectURL, googlecalendar.DefaultRedirectURL),
+			Scopes:       []string{stringOr(file.GoogleCalendar.Scope, googlecalendar.DefaultScope)},
+			TokenPath:    stringOr(file.GoogleCalendar.TokenPath, filepath.Join(dataDir, "google_oauth_token.json")),
+		},
+		RTCIceAdvertiseIPs: iceIPs,
+		WSAddr:             stringOr(file.Server.WSAddr, ":8081"),
+		WebDistDir:         stringOr(file.Server.WebDistDir, "web/dist"),
+	}, nil
 }
 
-func loadMemoryConfig(responsesModel string) MemoryConfig {
-	memoryModel := strings.TrimSpace(os.Getenv("OPENAI_MEMORY_MODEL"))
-	if memoryModel == "" {
-		memoryModel = responsesModel
-	}
-	storePath := strings.TrimSpace(os.Getenv("MEMORY_STORE_PATH"))
-	if storePath == "" {
-		storePath = "data/memories.json"
-	}
-	return MemoryConfig{
-		Model:     memoryModel,
-		StorePath: storePath,
-	}
-}
-
-// loadWakeSettingsは呼びかけの判定の設定を環境変数から読む。値の範囲はwakemode.NewStoreで検証する。
-func loadWakeSettings() wakemode.Settings {
+// wakeSettingsは呼びかけの判定の設定を作る。値の範囲はwakemode.NewStoreで検証する。
+func wakeSettings(file configFile) wakemode.Settings {
 	settings := wakemode.DefaultSettings()
-	if words := strings.TrimSpace(os.Getenv("WAKE_WORDS")); words != "" {
-		settings.Words = nil
-		for _, word := range strings.Split(words, ",") {
-			if word = strings.TrimSpace(word); word != "" {
-				settings.Words = append(settings.Words, word)
-			}
-		}
+	if words := trimStrings(file.Wake.Words); len(words) > 0 {
+		settings.Words = words
 	}
-	settings.MaxPrefix = intFromEnv("WAKE_MAX_PREFIX", settings.MaxPrefix)
-	settings.MinConfidence = floatFromEnv("WAKE_MIN_CONFIDENCE", settings.MinConfidence)
-	settings.MinSimilarity = floatFromEnv("WAKE_MIN_SIMILARITY", settings.MinSimilarity)
+	settings.MaxPrefix = intOr(file.Wake.MaxPrefix, settings.MaxPrefix)
+	if file.Wake.MinConfidence != nil {
+		settings.MinConfidence = *file.Wake.MinConfidence
+	}
+	if file.Wake.MinSimilarity != nil {
+		settings.MinSimilarity = *file.Wake.MinSimilarity
+	}
 	return settings
 }
 
-func intFromEnv(name string, defaultValue int) int {
-	trimmed := strings.TrimSpace(os.Getenv(name))
-	if trimmed == "" {
-		return defaultValue
+func stringOr(value, defaultValue string) string {
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
 	}
-	value, err := strconv.Atoi(trimmed)
-	if err != nil {
-		return defaultValue
-	}
-	return value
+	return defaultValue
 }
 
-func floatFromEnv(name string, defaultValue float64) float64 {
-	trimmed := strings.TrimSpace(os.Getenv(name))
-	if trimmed == "" {
+func intOr(value *int, defaultValue int) int {
+	if value == nil {
 		return defaultValue
 	}
-	value, err := strconv.ParseFloat(trimmed, 64)
-	if err != nil {
-		return defaultValue
-	}
-	return value
+	return *value
 }
 
-func optionalPositiveFloatFromEnv(name string) *float64 {
-	trimmed := strings.TrimSpace(os.Getenv(name))
-	if trimmed == "" {
+func positiveFloat(value *float64) *float64 {
+	if value == nil || *value <= 0 {
 		return nil
 	}
-	value, err := strconv.ParseFloat(trimmed, 64)
-	if err != nil || value <= 0 {
-		return nil
-	}
-	return &value
+	v := *value
+	return &v
 }
 
-func conversationIdleTimeoutFromEnv(raw string) time.Duration {
+// conversationIdleTimeoutは会話終了までの無操作時間を返す。0は無効、負の値は既定値にする。
+func conversationIdleTimeout(seconds *int) time.Duration {
 	const defaultConversationIdleTimeout = 5 * time.Minute
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
+	if seconds == nil || *seconds < 0 {
 		return defaultConversationIdleTimeout
 	}
-	secs, err := strconv.Atoi(trimmed)
-	if err != nil || secs < 0 {
-		return defaultConversationIdleTimeout
+	return time.Duration(*seconds) * time.Second
+}
+
+func trimStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
 	}
-	return time.Duration(secs) * time.Second
+	return out
 }
 
 func splitComma(raw string) []string {
@@ -300,83 +364,6 @@ func splitComma(raw string) []string {
 			continue
 		}
 		out = append(out, trimmed)
-	}
-	return out
-}
-
-func readSystemPrompt(path string) string {
-	if path == "" {
-		return ""
-	}
-	mainPrompt, err := readPromptFile(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to read system prompt (%v)\n", err)
-	}
-
-	localPath := filepath.Join(filepath.Dir(path), "system_prompt.local.txt")
-	localPrompt, err := readPromptFile(localPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read local system prompt (%v)\n", err)
-	}
-
-	return joinPrompts(mainPrompt, localPrompt)
-}
-
-func readPromptFile(path string) (string, error) {
-	if path == "" {
-		return "", nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func readSTTPhrases(path string) []string {
-	phrases, err := readPhraseFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read STT phrases (%v)\n", err)
-	}
-
-	localPath := filepath.Join(filepath.Dir(path), "stt_phrases.local.txt")
-	localPhrases, err := readPhraseFile(localPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read local STT phrases (%v)\n", err)
-	}
-
-	return uniqueStrings(append(phrases, localPhrases...))
-}
-
-func readPhraseFile(path string) ([]string, error) {
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(string(data), "\n")
-	phrases := make([]string, 0, len(lines))
-	for _, line := range lines {
-		phrase := strings.TrimSpace(line)
-		if phrase == "" || strings.HasPrefix(phrase, "#") {
-			continue
-		}
-		phrases = append(phrases, phrase)
-	}
-	return phrases, nil
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
 	}
 	return out
 }

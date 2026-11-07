@@ -1,6 +1,8 @@
 tmp
 .envrc
+config.yaml
 AGENTS.md
+# 廃止したローカル設定ファイル。手元に残っている場合に誤ってコミットしないよう、無視を続ける
 system_prompt.local.txt
 stt_phrases.local.txt
 /smart-speaker

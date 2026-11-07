@@ -20,29 +20,31 @@ Apple Silicon Macではarm64、Linuxのx86 PCではamd64版が選択されます
 
 ## 設定
 
-VOICEVOX を使う場合は、`server` に渡す環境変数を次のように設定します。
+VOICEVOX を使う場合は、`config.yaml` を次のように設定します。
 
-```sh
-TTS_PROVIDER=voicevox
-VOICEVOX_ENDPOINT=http://voicevox:50021
-VOICEVOX_SPEAKER_ID=1
-VOICEVOX_SPEED_SCALE=1.1
+```yaml
+tts:
+  provider: voicevox
+  voicevox:
+    endpoint: http://voicevox:50021
+    speaker_id: 1
+    speed_scale: 1.1
 ```
 
-- `TTS_PROVIDER`: `voicevox` を指定すると VOICEVOX provider を使います。未指定時も `voicevox` です。ElevenLabsを利用する場合は `TTS_PROVIDER=elevenlabs` とAPI key / voice idを設定します。
-- `VOICEVOX_ENDPOINT`: VOICEVOX Engine の HTTP endpoint です。Compose 内では `http://voicevox:50021` を使います。
-- `VOICEVOX_SPEAKER_ID`: VOICEVOX の speaker ID です。未指定時は `1` です。
-- `VOICEVOX_SPEED_SCALE`: 任意です。指定した場合は `/audio_query` の `speedScale` を上書きします。未指定時は engine が返した query をそのまま使います。
+- `tts.provider`: `voicevox` を指定すると VOICEVOX provider を使います。未指定時も `voicevox` です。ElevenLabsを利用する場合は `tts.provider: elevenlabs` と、環境変数 `ELEVENLABS_API_KEY`・`tts.elevenlabs.voice_id` を設定します。
+- `tts.voicevox.endpoint`: VOICEVOX Engine の HTTP endpoint です。未指定時は Compose 内の `http://voicevox:50021` です。
+- `tts.voicevox.speaker_id`: VOICEVOX の speaker ID です。未指定時は `1` です。
+- `tts.voicevox.speed_scale`: 任意です。指定した場合は `/audio_query` の `speedScale` を上書きします。未指定時は engine が返した query をそのまま使います。
 
-`TTS_PROVIDER=voicevox` の場合、ElevenLabs の API key / voice id は TTS stage 初期化には不要です。
+`tts.provider: voicevox` の場合、ElevenLabs の API key / voice id は TTS stage 初期化には不要です。
 
-## `VOICEVOX_SPEAKER_ID` 一覧
+## `tts.voicevox.speaker_id` 一覧
 
-`VOICEVOX_SPEAKER_ID` はキャラクター単位の ID ではなく、VOICEVOX Engine の `/speakers` が返す各スタイルの `id` を指定します。つまり、キャラクターと声色をまとめた style ID を 1 つ指定する仕様です。
+`tts.voicevox.speaker_id` はキャラクター単位の ID ではなく、VOICEVOX Engine の `/speakers` が返す各スタイルの `id` を指定します。つまり、キャラクターと声色をまとめた style ID を 1 つ指定する仕様です。
 
 以下の一覧は、2026-06-04 時点で `voicevox/voicevox_engine:cpu-ubuntu20.04-latest` を起動し、`/speakers` の応答を確認して作成したものです。`latest` tag を参照しているため、将来の VOICEVOX Engine 更新で値やキャラクター数が変わる可能性があります。
 
-| キャラクター | スタイル | `VOICEVOX_SPEAKER_ID` |
+| キャラクター | スタイル | `tts.voicevox.speaker_id` |
 | --- | --- | --- |
 | 四国めたん | あまあま | `0` |
 | ずんだもん | あまあま | `1` |

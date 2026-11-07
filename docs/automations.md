@@ -15,7 +15,7 @@
 
 ## 保存と実行
 
-最大100件を`AUTOMATIONS_STORE_PATH`へJSONで保存する。既定はメモリ保存ファイルと同じディレクトリの`automations.json`で、Composeでは`/app/data/automations.json`。一時ファイルを書き終えてから置き換える。保存に失敗した予約は登録しない。
+最大100件を`automations.store_path`へJSONで保存する。既定はメモリ保存ファイルと同じディレクトリの`automations.json`で、Composeでは`/app/data/automations.json`。一時ファイルを書き終えてから置き換える。保存に失敗した予約は登録しない。
 
 サーバー停止中に過ぎた予定は、起動後の確認時に1回まとめて受け付ける。繰り返し予約は現在時刻から次回を計算し、停止中の回数分を連続実行しない。
 

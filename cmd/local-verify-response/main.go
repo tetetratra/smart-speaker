@@ -80,7 +80,7 @@ func main() {
 		inputText = defaultInputText
 	}
 
-	cfg := app.LoadConfig("system_prompt.txt")
+	cfg := app.LoadConfig()
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 

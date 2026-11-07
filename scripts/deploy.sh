@@ -7,6 +7,12 @@ set -euo pipefail
 CONTEXT_NAME="production"
 COMPOSE_FILE="docker-compose.yml"
 
+# config.yaml はイメージに含めて本番へ送る。無くてもビルドは通り、本番が既定値で動いてしまうため、ここで止める。
+if [[ ! -f config.yaml ]]; then
+  echo "config.yaml がありません。config.sample.yaml をもとに作成してから、リポジトリ直下で実行してください。" >&2
+  exit 1
+fi
+
 production_docker_host="$(
   docker context inspect "$CONTEXT_NAME" --format '{{ (index .Endpoints "docker").Host }}'
 )"

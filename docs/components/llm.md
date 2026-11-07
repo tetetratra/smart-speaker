@@ -226,7 +226,7 @@ sequenceDiagram
 
 ```json
 {
-  "model": "<OPENAI_RESPONSES_MODEL>",
+  "model": "<openai.responses_model>",
   "input": [
     {"role": "system", "content": "<system prompt + JSON timeline契約 + 現在日時>"},
     {"role": "user", "content": "..."}
@@ -250,7 +250,7 @@ sequenceDiagram
 }
 ```
 
-- `model` は `llm.Config.Model` から渡る。通常起動では `OPENAI_RESPONSES_MODEL` が未設定の場合、`internal/app/config.go` の default により `gpt-5.4-mini` になる。
+- `model` は `llm.Config.Model` から渡る。通常起動では `openai.responses_model` が未設定の場合、`internal/app/config.go` の default により `gpt-5.4-mini` になる。
 - `input` は system prompt を先頭に追加し、その後に履歴由来の message を追加する。role が空なら `user` になる。content が空の message は送らない。
 - HTTP status が 300 以上の場合、body を読んで `llm: <status>: <body>` としてエラーにする。この場合は JSON timeline retry ではなく、その request 自体を失敗として捨てる。
 - response body は `output[].content[]` のうち `type: "output_text"` の `text` を通常出力として扱う。text が空の場合はエラーにする。
