@@ -79,27 +79,6 @@ func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
 		t.Fatal(service.List())
 	}
 }
-func TestLegacyFinishedOneShotIsDroppedOnLoad(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "jobs.json")
-	legacy := `[
-  {"id":"done","name":"済み","instruction":"x","schedule":{"at":"2026-11-07T11:07:08+09:00","timezone":"Asia/Tokyo"},"speak":true,"enabled":false,"last_status":"submitted"},
-  {"id":"cron","name":"毎朝","instruction":"y","schedule":{"cron":"0 8 * * *","timezone":"Asia/Tokyo"},"speak":false,"enabled":true,"next_run_at":"2026-11-08T08:00:00+09:00","last_status":"scheduled"}
-]`
-	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
-		t.Fatal(err)
-	}
-	service, err := New(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if jobs := service.List(); len(jobs) != 1 || jobs[0].ID != "cron" {
-		t.Fatal(jobs)
-	}
-	restored, err := New(path, nil)
-	if err != nil || len(restored.List()) != 1 {
-		t.Fatal(err, restored.List())
-	}
-}
 func TestMissedCronCoalescesAndConcurrentTicksDoNotDuplicate(t *testing.T) {
 	var count atomic.Int32
 	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(_ context.Context, d Delivery) error {

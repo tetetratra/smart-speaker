@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 type JobSpec = { name: string; instruction: string; schedule: { cron?: string; at?: string; after_seconds?: number; timezone?: string }; speak: boolean }
-type Job = JobSpec & { id: string; enabled: boolean; next_run_at?: string; last_run_at?: string; last_status: string; last_error?: string }
+type Job = JobSpec & { id: string; next_run_at?: string; last_run_at?: string; last_status: string; last_error?: string }
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
 const pad = (value: number) => String(value).padStart(2, '0')
@@ -126,7 +126,6 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
               <div className="job-title">
                 <h2 className="job-name">{job.name}</h2>
                 {job.speak && <span className="job-badge">音声</span>}
-                {!job.enabled && <span className="job-badge">停止中</span>}
                 {job.last_status === 'failed' && <span className="job-badge danger">送信失敗</span>}
               </div>
               <span className="job-meta">

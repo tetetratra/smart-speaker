@@ -23,7 +23,6 @@ type Spec struct {
 type Job struct {
 	ID string `json:"id"`
 	Spec
-	Enabled    bool      `json:"enabled"`
 	NextRunAt  time.Time `json:"next_run_at,omitzero"`
 	LastRunAt  time.Time `json:"last_run_at,omitzero"`
 	LastStatus string    `json:"last_status"`
@@ -56,28 +55,17 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 	if len(jobs) > 100 {
 		return nil, fmt.Errorf("予約ジョブが100件を超えています")
 	}
-	dropped := false
 	for _, job := range jobs {
 		if job.ID == "" {
 			return nil, fmt.Errorf("予約ジョブのIDが空です")
 		}
-		// 以前の版で実行済みのまま残した日時指定の予約は読み込まない。
-		if job.Schedule.Cron == "" && !job.Enabled {
-			dropped = true
-			continue
-		}
 		if _, err := validate(job.Spec, time.Now(), false); err != nil {
 			return nil, err
 		}
-		if _, exists := s.jobs[job.ID]; exists || (job.Enabled && job.NextRunAt.IsZero()) {
-			return nil, fmt.Errorf("予約ジョブのIDまたは次回日時が不正です")
+		if _, exists := s.jobs[job.ID]; exists {
+			return nil, fmt.Errorf("予約ジョブのIDが重複しています")
 		}
 		s.jobs[job.ID] = job
-	}
-	if dropped {
-		if err := s.saveLocked(); err != nil {
-			return nil, err
-		}
 	}
 	return s, nil
 }
@@ -149,7 +137,7 @@ func (s *Service) Create(spec Spec, now time.Time) (Job, error) {
 		return Job{}, err
 	}
 	next, _ := spec.Schedule.next(now, false)
-	job := Job{ID: uuid.NewString(), Spec: spec, Enabled: true, NextRunAt: next, LastStatus: "scheduled"}
+	job := Job{ID: uuid.NewString(), Spec: spec, NextRunAt: next, LastStatus: "scheduled"}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.jobs) >= 100 {
@@ -176,7 +164,6 @@ func (s *Service) Update(id string, spec Spec, now time.Time) (Job, error) {
 	}
 	job := old
 	job.Spec = spec
-	job.Enabled = true
 	job.NextRunAt = next
 	job.LastStatus = "scheduled"
 	job.LastError = ""
@@ -220,7 +207,7 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	var due []Job
 	old := map[string]Job{}
 	for _, job := range s.listLocked() {
-		if !job.Enabled || job.NextRunAt.IsZero() || job.NextRunAt.After(now) {
+		if job.NextRunAt.IsZero() || job.NextRunAt.After(now) {
 			continue
 		}
 		due = append(due, job)
