@@ -35,6 +35,8 @@ cp config.sample.yaml config.yaml
 `config.yaml` が無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使います。未知のキーや型の誤りがあると起動時にエラーになります。
 `config.yaml` は `.gitignore` 済みです。本番用のイメージには、デプロイ元にある `config.yaml` が含まれます。
 
+システムプロンプトは `internal/app/system_prompt.go` に定義しています。家族構成や家電の呼び名など、環境ごとに追記したい内容は `config.yaml` の `additional_system_prompt` に書きます（既定のプロンプトの末尾に追記されます）。
+
 環境変数で渡すシークレットは以下です。`OPENAI_API_KEY` だけが必須で、それ以外は使う機能に応じて設定します。
 
 | 環境変数 | 用途 |
@@ -42,7 +44,6 @@ cp config.sample.yaml config.yaml
 | `OPENAI_API_KEY` | OpenAI API キー（必須） |
 | `ELEVENLABS_API_KEY` | ElevenLabs で読み上げる場合の API キー |
 | `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合の認証情報 |
-| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Google Speech-to-Text のサービスアカウント認証情報（JSON） |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar の OAuth クライアント |
 
 例外として、`RTC_ICE_ADVERTISE_IPS` はシークレットではありませんが、デプロイスクリプトが本番サーバーのIPを取得して渡すため、環境変数でも指定できます。指定した場合は `config.yaml` の `rtc.ice_advertise_ips` より優先します。

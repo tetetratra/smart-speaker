@@ -15,13 +15,8 @@
 - TTS provider ごとの設定
   - `tts.provider: elevenlabs` または未指定の場合: `ELEVENLABS_API_KEY` / `tts.elevenlabs.voice_id`
   - `tts.provider: voicevox` の場合: 起動済みの VOICEVOX Engine と `tts.voicevox.endpoint`
-- STT provider ごとの設定
-  - `stt.provider: google` または未指定の場合: `stt.google.project`、必要に応じて `GOOGLE_APPLICATION_CREDENTIALS_JSON`
-  - `stt.provider: openai` の場合: `OPENAI_API_KEY`
 - 任意の設定（`config.yaml`。全項目は `config.sample.yaml` を参照）:
   - `tts.provider`（未指定時は `elevenlabs`）
-  - `stt.provider`（未指定時は `google`）
-  - `stt.openai_model`（未指定時は `gpt-realtime-whisper`）
   - `tts.elevenlabs.model`
   - `tts.voicevox.speaker_id`
   - `tts.voicevox.speed_scale`
@@ -30,12 +25,6 @@
   - `server.ws_addr`
   - `conversation.idle_timeout_seconds`（未設定時は 300 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
-
-### 音声入力・Google Speech 関連
-- 旧資料では、音声入力確認に Google Speech 系の認証設定が必要とされています。
-  - `stt.google.project`
-  - `GOOGLE_APPLICATION_CREDENTIALS_JSON` または Application Default Credentials
-- ただし、これらは現行 `README.md` には記載がありません。現行実装での必須条件はこの資料の参照範囲だけでは不明です。
 
 ### Google Calendar OAuth
 - Google Calendar を確認する場合は、`README.md` の記載どおり以下を設定します。

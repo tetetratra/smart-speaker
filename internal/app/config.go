@@ -33,18 +33,11 @@ type Config struct {
 	Memory                     MemoryConfig
 	SystemPrompt               string
 	ConversationIdleTimeout    time.Duration
-	STTProvider                string
-	OpenAISTTModel             string
 	TTSProvider                string
 	ElevenLabs                 ElevenLabsConfig
 	Voicevox                   VoicevoxConfig
 	SwitchBot                  SwitchBotConfig
-	GoogleCloudProject         string
-	GoogleRecognizer           string
-	GoogleLanguage             string
-	GoogleCredentials          string
 	GoogleCalendar             googlecalendar.Config
-	STTPhrases                 []string
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
@@ -78,7 +71,7 @@ const DefaultConfigPath = "config.yaml"
 
 // LoadConfigはシークレットを環境変数から、それ以外の設定値をconfig.yamlから読み込む。
 // config.yamlが無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使う。
-func LoadConfig(promptPath string) Config {
+func LoadConfig() Config {
 	file, err := readConfigFile(DefaultConfigPath)
 	if err != nil {
 		log.Fatal(err)
@@ -87,15 +80,14 @@ func LoadConfig(promptPath string) Config {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cfg.SystemPrompt = readSystemPrompt(promptPath)
-	cfg.STTPhrases = readSTTPhrases("stt_phrases.txt")
 	return cfg
 }
 
 // configFileはconfig.yamlの構造。項目の説明はconfig.sample.yamlに書く。
 // 0や空文字を有効な値として扱う項目は、未指定と区別するためにポインタにする。
 type configFile struct {
-	Server struct {
+	AdditionalSystemPrompt string `yaml:"additional_system_prompt"`
+	Server                 struct {
 		WSAddr     string `yaml:"ws_addr"`
 		WebDistDir string `yaml:"web_dist_dir"`
 	} `yaml:"server"`
@@ -122,15 +114,6 @@ type configFile struct {
 	Automations struct {
 		StorePath string `yaml:"store_path"`
 	} `yaml:"automations"`
-	STT struct {
-		Provider    string `yaml:"provider"`
-		OpenAIModel string `yaml:"openai_model"`
-		Google      struct {
-			Project    string `yaml:"project"`
-			Recognizer string `yaml:"recognizer"`
-			Language   string `yaml:"language"`
-		} `yaml:"google"`
-	} `yaml:"stt"`
 	TTS struct {
 		Provider string `yaml:"provider"`
 		Voicevox struct {
@@ -213,6 +196,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 
 	return Config{
 		APIKey:                     apiKey,
+		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
 		RealtimeModel:              stringOr(file.OpenAI.Realtime.Model, "gpt-realtime-2.1"),
 		RealtimeVAD:                stringOr(file.OpenAI.Realtime.VAD, "semantic_vad"),
 		RealtimeEndpoint:           strings.TrimSpace(file.OpenAI.Realtime.Endpoint),
@@ -225,8 +209,6 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
 		Memory:                     memoryCfg,
 		ConversationIdleTimeout:    conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds),
-		STTProvider:                stringOr(file.STT.Provider, "google"),
-		OpenAISTTModel:             stringOr(file.STT.OpenAIModel, "gpt-realtime-whisper"),
 		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
 		ElevenLabs: ElevenLabsConfig{
 			APIKey:  env("ELEVENLABS_API_KEY"),
@@ -243,10 +225,6 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 			Secret:    env("SWITCHBOT_SECRET"),
 			DeviceMap: file.SwitchBot.DeviceMap,
 		},
-		GoogleCloudProject: strings.TrimSpace(file.STT.Google.Project),
-		GoogleRecognizer:   stringOr(file.STT.Google.Recognizer, "_"),
-		GoogleLanguage:     stringOr(file.STT.Google.Language, "ja-JP"),
-		GoogleCredentials:  env("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
 		GoogleCalendar: googlecalendar.Config{
 			ClientID:     env("GOOGLE_CLIENT_ID"),
 			ClientSecret: env("GOOGLE_CLIENT_SECRET"),
@@ -326,83 +304,6 @@ func splitComma(raw string) []string {
 			continue
 		}
 		out = append(out, trimmed)
-	}
-	return out
-}
-
-func readSystemPrompt(path string) string {
-	if path == "" {
-		return ""
-	}
-	mainPrompt, err := readPromptFile(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to read system prompt (%v)\n", err)
-	}
-
-	localPath := filepath.Join(filepath.Dir(path), "system_prompt.local.txt")
-	localPrompt, err := readPromptFile(localPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read local system prompt (%v)\n", err)
-	}
-
-	return joinPrompts(mainPrompt, localPrompt)
-}
-
-func readPromptFile(path string) (string, error) {
-	if path == "" {
-		return "", nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func readSTTPhrases(path string) []string {
-	phrases, err := readPhraseFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read STT phrases (%v)\n", err)
-	}
-
-	localPath := filepath.Join(filepath.Dir(path), "stt_phrases.local.txt")
-	localPhrases, err := readPhraseFile(localPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "warning: failed to read local STT phrases (%v)\n", err)
-	}
-
-	return uniqueStrings(append(phrases, localPhrases...))
-}
-
-func readPhraseFile(path string) ([]string, error) {
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(string(data), "\n")
-	phrases := make([]string, 0, len(lines))
-	for _, line := range lines {
-		phrase := strings.TrimSpace(line)
-		if phrase == "" || strings.HasPrefix(phrase, "#") {
-			continue
-		}
-		phrases = append(phrases, phrase)
-	}
-	return phrases, nil
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
 	}
 	return out
 }

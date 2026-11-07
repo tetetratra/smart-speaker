@@ -1,7 +1,7 @@
 # interimstopper component
 
 > [!CAUTION]
-> この component は STT が interim transcript（`isFinal=false`）を返すことを前提にしているが、現在の STT モデル `chirp_3`（`internal/components/stt/stage.go`）は、`InterimResults: true` を指定してもストリーミングで interim を返さず final transcript（`isFinal=true`）しか返さない（Chirp 3 の仕様）。
+> この component は STT が interim transcript（`isFinal=false`）を返すことを前提にしているが、現在の STT モデル `chirp_3`（削除済みの `internal/components/stt`）は、`InterimResults: true` を指定してもストリーミングで interim を返さず final transcript（`isFinal=true`）しか返さない（Chirp 3 の仕様）。
 > そのため `stt` は `EventHumanInterimUtterance` を発行せず、この component の早期保留（`generation.Store.BeginInterruption()`）は実質的に発火しない。
 > 現在のAI出力保留は、`rtcvad` の speech start 判定時に保留中割り込みが始まることで、final transcript 到達前に始まる。
 > interim による早期保留を実際に効かせるには、interim を返すモデルへ変更する必要がある。

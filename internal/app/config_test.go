@@ -10,32 +10,6 @@ import (
 	"time"
 )
 
-func TestReadSTTPhrasesLoadsMainAndLocalFiles(t *testing.T) {
-	dir := t.TempDir()
-	mainPath := filepath.Join(dir, "stt_phrases.txt")
-	localPath := filepath.Join(dir, "stt_phrases.local.txt")
-
-	if err := os.WriteFile(mainPath, []byte("スマートスピーカー\n\n# comment\nyour-username\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(localPath, []byte("your-username\nPhraseSet\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	got := readSTTPhrases(mainPath)
-	want := []string{"スマートスピーカー", "your-username", "PhraseSet"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("expected %#v, got %#v", want, got)
-	}
-}
-
-func TestReadSTTPhrasesIgnoresMissingFiles(t *testing.T) {
-	got := readSTTPhrases(filepath.Join(t.TempDir(), "stt_phrases.txt"))
-	if len(got) != 0 {
-		t.Fatalf("expected no phrases, got %#v", got)
-	}
-}
-
 // loadFromYAMLはYAML文字列と環境変数からConfigを作る。
 func loadFromYAML(t *testing.T, content string, env map[string]string) (Config, error) {
 	t.Helper()
@@ -104,13 +78,9 @@ func TestBuildConfigDefaults(t *testing.T) {
 		"WakeModeStorePath":          {cfg.WakeModeStorePath, "data/wake-mode.json"},
 		"AutomationStorePath":        {cfg.AutomationStorePath, "data/automations.json"},
 		"LocalSTTEndpoint":           {cfg.LocalSTTEndpoint, "http://local-stt:8000/transcribe"},
-		"STTProvider":                {cfg.STTProvider, "google"},
-		"OpenAISTTModel":             {cfg.OpenAISTTModel, "gpt-realtime-whisper"},
 		"TTSProvider":                {cfg.TTSProvider, "voicevox"},
 		"Voicevox.Endpoint":          {cfg.Voicevox.Endpoint, "http://voicevox:50021"},
 		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_v3"},
-		"GoogleRecognizer":           {cfg.GoogleRecognizer, "_"},
-		"GoogleLanguage":             {cfg.GoogleLanguage, "ja-JP"},
 		"GoogleCalendar.RedirectURL": {cfg.GoogleCalendar.RedirectURL, "http://localhost:8081/oauth/google/callback"},
 		"GoogleCalendar.Scope":       {cfg.GoogleCalendar.Scopes[0], "https://www.googleapis.com/auth/calendar.events"},
 		"GoogleCalendar.TokenPath":   {cfg.GoogleCalendar.TokenPath, "data/google_oauth_token.json"},
@@ -159,13 +129,6 @@ memory:
   store_path: /app/data/memories.json
 automations:
   store_path: /tmp/automations.json
-stt:
-  provider: openai
-  openai_model: gpt-live-transcribe
-  google:
-    project: my-project
-    recognizer: rec
-    language: en-US
 tts:
   provider: elevenlabs
   voicevox:
@@ -191,13 +154,12 @@ google_calendar:
   token_path: /tmp/token.json
 `
 	env := map[string]string{
-		"OPENAI_API_KEY":                      "openai",
-		"ELEVENLABS_API_KEY":                  "eleven",
-		"SWITCHBOT_TOKEN":                     "token",
-		"SWITCHBOT_SECRET":                    "secret",
-		"GOOGLE_APPLICATION_CREDENTIALS_JSON": "{}",
-		"GOOGLE_CLIENT_ID":                    "client-id",
-		"GOOGLE_CLIENT_SECRET":                "client-secret",
+		"OPENAI_API_KEY":       "openai",
+		"ELEVENLABS_API_KEY":   "eleven",
+		"SWITCHBOT_TOKEN":      "token",
+		"SWITCHBOT_SECRET":     "secret",
+		"GOOGLE_CLIENT_ID":     "client-id",
+		"GOOGLE_CLIENT_SECRET": "client-secret",
 	}
 	cfg := mustLoadFromYAML(t, content, env)
 
@@ -213,12 +175,6 @@ google_calendar:
 		"Memory.Model":               {cfg.Memory.Model, "gpt-memory"},
 		"Memory.StorePath":           {cfg.Memory.StorePath, "/app/data/memories.json"},
 		"AutomationStorePath":        {cfg.AutomationStorePath, "/tmp/automations.json"},
-		"STTProvider":                {cfg.STTProvider, "openai"},
-		"OpenAISTTModel":             {cfg.OpenAISTTModel, "gpt-live-transcribe"},
-		"GoogleCloudProject":         {cfg.GoogleCloudProject, "my-project"},
-		"GoogleRecognizer":           {cfg.GoogleRecognizer, "rec"},
-		"GoogleLanguage":             {cfg.GoogleLanguage, "en-US"},
-		"GoogleCredentials":          {cfg.GoogleCredentials, "{}"},
 		"TTSProvider":                {cfg.TTSProvider, "elevenlabs"},
 		"Voicevox.Endpoint":          {cfg.Voicevox.Endpoint, "http://localhost:50021"},
 		"ElevenLabs.APIKey":          {cfg.ElevenLabs.APIKey, "eleven"},
@@ -313,5 +269,20 @@ func TestConfigSampleYAMLIsLoadable(t *testing.T) {
 	}
 	if cfg.Voicevox.SpeedScale == nil || len(cfg.RTCIceAdvertiseIPs) != 1 || len(cfg.SwitchBot.DeviceMap) != 1 {
 		t.Fatalf("コメントアウトされた項目が有効になっていません: %+v", cfg)
+	}
+}
+
+func TestBuildConfigUsesDefaultSystemPrompt(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "", minimalEnv)
+	if cfg.SystemPrompt != defaultSystemPrompt || !strings.Contains(cfg.SystemPrompt, "会話型AI") {
+		t.Fatalf("SystemPrompt が既定のプロンプトになっていません: %q", cfg.SystemPrompt)
+	}
+}
+
+func TestBuildConfigAppendsAdditionalSystemPrompt(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "additional_system_prompt: |\n  ユーザーの名前は太郎です。\n", minimalEnv)
+	want := strings.TrimRight(defaultSystemPrompt, "\n") + "\n\nユーザーの名前は太郎です。\n"
+	if cfg.SystemPrompt != want {
+		t.Fatalf("SystemPrompt の末尾 = %q", cfg.SystemPrompt[len(cfg.SystemPrompt)-40:])
 	}
 }

@@ -10,44 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tetetratra/smart-speaker/internal/app"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
-
-func TestBuildSTTStageDefaultsToGoogle(t *testing.T) {
-	st, err := buildSTTStage(app.Config{
-		APIKey: "openai",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st == nil {
-		t.Fatal("expected stage")
-	}
-	_ = st.Close()
-}
-
-func TestBuildSTTStageSelectsOpenAI(t *testing.T) {
-	st, err := buildSTTStage(app.Config{
-		APIKey:         "openai",
-		STTProvider:    "openai",
-		OpenAISTTModel: "gpt-realtime-whisper",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st == nil {
-		t.Fatal("expected stage")
-	}
-	_ = st.Close()
-}
-
-func TestBuildSTTStageRejectsUnknownProvider(t *testing.T) {
-	if _, err := buildSTTStage(app.Config{STTProvider: "unknown"}); err == nil {
-		t.Fatal("expected error")
-	}
-}
 
 func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))

@@ -9,6 +9,12 @@
 # - 未知のキー（書き間違い）や型の誤りがあると起動時にエラーになります。
 # - APIキーなどのシークレットはこのファイルに書かず、環境変数で渡します（README の「設定」を参照）。
 
+# システムプロンプトの末尾に追記する内容。環境ごとの事情（家族構成、家電の呼び名など）を書きます。既定: なし
+# 既定のシステムプロンプトは internal/app/system_prompt.go にあります。
+# additional_system_prompt: |
+#   ユーザーの名前は太郎です。
+#   リビングのエアコンは「エアコン」と呼びます。
+
 server:
   # HTTP / WebSocket サーバーの待ち受けアドレス。既定: ":8081"
   # ws_addr: ":8081"
@@ -60,23 +66,6 @@ memory:
 automations:
   # 予約ジョブの保存先。既定: memory.store_path と同じディレクトリの "automations.json"
   # store_path: "data/automations.json"
-
-stt:
-  # 音声認識のプロバイダ。"google" または "openai"。既定: "google"
-  # provider: "google"
-
-  # provider が "openai" のときの文字起こしモデル。既定: "gpt-realtime-whisper"
-  # openai_model: "gpt-realtime-whisper"
-
-  google:
-    # provider が "google" のときの Google Cloud プロジェクトID。既定: なし
-    # project: ""
-
-    # Speech-to-Text の recognizer。既定: "_"
-    # recognizer: "_"
-
-    # 認識する言語。既定: "ja-JP"
-    # language: "ja-JP"
 
 tts:
   # 音声合成のプロバイダ。"voicevox" または "elevenlabs"。既定: "voicevox"

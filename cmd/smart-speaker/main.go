@@ -14,12 +14,10 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
-	"github.com/tetetratra/smart-speaker/internal/components/openaistt"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/speechsegment"
-	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
@@ -47,7 +45,7 @@ func main() {
 
 	setLocalTimeZone()
 
-	cfg := app.LoadConfig("system_prompt.txt")
+	cfg := app.LoadConfig()
 	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
 
 	ensureGoogleCalendarToken()
@@ -233,31 +231,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.tool.Name = "toolcaller"
 	stages.rtcpeer.Name = "rtcpeer"
 	return stages, nil
-}
-
-func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
-	provider := strings.TrimSpace(cfg.STTProvider)
-	if provider == "" {
-		provider = "google"
-	}
-	switch provider {
-	case "google":
-		return stt.NewStage(stt.Config{
-			SpeechProjectID:  cfg.GoogleCloudProject,
-			SpeechRecognizer: cfg.GoogleRecognizer,
-			SpeechLanguage:   cfg.GoogleLanguage,
-			SpeechCredsJSON:  cfg.GoogleCredentials,
-			SpeechPhrases:    cfg.STTPhrases,
-		})
-	case "openai":
-		return openaistt.NewStage(openaistt.Config{
-			APIKey:  cfg.APIKey,
-			Model:   cfg.OpenAISTTModel,
-			Phrases: cfg.STTPhrases,
-		})
-	default:
-		return nil, fmt.Errorf("stt: unknown provider %q", provider)
-	}
 }
 
 func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
