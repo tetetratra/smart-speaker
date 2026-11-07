@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
-import { ToolHistoryView } from './ToolHistoryView'
+import { Whiteboard } from './Whiteboard'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
@@ -10,11 +10,11 @@ import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
-type BoardEntry = { id: number; content: string }
+type BoardEntry = { id: number; content: string; timestamp: number }
 type ToolToastKind = 'call' | 'result'
 type ToolToast = { id: number; kind: ToolToastKind; toolName: string }
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'tools' | 'jobs'
+type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
 type MemoryItem = {
   id: string
   content: string
@@ -61,6 +61,9 @@ const liveRootStyle = `
     --ui-accent-text: #ffffff;
     --ui-accent-soft: #dbeafe;
     --ui-accent-soft-text: #1d4ed8;
+    --ui-tool-call-bg: #dcfce7;
+    --ui-tool-call-line: #86efac;
+    --ui-tool-call-text: #166534;
     --ui-danger-bg: #fef2f2;
     --ui-danger-line: #fecaca;
     --ui-danger-text: #991b1b;
@@ -92,6 +95,7 @@ const liveRootStyle = `
   .live-frame {
     width: 100vw;
     height: 100vh;
+    height: 100dvh;
     padding: 6px;
     position: relative;
     background: var(--live-bg);
@@ -104,6 +108,9 @@ const liveRootStyle = `
       --ui-accent-text: #ffffff;
       --ui-accent-soft: #1e3558;
       --ui-accent-soft-text: #bfdbfe;
+      --ui-tool-call-bg: #143322;
+      --ui-tool-call-line: #357a4c;
+      --ui-tool-call-text: #bbf7d0;
       --ui-danger-bg: #381c26;
       --ui-danger-line: #864354;
       --ui-danger-text: #fecdd3;
@@ -165,7 +172,8 @@ const liveRootStyle = `
     justify-content: flex-end;
     gap: 6px;
     align-items: center;
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .live-volume-control {
     border: 1px solid var(--live-line);
@@ -205,9 +213,9 @@ const liveRootStyle = `
     animation: live-tool-toast-slide 5000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .live-tool-toast.call {
-    background: var(--live-panel-soft);
-    border-color: var(--live-line-strong);
-    color: var(--live-text);
+    background: var(--ui-tool-call-bg);
+    border-color: var(--ui-tool-call-line);
+    color: var(--ui-tool-call-text);
   }
   .live-tool-toast.result {
     background: var(--ui-accent-soft);
@@ -641,7 +649,6 @@ type LiveViewProps = {
   goScenes: () => void
   goMemory: () => void
   goAdmin: () => void
-  goTools: () => void
   goJobs: () => void
 }
 
@@ -894,7 +901,7 @@ function App() {
         case 'whiteboard_update': {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
-          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content }])
+          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content, timestamp: Date.now() }])
           break
         }
         default:
@@ -1149,7 +1156,6 @@ function App() {
   const [uiMode, setUiMode] = useState<UiMode>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) return 'jobs'
-    if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) return 'tools'
     if (params.get('ui') === 'admin') return 'admin'
     if (params.get('ui') === 'memory') return 'memory'
     if (params.get('ui') === 'scenes') return 'scenes'
@@ -1162,10 +1168,6 @@ function App() {
     const onPopState = () => {
       const params = new URLSearchParams(window.location.search)
       if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) {setUiMode('jobs');return}
-      if (params.get('ui') === 'tools' || window.location.pathname.startsWith('/tools')) {
-        setUiMode('tools')
-        return
-      }
       if (params.get('ui') === 'admin') {
         setUiMode('admin')
         return
@@ -1285,9 +1287,7 @@ function App() {
   }, [])
   const setMode = useCallback((mode: UiMode) => {
     const params = new URLSearchParams(window.location.search)
-    if (mode === 'jobs') {params.set('ui', 'jobs')} else if (mode === 'tools') {
-      params.set('ui', 'tools')
-    } else if (mode === 'admin') {
+    if (mode === 'jobs') {params.set('ui', 'jobs')} else if (mode === 'admin') {
       params.set('ui', 'admin')
     } else if (mode === 'memory') {
       params.set('ui', 'memory')
@@ -1323,7 +1323,6 @@ function App() {
           goScenes={() => setMode('scenes')}
           goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
-          goTools={() => setMode('tools')}
           goJobs={() => setMode('jobs')}
         />
       </div>
@@ -1380,9 +1379,7 @@ function App() {
           app画面
         </button>
       </div>
-      <WakeModeControl backendURL={backendURL} />
       <AutomationView visible={uiMode === 'jobs'} backendURL={backendURL} goApp={() => setMode('app')} />
-      <ToolHistoryView visible={uiMode === 'tools'} backendURL={backendURL} goApp={() => setMode('app')} />
       <MemoryView
         visible={uiMode === 'memory'}
         memories={memories}
@@ -1885,7 +1882,6 @@ function TTSControl() {
   return (
     <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        読み上げ音声
         <select
           aria-label="読み上げ音声"
           value={selection?.provider ?? ''}
@@ -1902,7 +1898,6 @@ function TTSControl() {
         </select>
         {error && <button className="live-admin-btn" onClick={() => void request()} disabled={pending}>再取得</button>}
       </label>
-      <span style={{ color: 'var(--live-muted)' }}>{pending ? '設定を確認中…' : '次の音声生成から反映・全端末共通'}</span>
       {error && <span role="alert">{error}</span>}
     </div>
   )
@@ -1927,10 +1922,8 @@ function LiveView(props: LiveViewProps) {
     goScenes,
     goMemory,
     goAdmin,
-    goTools,
     goJobs,
   } = props
-  const boardRef = useRef<HTMLDivElement | null>(null)
   const handleToggle = useCallback(() => {
     if (connected) {
       disconnect()
@@ -1938,11 +1931,6 @@ function LiveView(props: LiveViewProps) {
     }
     void connect()
   }, [connected, connect, disconnect])
-  useEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    board.scrollTop = board.scrollHeight
-  }, [boardEntries])
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
   const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
   const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
@@ -1952,17 +1940,7 @@ function LiveView(props: LiveViewProps) {
       <div className="live-frame">
         <div className="live-main">
           <div className="live-left">
-            <div className="live-board" ref={boardRef}>
-              {boardEntries.map((entry, index) => (
-                  <React.Fragment key={entry.id}>
-                    {index > 0 && <hr className="live-board-separator" />}
-                    <div className="live-board-entry">
-                      {entry.content}
-                    </div>
-                  </React.Fragment>
-                ))
-              }
-            </div>
+            <Whiteboard entries={boardEntries} backendURL={backendURL} />
             <div className="live-bubble-slot">
               {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
@@ -1985,7 +1963,6 @@ function LiveView(props: LiveViewProps) {
                   <button onClick={goScenes} className="live-admin-btn">リモコン</button>
                   <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                   <button onClick={goAdmin} className="live-admin-btn">ログ</button>
-                  <button onClick={goTools} className="live-admin-btn">ツール履歴</button>
                   <button onClick={goJobs} className="live-admin-btn">予約</button>
                 </div>
               </div>
@@ -2003,7 +1980,10 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <TTSControl />
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <TTSControl />
+                <WakeModeControl backendURL={backendURL} />
+              </div>
               <div className="live-playback-slider-row">
                 <span className="live-playback-slider-label">再生音量</span>
                 <input
