@@ -46,7 +46,7 @@ func newGate(t *testing.T, required bool) *gateRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Set(required, "", time.Now()); err != nil {
+	if _, err := s.Set(required, nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	f := &fakeSTT{calls: make(chan []byte, 8), answers: make(chan result, 8)}
@@ -124,29 +124,71 @@ func TestDisabledPassesAudioWithoutSTT(t *testing.T) {
 	default:
 	}
 }
-func TestEachUtteranceIsGatedAndRawAudioNeverLeaves(t *testing.T) {
-	r := newGate(t, true)
-	r.utterance(t)
-	r.stt.answers <- result{transcript: Transcript{Text: "スビーカー、予定を教えて", Confidence: 0.9}}
+func (r *gateRig) wake(t *testing.T, text string) types.LocalWakeUtterance {
+	t.Helper()
 	select {
 	case e := <-r.node.Downstream:
 		p, ok := e.Payload.(types.LocalWakeUtterance)
-		if !ok || (p.Similarity < 0.79 || p.Similarity >= 1) || p.Confidence != 0.9 {
+		if !ok || p.Text != text || p.Confidence != 0.9 {
+			t.Fatal(e)
+		}
+		return p
+	case <-r.ctx.Done():
+		t.Fatal(r.ctx.Err())
+	}
+	return types.LocalWakeUtterance{}
+}
+func TestUtterancesAreGatedUntilWakeAndThenPassRawAudio(t *testing.T) {
+	r := newGate(t, true)
+	// 呼びかけがない・文頭にない・低信頼度・認識失敗の発話は送らない。
+	for _, answer := range []result{
+		{transcript: Transcript{Text: "続きも教えて", Confidence: 0.9}},
+		{transcript: Transcript{Text: "明日は早く家を出るので起きて", Confidence: 0.9}},
+		{transcript: Transcript{Text: "起きて", Confidence: 0.1}},
+		{err: errors.New("STT停止")},
+	} {
+		r.utterance(t)
+		r.stt.answers <- answer
+		r.noEvent(t)
+	}
+	r.utterance(t)
+	r.stt.answers <- result{transcript: Transcript{Text: "ねえ、起きて。予定を教えて", Confidence: 0.9}}
+	if p := r.wake(t, "ねえ、起きて。予定を教えて"); p.WakeOnly {
+		t.Fatal("本文のある発話を呼びかけだけと判定しました")
+	}
+	// 会話中はローカルSTTを通さず、音声をそのまま送る。
+	go r.frame(t, true)
+	select {
+	case e := <-r.node.Downstream:
+		if e.Kind != types.EventRTCPeerAudioFrame {
 			t.Fatal(e)
 		}
 	case <-r.ctx.Done():
 		t.Fatal(r.ctx.Err())
 	}
-	// 直前に呼びかけ済みでも次の発話は必須。
+	select {
+	case <-r.stt.calls:
+		t.Fatal("会話中にSTTを呼びました")
+	default:
+	}
+}
+func TestUtteranceQueuedBeforeWakeIsAcceptedAfterWake(t *testing.T) {
+	r := newGate(t, true)
 	r.utterance(t)
-	r.stt.answers <- result{transcript: Transcript{Text: "続きも教えて", Confidence: 0.9}}
-	r.noEvent(t)
-	r.utterance(t)
-	r.stt.answers <- result{transcript: Transcript{Text: "スピーカー", Confidence: 0.1}}
-	r.noEvent(t)
-	r.utterance(t)
-	r.stt.answers <- result{err: errors.New("STT停止")}
-	r.noEvent(t)
+	// 呼びかけの認識中に続けて話した発話も、呼びかけの確定後に受け付ける。
+	for i := 0; i < 3; i++ {
+		r.frame(t, true)
+	}
+	for i := 0; i < 8; i++ {
+		r.frame(t, false)
+	}
+	r.stt.answers <- result{transcript: Transcript{Text: "起きて", Confidence: 0.9}}
+	if p := r.wake(t, "起きて"); !p.WakeOnly {
+		t.Fatal("呼びかけだけの発話を判定できません")
+	}
+	<-r.stt.calls
+	r.stt.answers <- result{transcript: Transcript{Text: "今日の天気は", Confidence: 0.9}}
+	r.wake(t, "今日の天気は")
 }
 func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 	for _, change := range []string{"mode", "peer"} {
@@ -154,12 +196,12 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 			r := newGate(t, true)
 			r.utterance(t)
 			if change == "mode" {
-				_, _ = r.store.Set(false, "", time.Now())
+				_, _ = r.store.Set(false, nil, time.Now())
 			} else {
 				r.sink(t, false)
 				r.sink(t, true)
 			}
-			r.stt.answers <- result{transcript: Transcript{Text: "スピーカー、今何時", Confidence: 0.9}}
+			r.stt.answers <- result{transcript: Transcript{Text: "起きて、今何時", Confidence: 0.9}}
 			r.noEvent(t)
 		})
 	}

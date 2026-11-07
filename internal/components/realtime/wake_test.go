@@ -12,7 +12,7 @@ import (
 
 func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
-	m, _ := s.Set(true, "", time.Now())
+	m, _ := s.Set(true, nil, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
 	for _, kind := range []string{"input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped", "input_audio_buffer.committed", "conversation.item.input_audio_transcription.completed"} {
 		r.send(map[string]any{"type": kind, "item_id": "meeting", "transcript": "会議の話"})
@@ -21,10 +21,10 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	if len(r.history.Snapshot()) != 0 {
 		t.Fatal("呼びかけなしの音声を記録しました")
 	}
-	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "スピーカー、今日の予定は", Revision: m.Revision, Confidence: 0.9, Similarity: 1}}
+	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、今日の予定は", Revision: m.Revision, Confidence: 0.9}}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	content := item["content"].([]any)[0].(map[string]any)
-	if content["type"] != "input_text" || content["text"] != "スピーカー、今日の予定は" {
+	if content["type"] != "input_text" || content["text"] != "起きて、今日の予定は" {
 		t.Fatal(item)
 	}
 	r.wait("response.create")
@@ -40,7 +40,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Set(true, "", time.Now()); err != nil {
+	if _, err = store.Set(true, nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	scheduled := make(chan types.ScheduledPrompt, 1)
@@ -89,4 +89,77 @@ check:
 	// 解除後は呼びかけのない通常の発話で応答を開始できる。
 	r.utterance("ordinary")
 	r.wait("response.create")
+}
+
+// 呼びかけだけの発話には、LLMへ送らずに短い返事を読み上げる。
+func TestWakeOnlyUtteranceGetsShortReplyWithoutLLM(t *testing.T) {
+	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+	m, _ := s.Set(true, nil, time.Now())
+	r := newRig(t, func(c *Config) { c.WakeMode = s })
+	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
+	change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
+	text := r.event(types.EventResponseText).Payload.(types.ResponseText)
+	if text.Text != "はい" || text.GenerationID != change.GenerationID {
+		t.Fatal(text)
+	}
+	if done := r.event(types.EventResponseText).Payload.(types.ResponseText); !done.Done {
+		t.Fatal(done)
+	}
+	timer := time.NewTimer(80 * time.Millisecond)
+	defer timer.Stop()
+	for {
+		select {
+		case c := <-r.commands:
+			if c["type"] == "conversation.item.create" || c["type"] == "response.create" {
+				t.Fatal("呼びかけだけの発話をLLMへ送りました", c)
+			}
+		case <-timer.C:
+			records := r.history.Snapshot()
+			if len(records) != 2 || records[0].Text != "起きて" || records[1].Text != "はい" {
+				t.Fatal(records)
+			}
+			return
+		}
+	}
+}
+
+// 呼びかけ後の会話中は、接続を作り直さずに音声とクラウドの発話検出を使い、終了時に未確定の音声を捨てる。
+func TestConversationAfterWakeUsesAudioUntilItEnds(t *testing.T) {
+	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+	m, _ := s.Set(true, nil, time.Now())
+	r := newRig(t, func(c *Config) { c.WakeMode = s })
+	frame := types.Event{Payload: types.RTCPeerAudioFrame{PeerID: "test", PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
+	r.node.Upstream <- frame
+	if d := s.Evaluate("起きて", 0.9, m.Revision, false, time.Now()); !d.Accepted {
+		t.Fatal(d)
+	}
+	r.node.Upstream <- frame
+	r.wait("input_audio_buffer.append")
+	before := s.Snapshot(time.Now()).AwakeUntil
+	time.Sleep(10 * time.Millisecond)
+	r.utterance("followup")
+	r.wait("response.create")
+	if after := s.Snapshot(time.Now()).AwakeUntil; after == nil || !after.After(*before) {
+		t.Fatal("会話中の発話で時間を数え直していません", before, after)
+	}
+	// 会話中が終わると接続は維持したまま、未確定の音声を捨てて音声を送らなくなる。
+	if _, err := s.Set(true, nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r.node.Upstream <- frame
+	r.wait("input_audio_buffer.clear")
+	timer := time.NewTimer(80 * time.Millisecond)
+	defer timer.Stop()
+	for {
+		select {
+		case c := <-r.commands:
+			if c["type"] == "input_audio_buffer.append" || c["type"] == "session.update" {
+				t.Fatal("会話の終了後に音声を送るか接続を作り直しました", c)
+			}
+		case conn := <-r.connections:
+			t.Fatal("会話中の切替で再接続しました", conn)
+		case <-timer.C:
+			return
+		}
+	}
 }

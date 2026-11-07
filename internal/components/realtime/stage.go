@@ -54,7 +54,7 @@ type call struct {
 	finished   bool
 }
 type stage struct {
-	wakeModeRequired                          bool
+	wakeModeRequired, wakeGated               bool
 	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
 	silentGeneration                          types.GenerationID
@@ -206,6 +206,7 @@ func (s *stage) run(ctx context.Context) {
 			}
 			s.instructions = instructions
 			s.wakeModeRequired = s.wakeRequired()
+			s.wakeGated = s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Gated()
 			s.transport.send(sessionUpdate(s.cfg, conversation.WithCurrentTime(instructions, time.Now())))
 			continue
 		}
@@ -283,7 +284,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 			}
 		}
 	case types.RTCPeerAudioFrame:
-		if s.wakeRequired() {
+		if s.refreshWakeConversation() {
 			return
 		}
 		pcm := normalizePCM16(p.PCM, p.SampleRate, p.Channels)
@@ -342,6 +343,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	if s.refreshWakeMode(ctx) {
 		return
 	}
+	s.refreshWakeConversation()
 	s.maybeRespond(ctx)
 	if s.startScheduled(ctx) {
 		return
