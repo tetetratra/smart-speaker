@@ -211,3 +211,9 @@ UIと`set_wake_mode`で、既定の呼びかけ不要モードから必須モー
 初回は`session_id`を空文字にし、返されたIDを次の呼び出しで指定すると同じ会話を継続します。親の会話履歴は自動転送しません。`OPENAI_SUBAGENT_MODEL`の既定は`gpt-5.4`、推論量は`high`で、外部ツールは付与しません。Responses APIとStructured Outputsに対応するモデルが必要です。
 
 セッションは最新の利用から24時間、最大32件をメモリに保持し、サーバー再起動で失われます。API側への保存を有効にし、`previous_response_id`で継続します。[会話状態](https://developers.openai.com/api/docs/guides/conversation-state)と[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)の公式仕様を使用しています。失敗時は直前に成功した会話から再開します。
+
+### 手元のMacのClaude Codeに作業を頼む
+
+資料の読み込みや調査、文章作成など時間のかかる作業を、手元のMacで動くClaude Codeに依頼できます（`ask_claude_code`）。依頼はすぐに受け付けられ、終わると結果を読み上げます。Claude Codeが操作の許可を求めたときは、声で許可するか聞かれます。セッションの一覧と会話の内容も声で確かめられ、同じセッションの続きを頼んだり、PCで `claude --resume` して続けたりできます。
+
+Macでは `services/agent-bridge` を常駐させ、サーバーに `AGENT_BRIDGE_URL` と `AGENT_BRIDGE_TOKEN` を設定します。未設定なら無効です。仕組みと安全のための制限は[Claude Code連携](docs/tools/claude-code.md)を参照してください。
