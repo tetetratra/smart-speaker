@@ -439,6 +439,13 @@ const liveRootStyle = `
     border-right-color: var(--live-toggle-on);
     border-top-color: var(--live-toggle-on);
   }
+  /* 呼びかけ後の会話中（呼びかけなしで話せる1分間）は、話している吹き出しと同じく枠を光らせる。 */
+  .live-control-btn.live-control-btn-awake {
+    border-color: var(--live-toggle-on);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--live-toggle-on) 35%, transparent),
+      0 0 12px color-mix(in srgb, var(--live-toggle-on) 45%, transparent);
+  }
   .live-board {
     background: var(--live-panel-soft);
     border: 2px solid var(--live-line-strong);
