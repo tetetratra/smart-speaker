@@ -277,7 +277,7 @@ func TestStageFallsBackWhenMemoryContextFails(t *testing.T) {
 	history := conversationhistory.NewStore()
 	history.Append(types.ConversationRecord{Role: types.RoleUser, Text: "朝食を考えて", GenerationID: 1})
 	client := &fakeClient{responses: []string{`{"items":[]}`}}
-	memory := &fakeMemoryContextProvider{err: errors.New("embedding unavailable")}
+	memory := &fakeMemoryContextProvider{err: errors.New("memory unavailable")}
 	st := &stage{
 		client:       client,
 		history:      history,
@@ -304,7 +304,7 @@ func TestStageFallsBackWhenMemoryContextFails(t *testing.T) {
 		"llm: memory context unavailable",
 		"generation=1",
 		"request_id=req-1",
-		"embedding unavailable",
+		"memory unavailable",
 	} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("log = %q, want it to contain %q", logText, want)

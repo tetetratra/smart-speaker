@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	DefaultOpenAIEndpoint         = "https://api.openai.com/v1/responses"
-	DefaultMaxMemoryCandidates    = 5
-	DefaultMaxMemoryCandidateTags = 5
+	DefaultOpenAIEndpoint      = "https://api.openai.com/v1/responses"
+	DefaultMaxMemoryOperations = 5
+	DefaultMaxMemoryTags       = 5
 )
 
 type OpenAIClientConfig struct {
@@ -25,7 +25,7 @@ type OpenAIClientConfig struct {
 	Model         string
 	Endpoint      string
 	HTTPClient    *http.Client
-	MaxCandidates int
+	MaxOperations int
 	MaxTags       int
 }
 
@@ -34,13 +34,30 @@ type OpenAIClient struct {
 	model         string
 	endpoint      string
 	client        *http.Client
-	maxCandidates int
+	maxOperations int
 	maxTags       int
 }
 
-type Candidate struct {
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
+const (
+	OperationAdd    = "add"
+	OperationUpdate = "update"
+	OperationDelete = "delete"
+)
+
+// Operation は既存メモリに対する1件の変更操作を表す。
+// Action が add のとき TargetID は空、delete のとき Content と Tags は空になる。
+type Operation struct {
+	Action   string   `json:"action"`
+	TargetID string   `json:"target_id"`
+	Content  string   `json:"content"`
+	Tags     []string `json:"tags"`
+}
+
+// ExistingMemory は抽出時に LLM へ渡す保存済みメモリ。
+// ID には store の ID ではなく、LLM が書き写しやすい短い参照番号を入れる。
+type ExistingMemory struct {
+	ID      string `json:"id"`
+	Content string `json:"content"`
 }
 
 func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
@@ -64,49 +81,50 @@ func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
-	maxCandidates := cfg.MaxCandidates
-	if maxCandidates <= 0 {
-		maxCandidates = DefaultMaxMemoryCandidates
+	maxOperations := cfg.MaxOperations
+	if maxOperations <= 0 {
+		maxOperations = DefaultMaxMemoryOperations
 	}
 	maxTags := cfg.MaxTags
 	if maxTags <= 0 {
-		maxTags = DefaultMaxMemoryCandidateTags
+		maxTags = DefaultMaxMemoryTags
 	}
 	return &OpenAIClient{
 		apiKey:        apiKey,
 		model:         model,
 		endpoint:      endpoint,
 		client:        httpClient,
-		maxCandidates: maxCandidates,
+		maxOperations: maxOperations,
 		maxTags:       maxTags,
 	}, nil
 }
 
-func (c *OpenAIClient) CreateCandidates(ctx context.Context, records []types.ConversationRecord) ([]Candidate, error) {
-	if len(records) == 0 {
+func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.ConversationRecord, existing []ExistingMemory) ([]Operation, error) {
+	conversation := conversationTurns(records)
+	if len(conversation) == 0 {
 		return nil, nil
 	}
-	historyJSON, err := encodeHistory(records)
+	inputJSON, err := encodeOperationInput(conversation, existing)
 	if err != nil {
 		return nil, err
 	}
 	payload := map[string]any{
 		"model": c.model,
 		"input": []map[string]any{
-			{"role": "system", "content": memoryCandidateInstructions},
-			{"role": "user", "content": historyJSON},
+			{"role": "system", "content": memoryOperationInstructions},
+			{"role": "user", "content": inputJSON},
 		},
-		"text": memoryCandidateTextFormat(c.maxCandidates, c.maxTags),
+		"text": memoryOperationTextFormat(c.maxOperations, c.maxTags),
 	}
 	text, err := c.createStructuredText(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
-	var decoded candidateResponse
+	var decoded operationResponse
 	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
-		return nil, fmt.Errorf("memory openai: parse candidates: %w", err)
+		return nil, fmt.Errorf("memory openai: parse operations: %w", err)
 	}
-	return normalizeCandidates(decoded.Candidates, c.maxCandidates, c.maxTags), nil
+	return normalizeOperations(decoded.Operations, c.maxOperations, c.maxTags), nil
 }
 
 func (c *OpenAIClient) CreateTags(ctx context.Context, content string) ([]string, error) {
@@ -130,7 +148,7 @@ func (c *OpenAIClient) CreateTags(ctx context.Context, content string) ([]string
 	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
 		return nil, fmt.Errorf("memory openai: parse tags: %w", err)
 	}
-	return normalizeCandidateTags(decoded.Tags, c.maxTags), nil
+	return normalizeTags(decoded.Tags, c.maxTags), nil
 }
 
 func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[string]any) (string, error) {
@@ -157,93 +175,140 @@ func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[str
 	return readOpenAIResponseBody(resp.Body)
 }
 
-const memoryCandidateInstructions = `Reset前の会話履歴から、後続会話で再利用できる長期記憶候補だけを抽出してください。
-候補がない場合は candidates を空配列にしてください。
-content は1候補につき1つの事実を、短く、主語が分かる自然文で書いてください。
-tags は検索補助用の短いラベルで、固有名詞、カテゴリ、場所、習慣、健康、デバイス種別などを含めてください。
-会話ログの生コピー、一時的な依頼、古くなりやすい状態、秘密情報らしき内容は保存候補にしないでください。
+const memoryOperationInstructions = `あなたはスマートスピーカーの長期記憶を管理します。
+入力 JSON の conversation（ユーザーとアシスタントの会話）と existing_memories（保存済みの長期記憶）を読み、長期記憶に対する変更操作だけを operations として出力してください。
 
-出力例:
-- content: "ユーザーは平日の朝にコーヒーを飲むことが多い"
-  tags: ["routine", "morning", "coffee", "weekday"]
-- content: "ユーザーはリビングの照明操作に SwitchBot ハブミニを使っている"
-  tags: ["SwitchBot", "smart_home", "living_room", "lighting", "device"]
-- content: "ユーザーは雨の日に頭痛が出やすい"
-  tags: ["health", "weather", "rain", "headache"]
-- 保存すべき長期記憶候補がない場合:
-  candidates: []`
+## 保存する価値の判断基準
+「数週間後の別の会話で、これを知っているとアシスタントの応答が明確に良くなるか」で判断してください。
+迷ったら保存しないでください。変更が不要なら operations を空配列にしてください。多くの会話では空配列が正解です。
 
-type historyPayload struct {
-	ID           string         `json:"id,omitempty"`
-	Role         string         `json:"role"`
-	Text         string         `json:"text,omitempty"`
-	GenerationID int64          `json:"generation_id,omitempty"`
-	Source       string         `json:"source,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	CreatedAt    string         `json:"created_at,omitempty"`
+保存してよいもの:
+- ユーザー本人が話した、長く変わらないプロフィール（住んでいる地域、仕事、経歴、家族など）
+- 好き嫌いや関心（食べ物、趣味、好きな作品など）
+- 繰り返す習慣や生活リズム（家事の周期、就寝時刻など）
+- アシスタントの応答の仕方についての希望（説明の長さ、話すか表示するかなど）
+
+保存しないもの:
+- アシスタントやシステムが既に分かること: 日本語で話す、音声で話しかける、タイムゾーン、アシスタントに連携済みのサービス・家電やそのシーン名
+- その場限りの依頼や出来事: 天気を確認した、今日どこへ行く、一度だけ言ったこと
+- 「〜を頼むことがある」「〜をよく尋ねる」のような利用傾向
+- アシスタント自体の動作確認・開発・テストの話（音の回り込み、マイク、端末での検証など）
+- アシスタントの発言だけを根拠にした推測。ユーザーの発言を根拠にしてください
+- 会話ログの生コピーや秘密情報らしき内容
+
+ユーザーが「覚えておいて」と明示した内容は、上の基準にかかわらず保存してください。ただしパスワード、暗証番号、カード番号などの秘密情報は保存しないでください。「忘れて」と言われた内容は delete してください。
+
+## 操作
+- add: existing_memories にない新しい事実を追加します。target_id は空文字にしてください。
+- update: existing_memories の記憶が変わった・補足されたとき、target_id の記憶を content で置き換えます。同じ話題は add せず update で1件にまとめてください。好みや状況が別のものに変わった場合も、delete ではなく新しい内容への update にしてください。
+- delete: ユーザーが「もう当てはまらない」「間違っている」「忘れて」と言い、置き換える内容がない記憶だけを target_id で削除します。content は空文字、tags は空配列にしてください。
+- existing_memories と同じ内容を言い換えて add しないでください。
+- target_id には existing_memories の id をそのまま使ってください。1つの記憶に対する操作は1件までにしてください。
+
+## content と tags の書き方
+- content は1件につき1つの話題を、「ユーザーは」で始まる短い自然文で書いてください。
+- 「今日」「来月」などの相対的な日時は、会話の created_at を基準に絶対日付で書いてください。
+- 将来の予定は、その日付を過ぎても意味がある場合だけ保存してください。
+- tags は検索補助用の短いラベルで、固有名詞、カテゴリ、場所、習慣、健康などを含めてください。
+
+## 出力例
+- 新しい好みを聞いた場合:
+  {"action": "add", "target_id": "", "content": "ユーザーは雨の日に頭痛が出やすい", "tags": ["health", "weather", "rain", "headache"]}
+- 引っ越したと聞いた場合（既存: {"id": "1", "content": "ユーザーは大岡山に住んでいる"}）:
+  {"action": "update", "target_id": "1", "content": "ユーザーは横浜に住んでいる", "tags": ["location", "横浜"]}
+- 好みが変わったと聞いた場合（既存: {"id": "2", "content": "ユーザーは朝にコーヒーを飲む"}）:
+  {"action": "update", "target_id": "2", "content": "ユーザーは朝に紅茶を飲む", "tags": ["routine", "morning", "tea"]}
+- 「もう猫は飼っていない」と聞いた場合（既存: {"id": "3", "content": "ユーザーは猫を飼っている"}）:
+  {"action": "delete", "target_id": "3", "content": "", "tags": []}
+- 「エアコンつけて」「今日の天気は？」だけの会話:
+  operations: []`
+
+// 会話の日時はサーバーのタイムゾーンに依存せず日本時間で渡す。
+var japanLocation = time.FixedZone("Asia/Tokyo", 9*60*60)
+
+type conversationTurn struct {
+	Role      string `json:"role"`
+	Text      string `json:"text"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
-func encodeHistory(records []types.ConversationRecord) (string, error) {
-	payload := make([]historyPayload, 0, len(records))
+type operationInput struct {
+	ExistingMemories []ExistingMemory   `json:"existing_memories"`
+	Conversation     []conversationTurn `json:"conversation"`
+}
+
+// conversationTurns はユーザーとアシスタントの発話だけを残す。
+// ツール呼び出し・結果や system メッセージは、ユーザー自身の事実ではないため抽出に渡さない。
+func conversationTurns(records []types.ConversationRecord) []conversationTurn {
+	turns := make([]conversationTurn, 0, len(records))
 	for _, record := range records {
 		role := strings.TrimSpace(record.Role)
-		if role == "" {
-			role = types.RoleUser
+		if role != types.RoleUser && role != types.RoleAgent {
+			continue
 		}
-		item := historyPayload{
-			ID:           strings.TrimSpace(record.ID),
-			Role:         role,
-			Text:         strings.TrimSpace(record.Text),
-			GenerationID: int64(record.GenerationID),
-			Source:       strings.TrimSpace(record.Source),
-			Metadata:     record.Metadata,
+		text := strings.TrimSpace(record.Text)
+		if text == "" {
+			continue
 		}
+		turn := conversationTurn{Role: role, Text: text}
 		if !record.CreatedAt.IsZero() {
-			item.CreatedAt = record.CreatedAt.UTC().Format(time.RFC3339Nano)
+			turn.CreatedAt = record.CreatedAt.In(japanLocation).Format(time.RFC3339)
 		}
-		payload = append(payload, item)
+		turns = append(turns, turn)
 	}
-	raw, err := json.Marshal(payload)
+	return turns
+}
+
+func encodeOperationInput(conversation []conversationTurn, existing []ExistingMemory) (string, error) {
+	if existing == nil {
+		existing = []ExistingMemory{}
+	}
+	raw, err := json.Marshal(operationInput{ExistingMemories: existing, Conversation: conversation})
 	if err != nil {
-		return "", fmt.Errorf("memory openai: encode history: %w", err)
+		return "", fmt.Errorf("memory openai: encode operation input: %w", err)
 	}
 	return string(raw), nil
 }
 
-func memoryCandidateTextFormat(maxCandidates, maxTags int) map[string]any {
+func memoryOperationTextFormat(maxOperations, maxTags int) map[string]any {
 	return map[string]any{
 		"format": map[string]any{
 			"type":   "json_schema",
-			"name":   "memory_candidates",
+			"name":   "memory_operations",
 			"strict": true,
-			"schema": memoryCandidateSchema(maxCandidates, maxTags),
+			"schema": memoryOperationSchema(maxOperations, maxTags),
 		},
 	}
 }
 
-func memoryCandidateSchema(maxCandidates, maxTags int) map[string]any {
+func memoryOperationSchema(maxOperations, maxTags int) map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"candidates": map[string]any{
+			"operations": map[string]any{
 				"type":     "array",
-				"maxItems": maxCandidates,
+				"maxItems": maxOperations,
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"content": map[string]any{"type": "string"},
+						"action": map[string]any{
+							"type": "string",
+							"enum": []string{OperationAdd, OperationUpdate, OperationDelete},
+						},
+						"target_id": map[string]any{"type": "string"},
+						"content":   map[string]any{"type": "string"},
 						"tags": map[string]any{
 							"type":     "array",
 							"maxItems": maxTags,
 							"items":    map[string]any{"type": "string"},
 						},
 					},
-					"required":             []string{"content", "tags"},
+					"required":             []string{"action", "target_id", "content", "tags"},
 					"additionalProperties": false,
 				},
 			},
 		},
-		"required":             []string{"candidates"},
+		"required":             []string{"operations"},
 		"additionalProperties": false,
 	}
 }
@@ -281,8 +346,8 @@ func memoryTagSchema(maxTags int) map[string]any {
 	}
 }
 
-type candidateResponse struct {
-	Candidates []Candidate `json:"candidates"`
+type operationResponse struct {
+	Operations []Operation `json:"operations"`
 }
 
 type tagResponse struct {
@@ -336,31 +401,39 @@ func readOpenAIResponseBody(r io.Reader) (string, error) {
 	return "", fmt.Errorf("memory openai: response text is empty")
 }
 
-func normalizeCandidates(candidates []Candidate, maxCandidates, maxTags int) []Candidate {
-	if maxCandidates <= 0 {
-		maxCandidates = DefaultMaxMemoryCandidates
+// normalizeOperations は action ごとの必須項目を満たさない操作を捨て、最大件数で切り詰める。
+func normalizeOperations(operations []Operation, maxOperations, maxTags int) []Operation {
+	if maxOperations <= 0 {
+		maxOperations = DefaultMaxMemoryOperations
 	}
 	if maxTags <= 0 {
-		maxTags = DefaultMaxMemoryCandidateTags
+		maxTags = DefaultMaxMemoryTags
 	}
-	out := make([]Candidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		content := strings.TrimSpace(candidate.Content)
-		if content == "" {
+	out := make([]Operation, 0, len(operations))
+	for _, operation := range operations {
+		action := strings.ToLower(strings.TrimSpace(operation.Action))
+		targetID := strings.TrimSpace(operation.TargetID)
+		content := strings.TrimSpace(operation.Content)
+		var normalized Operation
+		switch {
+		case action == OperationAdd && content != "":
+			normalized = Operation{Action: action, Content: content, Tags: normalizeTags(operation.Tags, maxTags)}
+		case action == OperationUpdate && content != "" && targetID != "":
+			normalized = Operation{Action: action, TargetID: targetID, Content: content, Tags: normalizeTags(operation.Tags, maxTags)}
+		case action == OperationDelete && targetID != "":
+			normalized = Operation{Action: action, TargetID: targetID}
+		default:
 			continue
 		}
-		out = append(out, Candidate{
-			Content: content,
-			Tags:    normalizeCandidateTags(candidate.Tags, maxTags),
-		})
-		if len(out) >= maxCandidates {
+		out = append(out, normalized)
+		if len(out) >= maxOperations {
 			break
 		}
 	}
 	return out
 }
 
-func normalizeCandidateTags(tags []string, maxTags int) []string {
+func normalizeTags(tags []string, maxTags int) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(tags))
 	for _, tag := range tags {

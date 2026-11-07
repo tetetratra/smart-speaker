@@ -44,7 +44,7 @@ func main() {
 	base := "http://" + *fixtureAddr
 	overrides := map[string]string{
 		"OPENAI_API_KEY": "local-verification-only", "OPENAI_REALTIME_ENDPOINT": "ws://" + *fixtureAddr + "/realtime",
-		"TTS_PROVIDER": "voicevox", "VOICEVOX_ENDPOINT": base, "MEMORY_EMBEDDING_BASE_URL": base,
+		"TTS_PROVIDER": "voicevox", "VOICEVOX_ENDPOINT": base,
 		"MEMORY_STORE_PATH": filepath.Join(dir, "memories.json"), "CONVERSATION_IDLE_TIMEOUT_SECONDS": "0",
 		"SWITCHBOT_TOKEN": "", "SWITCHBOT_SECRET": "", "WS_ADDR": *addr, "RTC_ICE_ADVERTISE_IPS": "",
 	}

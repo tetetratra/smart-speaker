@@ -18,12 +18,6 @@ import (
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
-	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
-		BaseURL: cfg.Memory.EmbeddingBaseURL,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init memory api embedder: %w", err)
-	}
 	memoryTagger, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
 		APIKey:  cfg.APIKey,
 		Model:   cfg.Memory.Model,
@@ -33,10 +27,8 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 		return nil, nil, fmt.Errorf("failed to init memory api tagger: %w", err)
 	}
 	registerMemoryAPI(mux, memoryStore, &manualMemoryService{
-		store:                  memoryStore,
-		tagger:                 memoryTagger,
-		embedder:               memoryEmbedder,
-		duplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
+		store:  memoryStore,
+		tagger: memoryTagger,
 	})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
 	registerLocationAPI(mux, &userlocation.Store{})

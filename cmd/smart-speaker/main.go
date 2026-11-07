@@ -157,32 +157,24 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
 	}
-	memoryEmbedder, err := memoryhook.NewEmbeddingClient(memoryhook.EmbeddingClientConfig{
-		BaseURL: cfg.Memory.EmbeddingBaseURL,
-	})
-	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init memory embedder: %w", err)
-	}
 	memoryContextProvider, err := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{
 		Memory: memoryStore,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
 	}
-	memoryCandidateCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
+	memoryOperationCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
 		APIKey:  cfg.APIKey,
 		Model:   cfg.Memory.Model,
 		MaxTags: cfg.Memory.MaxTags,
 	})
 	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init memory candidate creator: %w", err)
+		return appStages{}, fmt.Errorf("failed to init memory operation creator: %w", err)
 	}
 	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
-		History:                historyStore,
-		CandidateCreator:       memoryCandidateCreator,
-		Embedder:               memoryEmbedder,
-		Memory:                 memoryStore,
-		DuplicateMinSimilarity: cfg.Memory.DuplicateMinSimilarity,
+		History:          historyStore,
+		OperationCreator: memoryOperationCreator,
+		Memory:           memoryStore,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)

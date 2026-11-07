@@ -47,12 +47,9 @@ type Config struct {
 }
 
 type MemoryConfig struct {
-	Model                  string
-	StorePath              string
-	EmbeddingBaseURL       string
-	EmbeddingModel         string
-	DuplicateMinSimilarity float64
-	MaxTags                int
+	Model     string
+	StorePath string
+	MaxTags   int
 }
 
 type SwitchBotConfig struct {
@@ -223,21 +220,10 @@ func loadMemoryConfig(responsesModel string) MemoryConfig {
 	if storePath == "" {
 		storePath = "data/memories.json"
 	}
-	embeddingBaseURL := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_BASE_URL"))
-	if embeddingBaseURL == "" {
-		embeddingBaseURL = "http://embedding:80"
-	}
-	embeddingModel := strings.TrimSpace(os.Getenv("MEMORY_EMBEDDING_MODEL"))
-	if embeddingModel == "" {
-		embeddingModel = "intfloat/multilingual-e5-small"
-	}
 	return MemoryConfig{
-		Model:                  memoryModel,
-		StorePath:              storePath,
-		EmbeddingBaseURL:       embeddingBaseURL,
-		EmbeddingModel:         embeddingModel,
-		DuplicateMinSimilarity: floatFromEnv("MEMORY_SIMILARITY_THRESHOLD", 0.95),
-		MaxTags:                intFromEnv("MEMORY_MAX_TAGS", 5),
+		Model:     memoryModel,
+		StorePath: storePath,
+		MaxTags:   intFromEnv("MEMORY_MAX_TAGS", 5),
 	}
 }
 
