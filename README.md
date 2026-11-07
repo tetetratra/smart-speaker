@@ -118,13 +118,11 @@ https://pkg.go.dev/github.com/pion/webrtc/v4#SettingEngine.SetICEAddressRewriteR
 メモリ機能は、会話が終わるたびに保存済みメモリと会話の発話を LLM に渡して、メモリの追加・更新・削除を判断させます。保存済みの全メモリは毎回 LLM の入力に追加します。
 Docker Compose ではメモリ store を `/app/data/memories.json` に保存し、host 側の `/var/lib/smart-speaker/data` に永続化します。
 通常画面の「メモリ」ボタン、または `?ui=memory` / `/memory` から、その時点で保存されているメモリ一覧を確認し、メモリ文の追加・編集・削除ができます。
-追加・編集時は、入力したメモリ文からタグを再計算して保存します。
 
 主な設定は以下です。
 
 - `OPENAI_MEMORY_MODEL`: メモリの追加・更新・削除の判断に使う Responses API model。未指定時は `OPENAI_RESPONSES_MODEL` を使います。
 - `MEMORY_STORE_PATH`: メモリ JSON file store の保存先。Compose 既定値は `/app/data/memories.json` です。
-- `MEMORY_MAX_TAGS`: メモリ 1 件あたりの最大 tag 数。既定値は `5` です。
 
 ### 現在地API
 

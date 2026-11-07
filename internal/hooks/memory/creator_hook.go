@@ -133,7 +133,7 @@ type resolvedOperation struct {
 }
 
 func (h *CreatorHook) add(operation Operation) error {
-	if _, _, err := h.memory.Upsert(memorystate.UpsertInput{Content: operation.Content, Tags: operation.Tags}); err != nil {
+	if _, _, err := h.memory.Upsert(memorystate.UpsertInput{Content: operation.Content}); err != nil {
 		return fmt.Errorf("add memory %q: %w", operation.Content, err)
 	}
 	return nil
@@ -159,7 +159,7 @@ func (h *CreatorHook) modify(resolved resolvedOperation) error {
 		}
 		return nil
 	}
-	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content, Tags: operation.Tags}); err != nil {
+	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content}); err != nil {
 		return fmt.Errorf("update memory %q: %w", original.ID, err)
 	}
 	return nil

@@ -32,7 +32,6 @@ services:
       LOCAL_STT_ENDPOINT: ${LOCAL_STT_ENDPOINT:-http://local-stt:8000/transcribe}
       MEMORY_STORE_PATH: ${MEMORY_STORE_PATH:-/app/data/memories.json}
       AUTOMATIONS_STORE_PATH: ${AUTOMATIONS_STORE_PATH:-/app/data/automations.json}
-      MEMORY_MAX_TAGS: ${MEMORY_MAX_TAGS:-5}
       TTS_PROVIDER: ${TTS_PROVIDER:-voicevox}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID}

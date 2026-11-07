@@ -13,14 +13,14 @@ import (
 func TestNewStoreLoadsPersistedRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.json")
 	createdAt := time.Unix(1700000000, 0).UTC()
-	// 旧形式で保存された embedding が残っていても読み込めることを確認する。
+	// 旧形式で保存された embedding と tags が残っていても読み込めることを確認する。
 	payload := map[string]any{
 		"version": currentVersion,
 		"records": []map[string]any{
 			{
 				"id":         "memory-1",
 				"content":    "  猫が好き  ",
-				"tags":       []string{" pet ", "Pet", "", "profile"},
+				"tags":       []string{"pet"},
 				"embedding":  []float64{1, 0},
 				"created_at": createdAt,
 				"updated_at": createdAt,
@@ -46,9 +46,6 @@ func TestNewStoreLoadsPersistedRecords(t *testing.T) {
 	if snapshot[0].Content != "猫が好き" {
 		t.Fatalf("Content = %q, want trimmed content", snapshot[0].Content)
 	}
-	if got, want := snapshot[0].Tags, []string{"pet", "profile"}; !sameStrings(got, want) {
-		t.Fatalf("Tags = %#v, want %#v", got, want)
-	}
 }
 
 func TestStoreUpsertCreatesAndPersistsRecord(t *testing.T) {
@@ -60,7 +57,6 @@ func TestStoreUpsertCreatesAndPersistsRecord(t *testing.T) {
 
 	record, result, err := store.Upsert(UpsertInput{
 		Content: "  朝はコーヒーを飲む  ",
-		Tags:    []string{" preference ", "Preference", "morning"},
 	})
 	if err != nil {
 		t.Fatalf("Upsert() error = %v", err)
@@ -73,9 +69,6 @@ func TestStoreUpsertCreatesAndPersistsRecord(t *testing.T) {
 	}
 	if record.Content != "朝はコーヒーを飲む" {
 		t.Fatalf("Content = %q, want trimmed content", record.Content)
-	}
-	if got, want := record.Tags, []string{"morning", "preference"}; !sameStrings(got, want) {
-		t.Fatalf("Tags = %#v, want %#v", got, want)
 	}
 
 	reloaded, err := NewStore(path)
@@ -108,14 +101,14 @@ func TestStoreUpsertSkipsSameContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	created, _, err := store.Upsert(UpsertInput{Content: "犬を飼っている", Tags: []string{"profile", "pet"}})
+	created, _, err := store.Upsert(UpsertInput{Content: "犬を飼っている"})
 	if err != nil {
 		t.Fatalf("Upsert(create) error = %v", err)
 	}
 
 	// 重複時に永続化しようとすると失敗するパスへ差し替え、保存もスキップされることを確認する。
 	store.path = t.TempDir()
-	got, result, err := store.Upsert(UpsertInput{Content: " 犬を飼っている ", Tags: []string{"dog"}})
+	got, result, err := store.Upsert(UpsertInput{Content: " 犬を飼っている "})
 	if err != nil {
 		t.Fatalf("Upsert(duplicate) error = %v", err)
 	}
@@ -130,23 +123,6 @@ func TestStoreUpsertSkipsSameContent(t *testing.T) {
 	}
 }
 
-func TestStoreUpsertKeepsDifferentContentWithSameTags(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if _, _, err := store.Upsert(UpsertInput{Content: "犬を飼っている", Tags: []string{"pet"}}); err != nil {
-		t.Fatalf("Upsert() error = %v", err)
-	}
-	_, result, err := store.Upsert(UpsertInput{Content: "猫も飼っている", Tags: []string{"pet"}})
-	if err != nil {
-		t.Fatalf("Upsert() error = %v", err)
-	}
-	if !result.Created || len(store.Snapshot()) != 2 {
-		t.Fatalf("result = %#v, snapshot = %#v, want 2 records", result, store.Snapshot())
-	}
-}
-
 func TestStoreUpdateReplacesAndPersistsRecord(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.json")
 	store, err := NewStore(path)
@@ -155,7 +131,6 @@ func TestStoreUpdateReplacesAndPersistsRecord(t *testing.T) {
 	}
 	record, _, err := store.Upsert(UpsertInput{
 		Content: "朝はコーヒーを飲む",
-		Tags:    []string{"coffee"},
 	})
 	if err != nil {
 		t.Fatalf("Upsert() error = %v", err)
@@ -163,7 +138,6 @@ func TestStoreUpdateReplacesAndPersistsRecord(t *testing.T) {
 
 	updated, err := store.Update(record.ID, UpdateInput{
 		Content: "  朝は紅茶を飲む  ",
-		Tags:    []string{" tea ", "Tea", "morning"},
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -179,9 +153,6 @@ func TestStoreUpdateReplacesAndPersistsRecord(t *testing.T) {
 	}
 	if updated.Content != "朝は紅茶を飲む" {
 		t.Fatalf("Content = %q, want trimmed", updated.Content)
-	}
-	if got, want := updated.Tags, []string{"morning", "tea"}; !sameStrings(got, want) {
-		t.Fatalf("Tags = %#v, want %#v", got, want)
 	}
 
 	reloaded, err := NewStore(path)
@@ -240,27 +211,6 @@ func TestStoreDeleteRejectsUnknownID(t *testing.T) {
 	}
 	if err := store.Delete("missing"); !errors.Is(err, ErrRecordNotFound) {
 		t.Fatalf("Delete() error = %v, want ErrRecordNotFound", err)
-	}
-}
-
-func TestStoreSnapshotReturnsDeepCopy(t *testing.T) {
-	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if _, _, err := store.Upsert(UpsertInput{
-		Content: "昼食は軽めがよい",
-		Tags:    []string{"food"},
-	}); err != nil {
-		t.Fatalf("Upsert() error = %v", err)
-	}
-
-	snapshot := store.Snapshot()
-	snapshot[0].Tags[0] = "changed"
-
-	again := store.Snapshot()
-	if again[0].Tags[0] == "changed" {
-		t.Fatal("Tags changed through snapshot")
 	}
 }
 

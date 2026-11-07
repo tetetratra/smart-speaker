@@ -152,7 +152,6 @@ func TestLoadConfigReadsMemoryConfig(t *testing.T) {
 	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
 	t.Setenv("OPENAI_MEMORY_MODEL", "gpt-memory")
 	t.Setenv("MEMORY_STORE_PATH", "/app/data/memories.json")
-	t.Setenv("MEMORY_MAX_TAGS", "6")
 
 	cfg := LoadConfig("")
 	if cfg.Memory.Model != "gpt-memory" {
@@ -161,9 +160,6 @@ func TestLoadConfigReadsMemoryConfig(t *testing.T) {
 	if cfg.Memory.StorePath != "/app/data/memories.json" {
 		t.Fatalf("Memory.StorePath = %q", cfg.Memory.StorePath)
 	}
-	if cfg.Memory.MaxTags != 6 {
-		t.Fatalf("Memory.MaxTags = %d, want 6", cfg.Memory.MaxTags)
-	}
 }
 
 func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
@@ -171,7 +167,6 @@ func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
 	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
 	t.Setenv("OPENAI_MEMORY_MODEL", "")
 	t.Setenv("MEMORY_STORE_PATH", "")
-	t.Setenv("MEMORY_MAX_TAGS", "invalid")
 
 	cfg := LoadConfig("")
 	if cfg.Memory.Model != "gpt-response" {
@@ -179,9 +174,6 @@ func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
 	}
 	if cfg.Memory.StorePath != "data/memories.json" {
 		t.Fatalf("Memory.StorePath = %q, want data/memories.json", cfg.Memory.StorePath)
-	}
-	if cfg.Memory.MaxTags != 5 {
-		t.Fatalf("Memory.MaxTags = %d, want 5", cfg.Memory.MaxTags)
 	}
 }
 

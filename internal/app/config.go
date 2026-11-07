@@ -49,7 +49,6 @@ type Config struct {
 type MemoryConfig struct {
 	Model     string
 	StorePath string
-	MaxTags   int
 }
 
 type SwitchBotConfig struct {
@@ -223,7 +222,6 @@ func loadMemoryConfig(responsesModel string) MemoryConfig {
 	return MemoryConfig{
 		Model:     memoryModel,
 		StorePath: storePath,
-		MaxTags:   intFromEnv("MEMORY_MAX_TAGS", 5),
 	}
 }
 

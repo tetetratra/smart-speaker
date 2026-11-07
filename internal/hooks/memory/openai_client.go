@@ -17,7 +17,6 @@ import (
 const (
 	DefaultOpenAIEndpoint      = "https://api.openai.com/v1/responses"
 	DefaultMaxMemoryOperations = 5
-	DefaultMaxMemoryTags       = 5
 )
 
 type OpenAIClientConfig struct {
@@ -26,7 +25,6 @@ type OpenAIClientConfig struct {
 	Endpoint      string
 	HTTPClient    *http.Client
 	MaxOperations int
-	MaxTags       int
 }
 
 type OpenAIClient struct {
@@ -35,7 +33,6 @@ type OpenAIClient struct {
 	endpoint      string
 	client        *http.Client
 	maxOperations int
-	maxTags       int
 }
 
 const (
@@ -45,12 +42,11 @@ const (
 )
 
 // Operation は既存メモリに対する1件の変更操作を表す。
-// Action が add のとき TargetID は空、delete のとき Content と Tags は空になる。
+// Action が add のとき TargetID は空、delete のとき Content は空になる。
 type Operation struct {
-	Action   string   `json:"action"`
-	TargetID string   `json:"target_id"`
-	Content  string   `json:"content"`
-	Tags     []string `json:"tags"`
+	Action   string `json:"action"`
+	TargetID string `json:"target_id"`
+	Content  string `json:"content"`
 }
 
 // ExistingMemory は抽出時に LLM へ渡す保存済みメモリ。
@@ -85,17 +81,12 @@ func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
 	if maxOperations <= 0 {
 		maxOperations = DefaultMaxMemoryOperations
 	}
-	maxTags := cfg.MaxTags
-	if maxTags <= 0 {
-		maxTags = DefaultMaxMemoryTags
-	}
 	return &OpenAIClient{
 		apiKey:        apiKey,
 		model:         model,
 		endpoint:      endpoint,
 		client:        httpClient,
 		maxOperations: maxOperations,
-		maxTags:       maxTags,
 	}, nil
 }
 
@@ -114,7 +105,7 @@ func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.Con
 			{"role": "system", "content": memoryOperationInstructions},
 			{"role": "user", "content": inputJSON},
 		},
-		"text": memoryOperationTextFormat(c.maxOperations, c.maxTags),
+		"text": memoryOperationTextFormat(c.maxOperations),
 	}
 	text, err := c.createStructuredText(ctx, payload)
 	if err != nil {
@@ -124,31 +115,7 @@ func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.Con
 	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
 		return nil, fmt.Errorf("memory openai: parse operations: %w", err)
 	}
-	return normalizeOperations(decoded.Operations, c.maxOperations, c.maxTags), nil
-}
-
-func (c *OpenAIClient) CreateTags(ctx context.Context, content string) ([]string, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil, fmt.Errorf("memory openai: content is required")
-	}
-	payload := map[string]any{
-		"model": c.model,
-		"input": []map[string]any{
-			{"role": "system", "content": memoryTagInstructions(c.maxTags)},
-			{"role": "user", "content": content},
-		},
-		"text": memoryTagTextFormat(c.maxTags),
-	}
-	text, err := c.createStructuredText(ctx, payload)
-	if err != nil {
-		return nil, err
-	}
-	var decoded tagResponse
-	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
-		return nil, fmt.Errorf("memory openai: parse tags: %w", err)
-	}
-	return normalizeTags(decoded.Tags, c.maxTags), nil
+	return normalizeOperations(decoded.Operations, c.maxOperations), nil
 }
 
 func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[string]any) (string, error) {
@@ -201,25 +168,24 @@ const memoryOperationInstructions = `あなたはスマートスピーカーの�
 ## 操作
 - add: existing_memories にない新しい事実を追加します。target_id は空文字にしてください。
 - update: existing_memories の記憶が変わった・補足されたとき、target_id の記憶を content で置き換えます。同じ話題は add せず update で1件にまとめてください。好みや状況が別のものに変わった場合も、delete ではなく新しい内容への update にしてください。
-- delete: ユーザーが「もう当てはまらない」「間違っている」「忘れて」と言い、置き換える内容がない記憶だけを target_id で削除します。content は空文字、tags は空配列にしてください。
+- delete: ユーザーが「もう当てはまらない」「間違っている」「忘れて」と言い、置き換える内容がない記憶だけを target_id で削除します。content は空文字にしてください。
 - existing_memories と同じ内容を言い換えて add しないでください。
 - target_id には existing_memories の id をそのまま使ってください。1つの記憶に対する操作は1件までにしてください。
 
-## content と tags の書き方
+## content の書き方
 - content は1件につき1つの話題を、「ユーザーは」で始まる短い自然文で書いてください。
 - 「今日」「来月」などの相対的な日時は、会話の created_at を基準に絶対日付で書いてください。
 - 将来の予定は、その日付を過ぎても意味がある場合だけ保存してください。
-- tags は検索補助用の短いラベルで、固有名詞、カテゴリ、場所、習慣、健康などを含めてください。
 
 ## 出力例
 - 新しい好みを聞いた場合:
-  {"action": "add", "target_id": "", "content": "ユーザーは雨の日に頭痛が出やすい", "tags": ["health", "weather", "rain", "headache"]}
+  {"action": "add", "target_id": "", "content": "ユーザーは雨の日に頭痛が出やすい"}
 - 引っ越したと聞いた場合（既存: {"id": "1", "content": "ユーザーは大岡山に住んでいる"}）:
-  {"action": "update", "target_id": "1", "content": "ユーザーは横浜に住んでいる", "tags": ["location", "横浜"]}
+  {"action": "update", "target_id": "1", "content": "ユーザーは横浜に住んでいる"}
 - 好みが変わったと聞いた場合（既存: {"id": "2", "content": "ユーザーは朝にコーヒーを飲む"}）:
-  {"action": "update", "target_id": "2", "content": "ユーザーは朝に紅茶を飲む", "tags": ["routine", "morning", "tea"]}
+  {"action": "update", "target_id": "2", "content": "ユーザーは朝に紅茶を飲む"}
 - 「もう猫は飼っていない」と聞いた場合（既存: {"id": "3", "content": "ユーザーは猫を飼っている"}）:
-  {"action": "delete", "target_id": "3", "content": "", "tags": []}
+  {"action": "delete", "target_id": "3", "content": ""}
 - 「エアコンつけて」「今日の天気は？」だけの会話:
   operations: []`
 
@@ -270,18 +236,18 @@ func encodeOperationInput(conversation []conversationTurn, existing []ExistingMe
 	return string(raw), nil
 }
 
-func memoryOperationTextFormat(maxOperations, maxTags int) map[string]any {
+func memoryOperationTextFormat(maxOperations int) map[string]any {
 	return map[string]any{
 		"format": map[string]any{
 			"type":   "json_schema",
 			"name":   "memory_operations",
 			"strict": true,
-			"schema": memoryOperationSchema(maxOperations, maxTags),
+			"schema": memoryOperationSchema(maxOperations),
 		},
 	}
 }
 
-func memoryOperationSchema(maxOperations, maxTags int) map[string]any {
+func memoryOperationSchema(maxOperations int) map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -297,13 +263,8 @@ func memoryOperationSchema(maxOperations, maxTags int) map[string]any {
 						},
 						"target_id": map[string]any{"type": "string"},
 						"content":   map[string]any{"type": "string"},
-						"tags": map[string]any{
-							"type":     "array",
-							"maxItems": maxTags,
-							"items":    map[string]any{"type": "string"},
-						},
 					},
-					"required":             []string{"action", "target_id", "content", "tags"},
+					"required":             []string{"action", "target_id", "content"},
 					"additionalProperties": false,
 				},
 			},
@@ -313,45 +274,8 @@ func memoryOperationSchema(maxOperations, maxTags int) map[string]any {
 	}
 }
 
-func memoryTagInstructions(maxTags int) string {
-	return fmt.Sprintf(`ユーザーが手動入力した長期記憶の本文から、検索補助用の短いタグだけを抽出してください。
-タグは固有名詞、カテゴリ、場所、習慣、健康、デバイス種別などを優先し、最大%d件にしてください。
-本文を書き換えたり、タグ以外の説明を出力したりしないでください。
-秘密情報らしき値そのものはタグに含めず、必要ならカテゴリ名だけにしてください。`, maxTags)
-}
-
-func memoryTagTextFormat(maxTags int) map[string]any {
-	return map[string]any{
-		"format": map[string]any{
-			"type":   "json_schema",
-			"name":   "memory_tags",
-			"strict": true,
-			"schema": memoryTagSchema(maxTags),
-		},
-	}
-}
-
-func memoryTagSchema(maxTags int) map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"tags": map[string]any{
-				"type":     "array",
-				"maxItems": maxTags,
-				"items":    map[string]any{"type": "string"},
-			},
-		},
-		"required":             []string{"tags"},
-		"additionalProperties": false,
-	}
-}
-
 type operationResponse struct {
 	Operations []Operation `json:"operations"`
-}
-
-type tagResponse struct {
-	Tags []string `json:"tags"`
 }
 
 type openAIResponseBody struct {
@@ -402,12 +326,9 @@ func readOpenAIResponseBody(r io.Reader) (string, error) {
 }
 
 // normalizeOperations は action ごとの必須項目を満たさない操作を捨て、最大件数で切り詰める。
-func normalizeOperations(operations []Operation, maxOperations, maxTags int) []Operation {
+func normalizeOperations(operations []Operation, maxOperations int) []Operation {
 	if maxOperations <= 0 {
 		maxOperations = DefaultMaxMemoryOperations
-	}
-	if maxTags <= 0 {
-		maxTags = DefaultMaxMemoryTags
 	}
 	out := make([]Operation, 0, len(operations))
 	for _, operation := range operations {
@@ -417,9 +338,9 @@ func normalizeOperations(operations []Operation, maxOperations, maxTags int) []O
 		var normalized Operation
 		switch {
 		case action == OperationAdd && content != "":
-			normalized = Operation{Action: action, Content: content, Tags: normalizeTags(operation.Tags, maxTags)}
+			normalized = Operation{Action: action, Content: content}
 		case action == OperationUpdate && content != "" && targetID != "":
-			normalized = Operation{Action: action, TargetID: targetID, Content: content, Tags: normalizeTags(operation.Tags, maxTags)}
+			normalized = Operation{Action: action, TargetID: targetID, Content: content}
 		case action == OperationDelete && targetID != "":
 			normalized = Operation{Action: action, TargetID: targetID}
 		default:
@@ -427,27 +348,6 @@ func normalizeOperations(operations []Operation, maxOperations, maxTags int) []O
 		}
 		out = append(out, normalized)
 		if len(out) >= maxOperations {
-			break
-		}
-	}
-	return out
-}
-
-func normalizeTags(tags []string, maxTags int) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		value := strings.TrimSpace(tag)
-		if value == "" {
-			continue
-		}
-		key := strings.ToLower(value)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, value)
-		if len(out) >= maxTags {
 			break
 		}
 	}

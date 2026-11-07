@@ -14,7 +14,7 @@ import (
 
 func TestCreatorHookPassesSnapshotToOperationCreator(t *testing.T) {
 	history := &fakeHistory{records: []types.ConversationRecord{{ID: "rec-1", Role: types.RoleUser, Text: "朝はコーヒー"}}}
-	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationAdd, Content: "ユーザーは朝にコーヒーを飲む", Tags: []string{"coffee"}}}}
+	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationAdd, Content: "ユーザーは朝にコーヒーを飲む"}}}
 	store := &fakeMemoryWriter{}
 	hook := mustCreatorHook(t, history, creator, store)
 
@@ -28,16 +28,16 @@ func TestCreatorHookPassesSnapshotToOperationCreator(t *testing.T) {
 		t.Fatalf("upsert count = %d, want 1", len(store.inputs))
 	}
 	input := store.inputs[0]
-	if input.Content != "ユーザーは朝にコーヒーを飲む" || !reflect.DeepEqual(input.Tags, []string{"coffee"}) {
+	if input.Content != "ユーザーは朝にコーヒーを飲む" {
 		t.Fatalf("upsert input = %#v", input)
 	}
 }
 
 func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 	creator := &fakeOperationCreator{operations: []Operation{
-		{Action: OperationUpdate, TargetID: "1", Content: "ユーザーは横浜に住んでいる", Tags: []string{"location"}},
+		{Action: OperationUpdate, TargetID: "1", Content: "ユーザーは横浜に住んでいる"},
 		{Action: OperationDelete, TargetID: "2"},
-		{Action: OperationAdd, Content: "ユーザーは寿司が好き", Tags: []string{"food"}},
+		{Action: OperationAdd, Content: "ユーザーは寿司が好き"},
 	}}
 	store := &fakeMemoryWriter{records: []memorystate.Record{
 		{ID: "1788926855608507735-3", Content: "ユーザーは大岡山に住んでいる"},
@@ -54,7 +54,7 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 		t.Fatalf("existing = %#v, want %#v", creator.existing, wantExisting)
 	}
 	update, ok := store.updates["1788926855608507735-3"]
-	if !ok || update.Content != "ユーザーは横浜に住んでいる" || !reflect.DeepEqual(update.Tags, []string{"location"}) {
+	if !ok || update.Content != "ユーザーは横浜に住んでいる" {
 		t.Fatalf("updates = %#v", store.updates)
 	}
 	if !reflect.DeepEqual(store.deletes, []string{"1789095948492476660-8"}) {
@@ -328,7 +328,7 @@ func (f *fakeMemoryWriter) Upsert(input memorystate.UpsertInput) (memorystate.Re
 	if err := f.errByContent[input.Content]; err != nil {
 		return memorystate.Record{}, memorystate.UpsertResult{}, err
 	}
-	return memorystate.Record{Content: input.Content, Tags: input.Tags}, memorystate.UpsertResult{Created: true}, nil
+	return memorystate.Record{Content: input.Content}, memorystate.UpsertResult{Created: true}, nil
 }
 
 func (f *fakeMemoryWriter) Update(id string, input memorystate.UpdateInput) (memorystate.Record, error) {
@@ -339,11 +339,10 @@ func (f *fakeMemoryWriter) Update(id string, input memorystate.UpdateInput) (mem
 	for i := range f.records {
 		if f.records[i].ID == id {
 			f.records[i].Content = input.Content
-			f.records[i].Tags = input.Tags
 			f.records[i].UpdatedAt = f.records[i].UpdatedAt.Add(time.Second)
 		}
 	}
-	return memorystate.Record{ID: id, Content: input.Content, Tags: input.Tags}, nil
+	return memorystate.Record{ID: id, Content: input.Content}, nil
 }
 
 func (f *fakeMemoryWriter) Delete(id string) error {
@@ -355,52 +354,4 @@ func (f *fakeMemoryWriter) Delete(id string) error {
 		}
 	}
 	return nil
-}
-
-func TestCreatorHookKeepsTagsNormalizedByOperationCreator(t *testing.T) {
-	// タグ数の上限は MEMORY_MAX_TAGS を持つ OpenAIClient 側で決まるので、hook で切り詰め直さない。
-	tags := []string{"a", "b", "c", "d", "e", "f"}
-	store := &fakeMemoryWriter{}
-	hook := mustCreatorHook(
-		t,
-		&fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "test"}}},
-		&fakeOperationCreator{operations: []Operation{{Action: OperationAdd, Content: "タグが多い記憶", Tags: tags}}},
-		store,
-	)
-	if err := hook.Exec(context.Background()); err != nil {
-		t.Fatalf("Exec() error = %v", err)
-	}
-	if len(store.inputs) != 1 || !reflect.DeepEqual(store.inputs[0].Tags, tags) {
-		t.Fatalf("upserts = %#v, want all 6 tags", store.inputs)
-	}
-}
-
-func TestCreatorHookAppliesDeletesBeforeUpdatesAndAdds(t *testing.T) {
-	// 「1 を 2 と同じ本文に更新」と「2 を削除」が同時に来ても、両方の記憶が失われないようにする。
-	store := &fakeMemoryWriter{records: []memorystate.Record{
-		{ID: "m-1", Content: "ユーザーは大岡山に住んでいる"},
-		{ID: "m-2", Content: "ユーザーは横浜に住んでいる"},
-	}}
-	hook := mustCreatorHook(
-		t,
-		&fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "test"}}},
-		&fakeOperationCreator{operations: []Operation{
-			{Action: OperationAdd, Content: "ユーザーは横浜に住んでいる"},
-			{Action: OperationUpdate, TargetID: "1", Content: "ユーザーは横浜に住んでいる"},
-			{Action: OperationDelete, TargetID: "2"},
-		}},
-		store,
-	)
-	if err := hook.Exec(context.Background()); err != nil {
-		t.Fatalf("Exec() error = %v", err)
-	}
-	if !reflect.DeepEqual(store.deletes, []string{"m-2"}) {
-		t.Fatalf("deletes = %#v, want only m-2", store.deletes)
-	}
-	if got := store.updates["m-1"].Content; got != "ユーザーは横浜に住んでいる" {
-		t.Fatalf("m-1 updated content = %q", got)
-	}
-	if len(store.records) != 1 || store.records[0].Content != "ユーザーは横浜に住んでいる" {
-		t.Fatalf("records = %#v, want one record about 横浜", store.records)
-	}
 }
