@@ -74,7 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath)
+	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
 		log.Fatal(err)
 	}

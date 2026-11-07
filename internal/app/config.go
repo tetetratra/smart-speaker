@@ -9,11 +9,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 )
 
 // Config holds runtime settings.
 type Config struct {
 	WakeModeStorePath          string
+	WakeSettings               wakemode.Settings
 	LocalSTTEndpoint           string
 	APIKey                     string
 	ResponsesModel             string
@@ -186,6 +189,7 @@ func LoadConfig(promptPath string) Config {
 		RealtimeTranscriptionModel: transcriptionModel,
 		ResponsesModel:             responsesModel,
 		WakeModeStorePath:          wakePath,
+		WakeSettings:               loadWakeSettings(),
 		LocalSTTEndpoint:           localSTT,
 		AutomationStorePath:        automationPath,
 		SubagentModel:              subagentModel,
@@ -235,6 +239,23 @@ func loadMemoryConfig(responsesModel string) MemoryConfig {
 		DuplicateMinSimilarity: floatFromEnv("MEMORY_SIMILARITY_THRESHOLD", 0.95),
 		MaxTags:                intFromEnv("MEMORY_MAX_TAGS", 5),
 	}
+}
+
+// loadWakeSettingsは呼びかけの判定の設定を環境変数から読む。値の範囲はwakemode.NewStoreで検証する。
+func loadWakeSettings() wakemode.Settings {
+	settings := wakemode.DefaultSettings()
+	if words := strings.TrimSpace(os.Getenv("WAKE_WORDS")); words != "" {
+		settings.Words = nil
+		for _, word := range strings.Split(words, ",") {
+			if word = strings.TrimSpace(word); word != "" {
+				settings.Words = append(settings.Words, word)
+			}
+		}
+	}
+	settings.MaxPrefix = intFromEnv("WAKE_MAX_PREFIX", settings.MaxPrefix)
+	settings.MinConfidence = floatFromEnv("WAKE_MIN_CONFIDENCE", settings.MinConfidence)
+	settings.MinSimilarity = floatFromEnv("WAKE_MIN_SIMILARITY", settings.MinSimilarity)
+	return settings
 }
 
 func intFromEnv(name string, defaultValue int) int {

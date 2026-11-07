@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// 話しかけて判定の設定を調整できるよう、LLMが送るJSONの引数をそのまま受け付ける。
-func TestSetWakeModeUpdatesThresholds(t *testing.T) {
-	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+// 話しかけて必須モードは切り替えられるが、呼びかけの言葉やしきい値は変えられない。
+func TestSetWakeModeOnlySwitchesRequired(t *testing.T) {
+	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,16 +23,15 @@ func TestSetWakeModeUpdatesThresholds(t *testing.T) {
 		_, err := tool.Run(args)
 		return err
 	}
-	if err := run(`{"required":true,"words":["ねえ"],"max_prefix":2,"min_similarity":0.6,"min_confidence":0.4}`); err != nil {
+	if err := run(`{"required":true}`); err != nil || !store.Snapshot(time.Now()).Required {
 		t.Fatal(err)
 	}
-	mode := store.Snapshot(time.Now())
-	if !mode.Required || mode.Words[0] != "ねえ" || mode.MaxPrefix != 2 || mode.MinSimilarity != 0.6 || mode.MinConfidence != 0.4 {
-		t.Fatal(mode)
-	}
-	for _, raw := range []string{`{"required":true,"max_prefix":1.5}`, `{"required":true,"min_similarity":"0.6"}`, `{"required":true,"patterns":["^起きて"]}`} {
+	for _, raw := range []string{`{"required":true,"words":["ねえ"]}`, `{"required":true,"min_similarity":0.6}`, `{"required":"true"}`} {
 		if err := run(raw); err == nil {
 			t.Fatal("不正な引数を受理しました", raw)
 		}
+	}
+	if mode := store.Snapshot(time.Now()); len(mode.Words) != len(wakemode.DefaultWords) || mode.MinSimilarity != 0.65 {
+		t.Fatal("呼びかけの設定が変わりました", mode)
 	}
 }

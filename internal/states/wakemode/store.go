@@ -16,8 +16,9 @@ import (
 // ConversationTimeoutは、呼びかけ後に呼びかけなしで話せる時間。最後のユーザー発話から数える。
 const ConversationTimeout = time.Minute
 
-// DefaultWordsは既定の呼びかけ。STTが漢字・かなのどちらで書き起こしても通るよう両方を持つ。
-var DefaultWords = []string{"おきて", "起きて"}
+// DefaultWordsは既定の呼びかけ。STTが漢字・かなのどちらで書き起こしても通るよう両方を持ち、
+// 短い「起きて」をSTTが聞き違えやすい「オッケー」も含める。
+var DefaultWords = []string{"おきて", "起きて", "オッケー"}
 
 const (
 	maxWords      = 16
@@ -25,25 +26,24 @@ const (
 	maxPrefixMax  = 20
 )
 
-type Config struct {
-	Required bool     `json:"required"`
-	Words    []string `json:"words"`
+// Settingsは呼びかけの判定の設定。デプロイ時の環境変数で決め、実行中は変更しない。
+type Settings struct {
+	Words []string `json:"words"`
 	// MaxPrefixは、呼びかけの前に許す文字数（「ねえ」などの前置き）。正規化後の文字数で数える。
 	MaxPrefix     int     `json:"max_prefix"`
 	MinConfidence float64 `json:"min_confidence"`
 	MinSimilarity float64 `json:"min_similarity"`
 }
 
-// Optionsは設定の部分更新。nilの項目は変更しない。
-type Options struct {
-	Words         []string
-	MaxPrefix     *int
-	MinConfidence *float64
-	MinSimilarity *float64
+// DefaultSettingsは環境変数で指定しない場合の判定の設定。
+func DefaultSettings() Settings {
+	return Settings{Words: append([]string(nil), DefaultWords...), MaxPrefix: 4, MinConfidence: 0.55, MinSimilarity: 0.65}
 }
 
-func defaultConfig() Config {
-	return Config{Words: append([]string(nil), DefaultWords...), MaxPrefix: 4, MinConfidence: 0.55, MinSimilarity: 0.65}
+// Configは画面・ツールで切り替える必須モードと、固定の判定の設定。保存するのはRequiredだけ。
+type Config struct {
+	Required bool `json:"required"`
+	Settings
 }
 
 type Snapshot struct {
@@ -67,28 +67,26 @@ type Store struct {
 	awakeUntil time.Time
 }
 
-func NewStore(path string) (*Store, error) {
-	s := &Store{path: path, config: defaultConfig(), revision: 1}
+// NewStoreは保存済みの必須モードを読み込み、判定の設定には引数のsettingsを使う。
+func NewStore(path string, settings Settings) (*Store, error) {
+	settings.Words = append([]string(nil), settings.Words...)
+	if err := validSettings(settings); err != nil {
+		return nil, err
+	}
+	s := &Store{path: path, config: Config{Settings: settings}, revision: 1}
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	if err == nil {
-		if err = json.Unmarshal(data, &s.config); err != nil {
+		// 以前は言葉やしきい値も保存していたが、現在は必須モードだけを読み込む。
+		var saved struct {
+			Required bool `json:"required"`
+		}
+		if err = json.Unmarshal(data, &saved); err != nil {
 			return nil, err
 		}
-		// 旧形式（wordやpatterns）の保存内容は言葉を持たないため、既定の呼びかけと許容文字数を使う。
-		if len(s.config.Words) == 0 {
-			defaults := defaultConfig()
-			s.config.Words = defaults.Words
-			s.config.MaxPrefix = defaults.MaxPrefix
-		}
-		if s.config.MinSimilarity == 0 {
-			s.config.MinSimilarity = defaultConfig().MinSimilarity
-		}
-	}
-	if err = validConfig(s.config); err != nil {
-		return nil, err
+		s.config.Required = saved.Required
 	}
 	return s, nil
 }
@@ -109,7 +107,7 @@ func toHiragana(r rune) rune {
 	return r
 }
 
-func validConfig(c Config) error {
+func validSettings(c Settings) error {
 	if len(c.Words) == 0 || len(c.Words) > maxWords {
 		return fmt.Errorf("呼びかけの言葉を1〜%d件で指定してください", maxWords)
 	}
@@ -143,38 +141,15 @@ func (s *Store) Snapshot(now time.Time) Snapshot {
 	defer s.mu.Unlock()
 	return s.snapshotLocked(now)
 }
-func (s *Store) Set(required bool, words []string, now time.Time) (Snapshot, error) {
-	return s.SetOptions(required, Options{Words: words}, now)
-}
 
-// SetOptionsは設定を保存する。指定のない項目は変更しない。設定を変えると会話中の状態は終わる。
-func (s *Store) SetOptions(required bool, options Options, now time.Time) (Snapshot, error) {
+// SetRequiredは必須モードを切り替えて保存する。切り替えると会話中の状態は終わる。
+func (s *Store) SetRequired(required bool, now time.Time) (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := s.config
-	next.Required = required
-	if len(options.Words) > 0 {
-		next.Words = make([]string, 0, len(options.Words))
-		for _, word := range options.Words {
-			next.Words = append(next.Words, strings.TrimSpace(word))
-		}
-	}
-	if options.MaxPrefix != nil {
-		next.MaxPrefix = *options.MaxPrefix
-	}
-	if options.MinConfidence != nil {
-		next.MinConfidence = *options.MinConfidence
-	}
-	if options.MinSimilarity != nil {
-		next.MinSimilarity = *options.MinSimilarity
-	}
-	if err := validConfig(next); err != nil {
-		return Snapshot{}, err
-	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return Snapshot{}, err
 	}
-	data, err := json.MarshalIndent(next, "", "  ")
+	data, err := json.MarshalIndent(map[string]bool{"required": required}, "", "  ")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -197,7 +172,7 @@ func (s *Store) SetOptions(required bool, options Options, now time.Time) (Snaps
 	if err = os.Rename(file.Name(), s.path); err != nil {
 		return Snapshot{}, err
 	}
-	s.config = next
+	s.config.Required = required
 	s.last = nil
 	s.awakeUntil = time.Time{}
 	s.revision++
