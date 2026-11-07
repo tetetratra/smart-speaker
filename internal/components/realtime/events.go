@@ -184,9 +184,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if _, exists := s.calls[e.CallID]; exists {
 			return
 		}
-		if !s.cfg.Generation.IsCurrent(r.generation) {
-			return
-		}
+		// 引数の確定前にユーザーが話し始めて世代が進んでも、呼び出しは捨てずに実行する。
+		// 捨てると結果のない呼び出しが会話に残り、モデルが「実行中」とみなして再実行しなくなるため。
 		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, silent: r.silent}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
 		s.record(ctx, "call/"+e.CallID, types.RoleToolCall, e.Name+": "+e.Arguments, r.generation, e.Name)
