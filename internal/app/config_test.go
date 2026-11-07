@@ -222,3 +222,27 @@ func TestLoadConfigHandlesInvalidVoicevoxNumbers(t *testing.T) {
 		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
 	}
 }
+
+func TestLoadConfigReadsWakeSettingsFromEnv(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	t.Setenv("WAKE_WORDS", "おきて, 起きて ,,オッケー")
+	t.Setenv("WAKE_MAX_PREFIX", "2")
+	t.Setenv("WAKE_MIN_CONFIDENCE", "0.4")
+	t.Setenv("WAKE_MIN_SIMILARITY", "0.7")
+
+	settings := LoadConfig("").WakeSettings
+	if len(settings.Words) != 3 || settings.Words[1] != "起きて" || settings.MaxPrefix != 2 || settings.MinConfidence != 0.4 || settings.MinSimilarity != 0.7 {
+		t.Fatalf("WakeSettings = %+v", settings)
+	}
+}
+
+func TestLoadConfigUsesDefaultWakeSettings(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai")
+	for _, name := range []string{"WAKE_WORDS", "WAKE_MAX_PREFIX", "WAKE_MIN_CONFIDENCE", "WAKE_MIN_SIMILARITY"} {
+		t.Setenv(name, "")
+	}
+	settings := LoadConfig("").WakeSettings
+	if len(settings.Words) != 3 || settings.MaxPrefix != 4 || settings.MinConfidence != 0.55 || settings.MinSimilarity != 0.65 {
+		t.Fatalf("WakeSettings = %+v", settings)
+	}
+}

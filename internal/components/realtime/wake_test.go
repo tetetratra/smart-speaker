@@ -12,8 +12,8 @@ import (
 )
 
 func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
-	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
-	m, _ := s.Set(true, nil, time.Now())
+	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	m, _ := s.SetRequired(true, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
 	for _, kind := range []string{"input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped", "input_audio_buffer.committed", "conversation.item.input_audio_transcription.completed"} {
 		r.send(map[string]any{"type": kind, "item_id": "meeting", "transcript": "会議の話"})
@@ -37,11 +37,11 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 
 // 予約は内部指示なので呼びかけなしで実行でき、モード変更の返答も読み上げない。
 func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
-	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Set(true, nil, time.Now()); err != nil {
+	if _, err = store.SetRequired(true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	scheduled := make(chan types.ScheduledPrompt, 1)
@@ -94,8 +94,8 @@ check:
 
 // 呼びかけだけの発話もRealtimeへ送り、その応答にだけ起きていることを伝える指示を付ける。
 func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
-	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
-	m, _ := s.Set(true, nil, time.Now())
+	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	m, _ := s.SetRequired(true, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
 	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
@@ -118,8 +118,8 @@ func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
 
 // 呼びかけ後の会話中は、接続を作り直さずに音声とクラウドの発話検出を使い、終了時に未確定の音声を捨てる。
 func TestConversationAfterWakeUsesAudioUntilItEnds(t *testing.T) {
-	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
-	m, _ := s.Set(true, nil, time.Now())
+	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	m, _ := s.SetRequired(true, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
 	frame := types.Event{Payload: types.RTCPeerAudioFrame{PeerID: "test", PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
 	r.node.Upstream <- frame
@@ -136,7 +136,7 @@ func TestConversationAfterWakeUsesAudioUntilItEnds(t *testing.T) {
 		t.Fatal("会話中の発話で時間を数え直していません", before, after)
 	}
 	// 会話中が終わると接続は維持したまま、未確定の音声を捨てて音声を送らなくなる。
-	if _, err := s.Set(true, nil, time.Now()); err != nil {
+	if _, err := s.SetRequired(true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	r.node.Upstream <- frame

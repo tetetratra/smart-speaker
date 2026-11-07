@@ -4,20 +4,21 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestDefaultWordsAcceptWakeWordNearSentenceStart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mode.json")
-	s, err := NewStore(path)
+	s, err := NewStore(path, DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Snapshot(time.Now()).Required {
 		t.Fatal("既定が必須です")
 	}
-	m, err := s.Set(true, nil, time.Now())
+	m, err := s.SetRequired(true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,21 +46,18 @@ func TestDefaultWordsAcceptWakeWordNearSentenceStart(t *testing.T) {
 			t.Fatal(test, d)
 		}
 	}
-	restored, err := NewStore(path)
+	restored, err := NewStore(path, DefaultSettings())
 	if err != nil || !restored.Snapshot(time.Now()).Required {
 		t.Fatal(err)
 	}
 	if d := s.Evaluate("起きて", 0.9, m.Revision-1, false, now.Add(2*ConversationTimeout)); d.Accepted {
 		t.Fatal("旧設定で受理しました")
 	}
-	if _, err := s.SetOptions(true, Options{MinConfidence: ptr(math.NaN())}, time.Now()); err == nil {
-		t.Fatal("不正なしきい値を受理しました")
-	}
 }
 
 func TestWakeKeepsConversationUntilOneMinuteAfterLastUtterance(t *testing.T) {
-	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"))
-	m, _ := s.Set(true, nil, time.Now())
+	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
+	m, _ := s.SetRequired(true, time.Now())
 	now := time.Now()
 	if !s.Snapshot(now).Gated() {
 		t.Fatal("呼びかけ前から会話中です")
@@ -88,7 +86,7 @@ func TestWakeKeepsConversationUntilOneMinuteAfterLastUtterance(t *testing.T) {
 	}
 	// 設定を変えると会話中の状態は終わり、保存もしない。
 	s.Evaluate("起きて", 0.9, m.Revision, false, now.Add(300*time.Second))
-	if _, err := s.Set(true, []string{"ねえ"}, now.Add(301*time.Second)); err != nil {
+	if _, err := s.SetRequired(true, now.Add(301*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if !s.Snapshot(now.Add(302 * time.Second)).Gated() {
@@ -96,15 +94,26 @@ func TestWakeKeepsConversationUntilOneMinuteAfterLastUtterance(t *testing.T) {
 	}
 }
 
-func TestOptionsAreValidatedAndPersisted(t *testing.T) {
+func TestSettingsAreValidatedAndOnlyRequiredIsPersisted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mode.json")
-	s, _ := NewStore(path)
-	for _, options := range []Options{{Words: []string{"！？"}}, {MaxPrefix: iptr(-1)}, {MaxPrefix: iptr(21)}, {MinSimilarity: ptr(0)}} {
-		if _, err := s.SetOptions(true, options, time.Now()); err == nil {
-			t.Fatal("不正な設定を受理しました", options)
+	for _, settings := range []Settings{
+		{Words: []string{"！？"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5},
+		{Words: []string{"ねえ"}, MaxPrefix: -1, MinConfidence: 0.5, MinSimilarity: 0.5},
+		{Words: []string{"ねえ"}, MaxPrefix: 21, MinConfidence: 0.5, MinSimilarity: 0.5},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: math.NaN(), MinSimilarity: 0.5},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0},
+		{MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5},
+	} {
+		if _, err := NewStore(path, settings); err == nil {
+			t.Fatal("不正な設定を受理しました", settings)
 		}
 	}
-	m, err := s.SetOptions(true, Options{Words: []string{"ヘイ", "hello"}, MaxPrefix: iptr(0), MinSimilarity: ptr(1)}, time.Now())
+	settings := Settings{Words: []string{"ヘイ", "hello"}, MaxPrefix: 0, MinConfidence: 0.55, MinSimilarity: 1}
+	s, err := NewStore(path, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.SetRequired(true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,26 +127,30 @@ func TestOptionsAreValidatedAndPersisted(t *testing.T) {
 	if d := s.Evaluate("ねえヘイ", 0.9, m.Revision, false, now.Add(4*ConversationTimeout)); d.Accepted {
 		t.Fatal("許容文字数を超える前置きを許しました", d)
 	}
-	restored, err := NewStore(path)
+	// 保存するのは必須モードだけで、判定の設定は起動時に渡した値を使う。
+	data, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(data), "words") {
+		t.Fatal(err, string(data))
+	}
+	restored, err := NewStore(path, DefaultSettings())
 	mode := restored.Snapshot(time.Now())
-	if err != nil || len(mode.Words) != 2 || mode.MaxPrefix != 0 || mode.MinSimilarity != 1 {
+	if err != nil || !mode.Required || len(mode.Words) != len(DefaultWords) || mode.MaxPrefix != 4 {
 		t.Fatal(err, mode)
 	}
 }
 
-func TestLegacyPatternSettingFallsBackToDefaultWords(t *testing.T) {
+// 以前の保存内容に言葉やしきい値があっても無視し、必須モードだけを引き継ぐ。
+func TestLegacySavedSettingsAreIgnored(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mode.json")
-	if err := os.WriteFile(path, []byte(`{"required":true,"patterns":["^.{0,4}(起きて|おきて)"],"min_confidence":0.6}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"required":true,"words":["ねえ"],"max_prefix":0,"min_confidence":0.9,"min_similarity":0.9}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewStore(path)
+	s, err := NewStore(path, DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
 	mode := s.Snapshot(time.Now())
-	if !mode.Required || mode.MinConfidence != 0.6 || len(mode.Words) != 2 || mode.MaxPrefix != 4 || mode.MinSimilarity != 0.65 {
+	if !mode.Required || mode.MinConfidence != 0.55 || len(mode.Words) != len(DefaultWords) || mode.MaxPrefix != 4 || mode.MinSimilarity != 0.65 {
 		t.Fatal(mode)
 	}
 }
-func iptr(v int) *int        { return &v }
-func ptr(v float64) *float64 { return &v }

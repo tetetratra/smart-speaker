@@ -25,13 +25,10 @@ func registerWakeModeAPI(mux *http.ServeMux, store *wakemode.Store) {
 			return
 		}
 		var req struct {
-			Required      *bool    `json:"required"`
-			Words         []string `json:"words"`
-			MaxPrefix     *int     `json:"max_prefix"`
-			MinConfidence *float64 `json:"min_confidence"`
-			MinSimilarity *float64 `json:"min_similarity"`
+			Required *bool `json:"required"`
 		}
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+		// 判定の言葉やしきい値はデプロイ時の環境変数で決めるため、ここでは必須モードだけを受け付ける。
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&req); err != nil || req.Required == nil {
 			http.Error(w, "requiredにtrueまたはfalseを指定してください", 400)
@@ -41,7 +38,7 @@ func registerWakeModeAPI(mux *http.ServeMux, store *wakemode.Store) {
 			http.Error(w, "JSONは1件だけ指定してください", 400)
 			return
 		}
-		mode, err := store.SetOptions(*req.Required, wakemode.Options{Words: req.Words, MaxPrefix: req.MaxPrefix, MinConfidence: req.MinConfidence, MinSimilarity: req.MinSimilarity}, time.Now())
+		mode, err := store.SetRequired(*req.Required, time.Now())
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return

@@ -42,11 +42,11 @@ func newGate(t *testing.T, required bool) *gateRig {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
-	s, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"))
+	s, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Set(required, nil, time.Now()); err != nil {
+	if _, err := s.SetRequired(required, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	f := &fakeSTT{calls: make(chan []byte, 8), answers: make(chan result, 8)}
@@ -204,7 +204,7 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 			r := newGate(t, true)
 			r.utterance(t)
 			if change == "mode" {
-				_, _ = r.store.Set(false, nil, time.Now())
+				_, _ = r.store.SetRequired(false, time.Now())
 			} else {
 				r.sink(t, false)
 				r.sink(t, true)
