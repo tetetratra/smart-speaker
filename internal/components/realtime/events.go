@@ -91,6 +91,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.cfg.WakeMode.Touch(time.Now())
 		}
 		s.awaitingInputCommit = e.ItemID
+		// 呼びかけだけの発話への指示を、後から話した発話の応答へ持ち越さない。
+		s.wakeOnlyReply = false
 		s.silentGeneration = 0
 		s.speaking = true
 		s.lastActivity = time.Now()
@@ -277,7 +279,12 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
 	// 接続を維持したまま日付が変わっても、復元文脈と指示を保って日時を更新する。
-	response["instructions"] = conversation.WithCurrentTime(s.toolResultInstructions(), time.Now())
+	instructions := s.toolResultInstructions()
+	if s.wakeOnlyReply {
+		instructions += wakeOnlyInstructions
+		s.wakeOnlyReply = false
+	}
+	response["instructions"] = conversation.WithCurrentTime(instructions, time.Now())
 	s.transport.send(map[string]any{"type": "response.create", "response": response})
 	// 送信まで保持する一回用の指示。報告完了を管理するキューではない。
 	s.pendingToolResponses = nil

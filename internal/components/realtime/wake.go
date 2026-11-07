@@ -3,13 +3,15 @@ package realtime
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"time"
 )
 
-// wakeAckTextは呼びかけだけの発話への返事。LLMを通さずに読み上げる。
-const wakeAckText = "はい"
+// wakeOnlyInstructionsは、呼びかけだけの発話への応答にだけ付ける指示。
+// 呼びかけの言葉は設定で変わるため、システムプロンプトではなく応答ごとに渡す。
+const wakeOnlyInstructions = `
+
+ユーザーは呼びかけの言葉だけを言いました。起きていて話を聞けることを、普段の口調で一言だけ伝えてください（例:「起きたよ」「起きてるよ」）。ツールは使わないでください。`
 
 func (s *stage) wakeRequired() bool {
 	return s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Required
@@ -56,10 +58,6 @@ func (s *stage) localWake(ctx context.Context, p types.LocalWakeUtterance) {
 	if !mode.Required || mode.Revision != p.Revision || p.Text == "" {
 		return
 	}
-	if p.WakeOnly {
-		s.acknowledgeWake(ctx, p)
-		return
-	}
 	if !s.ready {
 		if len(s.pendingWake) < 4 {
 			s.pendingWake = append(s.pendingWake, p)
@@ -72,25 +70,6 @@ func (s *stage) localWake(ctx context.Context, p types.LocalWakeUtterance) {
 	}
 	// 既存の応答は世代変更で再生を止める。キャンセル完了後に次の生成を始める。
 	s.speaking = false
+	s.wakeOnlyReply = p.WakeOnly
 	s.handle(ctx, types.Event{Kind: types.EventLLMRequest, Payload: types.LLMRequest{RequestID: fmt.Sprintf("local-wake/%s", p.PeerID), Text: p.Text}})
-}
-
-// acknowledgeWakeは呼びかけだけの発話に、LLMを通さず短い返事を読み上げる。
-// 返事はRealtimeの会話には送らず、ローカルの会話履歴と画面にだけ残す。
-func (s *stage) acknowledgeWake(ctx context.Context, p types.LocalWakeUtterance) {
-	if s.active != "" && s.transport != nil {
-		s.transport.send(map[string]any{"type": "response.cancel"})
-	}
-	s.speaking = false
-	id := "wake-ack/" + uuid.NewString()
-	change, _ := s.controller.Start(id)
-	s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
-	s.lastActivity = time.Now()
-	s.record(ctx, id+"/user", types.RoleUser, p.Text, change.GenerationID, "local-stt")
-	s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: change.GenerationID, ResponseID: id, ItemID: id, Text: wakeAckText}})
-	s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: change.GenerationID, ResponseID: id, ItemID: id, Done: true}})
-	s.record(ctx, id, types.RoleAgent, wakeAckText, change.GenerationID, "wake-ack")
-	if s.transport == nil {
-		s.connect(ctx)
-	}
 }

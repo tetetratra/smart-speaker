@@ -55,6 +55,7 @@ type call struct {
 }
 type stage struct {
 	wakeModeRequired, wakeGated               bool
+	wakeOnlyReply                             bool
 	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
 	silentGeneration                          types.GenerationID
