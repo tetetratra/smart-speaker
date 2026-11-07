@@ -65,23 +65,6 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 				return
 			}
 			writeJSON(w, 200, map[string]any{"job": job})
-		case !collection && r.Method == http.MethodPatch:
-			var req struct {
-				Enabled *bool `json:"enabled"`
-			}
-			if !decode(&req) {
-				return
-			}
-			if req.Enabled == nil {
-				http.Error(w, "enabledを指定してください", 400)
-				return
-			}
-			job, err := service.Enable(id, *req.Enabled, time.Now())
-			if err != nil {
-				fail(err)
-				return
-			}
-			writeJSON(w, 200, map[string]any{"job": job})
 		case !collection && r.Method == http.MethodDelete:
 			if err := service.Delete(id); err != nil {
 				fail(err)
@@ -92,7 +75,7 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 			if collection {
 				w.Header().Set("Allow", "GET, POST")
 			} else {
-				w.Header().Set("Allow", "PUT, PATCH, DELETE")
+				w.Header().Set("Allow", "PUT, DELETE")
 			}
 			w.WriteHeader(405)
 		}

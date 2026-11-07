@@ -62,8 +62,21 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 	if len(deliveries) != 1 || !deliveries[0].Speak || deliveries[0].Instruction != "ユーザーを起こして" {
 		t.Fatal(deliveries)
 	}
-	if again.List()[0].Enabled || again.List()[0].LastStatus != "submitted" {
-		t.Fatal(again.List())
+	if len(again.List()) != 0 {
+		t.Fatal("実行済みの日時指定の予約が残りました", again.List())
+	}
+}
+func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
+	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(context.Context, Delivery) error { return errors.New("受付できません") })
+	now := stamp("2026-11-06T08:00:00+09:00")
+	if _, err := service.Create(Spec{Name: "室温", Instruction: "室温を伝える", Schedule: Schedule{AfterSeconds: 60}, Speak: true}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunDue(context.Background(), now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.List()) != 0 {
+		t.Fatal(service.List())
 	}
 }
 func TestMissedCronCoalescesAndConcurrentTicksDoNotDuplicate(t *testing.T) {
@@ -109,25 +122,16 @@ func TestFailedPersistenceDoesNotExecuteAndCRUDPersists(t *testing.T) {
 		t.Fatal("保存失敗の予約が残りました")
 	}
 	_ = os.Remove(parent)
+	spec.Schedule = Schedule{Cron: "* * * * *"}
 	job, err := service.Create(spec, now)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, err := service.Enable(job.ID, false, now); err != nil {
-		t.Fatal(err)
-	}
-	_ = service.RunDue(context.Background(), now.Add(2*time.Second))
-	if count != 0 {
-		t.Fatal("停止中に実行しました")
 	}
 	spec.Instruction = "変更後"
 	if _, err := service.Update(job.ID, spec, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Enable(job.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.RunDue(context.Background(), now.Add(2*time.Second)); err != nil {
+	if err := service.RunDue(context.Background(), now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if service.List()[0].LastStatus != "failed" || service.List()[0].LastError == "" {

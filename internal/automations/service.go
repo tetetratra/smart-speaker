@@ -23,7 +23,6 @@ type Spec struct {
 type Job struct {
 	ID string `json:"id"`
 	Spec
-	Enabled    bool      `json:"enabled"`
 	NextRunAt  time.Time `json:"next_run_at,omitzero"`
 	LastRunAt  time.Time `json:"last_run_at,omitzero"`
 	LastStatus string    `json:"last_status"`
@@ -63,8 +62,8 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 		if _, err := validate(job.Spec, time.Now(), false); err != nil {
 			return nil, err
 		}
-		if _, exists := s.jobs[job.ID]; exists || (job.Enabled && job.NextRunAt.IsZero()) {
-			return nil, fmt.Errorf("予約ジョブのIDまたは次回日時が不正です")
+		if _, exists := s.jobs[job.ID]; exists {
+			return nil, fmt.Errorf("予約ジョブのIDが重複しています")
 		}
 		s.jobs[job.ID] = job
 	}
@@ -138,7 +137,7 @@ func (s *Service) Create(spec Spec, now time.Time) (Job, error) {
 		return Job{}, err
 	}
 	next, _ := spec.Schedule.next(now, false)
-	job := Job{ID: uuid.NewString(), Spec: spec, Enabled: true, NextRunAt: next, LastStatus: "scheduled"}
+	job := Job{ID: uuid.NewString(), Spec: spec, NextRunAt: next, LastStatus: "scheduled"}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.jobs) >= 100 {
@@ -168,30 +167,6 @@ func (s *Service) Update(id string, spec Spec, now time.Time) (Job, error) {
 	job.NextRunAt = next
 	job.LastStatus = "scheduled"
 	job.LastError = ""
-	s.jobs[id] = job
-	if err := s.saveLocked(); err != nil {
-		s.jobs[id] = old
-		return Job{}, err
-	}
-	return job, nil
-}
-func (s *Service) Enable(id string, enabled bool, now time.Time) (Job, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	old, ok := s.jobs[id]
-	if !ok {
-		return Job{}, os.ErrNotExist
-	}
-	job := old
-	job.Enabled = enabled
-	if enabled {
-		next, err := job.Schedule.next(now, true)
-		if err != nil {
-			return Job{}, err
-		}
-		job.NextRunAt = next
-		job.LastStatus = "scheduled"
-	}
 	s.jobs[id] = job
 	if err := s.saveLocked(); err != nil {
 		s.jobs[id] = old
@@ -232,7 +207,7 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	var due []Job
 	old := map[string]Job{}
 	for _, job := range s.listLocked() {
-		if !job.Enabled || job.NextRunAt.IsZero() || job.NextRunAt.After(now) {
+		if job.NextRunAt.IsZero() || job.NextRunAt.After(now) {
 			continue
 		}
 		due = append(due, job)
@@ -240,12 +215,12 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 		job.LastRunAt = now
 		job.LastStatus = "queued"
 		job.LastError = ""
-		if job.Schedule.Cron != "" {
-			job.NextRunAt, _ = job.Schedule.next(now, false)
-		} else {
-			job.Enabled = false
-			job.NextRunAt = time.Time{}
+		if job.Schedule.Cron == "" {
+			// 日時指定の予約は一度きりなので、実行時に一覧から削除する。
+			delete(s.jobs, job.ID)
+			continue
 		}
+		job.NextRunAt, _ = job.Schedule.next(now, false)
 		s.jobs[job.ID] = job
 	}
 	if len(due) > 0 {
@@ -267,6 +242,10 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 			deliveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction, Speak: job.Speak})
 			cancel()
+		}
+		if err != nil && job.Schedule.Cron == "" {
+			// 削除済みの一度きりの予約は画面に失敗を残せないため、ログへ出す。
+			fmt.Fprintf(os.Stderr, "予約ジョブの送信失敗 id=%s name=%s: %v\n", job.ID, job.Name, err)
 		}
 		s.mu.Lock()
 		current, ok := s.jobs[job.ID]
