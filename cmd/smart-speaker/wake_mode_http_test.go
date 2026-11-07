@@ -23,16 +23,16 @@ func TestWakeModeAPIControlsPersistentSettings(t *testing.T) {
 	if rec := request("GET", ""); rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal(rec.Code)
 	}
-	for _, body := range []string{`{}`, `{"required":"true"}`, `{"required":true} {}`, `{"required":true,"word":"！？"}`} {
+	for _, body := range []string{`{}`, `{"required":"true"}`, `{"required":true} {}`, `{"required":true,"patterns":["^.{,4}起きて"]}`, `{"required":true,"word":"スピーカー"}`} {
 		if rec := request("PUT", body); rec.Code != 400 {
 			t.Fatal(rec.Code, rec.Body)
 		}
 	}
-	if rec := request("PUT", `{"required":true,"word":"アシスタント"}`); rec.Code != 200 {
+	if rec := request("PUT", `{"required":true,"patterns":["^ねえ"]}`); rec.Code != 200 {
 		t.Fatal(rec.Code, rec.Body)
 	}
 	restored, err := wakemode.NewStore(path)
-	if err != nil || !restored.Snapshot(time.Now()).Required || restored.Snapshot(time.Now()).Word != "アシスタント" {
+	if err != nil || !restored.Snapshot(time.Now()).Required || restored.Snapshot(time.Now()).Patterns[0] != "^ねえ" {
 		t.Fatal(err, restored)
 	}
 	if rec := request("DELETE", ""); rec.Code != 405 {

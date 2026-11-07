@@ -64,9 +64,11 @@ const EventLocalWakeUtterance EventKind = 120
 
 // LocalWakeUtteranceはローカルの認識・呼びかけ判定を通過した1回の発話。
 type LocalWakeUtterance struct {
-	PeerID, Text           string
-	Revision               uint64
-	Confidence, Similarity float64
+	PeerID, Text string
+	Revision     uint64
+	Confidence   float64
+	// WakeOnlyは呼びかけだけで依頼の本文がない発話。短い返事だけを返す。
+	WakeOnly bool
 }
 
 // ScheduledPrompt は登録済みの自然言語ジョブを会話処理へ渡す。

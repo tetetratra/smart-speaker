@@ -87,9 +87,10 @@ func NewStage(cfg Config) *graph.Stage {
 				if !mode.Required || mode.Revision != r.revision {
 					continue
 				}
-				d := cfg.Store.Evaluate(r.transcript.Text, r.transcript.Confidence, r.revision, r.err != nil)
+				// 呼びかけの確定前に区切った発話は、会話中へ移った後に結果が届いても受け付ける。
+				d := cfg.Store.Evaluate(r.transcript.Text, r.transcript.Confidence, r.revision, r.err != nil, time.Now())
 				if d.Accepted {
-					emit(types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, Similarity: d.Similarity}})
+					emit(types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, WakeOnly: d.WakeOnly}})
 				}
 			case e, ok := <-node.Upstream:
 				if !ok {
@@ -114,7 +115,8 @@ func NewStage(cfg Config) *graph.Stage {
 						continue
 					}
 					mode := cfg.Store.Snapshot(time.Now())
-					if !mode.Required {
+					// 不要モードと呼びかけ後の会話中は、ローカルSTTを通さず音声をそのまま送る。
+					if !mode.Gated() {
 						b.pcm = nil
 						b.pre = nil
 						b.quiet = 0
@@ -163,7 +165,7 @@ func NewStage(cfg Config) *graph.Stage {
 							select {
 							case jobs <- j:
 							default:
-								cfg.Store.Evaluate("", 0, mode.Revision, true)
+								cfg.Store.Evaluate("", 0, mode.Revision, true, time.Now())
 							}
 						}
 						b.pcm = nil

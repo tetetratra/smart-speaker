@@ -42,8 +42,9 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 	if s.refreshWakeMode(ctx) {
 		return
 	}
-	// クラウド側に残った音声イベントは呼びかけ判定には使わない。
-	if s.wakeRequired() {
+	s.refreshWakeConversation()
+	// 呼びかけ前にクラウド側へ残った音声イベントは、呼びかけ判定には使わない。
+	if s.wakeGated {
 		switch e.Type {
 		case "input_audio_buffer.committed":
 			if e.ItemID != "" {
@@ -62,7 +63,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.ready = true
 		s.started = time.Now()
 		for _, pcm := range s.pendingAudio {
-			if s.wakeRequired() {
+			if s.wakeGated {
 				break
 			}
 			s.transport.send(map[string]any{"type": "input_audio_buffer.append", "audio": encodeAudio(pcm)})
@@ -85,6 +86,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		}
 		s.maybeRespond(ctx)
 	case "input_audio_buffer.speech_started":
+		// 呼びかけ後の会話中は、ユーザーの発話ごとに会話中の時間を数え直す。
+		if s.cfg.WakeMode != nil {
+			s.cfg.WakeMode.Touch(time.Now())
+		}
 		s.awaitingInputCommit = e.ItemID
 		s.silentGeneration = 0
 		s.speaking = true
