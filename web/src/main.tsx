@@ -406,7 +406,7 @@ const liveRootStyle = `
   }
   .live-bubble-user {
     color: var(--live-muted);
-    font-size: 18px;
+    font-size: 9px;
     line-height: 1.35;
     opacity: 0.72;
     overflow-wrap: anywhere;
@@ -504,7 +504,7 @@ const liveRootStyle = `
       font-size: clamp(14px, 4vw, 20px);
     }
     .live-bubble-user {
-      font-size: clamp(12px, 3.2vw, 16px);
+      font-size: clamp(6px, 1.6vw, 8px);
     }
     .live-bubble::after {
       right: auto;
