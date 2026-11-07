@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-// awakeは呼びかけ後の会話中。音声をローカルSTTを通さずRealtimeへ送っている状態。
-type WakeMode = { required: boolean, awake?: boolean }
+type WakeMode = { required: boolean }
 
 export function WakeModeControl({ backendURL }: { backendURL: URL }) {
   const [mode, setMode] = useState<WakeMode>()
@@ -84,7 +83,6 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
         <span className={`live-toggle-switch ${mode?.required ? 'on' : ''}`} aria-hidden="true" />
         呼びかけ
       </button>
-      {mode?.required && mode.awake && <span role="status">会話中（音声を送信中）</span>}
       {error && <span role="alert">{error}</span>}
     </div>
   )

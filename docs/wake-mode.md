@@ -29,7 +29,7 @@ STT信頼度（0〜1）は認識した単語確率の平均で、**正しく認�
 
 ## 設定
 
-画面のスイッチ、`get_wake_mode`・`set_wake_mode`ツールから切り替えます。`set_wake_mode`の引数は`required`（必須）と`patterns`（変更時のみ、文字列の配列）です。画面には会話中かどうかを表示します。`GET /api/wake-mode`で取得、`PUT /api/wake-mode`で更新します。信頼度の下限（既定0.55）は`min_confidence`で変更できます。
+画面のスイッチ、`get_wake_mode`・`set_wake_mode`ツールから切り替えます。`set_wake_mode`の引数は`required`（必須）と`patterns`（変更時のみ、文字列の配列）です。`GET /api/wake-mode`で取得、`PUT /api/wake-mode`で更新します。信頼度の下限（既定0.55）は`min_confidence`で変更できます。
 
 ```json
 {"required":true,"patterns":["^.{0,4}(起きて|おきて|オキテ|掟)"],"min_confidence":0.55}
