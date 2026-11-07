@@ -144,7 +144,7 @@ const liveRootStyle = `
     border-radius: 14px;
     padding: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(248px, 40%);
+    grid-template-columns: minmax(0, 1fr) minmax(248px, 30%);
     gap: 12px;
     min-height: 0;
   }
@@ -162,21 +162,27 @@ const liveRootStyle = `
     grid-template-rows: auto 1fr auto;
     gap: 8px;
   }
-  .live-controls-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
+  .live-controls-toggles,
+  .live-controls-nav {
+    display: grid;
+    gap: 4px;
     width: 100%;
-    align-items: center;
-  }
-  .live-controls-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
-    align-items: center;
-    flex: 1 1 0;
     min-width: 0;
+  }
+  .live-controls-toggles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .live-controls-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .live-controls-toggles .live-control-btn,
+  .live-controls-nav .live-admin-btn {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 4px;
+  }
+  .live-controls-toggles .live-control-btn {
+    justify-content: center;
   }
   .live-volume-control {
     border: 1px solid var(--live-line);
@@ -1841,14 +1847,14 @@ function TTSControl() {
     }
   }, [request])
   return (
-    <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div style={{ display: 'grid', gap: 4, fontSize: 12, minWidth: 0 }}>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
         <select
           aria-label="読み上げ音声"
           value={selection?.provider ?? ''}
           disabled={pending || !selection}
           onChange={(event) => void request(event.currentTarget.value)}
-          style={{ background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 6, padding: 4 }}
+          style={{ flex: 1, minWidth: 0, minHeight: 30, background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 8, padding: 4 }}
         >
           {!selection && <option value="">{pending ? '読み込み中' : '取得できません'}</option>}
           {selection?.providers.map((provider) => (
@@ -1914,17 +1920,19 @@ function LiveView(props: LiveViewProps) {
           </div>
           <div className="live-right">
             <div className="live-controls-panel">
-              <div className="live-controls-row">
-                <div className="live-controls-actions">
-                  <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
-                    <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
-                    接続
-                  </button>
-                  <button onClick={goScenes} className="live-admin-btn">リモコン</button>
-                  <button onClick={goMemory} className="live-admin-btn">メモリ</button>
-                  <button onClick={goAdmin} className="live-admin-btn">ログ</button>
-                  <button onClick={goJobs} className="live-admin-btn">予約</button>
-                </div>
+              {/* 切り替えスイッチと画面遷移ボタンを行で分け、狭い幅でも折り返しで崩れないようにする */}
+              <div className="live-controls-toggles">
+                <button onClick={handleToggle} className="live-control-btn" aria-label="接続切替">
+                  <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
+                  接続
+                </button>
+                <WakeModeControl backendURL={backendURL} />
+              </div>
+              <div className="live-controls-nav">
+                <button onClick={goScenes} className="live-admin-btn">リモコン</button>
+                <button onClick={goMemory} className="live-admin-btn">メモリ</button>
+                <button onClick={goAdmin} className="live-admin-btn">ログ</button>
+                <button onClick={goJobs} className="live-admin-btn">予約</button>
               </div>
               <div className="live-status-grid">
                 <div className="live-status-card">
@@ -1940,10 +1948,7 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <TTSControl />
-                <WakeModeControl backendURL={backendURL} />
-              </div>
+              <TTSControl />
               <div className="live-playback-slider-row">
                 <span className="live-playback-slider-label">再生音量</span>
                 <input
