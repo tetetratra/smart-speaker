@@ -47,7 +47,9 @@ WORKDIR /app
 
 COPY --from=build /app/bin/smart-speaker /app/bin/smart-speaker
 COPY --from=frontend /app/web/dist /app/web/dist
-COPY system_prompt.txt /app/system_prompt.txt
+# config.yaml は任意。無い場合はアプリケーション側の既定値を使う
+# （ワイルドカードにすると、一致するファイルが無くてもCOPYが失敗しない）
+COPY system_prompt.txt config.yam[l] /app/
 COPY system_prompt.local.txt /app/system_prompt.local.txt
 
 EXPOSE 8081

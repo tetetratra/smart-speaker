@@ -34,7 +34,7 @@ type Config struct {
 	Subagent           *subagent.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
-	SwitchBotDeviceMap string
+	SwitchBotDeviceMap map[string]string
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client

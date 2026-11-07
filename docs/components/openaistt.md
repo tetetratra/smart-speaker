@@ -3,8 +3,8 @@
 `openaistt` は server-side Speech-to-Text を担当する OpenAI Realtime transcription component。
 `rtcvad` が検出した発話区間の PCM audio を OpenAI Realtime API に WebSocket で送り、transcript delta と completed transcript を会話 pipeline へ渡す。
 
-STT provider は `STT_PROVIDER` で切り替える。
-`STT_PROVIDER=openai` の場合はこの component を使い、未指定または `google` の場合は Google Speech-to-Text 用の `stt` component を graph 上の同じ位置に接続する。
+STT provider は `stt.provider` で切り替える。
+`stt.provider: openai` の場合はこの component を使い、未指定または `google` の場合は Google Speech-to-Text 用の `stt` component を graph 上の同じ位置に接続する。
 
 ## 責務
 
@@ -21,8 +21,8 @@ STT provider は `STT_PROVIDER` で切り替える。
 
 - `OPENAI_API_KEY`
   - OpenAI Realtime API の認証に使う。
-  - `STT_PROVIDER=openai` の場合は必須。
-- `OPENAI_STT_MODEL`
+  - `stt.provider: openai` の場合は必須。
+- `stt.openai_model`
   - OpenAI transcription model を指定する。
   - 未指定時は `gpt-realtime-whisper` を使う。
 - `stt_phrases.txt`
@@ -51,7 +51,7 @@ flowchart LR
 3. `openaistt` は `session.update` で transcription session を設定する。
    - `audio.input.format.type` は `audio/pcm`。
    - `audio.input.format.rate` は `24000`。
-   - `audio.input.transcription.model` は `OPENAI_STT_MODEL` または `gpt-realtime-whisper`。
+   - `audio.input.transcription.model` は `stt.openai_model` または `gpt-realtime-whisper`。
    - `audio.input.transcription.keywords` には `stt_phrases.txt` 由来の phrase を渡す。
    - `audio.input.turn_detection` は `null` にし、発話境界は既存 `rtcvad` の start/end に従う。
 4. start event に prebuffer が含まれる場合、24 kHz mono PCM16 へ正規化して `input_audio_buffer.append` で送る。

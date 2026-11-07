@@ -16,7 +16,7 @@
 ## ICE candidate
 
 `rtcpeer` は `RTCIceAdvertiseIPs` 設定を受け取り、`PeerConnection` 作成時に `SetICEAddressRewriteRules` を設定する。
-設定値は環境変数 `RTC_ICE_ADVERTISE_IPS` から読み込まれ、カンマ区切りのIPv4アドレスとして扱う。
+設定値は `config.yaml` の `rtc.ice_advertise_ips`（IPv4アドレスのリスト）から読み込む。環境変数 `RTC_ICE_ADVERTISE_IPS`（カンマ区切り）がある場合は、そちらを優先する。
 
 指定できるアドレスは次の範囲に限定する。
 

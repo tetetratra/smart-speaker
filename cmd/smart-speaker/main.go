@@ -48,6 +48,7 @@ func main() {
 	setLocalTimeZone()
 
 	cfg := app.LoadConfig("system_prompt.txt")
+	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
 
 	ensureGoogleCalendarToken()
 

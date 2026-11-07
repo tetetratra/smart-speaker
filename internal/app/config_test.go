@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,183 +36,282 @@ func TestReadSTTPhrasesIgnoresMissingFiles(t *testing.T) {
 	}
 }
 
-func TestConversationIdleTimeoutFromEnv(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want time.Duration
-	}{
-		{name: "empty uses default", raw: "", want: 5 * time.Minute},
-		{name: "positive seconds", raw: "42", want: 42 * time.Second},
-		{name: "zero disables", raw: "0", want: 0},
-		{name: "invalid uses default", raw: "invalid", want: 5 * time.Minute},
-		{name: "negative uses default", raw: "-1", want: 5 * time.Minute},
-		{name: "trims spaces", raw: " 5 ", want: 5 * time.Second},
+// loadFromYAMLはYAML文字列と環境変数からConfigを作る。
+func loadFromYAML(t *testing.T, content string, env map[string]string) (Config, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := conversationIdleTimeoutFromEnv(tt.raw); got != tt.want {
-				t.Fatalf("conversationIdleTimeoutFromEnv(%q) = %s, want %s", tt.raw, got, tt.want)
-			}
-		})
+	file, err := readConfigFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	return buildConfig(file, func(name string) string { return env[name] })
+}
+
+func mustLoadFromYAML(t *testing.T, content string, env map[string]string) Config {
+	t.Helper()
+	cfg, err := loadFromYAML(t, content, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+var minimalEnv = map[string]string{"OPENAI_API_KEY": "openai"}
+
+func TestBuildConfigRequiresOpenAIAPIKey(t *testing.T) {
+	if _, err := loadFromYAML(t, "", map[string]string{}); err == nil {
+		t.Fatal("OPENAI_API_KEY 未設定でエラーになりません")
 	}
 }
 
-func TestLoadConfigReadsTTSProviderConfig(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("TTS_PROVIDER", "voicevox")
-	t.Setenv("VOICEVOX_ENDPOINT", "http://voicevox:50021")
-	t.Setenv("VOICEVOX_SPEAKER_ID", "3")
-	t.Setenv("VOICEVOX_SPEED_SCALE", "1.25")
-	t.Setenv("ELEVENLABS_API_KEY", "")
-	t.Setenv("ELEVENLABS_VOICE_ID", "")
+func TestReadConfigFileMissingFileUsesDefaults(t *testing.T) {
+	file, err := readConfigFile(filepath.Join(t.TempDir(), "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(file, configFile{}) {
+		t.Fatalf("file = %+v, want zero value", file)
+	}
+}
 
-	cfg := LoadConfig("")
-	if cfg.TTSProvider != "voicevox" {
-		t.Fatalf("TTSProvider = %q, want voicevox", cfg.TTSProvider)
+func TestReadConfigFileRejectsUnknownKeys(t *testing.T) {
+	if _, err := loadFromYAML(t, "tts:\n  provder: voicevox\n", minimalEnv); err == nil {
+		t.Fatal("未知のキーでエラーになりません")
 	}
-	if cfg.Voicevox.Endpoint != "http://voicevox:50021" {
-		t.Fatalf("Voicevox.Endpoint = %q", cfg.Voicevox.Endpoint)
+}
+
+func TestReadConfigFileRejectsWrongTypes(t *testing.T) {
+	if _, err := loadFromYAML(t, "tts:\n  voicevox:\n    speaker_id: abc\n", minimalEnv); err == nil {
+		t.Fatal("型の誤りでエラーになりません")
 	}
-	if cfg.Voicevox.SpeakerID != 3 {
-		t.Fatalf("Voicevox.SpeakerID = %d, want 3", cfg.Voicevox.SpeakerID)
+}
+
+func TestBuildConfigDefaults(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "", minimalEnv)
+
+	checks := map[string][2]string{
+		"ResponsesModel":             {cfg.ResponsesModel, "gpt-5.4-nano-2026-03-17"},
+		"SubagentModel":              {cfg.SubagentModel, "gpt-5.4"},
+		"RealtimeModel":              {cfg.RealtimeModel, "gpt-realtime-2.1"},
+		"RealtimeVAD":                {cfg.RealtimeVAD, "semantic_vad"},
+		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-4o-mini-transcribe"},
+		"RealtimeEndpoint":           {cfg.RealtimeEndpoint, ""},
+		"Memory.Model":               {cfg.Memory.Model, "gpt-5.4-nano-2026-03-17"},
+		"Memory.StorePath":           {cfg.Memory.StorePath, "data/memories.json"},
+		"WakeModeStorePath":          {cfg.WakeModeStorePath, "data/wake-mode.json"},
+		"AutomationStorePath":        {cfg.AutomationStorePath, "data/automations.json"},
+		"LocalSTTEndpoint":           {cfg.LocalSTTEndpoint, "http://local-stt:8000/transcribe"},
+		"STTProvider":                {cfg.STTProvider, "google"},
+		"OpenAISTTModel":             {cfg.OpenAISTTModel, "gpt-realtime-whisper"},
+		"TTSProvider":                {cfg.TTSProvider, "voicevox"},
+		"Voicevox.Endpoint":          {cfg.Voicevox.Endpoint, "http://voicevox:50021"},
+		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_v3"},
+		"GoogleRecognizer":           {cfg.GoogleRecognizer, "_"},
+		"GoogleLanguage":             {cfg.GoogleLanguage, "ja-JP"},
+		"GoogleCalendar.RedirectURL": {cfg.GoogleCalendar.RedirectURL, "http://localhost:8081/oauth/google/callback"},
+		"GoogleCalendar.Scope":       {cfg.GoogleCalendar.Scopes[0], "https://www.googleapis.com/auth/calendar.events"},
+		"GoogleCalendar.TokenPath":   {cfg.GoogleCalendar.TokenPath, "data/google_oauth_token.json"},
+		"WSAddr":                     {cfg.WSAddr, ":8081"},
+		"WebDistDir":                 {cfg.WebDistDir, "web/dist"},
+	}
+	for name, c := range checks {
+		if c[0] != c[1] {
+			t.Errorf("%s = %q, want %q", name, c[0], c[1])
+		}
+	}
+	if cfg.Voicevox.SpeakerID != 1 || cfg.Voicevox.SpeedScale != nil {
+		t.Errorf("Voicevox = %+v", cfg.Voicevox)
+	}
+	if cfg.ConversationIdleTimeout != 5*time.Minute {
+		t.Errorf("ConversationIdleTimeout = %s", cfg.ConversationIdleTimeout)
+	}
+	if len(cfg.RTCIceAdvertiseIPs) != 0 {
+		t.Errorf("RTCIceAdvertiseIPs = %#v", cfg.RTCIceAdvertiseIPs)
+	}
+	w := cfg.WakeSettings
+	if len(w.Words) != 3 || w.MaxPrefix != 4 || w.MinConfidence != 0.55 || w.MinSimilarity != 0.65 {
+		t.Errorf("WakeSettings = %+v", w)
+	}
+}
+
+func TestBuildConfigReadsYAMLValues(t *testing.T) {
+	content := `
+server:
+  ws_addr: ":9090"
+  web_dist_dir: dist
+rtc:
+  ice_advertise_ips: [" 192.168.0.100", "100.64.0.1", ""]
+openai:
+  responses_model: gpt-response
+  subagent_model: gpt-sub
+  realtime:
+    model: comparison-model
+    vad: server_vad
+    transcription_model: gpt-transcribe
+    endpoint: ws://127.0.0.1:1234
+conversation:
+  idle_timeout_seconds: 0
+memory:
+  model: gpt-memory
+  store_path: /app/data/memories.json
+automations:
+  store_path: /tmp/automations.json
+stt:
+  provider: openai
+  openai_model: gpt-live-transcribe
+  google:
+    project: my-project
+    recognizer: rec
+    language: en-US
+tts:
+  provider: elevenlabs
+  voicevox:
+    endpoint: http://localhost:50021
+    speaker_id: 0
+    speed_scale: 1.25
+  elevenlabs:
+    voice_id: voice
+    model: eleven_flash_v2_5
+wake:
+  store_path: /tmp/wake.json
+  local_stt_endpoint: http://localhost:8000/transcribe
+  words: [おきて, " 起きて ", "", オッケー]
+  max_prefix: 0
+  min_confidence: 0.4
+  min_similarity: 0.7
+switchbot:
+  device_map:
+    hub2: hub-device
+google_calendar:
+  redirect_url: http://example.test/callback
+  scope: https://www.googleapis.com/auth/calendar.readonly
+  token_path: /tmp/token.json
+`
+	env := map[string]string{
+		"OPENAI_API_KEY":                      "openai",
+		"ELEVENLABS_API_KEY":                  "eleven",
+		"SWITCHBOT_TOKEN":                     "token",
+		"SWITCHBOT_SECRET":                    "secret",
+		"GOOGLE_APPLICATION_CREDENTIALS_JSON": "{}",
+		"GOOGLE_CLIENT_ID":                    "client-id",
+		"GOOGLE_CLIENT_SECRET":                "client-secret",
+	}
+	cfg := mustLoadFromYAML(t, content, env)
+
+	checks := map[string][2]string{
+		"WSAddr":                     {cfg.WSAddr, ":9090"},
+		"WebDistDir":                 {cfg.WebDistDir, "dist"},
+		"ResponsesModel":             {cfg.ResponsesModel, "gpt-response"},
+		"SubagentModel":              {cfg.SubagentModel, "gpt-sub"},
+		"RealtimeModel":              {cfg.RealtimeModel, "comparison-model"},
+		"RealtimeVAD":                {cfg.RealtimeVAD, "server_vad"},
+		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-transcribe"},
+		"RealtimeEndpoint":           {cfg.RealtimeEndpoint, "ws://127.0.0.1:1234"},
+		"Memory.Model":               {cfg.Memory.Model, "gpt-memory"},
+		"Memory.StorePath":           {cfg.Memory.StorePath, "/app/data/memories.json"},
+		"AutomationStorePath":        {cfg.AutomationStorePath, "/tmp/automations.json"},
+		"STTProvider":                {cfg.STTProvider, "openai"},
+		"OpenAISTTModel":             {cfg.OpenAISTTModel, "gpt-live-transcribe"},
+		"GoogleCloudProject":         {cfg.GoogleCloudProject, "my-project"},
+		"GoogleRecognizer":           {cfg.GoogleRecognizer, "rec"},
+		"GoogleLanguage":             {cfg.GoogleLanguage, "en-US"},
+		"GoogleCredentials":          {cfg.GoogleCredentials, "{}"},
+		"TTSProvider":                {cfg.TTSProvider, "elevenlabs"},
+		"Voicevox.Endpoint":          {cfg.Voicevox.Endpoint, "http://localhost:50021"},
+		"ElevenLabs.APIKey":          {cfg.ElevenLabs.APIKey, "eleven"},
+		"ElevenLabs.VoiceID":         {cfg.ElevenLabs.VoiceID, "voice"},
+		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_flash_v2_5"},
+		"WakeModeStorePath":          {cfg.WakeModeStorePath, "/tmp/wake.json"},
+		"LocalSTTEndpoint":           {cfg.LocalSTTEndpoint, "http://localhost:8000/transcribe"},
+		"SwitchBot.Token":            {cfg.SwitchBot.Token, "token"},
+		"SwitchBot.Secret":           {cfg.SwitchBot.Secret, "secret"},
+		"GoogleCalendar.ClientID":    {cfg.GoogleCalendar.ClientID, "client-id"},
+		"GoogleCalendar.Secret":      {cfg.GoogleCalendar.ClientSecret, "client-secret"},
+		"GoogleCalendar.RedirectURL": {cfg.GoogleCalendar.RedirectURL, "http://example.test/callback"},
+		"GoogleCalendar.Scope":       {cfg.GoogleCalendar.Scopes[0], "https://www.googleapis.com/auth/calendar.readonly"},
+		"GoogleCalendar.TokenPath":   {cfg.GoogleCalendar.TokenPath, "/tmp/token.json"},
+	}
+	for name, c := range checks {
+		if c[0] != c[1] {
+			t.Errorf("%s = %q, want %q", name, c[0], c[1])
+		}
+	}
+	if cfg.Voicevox.SpeakerID != 0 {
+		t.Errorf("Voicevox.SpeakerID = %d, want 0", cfg.Voicevox.SpeakerID)
 	}
 	if cfg.Voicevox.SpeedScale == nil || *cfg.Voicevox.SpeedScale != 1.25 {
-		t.Fatalf("Voicevox.SpeedScale = %v, want 1.25", cfg.Voicevox.SpeedScale)
+		t.Errorf("Voicevox.SpeedScale = %v, want 1.25", cfg.Voicevox.SpeedScale)
+	}
+	if cfg.ConversationIdleTimeout != 0 {
+		t.Errorf("ConversationIdleTimeout = %s, want 0", cfg.ConversationIdleTimeout)
+	}
+	if want := []string{"192.168.0.100", "100.64.0.1"}; !reflect.DeepEqual(cfg.RTCIceAdvertiseIPs, want) {
+		t.Errorf("RTCIceAdvertiseIPs = %#v, want %#v", cfg.RTCIceAdvertiseIPs, want)
+	}
+	if want := map[string]string{"hub2": "hub-device"}; !reflect.DeepEqual(cfg.SwitchBot.DeviceMap, want) {
+		t.Errorf("SwitchBot.DeviceMap = %#v", cfg.SwitchBot.DeviceMap)
+	}
+	w := cfg.WakeSettings
+	if want := []string{"おきて", "起きて", "オッケー"}; !reflect.DeepEqual(w.Words, want) || w.MaxPrefix != 0 || w.MinConfidence != 0.4 || w.MinSimilarity != 0.7 {
+		t.Errorf("WakeSettings = %+v", w)
 	}
 }
 
-func TestLoadConfigDefaultsTTSProviderAndVoicevoxSettings(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("STT_PROVIDER", "")
-	t.Setenv("OPENAI_STT_MODEL", "")
-	t.Setenv("TTS_PROVIDER", "")
-	t.Setenv("VOICEVOX_SPEAKER_ID", "")
-	t.Setenv("VOICEVOX_SPEED_SCALE", "")
-
-	cfg := LoadConfig("")
-	if cfg.STTProvider != "google" {
-		t.Fatalf("STTProvider = %q, want google", cfg.STTProvider)
-	}
-	if cfg.OpenAISTTModel != "gpt-realtime-whisper" {
-		t.Fatalf("OpenAISTTModel = %q, want gpt-realtime-whisper", cfg.OpenAISTTModel)
-	}
-	if cfg.TTSProvider != "voicevox" {
-		t.Fatalf("TTSProvider = %q, want voicevox", cfg.TTSProvider)
-	}
-	if cfg.Voicevox.SpeakerID != 1 {
-		t.Fatalf("Voicevox.SpeakerID = %d, want 1", cfg.Voicevox.SpeakerID)
-	}
-	if cfg.Voicevox.SpeedScale != nil {
-		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+func TestBuildConfigDerivesStorePathsFromMemoryStorePath(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "memory:\n  store_path: /app/data/memories.json\n", minimalEnv)
+	if cfg.WakeModeStorePath != "/app/data/wake-mode.json" || cfg.AutomationStorePath != "/app/data/automations.json" || cfg.GoogleCalendar.TokenPath != "/app/data/google_oauth_token.json" {
+		t.Fatalf("store paths = %q, %q, %q", cfg.WakeModeStorePath, cfg.AutomationStorePath, cfg.GoogleCalendar.TokenPath)
 	}
 }
 
-func TestLoadConfigReadsSTTProviderConfig(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("STT_PROVIDER", "openai")
-	t.Setenv("OPENAI_STT_MODEL", "gpt-live-transcribe")
-
-	cfg := LoadConfig("")
-	if cfg.STTProvider != "openai" {
-		t.Fatalf("STTProvider = %q, want openai", cfg.STTProvider)
-	}
-	if cfg.OpenAISTTModel != "gpt-live-transcribe" {
-		t.Fatalf("OpenAISTTModel = %q, want gpt-live-transcribe", cfg.OpenAISTTModel)
-	}
-}
-
-func TestLoadConfigRealtimeModelAndVADDefaultsAndOverrides(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "local")
-	t.Setenv("OPENAI_REALTIME_MODEL", "")
-	t.Setenv("OPENAI_REALTIME_VAD", "")
-	cfg := LoadConfig("")
-	if cfg.RealtimeModel != "gpt-realtime-2.1" || cfg.RealtimeVAD != "semantic_vad" {
-		t.Fatalf("会話モデルまたは発話区切りの既定値が違います: %q, %q", cfg.RealtimeModel, cfg.RealtimeVAD)
-	}
-	t.Setenv("OPENAI_REALTIME_MODEL", "comparison-model")
-	t.Setenv("OPENAI_REALTIME_VAD", "server_vad")
-	cfg = LoadConfig("")
-	if cfg.RealtimeModel != "comparison-model" || cfg.RealtimeVAD != "server_vad" {
-		t.Fatalf("比較用の環境変数が反映されていません: %q, %q", cfg.RealtimeModel, cfg.RealtimeVAD)
-	}
-}
-
-func TestLoadConfigReadsRTCIceAdvertiseIPs(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("RTC_ICE_ADVERTISE_IPS", " 192.168.0.100,100.64.0.1, ,192.168.0.101 ")
-
-	cfg := LoadConfig("")
+func TestBuildConfigRTCIceAdvertiseIPsEnvOverridesYAML(t *testing.T) {
+	env := map[string]string{"OPENAI_API_KEY": "openai", "RTC_ICE_ADVERTISE_IPS": " 192.168.0.100,100.64.0.1, ,192.168.0.101 "}
+	cfg := mustLoadFromYAML(t, "rtc:\n  ice_advertise_ips: [10.0.0.1]\n", env)
 	want := []string{"192.168.0.100", "100.64.0.1", "192.168.0.101"}
 	if !reflect.DeepEqual(cfg.RTCIceAdvertiseIPs, want) {
 		t.Fatalf("RTCIceAdvertiseIPs = %#v, want %#v", cfg.RTCIceAdvertiseIPs, want)
 	}
 }
 
-func TestLoadConfigReadsMemoryConfig(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
-	t.Setenv("OPENAI_MEMORY_MODEL", "gpt-memory")
-	t.Setenv("MEMORY_STORE_PATH", "/app/data/memories.json")
-
-	cfg := LoadConfig("")
-	if cfg.Memory.Model != "gpt-memory" {
-		t.Fatalf("Memory.Model = %q, want gpt-memory", cfg.Memory.Model)
-	}
-	if cfg.Memory.StorePath != "/app/data/memories.json" {
-		t.Fatalf("Memory.StorePath = %q", cfg.Memory.StorePath)
-	}
-}
-
-func TestLoadConfigDefaultsMemoryConfig(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("OPENAI_RESPONSES_MODEL", "gpt-response")
-	t.Setenv("OPENAI_MEMORY_MODEL", "")
-	t.Setenv("MEMORY_STORE_PATH", "")
-
-	cfg := LoadConfig("")
-	if cfg.Memory.Model != "gpt-response" {
-		t.Fatalf("Memory.Model = %q, want OPENAI_RESPONSES_MODEL fallback", cfg.Memory.Model)
-	}
-	if cfg.Memory.StorePath != "data/memories.json" {
-		t.Fatalf("Memory.StorePath = %q, want data/memories.json", cfg.Memory.StorePath)
-	}
-}
-
-func TestLoadConfigHandlesInvalidVoicevoxNumbers(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("VOICEVOX_SPEAKER_ID", "invalid")
-	t.Setenv("VOICEVOX_SPEED_SCALE", "-1")
-
-	cfg := LoadConfig("")
-	if cfg.Voicevox.SpeakerID != 1 {
-		t.Fatalf("Voicevox.SpeakerID = %d, want default 1", cfg.Voicevox.SpeakerID)
+func TestBuildConfigFallsBackOnOutOfRangeNumbers(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "conversation:\n  idle_timeout_seconds: -1\ntts:\n  voicevox:\n    speed_scale: -1\n", minimalEnv)
+	if cfg.ConversationIdleTimeout != 5*time.Minute {
+		t.Errorf("ConversationIdleTimeout = %s, want default", cfg.ConversationIdleTimeout)
 	}
 	if cfg.Voicevox.SpeedScale != nil {
-		t.Fatalf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+		t.Errorf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
 	}
 }
 
-func TestLoadConfigReadsWakeSettingsFromEnv(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	t.Setenv("WAKE_WORDS", "おきて, 起きて ,,オッケー")
-	t.Setenv("WAKE_MAX_PREFIX", "2")
-	t.Setenv("WAKE_MIN_CONFIDENCE", "0.4")
-	t.Setenv("WAKE_MIN_SIMILARITY", "0.7")
-
-	settings := LoadConfig("").WakeSettings
-	if len(settings.Words) != 3 || settings.Words[1] != "起きて" || settings.MaxPrefix != 2 || settings.MinConfidence != 0.4 || settings.MinSimilarity != 0.7 {
-		t.Fatalf("WakeSettings = %+v", settings)
+// config.sample.yamlがそのままでも、コメントアウトされた項目をすべて有効にしても読み込めることを確かめる。
+// 構造体に無い項目がサンプルに書かれていると、未知のキーとしてエラーになる。
+func TestConfigSampleYAMLIsLoadable(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "config.sample.yaml"))
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestLoadConfigUsesDefaultWakeSettings(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "openai")
-	for _, name := range []string{"WAKE_WORDS", "WAKE_MAX_PREFIX", "WAKE_MIN_CONFIDENCE", "WAKE_MIN_SIMILARITY"} {
-		t.Setenv(name, "")
+	if _, err := loadFromYAML(t, string(data), minimalEnv); err != nil {
+		t.Fatalf("config.sample.yaml: %v", err)
 	}
-	settings := LoadConfig("").WakeSettings
-	if len(settings.Words) != 3 || settings.MaxPrefix != 4 || settings.MinConfidence != 0.55 || settings.MinSimilarity != 0.65 {
-		t.Fatalf("WakeSettings = %+v", settings)
+
+	keyLine := regexp.MustCompile(`^( *)# ([a-z_]+:.*)$`)
+	nestedLine := regexp.MustCompile(`^( *)#   (- .*|[a-z0-9_]+: .*)$`)
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if m := keyLine.FindStringSubmatch(line); m != nil {
+			lines[i] = m[1] + m[2]
+		} else if m := nestedLine.FindStringSubmatch(line); m != nil {
+			lines[i] = m[1] + "  " + m[2]
+		}
+	}
+	cfg, err := loadFromYAML(t, strings.Join(lines, "\n"), minimalEnv)
+	if err != nil {
+		t.Fatalf("config.sample.yaml（全項目有効）: %v", err)
+	}
+	if cfg.Voicevox.SpeedScale == nil || len(cfg.RTCIceAdvertiseIPs) != 1 || len(cfg.SwitchBot.DeviceMap) != 1 {
+		t.Fatalf("コメントアウトされた項目が有効になっていません: %+v", cfg)
 	}
 }

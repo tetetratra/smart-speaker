@@ -15,8 +15,8 @@
   - 会話履歴はユーザーとアシスタントの発話（`user` / `agent`）だけを渡し、ツール呼び出し・ツール結果・system メッセージと metadata は渡さない
   - 操作（`Operation`）は `action`（`add` / `update` / `delete`）、`target_id`、`content` を持つ
   - 会話の `created_at` は日本時間（`+09:00`）で渡す
-  - 通常起動では `OPENAI_MEMORY_MODEL` を使い、未指定の場合は `OPENAI_RESPONSES_MODEL` に fallback する
-  - 1 reset あたりの操作数は最大 5 件（環境変数では変更できない）
+  - 通常起動では `memory.model` を使い、未指定の場合は `openai.responses_model` に fallback する
+  - 1 reset あたりの操作数は最大 5 件（設定では変更できない）
   - ユーザーとアシスタントの発話が無い場合は OpenAI API を呼ばず、操作なしとして返す
 - **`internal/hooks/memory.CreatorHook`**
   - `sessionreset.Hook` として reset 前に同期実行される
@@ -54,14 +54,14 @@
 
 ## 3. 設定
 
-通常起動では、メモリ機能の設定を環境変数から読み込みます。
+通常起動では、メモリ機能の設定を `config.yaml` から読み込みます。
 
-| 環境変数 | 既定値 | 用途 |
+| `config.yaml` の項目 | 既定値 | 用途 |
 | --- | --- | --- |
-| `OPENAI_MEMORY_MODEL` | `OPENAI_RESPONSES_MODEL` | reset 前履歴からメモリ操作を作る Responses API の model |
-| `MEMORY_STORE_PATH` | `data/memories.json` | メモリ JSON file store の保存先 |
+| `memory.model` | `openai.responses_model` | reset 前履歴からメモリ操作を作る Responses API の model |
+| `memory.store_path` | `data/memories.json` | メモリ JSON file store の保存先 |
 
-Docker Compose では `MEMORY_STORE_PATH=/app/data/memories.json` を server に渡します。
+Docker Compose ではコンテナの作業ディレクトリが `/app` のため、既定の保存先は `/app/data/memories.json` になります。
 `/app/data` は host の `/var/lib/smart-speaker/data` に volume mount されるため、メモリ JSON はコンテナ再作成後も保持されます。
 
 ## 4. 主要なデータフロー

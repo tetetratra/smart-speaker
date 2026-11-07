@@ -36,8 +36,8 @@
 ## セッションリセット
 
 - `sessionreset` は `utterancebuffer` から出る user の `EventConversationCommitRequest` を横付けで監視する。
-- `CONVERSATION_IDLE_TIMEOUT_SECONDS` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させ、agent status を `idle` にする。
-- `CONVERSATION_IDLE_TIMEOUT_SECONDS=0` の場合、idle reset は無効になる。
+- `conversation.idle_timeout_seconds` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させ、agent status を `idle` にする。
+- `conversation.idle_timeout_seconds: 0` の場合、idle reset は無効になる。
 - reset 用の graph event として `EventSessionReset` を発行し、`wschat` が UI へ `session_reset` を通知する。
 
 ## function calling

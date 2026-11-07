@@ -101,8 +101,8 @@ flowchart TB
 - `llm` は会話履歴Storeの snapshot と agent status を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。保留中割り込みがある場合は、空 timeline で paused 世代を再開し、非空 timeline で candidate 世代を確定する。
 - `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
 - `generationfilter` は世代id付き event を通過、保留、破棄に分類する。保留中割り込みがない場合は最新世代だけを通し、保留中は candidate 世代を通し、paused 世代を判定確定まで保持する。
-- `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `TTS_PROVIDER` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
-- STT は `STT_PROVIDER` で切り替え、未指定時は Google Speech-to-Text の `stt`、`openai` 指定時は OpenAI Realtime transcription の `openaistt` を同じ graph 位置に接続する。
+- `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `tts.provider` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
+- STT は `stt.provider` で切り替え、未指定時は Google Speech-to-Text の `stt`、`openai` 指定時は OpenAI Realtime transcription の `openaistt` を同じ graph 位置に接続する。
 - `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
 - `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
 - `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
@@ -148,7 +148,7 @@ session reset hook は保存済みメモリと reset 前の発話から add / up
 
 ## セッションリセット
 
-`CONVERSATION_IDLE_TIMEOUT_SECONDS` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
+`conversation.idle_timeout_seconds` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
 未設定時は 300 秒、`0` は無効化、不正値や負値は既定値として扱う。
 
 リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進め、agent status を `idle` に更新する。

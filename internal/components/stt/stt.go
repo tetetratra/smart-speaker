@@ -45,7 +45,7 @@ func (s *stage) startSpeechStream(sampleRate int32, channels int32, prebuffer []
 
 	projectID := strings.TrimSpace(s.cfg.SpeechProjectID)
 	if projectID == "" {
-		log.Printf("stt: GOOGLE_CLOUD_PROJECT is empty; server-side STT disabled")
+		log.Printf("stt: stt.google.project is empty; server-side STT disabled")
 		return
 	}
 	if s.speechClient == nil {

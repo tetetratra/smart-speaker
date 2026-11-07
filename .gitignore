@@ -1,5 +1,6 @@
 tmp
 .envrc
+config.yaml
 AGENTS.md
 system_prompt.local.txt
 stt_phrases.local.txt

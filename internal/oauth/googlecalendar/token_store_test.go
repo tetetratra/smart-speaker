@@ -10,7 +10,7 @@ import (
 )
 
 func TestSaveTokenPersistsToDisk(t *testing.T) {
-	t.Setenv("GOOGLE_OAUTH_TOKEN_PATH", filepath.Join(t.TempDir(), "google_oauth_token.json"))
+	useTokenPath(t, filepath.Join(t.TempDir(), "google_oauth_token.json"))
 	resetTokenCache()
 
 	original := &oauth2.Token{
@@ -37,7 +37,7 @@ func TestSaveTokenPersistsToDisk(t *testing.T) {
 }
 
 func TestSaveTokenPreservesRefreshToken(t *testing.T) {
-	t.Setenv("GOOGLE_OAUTH_TOKEN_PATH", filepath.Join(t.TempDir(), "google_oauth_token.json"))
+	useTokenPath(t, filepath.Join(t.TempDir(), "google_oauth_token.json"))
 	resetTokenCache()
 
 	if err := SaveToken(&oauth2.Token{
@@ -71,7 +71,7 @@ func TestSaveTokenPreservesRefreshToken(t *testing.T) {
 }
 
 func TestLoadTokenMissingFile(t *testing.T) {
-	t.Setenv("GOOGLE_OAUTH_TOKEN_PATH", filepath.Join(t.TempDir(), "missing.json"))
+	useTokenPath(t, filepath.Join(t.TempDir(), "missing.json"))
 	resetTokenCache()
 
 	_, err := LoadToken()
@@ -87,4 +87,11 @@ func resetTokenCache() {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
 	cachedToken = nil
+}
+
+func useTokenPath(t *testing.T, path string) {
+	t.Helper()
+	previous := currentConfig()
+	Configure(Config{TokenPath: path})
+	t.Cleanup(func() { Configure(previous) })
 }

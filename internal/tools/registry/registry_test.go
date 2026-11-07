@@ -27,7 +27,7 @@ func TestToolResponsePoliciesStayLocalAndReachRegistry(t *testing.T) {
 }
 
 func TestRegistrySwitchBotTools(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	reg := New(Config{
 		SwitchBotClient: client,
 		SwitchBotScenes: []switchbot.Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}},
@@ -72,7 +72,7 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 }
 
 func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	reg := New(Config{SwitchBotClient: client})
 
 	if _, ok := reg.DefinitionByName("switchbot_execute_scene"); ok {
@@ -168,7 +168,7 @@ func TestRegistryDefinitionsForLLMOmitsSetWhiteboard(t *testing.T) {
 }
 
 func TestRegistryOmitsSetVolumeTool(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	reg := New(Config{SwitchBotClient: client})
 
 	if _, ok := reg.DefinitionByName("set_volume"); ok {
@@ -180,7 +180,7 @@ func TestRegistryOmitsSetVolumeTool(t *testing.T) {
 }
 
 func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	reg := New(Config{SwitchBotClient: client})
 
 	if _, ok := reg.DefinitionByName("schedule_timer"); ok {

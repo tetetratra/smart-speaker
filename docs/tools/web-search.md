@@ -8,13 +8,13 @@ OpenAI function calling は使いません。
 会話 pipeline 上は他の local tool と同じく、`scheduler` / `router` / `toolcaller` を経由し、結果は `conversationcommitter` で会話履歴に保存されます。
 
 ## 登録条件
-- 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が `OPENAI_API_KEY` と `OPENAI_RESPONSES_MODEL` を registry に渡します。
+- 通常起動では `cmd/smart-speaker/main.go` の `buildToolRegistry` が `OPENAI_API_KEY` と `openai.responses_model` を registry に渡します。
 - registry は OpenAI API key と model が両方ある場合に `web_search` を登録します。
 - 登録されると `registry.Definitions()` 経由で LLM の Structured Outputs schema と system prompt に入り、`registry.Handlers()` 経由で `toolcaller` の handler map に入ります。
 - API key または model が空の場合、`web_search` は LLM に提示されず handler も登録されません。
 
 通常起動では `OPENAI_API_KEY` は必須設定です。
-`OPENAI_RESPONSES_MODEL` が未設定の場合は `internal/app/config.go` の default model が使われます。
+`openai.responses_model` が未設定の場合は `internal/app/config.go` の default model が使われます。
 
 ## 入力
 - tool 名: `web_search`
@@ -71,7 +71,7 @@ Responses API request の概形:
 
 ```json
 {
-  "model": "<OPENAI_RESPONSES_MODEL>",
+  "model": "<openai.responses_model>",
   "instructions": "<検索バックエンド向け指示（逆質問禁止など）>",
   "input": "検索依頼:\n<query>",
   "tools": [
