@@ -28,7 +28,7 @@ func (h stubHandler) Run(args map[string]any) (map[string]any, error) {
 }
 
 func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
-	st := NewStage(nil, nil)
+	st := NewStage(nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -82,7 +82,7 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 		},
 	}, map[string]string{
 		"set_whiteboard": tools.ToolModeWrite,
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -114,7 +114,7 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 		},
 	}, map[string]string{
 		"set_whiteboard": tools.ToolModeWrite,
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -156,7 +156,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 		},
 	}, map[string]string{
 		"web_search": tools.ToolModeRead,
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -189,7 +189,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 
 func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 	handler := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"count": handler}, nil)
+	st := NewStage(map[string]tools.Handler{"count": handler}, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -235,7 +235,7 @@ func (h *blockingHandler) Run(map[string]any) (map[string]any, error) {
 func TestHistoryTracksRunningResultAndDuplicateCall(t *testing.T) {
 	history := toolhistory.NewStore(200)
 	handler := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
-	stage := NewStageWithHistory(map[string]tools.Handler{"blocked": handler}, nil, history)
+	stage := NewStage(map[string]tools.Handler{"blocked": handler}, nil, history)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	stage.Run(ctx)
@@ -277,7 +277,7 @@ func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
 	} {
 		t.Run(req.ToolCallID, func(t *testing.T) {
 			history := toolhistory.NewStore(200)
-			stage := NewStageWithHistory(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, nil, history)
+			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, nil, history)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			stage.Run(ctx)

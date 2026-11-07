@@ -5,12 +5,12 @@
 - **解決する課題**: Realtime API が返した function call を、local tool の実行へ橋渡しする。
 - **提供価値**: tool の実行結果を realtime へ戻し、API への `function_call_output` と会話履歴の記録につなげる。UI に副作用を持つ tool（`set_whiteboard`）は、実行結果とは別の graph event で wschat へ通知できる。
 - **責務の境界**: `toolcaller` は tool の実行と結果 event の発行だけを担う。function call の受け取り、結果の API への返却、会話履歴への記録、成功後に再び応答を生成するかの判断は `realtime` の責務。
-- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` の `buildToolRegistry` が local tool registry を構築し、`registry.Handlers()` と `registry.ToolModes()` を `toolcaller.NewStageWithHistory` に渡す。
+- **通常起動での handler 登録**: `cmd/smart-speaker/main.go` の `buildToolRegistry` が local tool registry を構築し、`registry.Handlers()` と `registry.ToolModes()` を `toolcaller.NewStage` に渡す。
 - **根拠コード**: `internal/components/toolcaller/toolcaller.go`、`internal/components/generationfilter/connection.go`、`internal/components/realtime/events.go`、`cmd/smart-speaker/main.go`、`internal/tools/registry/registry.go`。
 
 ## 2. 論理構造・機能俯瞰
 
-- **`toolcaller.NewStageWithHistory`**
+- **`toolcaller.NewStage`**
   - handler map、tool mode map、ツール呼び出し履歴（`toolhistory.Store`）を受け取り、graph stage を作る。nil の map は空 map にする。
   - tool mode map は保持しているが、現在の処理では参照していない。
 

@@ -49,7 +49,3 @@ sequenceDiagram
         F-->>F: 捨てる
     end
 ```
-
-## 5. 補足
-
-`internal/components/generationfilter/stage.go` の `NewStage`（世代判定を独立した stage として置き、保留中の割り込みに応じて event を保持・再開する旧方式）と、それが使う `generation.Store` の保留中割り込みの関数（`BeginInterruption` など）は、Realtime API への移行後は使われていない。

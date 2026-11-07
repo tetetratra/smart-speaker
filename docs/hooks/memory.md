@@ -20,7 +20,7 @@
   - ユーザーとアシスタントの発話が無い場合は OpenAI API を呼ばず、操作なしとして返す
 - **`internal/hooks/memory.CreatorHook`**
   - realtime の `OnConversationEnd` として、無操作によるセッションリセットの時に別 goroutine で実行される
-  - `ExecRecords` が、realtime が取り出して空にした時点の会話履歴を受け取る（`Exec` は旧 `sessionreset` 用で、現在は使われていない）
+  - `ExecRecords` が、realtime が取り出して空にした時点の会話履歴を受け取る
   - `memory.Store.Snapshot()` から保存済みメモリを読み、store の ID の代わりに `"1"`, `"2"` … の短い参照番号を付けて `OpenAIClient` に渡す。LLM が長い ID を書き写し間違えるのを防ぐためで、Mem0 と同じ手法
   - `add` は `memory.Store.Upsert` に保存を委譲する
   - `update` は `memory.Store.Update` で `target_id` の記憶を置き換える。更新後の本文が別の記憶と同じになる場合は、重複を作らないよう対象を削除する
@@ -166,13 +166,12 @@ sequenceDiagram
         - `CreateOperations`: 履歴をユーザー・アシスタントの発話に絞り、空なら操作なしを返す。発話があれば保存済みメモリと一緒に Responses API の strict JSON schema で変更操作を生成する
         - `memoryOperationInstructions`: 保存基準、操作の使い分け、出力例を定義する
         - `normalizeOperations`: action ごとの必須項目の検証と件数制限を行う
-      - `creator_hook.go`: session reset 前にメモリ操作を生成して適用する hook を担当する
-        - `NewCreatorHook`: history、operation creator、memory store を受け取り、必須依存の nil を拒否する
+      - `creator_hook.go`: 会話終了時にメモリ操作を生成して適用する hook を担当する
+        - `NewCreatorHook`: operation creator、memory store を受け取り、必須依存の nil を拒否する
         - `ExecRecords`: 保存済みメモリの snapshot に参照番号を付け、操作生成、参照番号の解決、Store への add / update / delete を順に実行する
-        - `Exec`: 会話履歴 store の snapshot で `ExecRecords` を呼ぶ
         - 操作単位の失敗は `errors.Join` で集約しつつ、残りの処理を続ける
-      - `context_provider.go`: LLM 応答生成前のメモリ注入を担当する
-        - `BuildContext`: 保存済みメモリを全件取得し、本文だけを `memory_context` system message にする
+      - `context_provider.go`: Realtime API への接続時に渡すメモリの文脈を担当する
+        - `BuildContext`: 保存済みメモリを全件取得し、本文を返す
   - `cmd/`
     - `smart-speaker/`
       - `http_server.go`: HTTP server と mux の構築、共通 JSON 応答、server 起動・終了を担当する

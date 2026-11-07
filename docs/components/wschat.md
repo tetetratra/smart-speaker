@@ -28,11 +28,11 @@
   - ブラウザからの JSON は `type`, `sdp`, `candidate` を読み取る。
   - `type` が `webrtc.` prefix の場合は `types.EventRTCSignal` に変換して `downstream` へ送る。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechStart`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd` をブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechStart`, `EventSpeechEnd`, `EventWhiteboardUpdate`, `EventSessionReset` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
-  - `web/src/main.tsx` は `message`, `speech_start`, `speech_end`, `agent_speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
+  - `web/src/main.tsx` は `message`, `speech_start`, `speech_end`, `session_reset`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
   - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
@@ -113,7 +113,6 @@ sequenceDiagram
 3. 発話終了: upstreamから `EventSpeechEnd` が来ると、`wschat` は `speech_end` JSON を全接続に送る。
 4. 発話終了UI: UIは `speechDetectStatus` を `待機中`、`sttStatus` を `最終結果待ち` にする。
 5. 発話開始・終了は、realtime が Realtime API の VAD（`input_audio_buffer.speech_started` / `speech_stopped`）を受けて発行する。
-6. `EventRTCVADStatus`（`rtc_vad_status`）の変換処理は残っているが、サーバー側 VAD（旧 `rtcvad`）の削除により、現在は発行元がない。
 
 ```mermaid
 sequenceDiagram
@@ -216,14 +215,10 @@ sequenceDiagram
   - 例: `{ "type": "speech_start", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `speech_end`: 発話終了をUIへ通知する。
   - 例: `{ "type": "speech_end", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
-- `rtc_vad_status`: サーバー側VADの入力レベルとしきい値をUIへ通知する。変換処理は残っているが、現在は発行元がない。
-  - 例: `{ "type": "rtc_vad_status", "input_level": 123, "threshold": 456, "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `whiteboard_update`: ホワイトボード表示内容をUIへ通知する。
   - 例: `{ "type": "whiteboard_update", "content": "..." }`
 - `session_reset`: セッションリセット発火をUIへ通知する。
   - 例: `{ "type": "session_reset", "requested_at": "2026-05-27T12:00:00.000000123Z" }`
-- `agent_speech_end`: 当該 generation の AI タイムラインの完了を UI へ通知する。変換処理は残っているが、旧 `scheduler` の削除により、現在は発行元がない。
-  - 例: `{ "type": "agent_speech_end", "generation_id": 3, "completed_at": "2026-05-28T16:00:00.000000000+09:00" }`
 ### イベント変換仕様
 
 | graph event | payload型 | WebSocket type | 宛先 |
@@ -232,10 +227,8 @@ sequenceDiagram
 | `EventRTCSignal` | `types.RTCSignal` | `sig.Type` | `sig.ClientID` の接続のみ |
 | `EventSpeechStart` | `types.SpeechEvent` | `speech_start` | 全接続 |
 | `EventSpeechEnd` | `types.SpeechEvent` | `speech_end` | 全接続 |
-| `EventRTCVADStatus` | `types.RTCVADStatus` | `rtc_vad_status` | 全接続 |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |
 | `EventSessionReset` | `types.SessionResetEvent` | `session_reset` | 全接続 |
-| `EventAgentSpeechPlaybackEnd` | `types.AgentSpeechPlaybackEnd` | `agent_speech_end` | 全接続 |
 
 ### エラー・終了時の挙動
 

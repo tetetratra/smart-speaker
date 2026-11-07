@@ -860,10 +860,6 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
-        case 'agent_speech_end': {
-          setIsAiSpeaking(false)
-          break
-        }
         case 'session_reset': {
           resetConversationBubble()
           break

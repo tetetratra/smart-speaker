@@ -1,23 +1,14 @@
 package types
 
-import "encoding/json"
+const TimelineKindSpeech = "speech"
 
-const (
-	TimelineKindSpeech = "speech"
-	TimelineKindWait   = "wait"
-	TimelineKindTool   = "tool"
-)
-
-// TimelineItem は LLM が出力する順序付き item です。
+// TimelineItem は speechsegment が応答テキストから作る読み上げ単位です。
 type TimelineItem struct {
 	ItemID       string
 	Kind         string
 	GenerationID GenerationID
 	SequenceID   string
 	Text         string
-	Sec          float64
-	ToolName     string
-	ToolArgs     json.RawMessage
 }
 
 // PlayableSpeech は TTS 済みの speech item です。

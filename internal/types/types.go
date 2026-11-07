@@ -12,14 +12,6 @@ type OutputLine struct {
 	GenerationID GenerationID
 }
 
-// OutputAudio represents an agent audio response chunk.
-type OutputAudio struct {
-	Role         string
-	Audio        string
-	Text         string
-	GenerationID GenerationID
-}
-
 // SpeechEvent は文字起こしの終了イベントを表します。
 type SpeechEvent struct {
 	Source     string
@@ -31,30 +23,10 @@ type SessionResetEvent struct {
 	RequestedAt time.Time
 }
 
-// AgentTimelineEnd は LLM が当該 generation の timeline item をすべて発行し終えたことを表します。
+// AgentTimelineEnd は speechsegment が1つの応答の読み上げ単位をすべて発行し終えたことを表します。
 type AgentTimelineEnd struct {
 	ItemID       string
 	GenerationID GenerationID
-}
-
-// AgentSpeechPlaybackEnd は scheduler が当該 generation の timeline 処理を完了したことを表します。
-type AgentSpeechPlaybackEnd struct {
-	GenerationID GenerationID
-	CompletedAt  time.Time
-}
-
-// RTCVADStatus はサーバー側VADの現在音量としきい値を表します。
-type RTCVADStatus struct {
-	InputLevel int
-	Threshold  int
-	CapturedAt time.Time
-}
-
-// TTSEvent はTTSストリーム完了を表します。
-type TTSEvent struct {
-	ResponseID      string
-	AudioStartAt    time.Time
-	DurationSeconds float64
 }
 
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。

@@ -14,7 +14,6 @@ const (
 	DefaultRedirectURL = "http://localhost:8081/oauth/google/callback"
 	// DefaultScope は設定ファイルで指定しない場合のOAuthスコープです。
 	DefaultScope       = scopeCalendarWrite
-	scopeCalendarRead  = "https://www.googleapis.com/auth/calendar.readonly"
 	scopeCalendarWrite = "https://www.googleapis.com/auth/calendar.events"
 )
 
@@ -64,9 +63,4 @@ func OAuthConfig(cfg Config) *oauth2.Config {
 		Scopes:       cfg.Scopes,
 		Endpoint:     google.Endpoint,
 	}
-}
-
-// Scopes は使えるスコープ一覧を返します。
-func Scopes() []string {
-	return []string{scopeCalendarRead, scopeCalendarWrite}
 }

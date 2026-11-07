@@ -11,19 +11,13 @@ import (
 )
 
 type CreatorHookConfig struct {
-	History          historyReader
 	OperationCreator operationCreator
 	Memory           memoryWriter
 }
 
 type CreatorHook struct {
-	history          historyReader
 	operationCreator operationCreator
 	memory           memoryWriter
-}
-
-type historyReader interface {
-	Snapshot() []types.ConversationRecord
 }
 
 type operationCreator interface {
@@ -38,9 +32,6 @@ type memoryWriter interface {
 }
 
 func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
-	if cfg.History == nil {
-		return nil, fmt.Errorf("memory creator hook: history is required")
-	}
 	if cfg.OperationCreator == nil {
 		return nil, fmt.Errorf("memory creator hook: operation creator is required")
 	}
@@ -48,14 +39,9 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 		return nil, fmt.Errorf("memory creator hook: memory is required")
 	}
 	return &CreatorHook{
-		history:          cfg.History,
 		operationCreator: cfg.OperationCreator,
 		memory:           cfg.Memory,
 	}, nil
-}
-
-func (h *CreatorHook) Exec(ctx context.Context) error {
-	return h.ExecRecords(ctx, h.history.Snapshot())
 }
 
 // ExecRecords は終了時点で固定した会話を対象にする。

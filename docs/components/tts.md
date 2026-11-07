@@ -156,7 +156,6 @@ sequenceDiagram
 
 ### 不明点
 
-- `EventTTSEnd` と `types.TTSEvent` は定義されているが、現行コードで発行している箇所はない。
 - ElevenLabs API と VOICEVOX API の外部仕様そのものは本ドキュメントでは検証していない。URL、payload、PCM 前提は現行実装に基づく。
 
 ## 参照元

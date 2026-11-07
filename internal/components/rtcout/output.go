@@ -101,17 +101,6 @@ func bytesToInt16(b []byte) []int16 {
 	return out
 }
 
-func int16ToBytes(in []int16) []byte {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]byte, len(in)*2)
-	for i, v := range in {
-		binary.LittleEndian.PutUint16(out[i*2:], uint16(v))
-	}
-	return out
-}
-
 func upsampleBy2(in []int16) []int16 {
 	if len(in) == 0 {
 		return nil
