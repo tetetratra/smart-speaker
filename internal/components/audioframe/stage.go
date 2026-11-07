@@ -45,6 +45,10 @@ func NewStage() *graph.Stage {
 					if frame.Sequence == 0 || frame.Final {
 						frame.Text = p.Text
 					}
+					// 画面で吹き出しを再生に合わせてスクロールできるよう、区間全体の長さを先頭に添える。
+					if frame.Sequence == 0 {
+						frame.SegmentDuration = time.Duration(len(pcm)) * time.Second / 48000
+					}
 					if !emit(frame) {
 						return
 					}

@@ -2,6 +2,8 @@ export interface PlaybackSpeech {
   generationId: number
   segmentId: string
   text: string
+  // 区間全体の再生時間。吹き出しを再生終了に合わせてスクロールするのに使う。
+  durationMs?: number
 }
 
 export interface PlaybackProgress {
@@ -9,6 +11,7 @@ export interface PlaybackProgress {
   segment_id: string
   text?: string
   end?: boolean
+  duration_ms?: number
 }
 
 export interface AudioReceiver {
@@ -81,7 +84,7 @@ export function createAudioReceiver(
       onPlaying(!frame.end)
       // 送信開始の通知で表示する。実際の再生とは受信バッファの分だけずれる。
       if (!frame.end && frame.text) {
-        onSpeech({ generationId: frame.generation_id, segmentId: frame.segment_id, text: frame.text })
+        onSpeech({ generationId: frame.generation_id, segmentId: frame.segment_id, text: frame.text, durationMs: frame.duration_ms })
       }
     },
     stop(next) {

@@ -149,6 +149,9 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 		}
 		// 音声はWebRTCで送り、画面には区間の開始と終了だけ通知する。
 		msg = map[string]any{"type": "playback_progress", "generation_id": uint64(p.GenerationID), "segment_id": p.SegmentID, "text": p.Text, "end": p.End}
+		if p.SegmentDuration > 0 {
+			msg["duration_ms"] = p.SegmentDuration.Milliseconds()
+		}
 	case types.EventGenerationChanged:
 		p, ok := evt.Payload.(types.GenerationChanged)
 		if !ok {

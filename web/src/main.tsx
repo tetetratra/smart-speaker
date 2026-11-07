@@ -6,6 +6,7 @@ import { Whiteboard } from './Whiteboard'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
+import { startBubbleAutoScroll } from './bubbleScroll'
 
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
@@ -614,6 +615,8 @@ type LiveViewProps = {
   lastUserMessage: string
   isAiSpeaking: boolean
   isConversationBubbleHidden: boolean
+  // 吹き出しに表示中の読み上げ区間。区間が変わるたびに再生時間に合わせて自動スクロールする。
+  assistantSpeech?: PlaybackSpeech
   boardEntries: BoardEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
@@ -1282,6 +1285,7 @@ function App() {
           lastUserMessage={lastUserMessage}
           isAiSpeaking={isAiSpeaking}
           isConversationBubbleHidden={!bubble.visible}
+          assistantSpeech={bubble.assistant ? playbackSpeech : undefined}
           boardEntries={boardEntries}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
@@ -1880,6 +1884,7 @@ function LiveView(props: LiveViewProps) {
     lastUserMessage,
     isAiSpeaking,
     isConversationBubbleHidden,
+    assistantSpeech,
     boardEntries,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
@@ -1890,6 +1895,12 @@ function LiveView(props: LiveViewProps) {
     goAdmin,
     goJobs,
   } = props
+  const bubbleContentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = bubbleContentRef.current
+    if (!element || !assistantSpeech) return
+    return startBubbleAutoScroll(element, assistantSpeech.durationMs)
+  }, [assistantSpeech])
   const handleToggle = useCallback(() => {
     if (connected) {
       disconnect()
@@ -1910,7 +1921,7 @@ function LiveView(props: LiveViewProps) {
             <div className="live-bubble-slot">
               {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>
-                  <div className="live-bubble-content">
+                  <div className="live-bubble-content" ref={bubbleContentRef}>
                     {lastUserMessage && <div className="live-bubble-user">{lastUserMessage}</div>}
                     {lastAssistantMessage && <div className="live-bubble-agent">{lastAssistantMessage}</div>}
                   </div>
