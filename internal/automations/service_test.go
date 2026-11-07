@@ -145,3 +145,11 @@ func TestFailedPersistenceDoesNotExecuteAndCRUDPersists(t *testing.T) {
 		t.Fatal(err, restored.List())
 	}
 }
+func TestPastAtErrorIncludesCurrentTime(t *testing.T) {
+	now := stamp("2026-11-07T11:40:00+09:00")
+	_, err := (Schedule{At: stamp("2026-11-07T02:37:00Z"), Timezone: "Asia/Tokyo"}).next(now, true)
+	want := "過去の日時です（指定: 2026-11-07T11:37:00+09:00、現在: 2026-11-07T11:40:00+09:00）。現在より後の日時を指定してください"
+	if err == nil || err.Error() != want {
+		t.Fatal(err)
+	}
+}

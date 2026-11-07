@@ -43,7 +43,9 @@ func (s Schedule) next(now time.Time, creating bool) (time.Time, error) {
 	}
 	if !s.At.IsZero() {
 		if creating && !s.At.After(now) {
-			return time.Time{}, fmt.Errorf("未来の日時を指定してください")
+			// AIが現在時刻を取り違えても登録し直せるよう、基準にした現在時刻を返す。
+			loc, _ := time.LoadLocation(s.Timezone)
+			return time.Time{}, fmt.Errorf("過去の日時です（指定: %s、現在: %s）。現在より後の日時を指定してください", s.At.In(loc).Format(time.RFC3339), now.In(loc).Format(time.RFC3339))
 		}
 		return s.At, nil
 	}
