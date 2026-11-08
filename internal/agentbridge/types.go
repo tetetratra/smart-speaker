@@ -39,10 +39,12 @@ type Event struct {
 type TaskAccepted struct {
 	TaskID    string `json:"task_id"`
 	SessionID string `json:"session_id"`
+	Workdir   string `json:"workdir"`
 }
 
 type SessionSummary struct {
 	SessionID          string `json:"session_id"`
+	Workdir            string `json:"workdir"`
 	Title              string `json:"title"`
 	CustomTitle        string `json:"custom_title,omitempty"`
 	FirstPrompt        string `json:"first_prompt,omitempty"`
@@ -56,6 +58,12 @@ type SessionSummary struct {
 	PendingPermissions int    `json:"pending_permissions"`
 }
 
+// SessionList はセッションの一覧と、作業ディレクトリの候補の名前（先頭が既定）。
+type SessionList struct {
+	Workdirs []string         `json:"workdirs"`
+	Sessions []SessionSummary `json:"sessions"`
+}
+
 type SessionTurn struct {
 	Role  string   `json:"role"`
 	Text  string   `json:"text"`
@@ -65,6 +73,7 @@ type SessionTurn struct {
 
 type SessionMessages struct {
 	SessionID string        `json:"session_id"`
+	Workdir   string        `json:"workdir"`
 	Total     int           `json:"total"`
 	Offset    int           `json:"offset"`
 	Messages  []SessionTurn `json:"messages"`

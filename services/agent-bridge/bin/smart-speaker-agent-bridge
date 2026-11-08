@@ -1,0 +1,9 @@
+#!/bin/sh
+# LaunchAgentから起動するブリッジの入口。
+# macOSの「バックグラウンドでのアクティビティ」には、plistで最初に指定したプログラムの名前が出る。
+# direnv を直接指定すると「direnv」と表示されて何のプロセスか分からないため、このスクリプトを挟む。
+# リポジトリ直下の .envrc を direnv で読み込んでから、ブリッジを起動する。
+set -eu
+bridge="$(cd "$(dirname "$0")/.." && pwd)"
+repo="$(cd "$bridge/../.." && pwd)"
+exec direnv exec "$repo" node "$bridge/src/main.ts"

@@ -65,7 +65,6 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 		requestID := event.RequestID
 		prompt.Text = permissionText(event)
 		prompt.ExpiresAt = event.ExpiresAt
-		prompt.AwaitReply = true
 		// 読み上げる前に答えが出たり作業が終わったりしたら、もう尋ねない。
 		prompt.Valid = func() bool { return s.isPending(requestID) }
 	case EventCompleted, EventFailed:

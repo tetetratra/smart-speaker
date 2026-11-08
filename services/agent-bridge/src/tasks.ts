@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { CanUseTool, Options, Query, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Workdir } from "./config.ts";
 import type { Notify } from "./notifier.ts";
 import type { PermissionBroker } from "./permissions.ts";
-import { HttpError } from "./protocol.ts";
+import { HttpError, type TaskAccepted } from "./protocol.ts";
 import { SMART_SPEAKER_TAG } from "./sessions.ts";
 
 export type QueryFn = (params: { prompt: string; options?: Options }) => Query | AsyncIterable<SDKMessage>;
@@ -11,6 +12,7 @@ export type TagFn = (sessionId: string, tag: string | null, options?: { dir?: st
 type Task = {
   id: string;
   sessionId: string;
+  workdir: Workdir;
   abort: AbortController;
   status: "running" | "completed" | "failed";
 };
@@ -18,10 +20,12 @@ type Task = {
 type Deps = {
   query: QueryFn;
   tagSession: TagFn;
-  sessionExists: (sessionId: string) => Promise<boolean>;
+  // findSession はセッションを始めた作業ディレクトリを返す。候補で始めたセッションでなければ undefined。
+  findSession: (sessionId: string) => Promise<Workdir | undefined>;
   broker: PermissionBroker;
   notify: Notify;
-  workdir: string;
+  // workdirs の先頭が既定の作業ディレクトリ。
+  workdirs: Workdir[];
   claudePath?: string;
   maxTasks: number;
   taskTimeoutMs: number;
@@ -58,22 +62,38 @@ export class TaskManager {
     this.#log = deps.log ?? ((message) => console.log(message));
   }
 
-  async start(input: string, sessionId?: string): Promise<{ task_id: string; session_id: string }> {
+  // start は作業を始める。workdirName は作業ディレクトリの候補の名前で、空なら先頭の候補を使う。
+  // 続きの依頼（sessionId あり）は、workdirName にかかわらずセッションを始めた場所で再開する。
+  async start(input: string, sessionId?: string, workdirName?: string): Promise<TaskAccepted> {
     input = input?.trim() ?? "";
     if (!input) throw new HttpError(400, "input を指定してください");
     if (input.length > MAX_INPUT) throw new HttpError(400, `input は${MAX_INPUT}文字以内にしてください`);
     const resume = sessionId?.trim() || undefined;
     if (resume && !isUUID(resume)) throw new HttpError(400, "session_id の形式が正しくありません");
-    if (resume && !(await this.#deps.sessionExists(resume))) throw new HttpError(404, "セッションが見つかりません");
+    let workdir = this.#workdir(workdirName);
+    if (resume) {
+      const found = await this.#deps.findSession(resume);
+      if (!found) throw new HttpError(404, "セッションが見つかりません");
+      workdir = found;
+    }
     // await の後に確かめ、同時に届いた依頼が上限をすり抜けないようにする。
     const running = [...this.#tasks.values()].filter((t) => t.status === "running");
     if (resume && running.some((t) => t.sessionId === resume)) throw new HttpError(409, "このセッションは作業中です");
     if (running.length >= this.#deps.maxTasks) throw new HttpError(429, "同時に動かせる作業の上限に達しています");
 
-    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), abort: new AbortController(), status: "running" };
+    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), workdir, abort: new AbortController(), status: "running" };
     this.#tasks.set(task.id, task);
     void this.#run(task, input, !resume);
-    return { task_id: task.id, session_id: task.sessionId };
+    return { task_id: task.id, session_id: task.sessionId, workdir: workdir.name };
+  }
+
+  #workdir(name: string | undefined): Workdir {
+    const { workdirs } = this.#deps;
+    name = name?.trim();
+    if (!name) return workdirs[0];
+    const found = workdirs.find((w) => w.name === name);
+    if (!found) throw new HttpError(400, `作業ディレクトリ「${name}」はありません。候補: ${workdirs.map((w) => w.name).join(", ")}`);
+    return found;
   }
 
   cancel(taskId: string): void {
@@ -126,7 +146,7 @@ export class TaskManager {
       const messages = this.#deps.query({
         prompt: input,
         options: {
-          cwd: this.#deps.workdir,
+          cwd: task.workdir.path,
           ...(isNew ? { sessionId: task.sessionId } : { resume: task.sessionId }),
           permissionMode: "auto",
           canUseTool,
@@ -150,7 +170,7 @@ export class TaskManager {
     }
     if (isNew) {
       // タグはセッションの記録ができてから付ける。失敗しても作業の結果には影響させない。
-      await this.#deps.tagSession(task.sessionId, SMART_SPEAKER_TAG, { dir: this.#deps.workdir }).catch((e) => {
+      await this.#deps.tagSession(task.sessionId, SMART_SPEAKER_TAG, { dir: task.workdir.path }).catch((e) => {
         this.#log(`task ${task.id}: タグを付けられませんでした: ${String(e)}`);
       });
     }

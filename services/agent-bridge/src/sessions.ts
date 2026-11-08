@@ -1,7 +1,8 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { SDKSessionInfo, SessionMessage } from "@anthropic-ai/claude-agent-sdk";
-import { HttpError, type SessionMessages, type SessionSummary, type SessionTurn } from "./protocol.ts";
+import type { Workdir } from "./config.ts";
+import { HttpError, type SessionList, type SessionMessages, type SessionTurn } from "./protocol.ts";
 
 export const SMART_SPEAKER_TAG = "smart-speaker";
 
@@ -20,29 +21,44 @@ const MAX_TURN_TEXT = 1500;
 const STRUCTURED_OUTPUT = "StructuredOutput";
 const MAX_TOTAL_TEXT = 12000;
 
-// SessionReader は作業ディレクトリのセッションだけを読む。ほかのプロジェクトのセッションは見せない。
+// SessionReader は作業ディレクトリの候補で始めたセッションだけを読む。ほかのプロジェクトのセッションは見せない。
 export class SessionReader {
   #api: SessionAPI;
-  #dir: string;
+  #workdirs: Workdir[];
   #tasks: TaskState;
 
-  constructor(api: SessionAPI, dir: string, tasks: TaskState) {
+  constructor(api: SessionAPI, workdirs: Workdir[], tasks: TaskState) {
     this.#api = api;
-    this.#dir = dir;
+    this.#workdirs = workdirs;
     this.#tasks = tasks;
   }
 
-  // exists は作業ディレクトリで始めたセッションかどうかを確かめる。worktreeのセッションは同じ場所で再開できない。
-  async exists(sessionId: string): Promise<boolean> {
-    const info = await this.#api.getSessionInfo(sessionId, { dir: this.#dir });
-    return info !== undefined && (!info.cwd || samePath(info.cwd, this.#dir));
+  // find はセッションを始めた作業ディレクトリを返す。候補で始めたセッションでなければ undefined。
+  // worktreeのセッションは同じ場所で再開できないので、見つからない扱いにする。
+  async find(sessionId: string): Promise<Workdir | undefined> {
+    for (const workdir of this.#workdirs) {
+      const info = await this.#api.getSessionInfo(sessionId, { dir: workdir.path });
+      if (info !== undefined && (!info.cwd || samePath(info.cwd, workdir.path))) return workdir;
+    }
+    return undefined;
   }
 
-  async list(limit: number): Promise<SessionSummary[]> {
-    // worktreeのセッションは同じ作業ディレクトリで再開できないので含めない。
-    const sessions = await this.#api.listSessions({ dir: this.#dir, limit, includeWorktrees: false });
-    return sessions.map((s) => ({
+  // list はすべての候補のセッションを新しい順に並べ、limit 件まで返す。
+  async list(limit: number): Promise<SessionList> {
+    const all = await Promise.all(
+      this.#workdirs.map(async (workdir) => {
+        // worktreeのセッションは同じ作業ディレクトリで再開できないので含めない。
+        const sessions = await this.#api.listSessions({ dir: workdir.path, limit, includeWorktrees: false });
+        return sessions.map((s) => ({ workdir, s }));
+      }),
+    );
+    const picked = all
+      .flat()
+      .sort((a, b) => b.s.lastModified - a.s.lastModified)
+      .slice(0, limit);
+    const sessions = picked.map(({ workdir, s }) => ({
       session_id: s.sessionId,
+      workdir: workdir.name,
       title: s.summary,
       custom_title: s.customTitle,
       first_prompt: truncate(s.firstPrompt, 200),
@@ -55,15 +71,17 @@ export class SessionReader {
       task_id: this.#tasks.runningTask(s.sessionId)?.id,
       pending_permissions: this.#tasks.pendingCount(s.sessionId),
     }));
+    return { workdirs: this.#workdirs.map((w) => w.name), sessions };
   }
 
   // messages の offset は新しい側から数える。SDKは古い側から数えるので、全件を読んでから切り出す。
   async messages(sessionId: string, limit: number, offset: number): Promise<SessionMessages> {
-    if (!(await this.exists(sessionId))) throw new HttpError(404, "セッションが見つかりません");
-    const turns = toTurns(await this.#api.getSessionMessages(sessionId, { dir: this.#dir }));
+    const workdir = await this.find(sessionId);
+    if (!workdir) throw new HttpError(404, "セッションが見つかりません");
+    const turns = toTurns(await this.#api.getSessionMessages(sessionId, { dir: workdir.path }));
     const end = Math.max(turns.length - offset, 0);
     const picked = turns.slice(Math.max(end - limit, 0), end);
-    return { session_id: sessionId, total: turns.length, offset, messages: capTotal(picked) };
+    return { session_id: sessionId, workdir: workdir.name, total: turns.length, offset, messages: capTotal(picked) };
   }
 }
 

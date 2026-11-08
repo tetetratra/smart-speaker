@@ -45,6 +45,8 @@ export type EventInput =
 
 export type SessionSummary = {
   session_id: string;
+  // workdir はセッションを始めた作業ディレクトリの名前。
+  workdir: string;
   title: string;
   custom_title?: string;
   first_prompt?: string;
@@ -59,6 +61,18 @@ export type SessionSummary = {
   pending_permissions: number;
 };
 
+export type SessionList = {
+  // workdirs は作業ディレクトリの候補の名前。先頭が既定。
+  workdirs: string[];
+  sessions: SessionSummary[];
+};
+
+export type TaskAccepted = {
+  task_id: string;
+  session_id: string;
+  workdir: string;
+};
+
 export type SessionTurn = {
   role: "user" | "assistant";
   text: string;
@@ -68,6 +82,7 @@ export type SessionTurn = {
 
 export type SessionMessages = {
   session_id: string;
+  workdir: string;
   total: number;
   offset: number;
   messages: SessionTurn[];
