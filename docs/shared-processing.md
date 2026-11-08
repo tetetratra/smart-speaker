@@ -12,6 +12,7 @@
 - `EventRTCPeerAudioFrame`: rtcpeer が decode した上り音声の PCM frame。wakegate を経由して realtime へ渡る。
 - `EventRTCPeerOutputSink`: rtcpeer が通知する WebRTC 下り音声の送信先。rtcout と、wakegate 経由で realtime が受け取る。
 - `EventLocalWakeUtterance`: 呼びかけ必須モード中に、wakegate がローカルSTTで呼びかけと判定した発話のテキスト。
+- `EventWakeTranscription`: 呼びかけ必須モード中に、wakegate がローカルSTTで書き起こした発話と判定結果。拒否・破棄した発話も含む。wschat が UI のログ管理画面向けに `wake_transcription` を送る。
 - `EventLLMRequest`: realtime 内部で扱うテキスト入力（呼びかけと判定された発話、予約ジョブ）。他の component からは流れてこない。
 - `EventGenerationChanged`: realtime が新しい世代を始めた通知。後段は古い世代の event を捨てる。
 - `EventSpeechStart` / `EventSpeechEnd`: Realtime API の VAD による発話開始・終了。wschat が UI へ通知する。

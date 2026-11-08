@@ -221,6 +221,27 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"type":    "whiteboard_update",
 			"content": update.Content,
 		}
+	case types.EventWakeTranscription:
+		tr, ok := evt.Payload.(types.WakeTranscription)
+		if !ok {
+			return nil, "", false
+		}
+		// 呼びかけの見逃しを調べるための情報。画面ではログ管理画面にだけ並ぶ。
+		msg = map[string]any{
+			"type":       "wake_transcription",
+			"peer_id":    tr.PeerID,
+			"text":       tr.Text,
+			"outcome":    tr.Outcome,
+			"confidence": tr.Confidence,
+			"similarity": tr.Similarity,
+			"matched":    tr.Matched,
+			"accepted":   tr.Accepted,
+			"wake_only":  tr.WakeOnly,
+			"awake":      tr.Awake,
+		}
+		if tr.Error != "" {
+			msg["error"] = tr.Error
+		}
 	case types.EventSessionReset:
 		reset, ok := evt.Payload.(types.SessionResetEvent)
 		if !ok {
