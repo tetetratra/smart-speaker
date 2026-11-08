@@ -193,6 +193,8 @@ type configFile struct {
 		MaxPrefix        *int     `yaml:"max_prefix"`
 		MinConfidence    *float64 `yaml:"min_confidence"`
 		MinSimilarity    *float64 `yaml:"min_similarity"`
+		// ConversationTimeoutSecondsは、呼びかけ後に呼びかけなしで話せる時間（秒）。
+		ConversationTimeoutSeconds *int `yaml:"conversation_timeout_seconds"`
 	} `yaml:"wake"`
 	SwitchBot struct {
 		DeviceMap map[string]string `yaml:"device_map"`
@@ -254,6 +256,14 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		iceIPs = splitComma(raw)
 	}
 
+	idleTimeout := conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds)
+	wake := wakeSettings(file)
+	// 無操作リセットで会話が終わった後も呼びかけなしで話せると、文脈のない会話が始まってしまうため、
+	// 呼びかけなしで話せる時間は無操作リセットより短くする。無操作リセットが無効（0）なら比べない。
+	if idleTimeout > 0 && wake.ConversationTimeout >= idleTimeout {
+		return Config{}, fmt.Errorf("wake.conversation_timeout_seconds (%s) must be shorter than conversation.idle_timeout_seconds (%s)", wake.ConversationTimeout, idleTimeout)
+	}
+
 	return Config{
 		APIKey:                     apiKey,
 		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
@@ -264,11 +274,11 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		ResponsesModel:             responsesModel,
 		SubagentModel:              stringOr(file.OpenAI.SubagentModel, "gpt-5.4"),
 		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
-		WakeSettings:               wakeSettings(file),
+		WakeSettings:               wake,
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
 		Memory:                     memoryCfg,
-		ConversationIdleTimeout:    conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds),
+		ConversationIdleTimeout:    idleTimeout,
 		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
 		ElevenLabs: ElevenLabsConfig{
 			APIKey:  env("ELEVENLABS_API_KEY"),
@@ -311,6 +321,9 @@ func wakeSettings(file configFile) wakemode.Settings {
 	if file.Wake.MinSimilarity != nil {
 		settings.MinSimilarity = *file.Wake.MinSimilarity
 	}
+	if file.Wake.ConversationTimeoutSeconds != nil {
+		settings.ConversationTimeout = time.Duration(*file.Wake.ConversationTimeoutSeconds) * time.Second
+	}
 	return settings
 }
 
@@ -338,7 +351,7 @@ func positiveFloat(value *float64) *float64 {
 
 // conversationIdleTimeoutは会話終了までの無操作時間を返す。0は無効、負の値は既定値にする。
 func conversationIdleTimeout(seconds *int) time.Duration {
-	const defaultConversationIdleTimeout = 5 * time.Minute
+	const defaultConversationIdleTimeout = 30 * time.Minute
 	if seconds == nil || *seconds < 0 {
 		return defaultConversationIdleTimeout
 	}

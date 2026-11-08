@@ -438,7 +438,7 @@ const liveRootStyle = `
     border-right-color: var(--live-toggle-on);
     border-top-color: var(--live-toggle-on);
   }
-  /* 呼びかけ後の会話中（呼びかけなしで話せる1分間）は、話している吹き出しと同じく枠を光らせる。 */
+  /* 呼びかけ後の会話中（呼びかけなしで話せる間）は、話している吹き出しと同じく枠を光らせる。 */
   .live-control-btn.live-control-btn-awake {
     border-color: var(--live-toggle-on);
     box-shadow:

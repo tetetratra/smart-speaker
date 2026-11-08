@@ -94,7 +94,7 @@ realtime は結果を会話履歴に記録し、`function_call_output` として
 
 ## セッションリセット
 
-最後の発話から `config.yaml` の `conversation.idle_timeout_seconds`（既定 300 秒、0 で無効）がたつと、realtime がセッションをリセットする。
+最後の発話から `config.yaml` の `conversation.idle_timeout_seconds`（既定 1800 秒、0 で無効）がたつと、realtime がセッションをリセットする。
 判定は realtime の定期処理（`tick`）で行い、応答中・ツール実行中・未送信の音声がある間はリセットしない。
 
 リセット時は、会話履歴を取り出して空にし、取り出した履歴でメモリ抽出を別 goroutine で起動する。

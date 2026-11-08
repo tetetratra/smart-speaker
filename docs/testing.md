@@ -23,7 +23,7 @@
   - `rtc.ice_advertise_ips`（ローカル起動時に、RFC 1918またはTailscaleのIPv4を指定。環境変数 `RTC_ICE_ADVERTISE_IPS` でも指定可）
   - `server.web_dist_dir`
   - `server.ws_addr`
-  - `conversation.idle_timeout_seconds`（未設定時は 300 秒、`0` で idle reset 無効）
+  - `conversation.idle_timeout_seconds`（未設定時は 1800 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
 
 ### Google Calendar OAuth
