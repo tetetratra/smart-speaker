@@ -24,6 +24,8 @@ services:
       SWITCHBOT_SECRET: ${SWITCHBOT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # 手元のMacで動く agent-bridge と共有するトークン。接続先は config.yaml の agent_bridge.url に書く
+      AGENT_BRIDGE_TOKEN: ${AGENT_BRIDGE_TOKEN:-}
       # デプロイスクリプトが本番サーバーのIPを取得して渡す。config.yaml の rtc.ice_advertise_ips より優先する
       RTC_ICE_ADVERTISE_IPS: ${RTC_ICE_ADVERTISE_IPS:-}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
@@ -17,4 +18,6 @@ type runtimeServices struct {
 	TTS         *tts.Selector
 	ToolHistory *toolhistory.Store
 	Subagent    *subagent.Service
+	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。
+	ClaudeCode *agentbridge.Service
 }

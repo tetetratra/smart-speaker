@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
@@ -73,6 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, scheduled)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
 		log.Fatal(err)
@@ -243,12 +245,29 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 		WakeMode:        services.WakeMode,
 		Automations:     services.Automations,
 		Subagent:        services.Subagent,
+		ClaudeCode:      services.ClaudeCode,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ToolModes(), reg.ResponsePolicies()
+}
+
+// newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
+func newClaudeCodeService(cfg app.AgentBridgeConfig, scheduled chan<- types.ScheduledPrompt) *agentbridge.Service {
+	if cfg.URL == "" || cfg.Token == "" {
+		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
+		return nil
+	}
+	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), func(ctx context.Context, prompt types.ScheduledPrompt) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case scheduled <- prompt:
+			return nil
+		}
+	})
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {

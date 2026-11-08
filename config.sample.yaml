@@ -134,3 +134,8 @@ google_calendar:
 
   # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
   # token_path: "data/google_oauth_token.json"
+
+agent_bridge:
+  # 手元のMacで動く agent-bridge（services/agent-bridge）のURL。既定: なし（Claude Code連携は無効）
+  # 共有トークンはシークレットなので、環境変数 AGENT_BRIDGE_TOKEN で渡します。URLとトークンの両方があるときだけ有効になります。
+  # url: "http://100.x.y.z:8787"

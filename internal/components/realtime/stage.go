@@ -83,6 +83,9 @@ type stage struct {
 	repairs                                   map[string]bool
 	calls                                     map[string]*call
 	userGenerations                           map[string]types.GenerationID
+
+	// machineGenerations はアプリが差し込んだ指示（予約ジョブ・外部エージェントの通知）で始まった世代と、その出どころ。
+	machineGenerations map[types.GenerationID]string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
@@ -103,6 +106,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	}
 	cfg.Tools = withWaitTool(cfg.Tools)
 	cfg.Instructions = withSubagentInstructions(cfg.Instructions, cfg.Tools)
+	cfg.Instructions = withClaudeCodeInstructions(cfg.Instructions, cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {
 		return nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")
 	}
@@ -330,9 +334,10 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if strings.HasPrefix(p.RequestID, "local-wake/") {
 			source = "local-stt"
 		}
-		if strings.HasPrefix(p.Source, "automation/") {
+		if isMachineSource(p.Source) {
 			role = "system"
 			source = p.Source
+			s.rememberMachineGeneration(change.GenerationID, p.Source)
 		}
 		s.record(ctx, id, role, p.Text, change.GenerationID, source)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})

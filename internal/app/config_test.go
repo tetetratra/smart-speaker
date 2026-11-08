@@ -325,6 +325,19 @@ func TestLegacyEnvWarnings(t *testing.T) {
 	}
 }
 
+func TestBuildConfigReadsAgentBridgeURLFromYAMLAndTokenFromEnv(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "", minimalEnv)
+	if cfg.AgentBridge != (AgentBridgeConfig{}) {
+		t.Fatalf("AgentBridge = %#v, want empty", cfg.AgentBridge)
+	}
+	env := map[string]string{"OPENAI_API_KEY": "openai", "AGENT_BRIDGE_TOKEN": " secret "}
+	cfg = mustLoadFromYAML(t, "agent_bridge:\n  url: http://100.64.0.2:8787\n", env)
+	want := AgentBridgeConfig{URL: "http://100.64.0.2:8787", Token: "secret"}
+	if cfg.AgentBridge != want {
+		t.Fatalf("AgentBridge = %#v, want %#v", cfg.AgentBridge, want)
+	}
+}
+
 // 発話とみなす音量の範囲外の値は、起動時にエラーにする。
 func TestBuildConfigRejectsOutOfRangeWakeEnergyThreshold(t *testing.T) {
 	for _, value := range []string{"0", "-0.001", "1.5"} {

@@ -44,6 +44,13 @@ type Config struct {
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
+	AgentBridge                AgentBridgeConfig
+}
+
+// AgentBridgeConfig は手元のMacで動く agent-bridge への接続設定。どちらかが空ならClaude Code連携を無効にする。
+type AgentBridgeConfig struct {
+	URL   string
+	Token string
 }
 
 type MemoryConfig struct {
@@ -208,6 +215,9 @@ type configFile struct {
 		Scope       string `yaml:"scope"`
 		TokenPath   string `yaml:"token_path"`
 	} `yaml:"google_calendar"`
+	AgentBridge struct {
+		URL string `yaml:"url"`
+	} `yaml:"agent_bridge"`
 }
 
 // readConfigFileは設定ファイルを読む。ファイルが無い場合は全項目を既定値にする。
@@ -318,6 +328,10 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		RTCIceAdvertiseIPs: iceIPs,
 		WSAddr:             stringOr(file.Server.WSAddr, ":8081"),
 		WebDistDir:         stringOr(file.Server.WebDistDir, "web/dist"),
+		AgentBridge: AgentBridgeConfig{
+			URL:   strings.TrimSpace(file.AgentBridge.URL),
+			Token: env("AGENT_BRIDGE_TOKEN"),
+		},
 	}, nil
 }
 
