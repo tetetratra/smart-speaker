@@ -28,7 +28,6 @@ type Config struct {
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
-	SubagentModel              string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -86,7 +85,6 @@ const ConfigPathEnv = "SMART_SPEAKER_CONFIG"
 // 設定したまま移行を忘れると既定値で動いてしまうため、起動時に警告する。
 var legacyEnvVars = map[string]string{
 	"OPENAI_RESPONSES_MODEL":              "openai.responses_model",
-	"OPENAI_SUBAGENT_MODEL":               "openai.subagent_model",
 	"OPENAI_REALTIME_MODEL":               "openai.realtime.model",
 	"OPENAI_REALTIME_VAD":                 "openai.realtime.vad",
 	"OPENAI_REALTIME_TRANSCRIPTION_MODEL": "openai.realtime.transcription_model",
@@ -165,7 +163,6 @@ type configFile struct {
 	} `yaml:"rtc"`
 	OpenAI struct {
 		ResponsesModel string `yaml:"responses_model"`
-		SubagentModel  string `yaml:"subagent_model"`
 		Realtime       struct {
 			Model              string `yaml:"model"`
 			VAD                string `yaml:"vad"`
@@ -294,7 +291,6 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		RealtimeEndpoint:           strings.TrimSpace(file.OpenAI.Realtime.Endpoint),
 		RealtimeTranscriptionModel: stringOr(file.OpenAI.Realtime.TranscriptionModel, "gpt-4o-mini-transcribe"),
 		ResponsesModel:             responsesModel,
-		SubagentModel:              stringOr(file.OpenAI.SubagentModel, "gpt-5.4"),
 		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
 		WakeSettings:               wake,
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),

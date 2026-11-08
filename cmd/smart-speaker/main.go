@@ -31,7 +31,6 @@ import (
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
-	"github.com/tetetratra/smart-speaker/internal/subagent"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
@@ -60,7 +59,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200), Subagent: subagent.New(&subagent.OpenAIClient{APIKey: cfg.APIKey, Model: cfg.SubagentModel})}
+	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	scheduled := make(chan types.ScheduledPrompt, 100)
 	services.Scheduled = scheduled
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
@@ -244,7 +243,6 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 	reg := registry.New(registry.Config{
 		WakeMode:        services.WakeMode,
 		Automations:     services.Automations,
-		Subagent:        services.Subagent,
 		ClaudeCode:      services.ClaudeCode,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,

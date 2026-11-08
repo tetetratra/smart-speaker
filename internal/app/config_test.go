@@ -68,7 +68,6 @@ func TestBuildConfigDefaults(t *testing.T) {
 
 	checks := map[string][2]string{
 		"ResponsesModel":             {cfg.ResponsesModel, "gpt-5.4-nano-2026-03-17"},
-		"SubagentModel":              {cfg.SubagentModel, "gpt-5.4"},
 		"RealtimeModel":              {cfg.RealtimeModel, "gpt-realtime-2.1"},
 		"RealtimeVAD":                {cfg.RealtimeVAD, "semantic_vad"},
 		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-4o-mini-transcribe"},
@@ -119,7 +118,6 @@ rtc:
   ice_advertise_ips: [" 192.168.0.100", "100.64.0.1", ""]
 openai:
   responses_model: gpt-response
-  subagent_model: gpt-sub
   realtime:
     model: comparison-model
     vad: server_vad
@@ -172,7 +170,6 @@ google_calendar:
 		"WSAddr":                     {cfg.WSAddr, ":9090"},
 		"WebDistDir":                 {cfg.WebDistDir, "dist"},
 		"ResponsesModel":             {cfg.ResponsesModel, "gpt-response"},
-		"SubagentModel":              {cfg.SubagentModel, "gpt-sub"},
 		"RealtimeModel":              {cfg.RealtimeModel, "comparison-model"},
 		"RealtimeVAD":                {cfg.RealtimeVAD, "server_vad"},
 		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-transcribe"},

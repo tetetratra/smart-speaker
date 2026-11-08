@@ -4,10 +4,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
-	"github.com/tetetratra/smart-speaker/internal/subagent"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
-	subagenttool "github.com/tetetratra/smart-speaker/internal/tools/functions/subagent"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
@@ -33,7 +31,6 @@ type entry struct {
 type Config struct {
 	WakeMode           *wakemode.Store
 	Automations        *automations.Service
-	Subagent           *subagent.Service
 	ClaudeCode         *agentbridge.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
@@ -82,10 +79,6 @@ func New(cfg Config) *Registry {
 			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
-	}
-	if cfg.Subagent != nil {
-		t := &subagenttool.Tool{Service: cfg.Subagent}
-		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.ClaudeCode != nil {
 		for _, operation := range claudecodetool.Operations {
