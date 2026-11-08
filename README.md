@@ -1,235 +1,47 @@
 # smart-speaker
 
-スマートフォンのブラウザを音声入力・音声再生の端末として使う、Web ベースのスマートスピーカーアプリケーションです。
-ユーザーがブラウザに話しかけると、マイク音声が Go サーバーへ送られます。
-サーバーは音声をRealtime APIへ送り、返ってきたテキストをVOICEVOXで音声合成します。
-入力・出力ともにWebRTCの音声トラックを使います。出力音声はWeb Audioの音量調整を通して再生し、マイクのエコー除去を有効にします。
-生成した音声はブラウザへ返送し、端末側で再生します。
+スマートフォンのブラウザを音声入力・音声再生の端末として使う、Web ベースのスマートスピーカーです。
 
-サーバー側では、音声入力から応答再生までの会話処理を実行します。
-会話処理はイベントの流れとして扱い、音声入力、応答生成、音声再生、ツール実行を順番に制御します。
+ブラウザのマイク音声を WebRTC で Go サーバーへ送り、サーバーが OpenAI の Realtime API と会話します。
+返答のテキストは VOICEVOX（または ElevenLabs）で音声にして、WebRTC でブラウザへ返して再生します。
 
-- Realtime API内蔵VADによる発話区間・割り込みの検出
-- ユーザーが話し始めたときの、再生中または生成中の応答の停止
-- ユーザー、アシスタント、ツール実行結果の履歴の保持
-- 応答テキストの文章分割・音声合成と、function callingによるツール実行
+## 主な機能
 
-会話中に外部サービスを呼び出すツール機能があります。
-現在は次の操作に対応しています。
+- 音声での会話。話しはじめると、読み上げ中の返答を止めて聞き取ります
+- ホワイトボード：調べた結果や補足を画面に書き出します
+- 外部サービスの操作：Google Calendar の予定の確認・登録、SwitchBot での家電操作、Web 検索
+- 長期メモリ：会話から覚えておくことを抽出し、次の会話で使います（画面から確認・編集できます）
+- 予約ジョブ：「10分後に起こして」「平日8時に〜して」などと会話から登録できます
+- 呼びかけ必須モード：「起きて」などの呼びかけで始まる発話だけに反応します
+- 手元の Mac の Claude Code に、調べものや文章作成などの作業を頼めます
 
-- Google Calendar の予定の取得・作成
-- SwitchBot を使った家電操作
-- Web 検索で最新情報の取得
-
-## 開発環境
-
-### 設定
-
-設定は、シークレットを環境変数で、それ以外の設定値を `config.yaml` で渡します。
+## すぐに起動する
 
 ```sh
 cp config.sample.yaml config.yaml
+export OPENAI_API_KEY=...
+docker compose up --build
 ```
 
-`config.yaml` には、変更したい項目だけを書き込みます。リポジトリ直下（作業ディレクトリ）の `config.yaml` を読み込み、環境変数 `SMART_SPEAKER_CONFIG` で別の場所を指定することもできます。全項目と既定値は [config.sample.yaml](config.sample.yaml) を参照してください。
-`config.yaml` が無い場合や項目が書かれていない場合は、アプリケーション側の既定値を使います。未知のキーや型の誤りがあると起動時にエラーになります。以前の環境変数（`TTS_PROVIDER` など）が設定されたままの場合は、移行先の項目名を起動時に警告します。
-`config.yaml` は `.gitignore` 済みです。本番用のイメージには、デプロイ元にある `config.yaml` が含まれます。
+`http://localhost:5173` を開きます。
+設定や外部サービスとの連携は、下の手順書を参照してください。
 
-システムプロンプトは `internal/app/system_prompt.go` に定義しています。家族構成や家電の呼び名など、環境ごとに追記したい内容は `config.yaml` の `additional_system_prompt` に書きます（既定のプロンプトの末尾に追記されます）。
+## 手順書
 
-環境変数で渡すシークレットは以下です。`OPENAI_API_KEY` だけが必須で、それ以外は使う機能に応じて設定します。
+- [セットアップとローカル起動](docs/setup.md)：設定、起動、テスト、外部サービス連携の設定
+- [本番環境へのデプロイ](docs/deploy.md)
+- [agent-bridge](services/agent-bridge/README.md)：Claude Code 連携のために Mac で常駐させるブリッジ
 
-| 環境変数 | 用途 |
+設定の全項目と既定値は [config.sample.yaml](config.sample.yaml) にあります。
+
+## ディレクトリ構成
+
+| パス | 内容 |
 |---|---|
-| `OPENAI_API_KEY` | OpenAI API キー（必須） |
-| `ELEVENLABS_API_KEY` | ElevenLabs で読み上げる場合の API キー |
-| `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合の認証情報 |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar の OAuth クライアント |
-
-例外として、`RTC_ICE_ADVERTISE_IPS` はシークレットではありませんが、デプロイスクリプトが本番サーバーのIPを取得して渡すため、環境変数でも指定できます。指定した場合は `config.yaml` の `rtc.ice_advertise_ips` より優先します。
-
-### 起動
-
-```sh
-docker compose build
-docker compose up
-```
-
-`http://localhost:5173` に配信されます。
-
-### Realtime APIによる会話
-
-以下はいずれも `config.yaml` の項目です。
-
-- `openai.realtime.model`: 会話モデル。既定は `gpt-realtime-2.1`。推論量はAPIへ指定せず、APIのデフォルトを使います（現在の公式仕様では`low`）。
-- `openai.realtime.vad`: 発話の区切り。既定は`semantic_vad`、`eagerness`は`auto`。比較用に`server_vad`を指定すると、従来の800ms無音で終了する方式へ戻せます。未対応の値は起動時にエラーにします。
-- `openai.realtime.transcription_model`: 履歴保存用の非同期文字起こし。既定は `gpt-4o-mini-transcribe`。音声理解とは別に課金されます。
-- `openai.realtime.endpoint`: テスト用のWebSocket接続先。通常は未指定にします。
-- `openai.responses_model`: 長い履歴の要約・メモリ抽出の既定モデル・検索に使用します。
-- `tts.provider`: 既定は `voicevox`。`tts.voicevox.endpoint` は既定で `http://voicevox:50021`。 `elevenlabs` を明示すればElevenLabsも選択できます。
-- メイン画面の「読み上げ音声」でVOICEVOX／ElevenLabsを切り替えられます。設定済みの候補だけ選択でき、生成中・再生待ちの音声は保持し、次に生成する音声から反映します。選択は全端末で共有し、サーバー再起動時は`tts.provider`の値に戻ります。
-- `GET /api/tts`で現在の選択と設定済み候補を取得し、`PUT /api/tts`に`{"provider":"voicevox"}`または`{"provider":"elevenlabs"}`を送ると切り替えられます。候補の利用可否は設定の有無を示し、外部サービスへの疎通を保証するものではありません。
-- ComposeのVOICEVOXは正式安定版 `cpu-0.26.0` に固定し、実行環境に合うamd64 / arm64を自動選択します。
-- `conversation.idle_timeout_seconds`: 会話終了までの無操作時間。既定は1800秒（30分）、0で無効。0以外では`wake.conversation_timeout_seconds`より長くする必要があり、そうでなければ起動時にエラーになります。
-
-発話の区切りは既定でAPIのSemantic VADにより内容から判断します。`auto`は`medium`相当で、言いよどみなどで終了が曖昧な場合の最大待ち時間は4秒です。常に4秒待つ意味ではなく、推論量の設定とも別です。アプリはAPIの自動応答を無効にしたまま、入力確定と履歴補正の後に応答生成を要求します。
-Semantic VADを使っても、音声開始の検知による現在の読み上げ停止は維持します。相槌や雑音で停止した読み上げを自動で再開する機能は含みません。
-待機キューは容量無制限です。応答出力のキューは最新の世代だけを保持し、旧世代の待機データと後から届く旧結果を破棄します。
-受信直後の接続部分でも現在世代を確認し、通常の文章分割・音声合成処理には世代の判断を持たせません。
-実行中の旧音声合成は完了させるため、その一件分の待ち時間は残ります。
-
-合成した24kHz・モノラルPCM16を20ms単位に分割し、送信タイミング調整と世代フィルターを通した後、48kHzのOpusへ変換してWebRTCで送ります。
-送信コンポーネントは待機音声を内部に蓄積しません。末尾の20ms未満の音声は無音で埋めて送ります。
-AIの吹き出しは返答全文ではなく、再生する読み上げ区間ごとに切り替わります。表示単位の検討と動作は[吹き出しの表示単位](docs/bubble-display.md)を参照してください。
-割り込み時はサーバー側で旧世代の未送信音声を破棄します。ブラウザで受信済みの音声は短い残りを再生し切り、同じ音声トラックで次の応答を続けます。残留時間は通信状況・端末のバッファに依存します。
-WebSocketでは音声データを送らず、送信した区間の表示通知と世代変更を送ります。表示と実際の再生には受信バッファ分のずれがあります。
-端末ごとの音量（0〜1.5倍）は、ブラウザのWeb AudioのGainNodeで適用します。WebSocketの`webrtc.volume`ではサーバー側を1倍に固定し、二重の増幅を避けます。
-
-会話履歴はメモリ上だけに保存します。生成テキストと、最後のフレームまで送信できた文章を区別します。
-途中で止まった文章は履歴補正時に中断として扱い、送信完了通知との微小な時間差は許容します。
-API接続は55分経過後の会話・送信の切れ目で更新し、切断時も保存済みテキストとメモリから文脈を復元します。
-文字起こし未完了の音声や切断中の入力を完全に復元するものではありません。
-会話終了時は履歴のスナップショットを切り離して長期メモリを抽出します。
-ツールの開始済み・結果不明の操作は再接続で自動再実行しません。
-ツール結果は呼び出し時の世代が古くても会話へ追加し、説明が必要なら現在の世代で応答を要求します。ユーザーの発話・入力確定待ちや別の応答生成中は、結果に対する追加指示も保持して待機します。必要な場合は口頭説明より先にホワイトボードを更新し、成功後に結果を説明するよう指示します。取消済み・説明済みの結果の扱いと表示の必要性はモデルが判断し、報告完了を厳密に追跡するものではありません。
-各ツールは`tools.DefinitionWithResponsePolicy`で成功後の再応答（`OnSuccess`）と追加指示（`Instructions`）を設定できます。未指定は再応答有効、失敗時は設定によらず説明を促します。結果自体は設定によらずAPIへ渡します。ホワイトボードも再応答を有効にし、未説明の取得結果だけを説明し、不要な完了報告や同じ表示の再更新はしないよう指示します。無音ジョブの結果は、次の通常会話へ自発的な読み上げとして持ち込みません。
-「ここをもっと詳しく書いて」などの追加表示も、モデルが`set_whiteboard`を選んで行えます。情報取得後の自動更新だけに利用を制限しません。
-`wait_for_user`はRealtimeステージが登録・処理する会話制御専用ツールです。一般のツール実行器へ渡さず、履歴とAPIに待機の完了を記録して、再応答・音声合成・ホワイトボード更新を起動せずに次の入力を待ちます。呼び出しの重複は再実行せず、次の入力の応答要求を抑制するフラグも設けません。
-会話の接続時と各応答の生成時、およびWeb検索の実行時に現在の日本時間と今日・明日・昨日の日付を渡します。サーバーのタイムゾーンや、接続中の日付変更に依存しません。
-Web検索は検索ツールの呼び出しを必須とし、完了した`web_search_call`を確認できない回答や未完了の応答を採用しません。出典の日付・内容の正しさはモデルへの指示で確認するため、検索済みでも誤った情報が含まれる可能性は残ります。
-SwitchBotのシーン名は登録済み候補を`enum`で渡し、実行前にも完全一致で検証します。引数検証で中止した場合は未実行と候補を返します。結果不明の操作を自動再実行する仕組みは追加しません。
-会話の指示では、意味が明確な省略は補い、自分宛ての依頼が聞き取れない場合は短い確認を一つだけ返し、自分宛てではない背景音・独り言には待機を選ぶよう区別します。通常の返答は1〜2文を目安とし、確認への「うん」などを短いという理由だけで無視しないよう求めます。
-受信音量表示は廃止し、発話検知はAPI内蔵VADに集約しています。再生音量はブラウザ側で調整できます。
-
-設定の仕様はOpenAI公式の[Realtimeプロンプトガイド](https://developers.openai.com/api/docs/guides/voice-prompting)、[VADガイド](https://developers.openai.com/api/docs/guides/realtime-vad)、[Realtime APIリファレンス](https://developers.openai.com/api/reference/resources/realtime/client-events)、[Web検索ガイド](https://developers.openai.com/api/docs/guides/tools-web-search)を参照してください。
-
-### 外部APIを使わないローカル確認
-
-```sh
-npm ci
-npm test
-npm run build
-GOCACHE=/tmp/smart-speaker-go-cache go test -race ./...
-GOCACHE=/tmp/smart-speaker-go-cache go run ./cmd/local-verify-realtime
-```
-
-`http://127.0.0.1:18081` を開いて接続します。マイクの許可が必要です。
-通常のアプリを、偽Realtime APIとVOICEVOX互換HTTPサービスに接続して起動します。
-本物のAPIキーや家電操作は使いません。確認用音声は読み上げではなく短い合成音です。
-別のターミナルで次を実行し、音が続いている間に二つ目を実行すると割り込みを再現できます。
-
-```sh
-curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"最初の会話"}'
-curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"割り込み後の会話"}'
-```
-
-検証コマンドはループバックアドレスだけで起動し、終了時に一時メモリを削除します。
-このデバッグ経路は本番アプリには登録しません。
-実APIでの音声理解・VOICEVOXの読み上げ品質・端末スピーカーからマイクへの回り込みは別途確認が必要です。
-
-### WebRTCのICE候補
-
-`config.yaml` の `rtc.ice_advertise_ips` には、ブラウザから到達できるサーバーのIPv4アドレスを指定します。環境変数 `RTC_ICE_ADVERTISE_IPS`（カンマ区切り）でも指定でき、その場合は環境変数を優先します。
-ローカル開発では、開発PCのLAN IPを指定します。
-未指定の場合は、Pionが実行環境から検出したアドレスだけを使用します。
-
-指定できるのは、RFC 1918のプライベートIPv4アドレスと、Tailscaleが使用する `100.64.0.0/10` のIPv4アドレスです。
-意図しない外部公開を防ぐため、グローバルIPv4アドレスとIPv6アドレスは受け付けません。
-
-PionのAddress Rewrite Rulesにより、指定したアドレスは既存のICE candidateへ追加されます。
-
-https://pkg.go.dev/github.com/pion/webrtc/v4#SettingEngine.SetICEAddressRewriteRules
-
-### メモリ機能
-
-メモリ機能は、会話が終わるたびに保存済みメモリと会話の発話を LLM に渡して、メモリの追加・更新・削除を判断させます。保存済みの全メモリは毎回 LLM の入力に追加します。
-Docker Compose ではメモリ store を `/app/data/memories.json` に保存し、host 側の `/var/lib/smart-speaker/data` に永続化します。
-通常画面の「メモリ」ボタン、または `?ui=memory` / `/memory` から、その時点で保存されているメモリ一覧を確認し、メモリ文の追加・編集・削除ができます。
-
-主な設定は以下です。
-
-- `memory.model`: メモリの追加・更新・削除の判断に使う Responses API model。未指定時は `openai.responses_model` を使います。
-- `memory.store_path`: メモリ JSON file store の保存先。既定値は `data/memories.json` で、Compose では作業ディレクトリが `/app` のため `/app/data/memories.json` になります。
-
-### 現在地API
-
-iPhoneのショートカットなどから、現在いる場所を任意の文字列で送信できます。
-経度・緯度は扱わず、最後に受け取った場所とサーバーでの更新日時だけをメモリ上に保持します。
-サーバー再起動時に消去され、初回更新前は `null` です。同じ場所を再送した場合も更新日時を更新します。
-このAPIでは情報を保持するだけで、会話の応答にはまだ反映しません。
-
-Goサーバーのポート（既定は8081）にリクエストを送信します。
-既存APIと同様にアプリ独自の認証はないため、自宅LANまたはTailscale経由で利用してください。
-
-```sh
-curl -X POST http://localhost:8081/api/location \
-  -H 'Content-Type: application/json' \
-  -d '{"place":"home"}'
-
-curl http://localhost:8081/api/location
-```
-
-どちらも成功時は200で、更新後は次の形式を返します。`updated_at` はUTCのRFC3339形式です。
-
-```json
-{"place":"home","updated_at":"2026-11-03T00:00:00Z"}
-```
-
-`place` は空文字・空白のみ・未指定・null・文字列以外を受け付けません。
-不正なJSONや複数のJSON値は400、本文が4KiBを超える場合は413、GET・POST以外は405を返し、保存済みの情報は変更しません。
-空でない文字列は前後の空白も含めてそのまま保存します。
-
-iPhoneのショートカットでは「URLの内容を取得」に次を設定します。
-
-- URL: `http://<サーバーのLANまたはTailscaleアドレス>:8081/api/location`
-- 方法: POST
-- 要求本文: JSON
-- フィールド: `place`（テキスト）に `home` などの場所名
-
-設定したショートカットをパーソナルオートメーションなどから実行します。
-
-## 本番環境
-
-### 準備
-予め開発環境側で `production` Docker context を作成してください。
-また、デプロイ元のリポジトリ直下に `config.yaml` を用意し（無い場合、デプロイスクリプトは中断します）、シークレットを環境変数に設定してください（「設定」を参照）。`config.yaml` はイメージに含めて本番サーバーへ送られます。
-
-```sh
-docker context create production --docker "host=ssh://<user>@<本番サーバーのIP>"
-```
-
-デプロイスクリプトは `production` Docker contextのSSH接続先で、本番サーバー自身のLAN IPとTailscale IPを取得します。
-取得した値は環境変数 `RTC_ICE_ADVERTISE_IPS` に割り当てられ、`config.yaml` の `rtc.ice_advertise_ips` より優先されるため、本番用IPをデプロイ元PCへ設定する必要はありません。
-本番サーバーでは、`ip` コマンドと `tailscale ip -4` を実行できる必要があります。
-本番サーバーのLAN IPは、家庭用ルーターのDHCP予約などで固定してください。
-
-Docker ComposeはWebRTC用UDPポート `50000-50100` をホストへ公開しますが、家庭用ルーターでインターネット向けのポート転送は行わないでください。
-外出先からは、tailnetへ参加した端末で本番サーバーのTailscaleアドレスへ接続します。
-
-https://tailscale.com/docs/how-to/connect-to-devices
-https://docs.docker.com/reference/cli/docker/context/inspect/
-https://tailscale.com/docs/reference/tailscale-cli
-
-## デプロイ
-
-```sh
-./scripts/deploy.sh
-```
-
-### ツール呼び出し履歴
-
-メイン画面の「ツール履歴」または`/?ui=tools`で、呼び出しと結果を対応付けて確認できます。実行中・成功・失敗、引数と返り値の全文を表示します。サーバーが最新200件をメモリに保持するため、画面の再読み込み後も参照できますが、サーバー再起動で消去されます。`GET /api/tool-history`からも取得できます。
-
-### 呼びかけ必須モード
-
-UIと`set_wake_mode`で、既定の呼びかけ不要モードから必須モードへ切り替えられます。必須モードでは、ローカルSTTの信頼度と、文頭付近と呼びかけの言葉（既定は「起きて」）との類似度を判定し、通過した発話のテキストだけをRealtimeへ渡します。呼びかけ後は最後の発話から一定時間（`wake.conversation_timeout_seconds`、既定は5分）、呼びかけなしで会話でき、その間は音声をそのままRealtimeへ送ります。呼びかけだけの発話には、普段の口調で起きていることを短く伝えます。オン・オフは永続化します。呼びかけの言葉と判定のしきい値は、`config.yaml` の `wake` の項目（`wake.words`など）で決めます。ローカルSTTの準備と精度上の制限は[呼びかけ必須モードの仕様](docs/wake-mode.md)を参照してください。
-
-### 自然言語の予約ジョブ
-
-「10分後に起こして」「平日8時に処理して。音声通知は不要」などと会話から登録できます。指定時間後・日時指定・5項目のcron式に対応し、指示と予定はファイルに保存します。実行時ごとにAIが自然言語の指示を解釈し、必要なツールを呼び出します。「予約」画面で確認・変更・削除できます。日時指定の予約は実行後に削除されます。`speak=false`の指示は音声合成へ送らず、読み上げません。保持範囲・失敗時の扱い・APIの引数は[予約ジョブの仕様](docs/automations.md)を参照してください。
-
-### 手元のMacのClaude Codeに作業を頼む
-
-資料の読み込みや調査、文章作成など時間のかかる作業を、手元のMacで動くClaude Codeに依頼できます（`ask_claude_code`）。依頼はすぐに受け付けられ、終わると結果を読み上げます。Claude Codeが操作の許可を求めたときは、声で許可するか聞かれます。セッションの一覧と会話の内容も声で確かめられ、同じセッションの続きを頼んだり、PCで `claude --resume` して続けたりできます。
-
-Macでは `services/agent-bridge` を常駐させ、サーバーには、ブリッジのURL（`config.yaml` の `agent_bridge.url`）と共有トークン（環境変数 `AGENT_BRIDGE_TOKEN`）を設定します。未設定なら無効です。仕組みと安全のための制限は[Claude Code連携](docs/tools/claude-code.md)を参照してください。
+| `cmd/smart-speaker` | サーバーの起動処理と HTTP API |
+| `cmd/local-verify-realtime` | 外部 API を使わずに動かす確認用のサーバー |
+| `internal/` | 会話処理（`components/realtime` など）、ツール（`tools/`）、状態の保存（`states/`） |
+| `web/` | ブラウザの画面（React） |
+| `services/local-stt` | 呼びかけ判定に使うローカルの文字起こし（faster-whisper） |
+| `services/agent-bridge` | Claude Code 連携のブリッジ |
+| `scripts/` | デプロイなどのスクリプト |

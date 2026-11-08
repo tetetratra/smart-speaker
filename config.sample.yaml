@@ -74,7 +74,7 @@ tts:
     # VOICEVOX Engine の HTTP エンドポイント。既定: "http://voicevox:50021"（Docker Compose 内の VOICEVOX）
     # endpoint: "http://voicevox:50021"
 
-    # スタイルID（docs/services/voicevox.md の一覧を参照）。既定: 1
+    # スタイルID。VOICEVOX Engine の GET /speakers が返す各スタイルの id を指定します。既定: 1
     # speaker_id: 1
 
     # 話速。指定した場合だけ /audio_query の speedScale を上書きします。0 以下は無視します。既定: なし
