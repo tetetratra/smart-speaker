@@ -172,8 +172,8 @@ func (t *Tool) Definition() map[string]any {
 	policy := tools.ResponsePolicy{OnSuccess: true}
 	switch t.Operation {
 	case OpAsk:
-		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。初回はsession_idを空にし、同じ作業の続きは返されたsession_idを指定します。親の会話は渡らないため、inputに必要な背景と依頼内容を書いてください。"
-		properties = map[string]any{"input": str("Claude Codeへの依頼文"), "session_id": str("初回は空文字、続きを頼むときは対象のセッションID")}
+		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。初回はsession_idを空にし、同じ作業の続きは返されたsession_idを指定します。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
+		properties = map[string]any{"input": str("Claude Codeへの依頼文。ユーザーの言葉をもとに日本語で書く。英語に訳さない"), "session_id": str("初回は空文字、続きを頼むときは対象のセッションID")}
 		mode = tools.ToolModeWrite
 		policy.Instructions = "Claude Codeに依頼したことと、終わったら知らせることだけを短く伝えてください。結果を予想して話さないでください。"
 	case OpAnswer:

@@ -26,6 +26,7 @@
 
 - `toolcaller` に付ける。`LatestOnly` は無効のままにし、ツール要求を捨てずに1件ずつ判定する。
 - 古い世代の `ToolRequest` は実行せず、`{"error":"interrupted before execution","executed":false}` という結果を `EventConversationCommitRequest` として下流（realtime）へ返す。結果が返らないまま realtime が待ち続けることを防ぐため。
+- この結果を受け取ったAIは、ユーザーが取り消していなければ同じ呼び出しをやり直す（システムプロンプトの「ツールと結果」に書いている）。割り込みで操作を止める働きは残しつつ、話している最中に物音を拾っただけで依頼が消えないようにするため。
 - 現在の世代の要求と、`ToolRequest` 以外の event はそのまま通す。
 
 ## 4. データフロー
