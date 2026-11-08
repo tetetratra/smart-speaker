@@ -49,6 +49,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 - **古い承認依頼は尋ねない**: 承認依頼は、期限（`ExpiresAt`）を過ぎたり、作業が終わったり、既に答えたりしたら読み上げずに捨てます。作業が終わった後に遅れて届いた承認依頼も捨てます。ブリッジも、片付いた承認依頼の通知は再送しません。
 - **承認の状態はブリッジが持つ**: サーバーを再起動して承認依頼の控えを失っても、返事はそのままブリッジへ送ります。答え済みや期限切れなら、ブリッジが404を返します。
 - **起動ワード必須モード**: 承認依頼を差し込むときは会話中の状態にします（`wakemode.Store.Awaken`）。起動ワードなしで「はい」と答えられます。会話中の時間は差し込んだ時点から `wake.conversation_timeout_seconds`（既定5分）なので、読み上げにかかった分だけ短くなります。その間は周囲の音声も受け付けます。
+- **Claude Codeに渡す環境変数を絞る**: ブリッジは、`AGENT_BRIDGE_` で始まる環境変数（共有トークンを含む）と、名前が `_TOKEN`・`_KEY`・`_SECRET`・`_PASSWORD` で終わる環境変数を、Claude Codeへ引き継ぎません。共有トークンがあると、Claude Codeが自分の承認依頼を自分で許可できてしまうためです。
 - **声で答えられないツールは使わない**: ブリッジは `AskUserQuestion`、`EnterPlanMode`、`ExitPlanMode` を使わせません。
 
 危険な操作を必ず承認に回したい場合は、Mac側のClaude Codeの設定（`~/.claude/settings.json` の `permissions.ask`）に、`Bash(git push:*)` などのルールを足してください。`ask` ルールに当たった操作は、`auto` モードでも承認依頼になります。
@@ -69,7 +70,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 
 ## 設定
 - smart-speaker: `config.yaml` の `agent_bridge.url`（例: `http://<MacのTailscale IP>:8787`）と、環境変数 `AGENT_BRIDGE_TOKEN`。
-- agent-bridge: `services/agent-bridge/README.md` を参照してください。
+- agent-bridge: 環境変数で渡します。常駐させるときは、リポジトリ直下の `.envrc` に書き、LaunchAgentから `direnv exec` 経由で起動します。共有トークンは、サーバーと同じ `AGENT_BRIDGE_TOKEN` を使います。手順は `services/agent-bridge/README.md` を参照してください。
 
 ## 制約
 - ブリッジを再起動すると、実行中の作業も止まります。完了通知は届きません。

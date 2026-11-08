@@ -8,6 +8,9 @@
 - Claude CodeのCLIで、サブスクリプションにログイン済みである必要があります（`claude` を一度起動してログインします）。
 
 ## 設定（環境変数）
+設定は環境変数で渡します。常駐させるときは、リポジトリ直下の `.envrc`（direnvで読む、Git管理外のファイル）に書きます。
+サーバーのデプロイも同じ `.envrc` を読むため、共有トークン `AGENT_BRIDGE_TOKEN` は1か所に書くだけで済みます。
+
 | 変数 | 必須 | 説明 |
 | --- | --- | --- |
 | `AGENT_BRIDGE_LISTEN` | ○ | 待ち受けるアドレス。例: `100.x.y.z:8787`（MacのTailscale IP） |
@@ -19,7 +22,11 @@
 | `AGENT_BRIDGE_TASK_TIMEOUT_SECONDS` | | 1つの作業の上限秒数。既定3600 |
 | `AGENT_BRIDGE_MAX_TASKS` | | 同時に動かす作業の数。既定1 |
 
-`ANTHROPIC_` と `CLAUDE` で始まる環境変数は、Claude Codeへ引き継ぎません。Claude Codeのデスクトップアプリから起動すると、これらの変数のせいでログインが使えなくなるためです。
+次の環境変数は、Claude Codeへ引き継ぎません。
+
+- `ANTHROPIC_` と `CLAUDE` で始まるもの。Claude Codeのデスクトップアプリから起動すると、これらの変数のせいでログインが使えなくなるためです。
+- `AGENT_BRIDGE_` で始まるもの。共有トークンがあると、Claude Codeが自分の承認依頼を自分で許可できてしまうためです。
+- 名前が `_TOKEN`、`_KEY`、`_SECRET`、`_PASSWORD` で終わるもの。`.envrc` にあるサーバー用のシークレット（`OPENAI_API_KEY` など）を渡さないためです。
 
 ## 起動
 ```sh
@@ -36,13 +43,75 @@ npm run typecheck
 ```
 
 ## LaunchAgentで常駐させる
-1. `launchd/com.tetetratra.smart-speaker.agent-bridge.plist` を `~/Library/LaunchAgents/` にコピーし、パスと環境変数を書き換えます。
-2. トークンはplistに書かず、`chmod 600` にしたファイルに置いて `AGENT_BRIDGE_TOKEN_FILE` で指定します。
-3. `PATH` には `node` と `git` の場所を含めます。`git` は、セッションの一覧でworktreeを判定するためにSDKが使います。
+worktreeは消えることがあるので、以下はリポジトリの本来の場所（メインのチェックアウト）で行います。
+
+1. リポジトリ直下の `.envrc` に、上の表の必須の変数を書き、`direnv allow` で許可します。
+   ```sh
+   export AGENT_BRIDGE_TOKEN=<openssl rand -hex 32 などで作った値>
+   export AGENT_BRIDGE_LISTEN=<MacのTailscale IP>:8787
+   export AGENT_BRIDGE_WORKDIR=$HOME/work
+   export AGENT_BRIDGE_EVENTS_URL=http://<サーバーのTailscale IP>:8081/api/agent-events
+   ```
+2. 依存を入れます。
+   ```sh
+   (cd services/agent-bridge && npm install)
+   ```
+3. LaunchAgentの設定ファイル（plist）を書き出します。リポジトリ直下で実行すると、`node` と `direnv` の場所、リポジトリの場所が埋まります。
+   ブリッジは `direnv exec` 経由で起動し、`.envrc` の環境変数を受け取ります。
+   `PATH` には `git` の場所を含めます。`git` は、セッションの一覧でworktreeを判定するためにSDKが使います。
+   ```sh
+   NODE="$(node -p process.execPath)"
+   DIRENV="$(command -v direnv)"
+   cat > ~/Library/LaunchAgents/com.tetetratra.smart-speaker.agent-bridge.plist <<EOF
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key>
+     <string>com.tetetratra.smart-speaker.agent-bridge</string>
+     <key>ProgramArguments</key>
+     <array>
+       <string>$DIRENV</string>
+       <string>exec</string>
+       <string>$PWD</string>
+       <string>$NODE</string>
+       <string>$PWD/services/agent-bridge/src/main.ts</string>
+     </array>
+     <key>WorkingDirectory</key>
+     <string>$PWD/services/agent-bridge</string>
+     <key>EnvironmentVariables</key>
+     <dict>
+       <key>PATH</key>
+       <string>$(dirname "$NODE"):$(dirname "$DIRENV"):/usr/bin:/bin</string>
+       <key>LANG</key>
+       <string>ja_JP.UTF-8</string>
+     </dict>
+     <key>RunAtLoad</key>
+     <true/>
+     <key>KeepAlive</key>
+     <true/>
+     <key>ThrottleInterval</key>
+     <integer>10</integer>
+     <key>StandardOutPath</key>
+     <string>$HOME/Library/Logs/smart-speaker-agent-bridge.log</string>
+     <key>StandardErrorPath</key>
+     <string>$HOME/Library/Logs/smart-speaker-agent-bridge.log</string>
+   </dict>
+   </plist>
+   EOF
+   plutil -lint ~/Library/LaunchAgents/com.tetetratra.smart-speaker.agent-bridge.plist
+   ```
 4. 読み込みます。
    ```sh
    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tetetratra.smart-speaker.agent-bridge.plist
    ```
+
+`.envrc` を変えたときは、再起動して読み直させます。
+```sh
+launchctl kickstart -k gui/$(id -u)/com.tetetratra.smart-speaker.agent-bridge
+```
+
+plistを変えたときや、`node` を別のバージョンに上げたとき（plistには手順3の時点の `node` の場所が入ります）は、`launchctl bootout gui/$(id -u)/com.tetetratra.smart-speaker.agent-bridge` で外してから、手順3と4をやり直します。
 
 Tailscaleより先に起動するとアドレスを確保できずに終了しますが、`KeepAlive` で再起動します。
 Tailscaleのアクセス制御で、サーバーからMacの待ち受けポートへの通信だけを許可しておくと安全です。

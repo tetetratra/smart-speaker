@@ -136,6 +136,22 @@ test("interpret は失敗や構造化出力の欠落を扱う", () => {
   assert.deepEqual(interpret(denied, undefined, false), { type: "completed", summary: "raw", details: [], permission_denials: ['Bash: {"command":"rm"}'] });
 });
 
-test("childEnv は Claude 系の環境変数を渡さない", () => {
-  assert.deepEqual(childEnv({ HOME: "/h", PATH: "/bin", DRIVE_TOKEN: "t", ANTHROPIC_BASE_URL: "x", CLAUDECODE: "1", CLAUDE_CODE_ENTRYPOINT: "y" }), { HOME: "/h", PATH: "/bin", DRIVE_TOKEN: "t" });
+test("childEnv は Claude 系・ブリッジ用・シークレットらしい環境変数を渡さない", () => {
+  const source = {
+    HOME: "/h",
+    PATH: "/bin",
+    KEYBOARD_LAYOUT: "jis",
+    TOKEN_COUNT: "3",
+    ANTHROPIC_BASE_URL: "x",
+    CLAUDECODE: "1",
+    CLAUDE_CODE_ENTRYPOINT: "y",
+    AGENT_BRIDGE_LISTEN: "127.0.0.1:8787",
+    AGENT_BRIDGE_TOKEN: "t",
+    OPENAI_API_KEY: "k",
+    SWITCHBOT_TOKEN: "t",
+    GOOGLE_CLIENT_SECRET: "s",
+    DB_PASSWORD: "p",
+  };
+  // 名前の途中に TOKEN や KEY を含むだけの変数は残す。
+  assert.deepEqual(childEnv(source), { HOME: "/h", PATH: "/bin", KEYBOARD_LAYOUT: "jis", TOKEN_COUNT: "3" });
 });

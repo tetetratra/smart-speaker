@@ -60,6 +60,7 @@ flowchart LR
   - ユーザー発話（非同期の文字起こし）、アシスタントの発言、ツール呼び出しと結果を会話履歴に記録する
   - function call を `EventToolRequest` として `toolcaller` に渡し、結果を API に返す。`wait_for_user` は自身で処理する
   - 呼びかけ必須モードの制御、予約ジョブの実行、無操作時のセッションリセット
+  - 予約ジョブと外部エージェント（Claude Code連携）の通知を、指示文として会話に差し込む。差し込んだ指示や外部の文章で始まった応答からは、ユーザー本人の返事が必要なツールを呼ばせない
 - `speechsegment` は応答テキストの差分を受け取り、句点などで読み上げ単位に分割して `EventTimelineItem` にする。応答の終わりで `EventAgentTimelineEnd` を出す。
 - `tts` は読み上げ単位を、選択中の provider（既定は VOICEVOX）で音声化する。provider は `config.yaml` の `tts.provider` と、画面からの切り替え（`GET` / `PUT /api/tts`）で決まる。
 - `audioframe` は 24kHz・モノラル PCM16 を 20ms 単位のフレームに分割し、`audiopace` が1フレームずつ送信時刻を進め、`rtcout` が 48kHz の Opus に変換して WebRTC で送る。送信したフレームは `EventAudioSent` として realtime と wschat に通知する。realtime は、実際に送信できたテキストを割り込み時の履歴補正に使う。
@@ -93,6 +94,13 @@ realtime は結果を会話履歴に記録し、`function_call_output` として
 各ツールには、成功後に再び応答を生成するかと、そのときの追加指示（`tools.DefinitionWithResponsePolicy`）を設定できる。
 `web_search` も同じ経路の local tool で、handler の内部で Responses API の hosted `web_search` を別の request として呼ぶ。
 
+## 外部エージェントからの通知
+
+手元の Mac で動く Claude Code に作業を頼むツール（`ask_claude_code` など）は、Mac の常駐プロセス（`services/agent-bridge`）を HTTP で呼ぶ。
+作業は裏で続き、承認依頼と完了の通知は、ブリッジから `POST /api/agent-events` で届く。
+`internal/agentbridge` が通知を `ScheduledPrompt` に変換し、予約ジョブと同じ scheduled チャネルで realtime へ渡す。realtime はそれを指示文として会話に差し込み、ユーザーに尋ねたり結果を読み上げたりする。
+graph の event は通らない。詳細は [Claude Code連携](tools/claude-code.md)。
+
 ## セッションリセット
 
 最後の発話から `config.yaml` の `conversation.idle_timeout_seconds`（既定 1800 秒、0 で無効）がたつと、realtime がセッションをリセットする。
@@ -124,3 +132,5 @@ realtime は結果を会話履歴に記録し、`function_call_output` として
 - `internal/states/memory/store.go`
 - `internal/hooks/memory/`
 - `internal/tools/registry/registry.go`
+- `internal/agentbridge/`
+- `cmd/smart-speaker/agent_events_http.go`
