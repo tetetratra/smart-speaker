@@ -287,6 +287,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	wake := add(s.wakegate)
 	connectKinds(g, peer, wake, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
 	connectKinds(g, wake, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink, types.EventLocalWakeUtterance)
+	connectKinds(g, wake, chat, types.EventWakeTranscription)
 	connectKinds(g, rt, segment, types.EventResponseText)
 	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)

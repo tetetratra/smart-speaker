@@ -42,13 +42,14 @@ flowchart LR
   TOOL -->|"EventConversationCommitRequest<br/>（ツール結果）"| RT
   TOOL -->|"EventWhiteboardUpdate"| WS
   RT -->|"世代変更、表示テキスト、発話開始/終了、<br/>接続状態、EventSessionReset"| WS
+  WAKE -->|"EventWakeTranscription<br/>（書き起こしと判定）"| WS
 ```
 
 ## 主要な責務
 
 - `wschat` はブラウザとの WebSocket 境界。チャット表示、WebRTC signaling、発話状態、セッションリセット、ホワイトボード更新を JSON でやり取りする。
 - `rtcpeer` は WebRTC の signaling と peer の管理、上り音声（Opus）の decode、下り音声の送信先の通知を担う。
-- `wakegate` は呼びかけ必須モードの間だけ、音声を realtime へ渡さず、ローカルSTT（`local-stt` サービス）で呼びかけを判定する。通過した発話は `EventLocalWakeUtterance` としてテキストで渡す。呼びかけ不要モードや呼びかけ後の会話中は、音声をそのまま通す。詳細は [呼びかけ必須モードの仕様](wake-mode.md)。
+- `wakegate` は呼びかけ必須モードの間だけ、音声を realtime へ渡さず、ローカルSTT（`local-stt` サービス）で呼びかけを判定する。通過した発話は `EventLocalWakeUtterance` としてテキストで渡す。書き起こしと判定の結果は、拒否・破棄したものも含めて `EventWakeTranscription` として wschat へ渡し、画面のログ管理画面に出す。呼びかけ不要モードや呼びかけ後の会話中は、音声をそのまま通す。詳細は [呼びかけ必須モードの仕様](wake-mode.md)。
 - `realtime` は会話の中心。主な責務は次のとおり。
   - Realtime API との WebSocket 接続・切断・55分ごとの張り直しと、`session.update`（モデル、VAD、文字起こしモデル、ツール定義、システムプロンプト）の送信
   - 再接続時に、会話履歴の要約と長期メモリをシステムプロンプトの後ろに付けて文脈を復元する

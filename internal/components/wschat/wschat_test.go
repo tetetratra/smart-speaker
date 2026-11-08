@@ -76,3 +76,46 @@ func TestMessageForAudioSentIncludesSegmentDuration(t *testing.T) {
 		t.Fatal("区間の長さが不明な通知に duration_ms を含めません")
 	}
 }
+
+func TestMessageForEventWakeTranscription(t *testing.T) {
+	msg, targetID, ok := messageForEvent(types.Event{
+		Kind: types.EventWakeTranscription,
+		Payload: types.WakeTranscription{
+			PeerID:     "peer-1",
+			Text:       "置きて",
+			Outcome:    types.WakeTranscriptionJudged,
+			Confidence: 0.4,
+			Similarity: 0.67,
+			Matched:    true,
+			Error:      "STT停止",
+		},
+	})
+	if !ok {
+		t.Fatal("messageForEvent returned ok=false")
+	}
+	// 接続中のすべての画面へ送る。
+	if targetID != "" {
+		t.Fatalf("targetID = %q, want empty", targetID)
+	}
+	want := map[string]any{
+		"type":       "wake_transcription",
+		"peer_id":    "peer-1",
+		"text":       "置きて",
+		"outcome":    "judged",
+		"confidence": 0.4,
+		"similarity": 0.67,
+		"matched":    true,
+		"accepted":   false,
+		"wake_only":  false,
+		"awake":      false,
+		"error":      "STT停止",
+	}
+	for key, value := range want {
+		if msg[key] != value {
+			t.Fatalf("%s = %v, want %v", key, msg[key], value)
+		}
+	}
+	if len(msg) != len(want) {
+		t.Fatalf("msg = %v, want %v", msg, want)
+	}
+}
