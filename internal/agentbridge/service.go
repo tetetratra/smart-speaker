@@ -23,6 +23,10 @@ type pendingPermission struct {
 
 const maxSeenEvents = 512
 
+// maxReadAloud は音読用の本文の上限文字数。Realtimeの文脈を圧迫しすぎない量にする。
+// agent-bridge 側（services/agent-bridge/src/tasks.ts の MAX_READ_ALOUD）と合わせる。
+const maxReadAloud = 6000
+
 // Service はサーバー側の中心。ツールからの依頼をブリッジへ送り、ブリッジからの通知を会話へ差し込む。
 type Service struct {
 	Client  *Client
@@ -203,7 +207,11 @@ func resultText(event Event) string {
 		details = append(details, clip(d, 300))
 	}
 	data["details"] = details
-	instruction := "依頼した作業が終わりました。summaryを自然な短い言葉で伝え、detailsはset_whiteboardで表示してください。全文は読み上げないでください。"
+	instruction := "依頼した作業が終わりました。summaryを自然な短い言葉で伝え、detailsはset_whiteboardで表示してください。summaryとdetailsの全文は読み上げないでください。"
+	if readAloud := clip(event.ReadAloud, maxReadAloud); readAloud != "" {
+		data["read_aloud"] = readAloud
+		instruction += "read_aloudは、ユーザーが音読を頼んだ文章の本文です。「文章の読み上げ（音読）」の方針に従い、省略・要約・言い換えをせずに、そのまま読み上げてください。"
+	}
 	if len(event.PermissionDenials) > 0 {
 		denials := make([]string, 0, len(event.PermissionDenials))
 		for _, d := range event.PermissionDenials {

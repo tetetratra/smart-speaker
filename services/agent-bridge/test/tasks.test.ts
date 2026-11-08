@@ -158,6 +158,19 @@ test("interpret は失敗や構造化出力の欠落を扱う", () => {
   assert.deepEqual(interpret(denied, undefined, false), { type: "completed", summary: "raw", details: [], permission_denials: ['Bash: {"command":"rm"}'] });
 });
 
+test("interpret は音読用の本文を要約せずに渡し、空なら省く", () => {
+  const text = "第1段落。\n第2段落。";
+  assert.deepEqual(interpret(success({ summary: "読みました", details: [], read_aloud: `  ${text}  ` }), undefined, false), {
+    type: "completed",
+    summary: "読みました",
+    details: [],
+    read_aloud: text,
+  });
+  assert.deepEqual(interpret(success({ summary: "読みました", details: [], read_aloud: " " }), undefined, false), { type: "completed", summary: "読みました", details: [] });
+  const long = interpret(success({ summary: "s", details: [], read_aloud: "あ".repeat(7000) }), undefined, false) as { read_aloud: string };
+  assert.equal(long.read_aloud, `${"あ".repeat(6000)}…`);
+});
+
 test("childEnv は Claude 系・ブリッジ用・シークレットらしい環境変数を渡さない", () => {
   const source = {
     HOME: "/h",

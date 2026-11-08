@@ -23,6 +23,8 @@ export type CompletedEvent = {
   request: string;
   summary: string;
   details: string[];
+  // read_aloud はユーザーが音読を頼んだときの本文。要約せずにそのまま読み上げてもらう。
+  read_aloud?: string;
   permission_denials?: string[];
 };
 

@@ -29,9 +29,11 @@ type Event struct {
 	ExpiresAt   time.Time       `json:"expires_at,omitempty"`
 
 	// 完了・失敗
-	Request           string   `json:"request,omitempty"`
-	Summary           string   `json:"summary,omitempty"`
-	Details           []string `json:"details,omitempty"`
+	Request string   `json:"request,omitempty"`
+	Summary string   `json:"summary,omitempty"`
+	Details []string `json:"details,omitempty"`
+	// ReadAloud はユーザーが音読を頼んだときの本文。要約せずにそのまま読み上げる。
+	ReadAloud         string   `json:"read_aloud,omitempty"`
 	PermissionDenials []string `json:"permission_denials,omitempty"`
 	Error             string   `json:"error,omitempty"`
 }

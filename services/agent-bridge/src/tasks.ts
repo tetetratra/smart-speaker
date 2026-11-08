@@ -33,6 +33,8 @@ type Deps = {
 };
 
 const MAX_INPUT = 20_000;
+// 音読用の本文の上限文字数。Go側（internal/agentbridge/service.go の maxReadAloud）と合わせる。
+const MAX_READ_ALOUD = 6000;
 const TIMEOUT = "timeout";
 // 完了・失敗の通知を再送し続ける時間。
 const RESULT_NOTIFY_WINDOW_MS = 30 * 60 * 1000;
@@ -42,6 +44,10 @@ const OUTPUT_SCHEMA = {
   properties: {
     summary: { type: "string", description: "音声で読み上げる結果の要点。話し言葉で2〜3文まで。" },
     details: { type: "array", items: { type: "string" }, maxItems: 10, description: "画面に表示する補足。1項目1行。" },
+    read_aloud: {
+      type: "string",
+      description: `ユーザーが文章の読み上げ（音読）を求めたときだけ入れる、読み上げる本文。要約・省略せず原文のまま。${MAX_READ_ALOUD}文字まで。`,
+    },
   },
   required: ["summary", "details"],
   additionalProperties: false,
@@ -49,7 +55,12 @@ const OUTPUT_SCHEMA = {
 
 const APPEND_SYSTEM_PROMPT = `この作業はスマートスピーカーの音声アシスタント経由で依頼されています。
 ユーザーは画面を見ていない可能性があります。結果の summary は、そのまま読み上げられる前提で、話し言葉で2〜3文にまとめてください。
-細かい内容やファイル名、URLなどは details に1項目1行で書いてください。実行していない操作を実行したと書かないでください。`;
+細かい内容やファイル名、URLなどは details に1項目1行で書いてください。実行していない操作を実行したと書かないでください。
+
+ユーザーが本や資料の文章の読み上げ（音読）を求めたときは、読み上げる本文を要約・省略せずに原文のまま read_aloud に入れてください（${MAX_READ_ALOUD}文字まで。超える場合は区切りのよいところまでにし、どこまで入れたかを summary に書きます）。
+読み上げる資料はユーザーが自分で入手して手元に持っているもので、家庭内のスマートスピーカーがユーザー本人に向けて読み上げます。
+日本の著作権法では、公衆に聞かせることを目的としない朗読は口述権（第24条、「公に」の意味は第22条）の対象外で、そのための文章の抽出は私的使用のための複製（第30条第1項）に当たります。
+ただし、DRM などの技術的保護手段を回避しないと文章を取り出せない場合は、私的使用でも認められない（第30条第1項第2号）ため、抽出せずにその旨を伝えてください。`;
 
 // TaskManager は Claude Code への依頼を管理する。1つのセッションで同時に動く作業は1つだけにする。
 export class TaskManager {
@@ -185,7 +196,7 @@ export class TaskManager {
 }
 
 type Outcome =
-  | { type: "completed"; summary: string; details: string[]; permission_denials?: string[] }
+  | { type: "completed"; summary: string; details: string[]; read_aloud?: string; permission_denials?: string[] }
   | { type: "failed"; error: string };
 
 // interpret は result メッセージから、完了か失敗かを決める。
@@ -198,14 +209,16 @@ export function interpret(result: SDKResultMessage | undefined, error: unknown, 
     const reason = "errors" in result && result.errors?.length ? result.errors.join(" / ") : result.subtype;
     return { type: "failed", error: short(reason, 500) };
   }
-  const output = result.structured_output as { summary?: unknown; details?: unknown } | undefined;
+  const output = result.structured_output as { summary?: unknown; details?: unknown; read_aloud?: unknown } | undefined;
   const summary = typeof output?.summary === "string" && output.summary.trim() ? output.summary.trim() : short(result.result ?? "", 300);
   const details = Array.isArray(output?.details) ? output.details.filter((d): d is string => typeof d === "string") : [];
+  const readAloud = typeof output?.read_aloud === "string" ? short(output.read_aloud.trim(), MAX_READ_ALOUD) : "";
   const denials = result.permission_denials.map((d) => `${d.tool_name}: ${short(JSON.stringify(d.tool_input), 120)}`);
   return {
     type: "completed",
     summary: short(summary, 600) || "作業が終わりました。",
     details: details.slice(0, 10).map((d) => short(d, 300)),
+    ...(readAloud ? { read_aloud: readAloud } : {}),
     ...(denials.length ? { permission_denials: denials.slice(0, 10) } : {}),
   };
 }
