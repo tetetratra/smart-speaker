@@ -1,7 +1,10 @@
 # agent-bridge
 
 手元のMacで常駐し、smart-speakerからの依頼でClaude Codeに作業させるブリッジです。
-仕組みは `docs/tools/claude-code.md` を参照してください。
+サーバー側の設定は [セットアップ](../../docs/setup.md#claude-code) を参照してください。
+
+Claude Code は `auto` モードで動くため、頼んだ操作は承認なしで実行されることがあります。
+危険な操作を必ず承認に回したい場合は、Mac 側の `~/.claude/settings.json` の `permissions.ask` に `Bash(git push:*)` などのルールを足してください。`ask` ルールに当たった操作は、`auto` モードでも承認依頼になります。
 
 - Node.js 22.18以降が必要です。TypeScriptのファイルを、Nodeの型除去でそのまま実行します。ビルドは不要です。
 - 依存は `@anthropic-ai/claude-agent-sdk` だけです。HTTPサーバーはNode標準の `node:http` で書いています。
