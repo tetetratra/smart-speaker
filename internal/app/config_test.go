@@ -101,6 +101,9 @@ func TestBuildConfigDefaults(t *testing.T) {
 	if len(cfg.RTCIceAdvertiseIPs) != 0 {
 		t.Errorf("RTCIceAdvertiseIPs = %#v", cfg.RTCIceAdvertiseIPs)
 	}
+	if cfg.WakeEnergyThreshold != 0.005 {
+		t.Errorf("WakeEnergyThreshold = %v, want 0.005", cfg.WakeEnergyThreshold)
+	}
 	w := cfg.WakeSettings
 	if len(w.Words) != 3 || w.MaxPrefix != 4 || w.MinConfidence != 0.55 || w.MinSimilarity != 0.65 || w.ConversationTimeout != 5*time.Minute {
 		t.Errorf("WakeSettings = %+v", w)
@@ -145,6 +148,7 @@ wake:
   max_prefix: 0
   min_confidence: 0.4
   min_similarity: 0.7
+  energy_threshold: 0.003
   conversation_timeout_seconds: 120
 switchbot:
   device_map:
@@ -210,6 +214,9 @@ google_calendar:
 	}
 	if want := map[string]string{"hub2": "hub-device"}; !reflect.DeepEqual(cfg.SwitchBot.DeviceMap, want) {
 		t.Errorf("SwitchBot.DeviceMap = %#v", cfg.SwitchBot.DeviceMap)
+	}
+	if cfg.WakeEnergyThreshold != 0.003 {
+		t.Errorf("WakeEnergyThreshold = %v, want 0.003", cfg.WakeEnergyThreshold)
 	}
 	w := cfg.WakeSettings
 	if want := []string{"おきて", "起きて", "オッケー"}; !reflect.DeepEqual(w.Words, want) || w.MaxPrefix != 0 || w.MinConfidence != 0.4 || w.MinSimilarity != 0.7 || w.ConversationTimeout != 2*time.Minute {
@@ -315,5 +322,18 @@ func TestLegacyEnvWarnings(t *testing.T) {
 	got := legacyEnvWarnings(func(name string) string { return env[name] })
 	if len(got) != 2 || !strings.Contains(got[0], "SWITCHBOT_DEVICE_MAP") || !strings.Contains(got[0], "switchbot.device_map") || !strings.Contains(got[1], "TTS_PROVIDER") {
 		t.Fatalf("warnings = %#v", got)
+	}
+}
+
+// 発話とみなす音量の範囲外の値は、起動時にエラーにする。
+func TestBuildConfigRejectsOutOfRangeWakeEnergyThreshold(t *testing.T) {
+	for _, value := range []string{"0", "-0.001", "1.5"} {
+		if _, err := loadFromYAML(t, "wake:\n  energy_threshold: "+value+"\n", minimalEnv); err == nil {
+			t.Errorf("範囲外の音量しきい値を受理しました: %s", value)
+		}
+	}
+	cfg, err := loadFromYAML(t, "wake:\n  energy_threshold: 1\n", minimalEnv)
+	if err != nil || cfg.WakeEnergyThreshold != 1 {
+		t.Errorf("WakeEnergyThreshold = %v, err = %v", cfg.WakeEnergyThreshold, err)
 	}
 }

@@ -16,7 +16,8 @@ type Config struct {
 	Store *wakemode.Store
 	STT   Transcriber
 	// EnergyThresholdは発話とみなす音量（RMS）、MinVoicedは発話とみなす最短の有声時間。
-	// スマホのマイクで短い「起きて」が捨てられないよう、実測（最大RMS 0.02前後・有声60〜120ms）をもとに決めた。
+	// MinVoicedは、スマホのマイクで短い「起きて」が捨てられないよう、実測（有声60〜120ms）をもとに決めた。
+	// EnergyThresholdはconfig.yamlのwake.energy_thresholdで決める（未指定なら0.005）。
 	EnergyThreshold float64
 	MinVoiced       time.Duration
 }
@@ -49,7 +50,7 @@ type result struct {
 func NewStage(cfg Config) *graph.Stage {
 	node := &graph.Stage{Name: "wakegate", Upstream: make(chan types.Event), Downstream: make(chan types.Event), CloseFn: func() error { return nil }}
 	if cfg.EnergyThreshold <= 0 {
-		cfg.EnergyThreshold = 0.006
+		cfg.EnergyThreshold = 0.005
 	}
 	if cfg.MinVoiced <= 0 {
 		cfg.MinVoiced = 60 * time.Millisecond

@@ -20,9 +20,11 @@ import (
 
 // Config holds runtime settings.
 type Config struct {
-	WakeModeStorePath          string
-	WakeSettings               wakemode.Settings
-	LocalSTTEndpoint           string
+	WakeModeStorePath string
+	WakeSettings      wakemode.Settings
+	LocalSTTEndpoint  string
+	// WakeEnergyThresholdは、呼びかけ必須モードで発話とみなすマイクの音量（RMS、0より大きく1以下）。
+	WakeEnergyThreshold        float64
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
@@ -193,6 +195,8 @@ type configFile struct {
 		MaxPrefix        *int     `yaml:"max_prefix"`
 		MinConfidence    *float64 `yaml:"min_confidence"`
 		MinSimilarity    *float64 `yaml:"min_similarity"`
+		// EnergyThresholdは、発話とみなすマイクの音量（RMS）。小さい声も拾うには下げる。
+		EnergyThreshold *float64 `yaml:"energy_threshold"`
 		// ConversationTimeoutSecondsは、呼びかけ後に呼びかけなしで話せる時間（秒）。
 		ConversationTimeoutSeconds *int `yaml:"conversation_timeout_seconds"`
 	} `yaml:"wake"`
@@ -264,6 +268,14 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("wake.conversation_timeout_seconds (%s) must be shorter than conversation.idle_timeout_seconds (%s)", wake.ConversationTimeout, idleTimeout)
 	}
 
+	energyThreshold := DefaultWakeEnergyThreshold
+	if v := file.Wake.EnergyThreshold; v != nil {
+		if *v <= 0 || *v > 1 {
+			return Config{}, fmt.Errorf("wake.energy_threshold (%g) must be greater than 0 and at most 1", *v)
+		}
+		energyThreshold = *v
+	}
+
 	return Config{
 		APIKey:                     apiKey,
 		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
@@ -276,6 +288,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
 		WakeSettings:               wake,
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
+		WakeEnergyThreshold:        energyThreshold,
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
 		Memory:                     memoryCfg,
 		ConversationIdleTimeout:    idleTimeout,
@@ -307,6 +320,10 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		WebDistDir:         stringOr(file.Server.WebDistDir, "web/dist"),
 	}, nil
 }
+
+// DefaultWakeEnergyThresholdは、呼びかけ必須モードで発話とみなす音量（RMS）の既定値。
+// 小さい声の「起きて」を取りこぼしていたため、当初の0.006から下げた。
+const DefaultWakeEnergyThreshold = 0.005
 
 // wakeSettingsは呼びかけの判定の設定を作る。値の範囲はwakemode.NewStoreで検証する。
 func wakeSettings(file configFile) wakemode.Settings {

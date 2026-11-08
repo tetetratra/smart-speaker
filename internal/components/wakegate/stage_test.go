@@ -255,7 +255,7 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 // 小さめの声の短い「起きて」（RMS約0.009・有声100ms）もSTTへ送り、それより小さい音は送らない。
 func TestShortQuietUtteranceIsSentToSTT(t *testing.T) {
 	r := newGate(t, true)
-	// RMS約0.003はしきい値（0.006）未満なので発話とみなさない。
+	// RMS約0.003はしきい値（0.005）未満なので発話とみなさない。
 	r.frameAt(t, 100)
 	for i := 0; i < 8; i++ {
 		r.frame(t, false)
