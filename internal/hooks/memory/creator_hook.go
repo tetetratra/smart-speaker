@@ -11,19 +11,13 @@ import (
 )
 
 type CreatorHookConfig struct {
-	History          historyReader
 	OperationCreator operationCreator
 	Memory           memoryWriter
 }
 
 type CreatorHook struct {
-	history          historyReader
 	operationCreator operationCreator
 	memory           memoryWriter
-}
-
-type historyReader interface {
-	Snapshot() []types.ConversationRecord
 }
 
 type operationCreator interface {
@@ -38,9 +32,6 @@ type memoryWriter interface {
 }
 
 func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
-	if cfg.History == nil {
-		return nil, fmt.Errorf("memory creator hook: history is required")
-	}
 	if cfg.OperationCreator == nil {
 		return nil, fmt.Errorf("memory creator hook: operation creator is required")
 	}
@@ -48,14 +39,9 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 		return nil, fmt.Errorf("memory creator hook: memory is required")
 	}
 	return &CreatorHook{
-		history:          cfg.History,
 		operationCreator: cfg.OperationCreator,
 		memory:           cfg.Memory,
 	}, nil
-}
-
-func (h *CreatorHook) Exec(ctx context.Context) error {
-	return h.ExecRecords(ctx, h.history.Snapshot())
 }
 
 // ExecRecords は終了時点で固定した会話を対象にする。
@@ -133,7 +119,7 @@ type resolvedOperation struct {
 }
 
 func (h *CreatorHook) add(operation Operation) error {
-	if _, _, err := h.memory.Upsert(memorystate.UpsertInput{Content: operation.Content, Tags: operation.Tags}); err != nil {
+	if _, _, err := h.memory.Upsert(memorystate.UpsertInput{Content: operation.Content}); err != nil {
 		return fmt.Errorf("add memory %q: %w", operation.Content, err)
 	}
 	return nil
@@ -159,7 +145,7 @@ func (h *CreatorHook) modify(resolved resolvedOperation) error {
 		}
 		return nil
 	}
-	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content, Tags: operation.Tags}); err != nil {
+	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content}); err != nil {
 		return fmt.Errorf("update memory %q: %w", original.ID, err)
 	}
 	return nil

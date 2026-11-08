@@ -330,11 +330,11 @@ func TestIdleEndRunsEvenAfterPeerDisconnectAndUsesFixedSnapshot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	history := conversationhistory.NewStore()
-	history.Append(types.ConversationRecord{ID: "old", Role: types.RoleUser, Text: "前の会話"})
+	history.Upsert(types.ConversationRecord{ID: "old", Role: types.RoleUser, Text: "前の会話"})
 	snapshots := make(chan []types.ConversationRecord, 1)
 	s := &stage{cfg: Config{History: history, IdleTimeout: time.Millisecond, OnConversationEnd: func(_ context.Context, r []types.ConversationRecord) error { snapshots <- r; return nil }}, lastActivity: time.Now().Add(-time.Second), node: &graph.Stage{Downstream: make(chan types.Event, 2)}}
 	s.tick(ctx, time.Now())
-	history.Append(types.ConversationRecord{ID: "new", Role: types.RoleUser, Text: "次の会話"})
+	history.Upsert(types.ConversationRecord{ID: "new", Role: types.RoleUser, Text: "次の会話"})
 	select {
 	case records := <-snapshots:
 		if len(records) != 1 || records[0].ID != "old" {

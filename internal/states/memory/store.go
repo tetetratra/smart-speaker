@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -51,7 +50,6 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 	if content == "" {
 		return Record{}, UpsertResult{}, ErrEmptyContent
 	}
-	tags := normalizeTags(input.Tags)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -59,13 +57,12 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 	now := time.Now().UTC()
 	// 言い換えの重複は抽出時に LLM が既存メモリを見て防ぐので、ここでは同じ本文だけを弾く。
 	if idx, ok := s.findSameContentLocked(content); ok {
-		return cloneRecord(s.records[idx]), UpsertResult{Created: false}, nil
+		return s.records[idx], UpsertResult{Created: false}, nil
 	}
 
 	record := Record{
 		ID:        newRecordID(now, len(s.records)+1),
 		Content:   content,
-		Tags:      tags,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -73,7 +70,7 @@ func (s *Store) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 	if err := s.saveLocked(); err != nil {
 		return Record{}, UpsertResult{}, err
 	}
-	return cloneRecord(record), UpsertResult{Created: true}, nil
+	return record, UpsertResult{Created: true}, nil
 }
 
 func (s *Store) Update(id string, input UpdateInput) (Record, error) {
@@ -82,7 +79,6 @@ func (s *Store) Update(id string, input UpdateInput) (Record, error) {
 	if content == "" {
 		return Record{}, ErrEmptyContent
 	}
-	tags := normalizeTags(input.Tags)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -92,12 +88,11 @@ func (s *Store) Update(id string, input UpdateInput) (Record, error) {
 			continue
 		}
 		s.records[i].Content = content
-		s.records[i].Tags = tags
 		s.records[i].UpdatedAt = time.Now().UTC()
 		if err := s.saveLocked(); err != nil {
 			return Record{}, err
 		}
-		return cloneRecord(s.records[i]), nil
+		return s.records[i], nil
 	}
 	return Record{}, ErrRecordNotFound
 }
@@ -164,7 +159,6 @@ func loadRecords(path string) ([]Record, error) {
 	records := cloneRecords(payload.Records)
 	for i := range records {
 		records[i].Content = strings.TrimSpace(records[i].Content)
-		records[i].Tags = normalizeTags(records[i].Tags)
 	}
 	return records, nil
 }
@@ -196,31 +190,8 @@ func cloneRecords(records []Record) []Record {
 		return nil
 	}
 	cloned := make([]Record, len(records))
-	for i, record := range records {
-		cloned[i] = cloneRecord(record)
-	}
+	copy(cloned, records)
 	return cloned
-}
-
-func normalizeTags(tags []string) []string {
-	seen := map[string]struct{}{}
-	normalized := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		value := strings.TrimSpace(tag)
-		if value == "" {
-			continue
-		}
-		key := strings.ToLower(value)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		normalized = append(normalized, value)
-	}
-	sort.Slice(normalized, func(i, j int) bool {
-		return strings.ToLower(normalized[i]) < strings.ToLower(normalized[j])
-	})
-	return normalized
 }
 
 func newRecordID(now time.Time, seq int) string {

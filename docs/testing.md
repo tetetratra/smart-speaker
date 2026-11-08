@@ -13,35 +13,24 @@
   - Node `20` 以降
   - `OPENAI_API_KEY`
 - TTS provider ごとの設定
-  - `TTS_PROVIDER=elevenlabs` または未指定の場合: `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`
-  - `TTS_PROVIDER=voicevox` の場合: 起動済みの VOICEVOX Engine と `VOICEVOX_ENDPOINT`
-- STT provider ごとの設定
-  - `STT_PROVIDER=google` または未指定の場合: `GOOGLE_CLOUD_PROJECT`、必要に応じて `GOOGLE_APPLICATION_CREDENTIALS_JSON`
-  - `STT_PROVIDER=openai` の場合: `OPENAI_API_KEY`
-- 任意の環境変数:
-  - `TTS_PROVIDER`（未指定時は `elevenlabs`）
-  - `STT_PROVIDER`（未指定時は `google`）
-  - `OPENAI_STT_MODEL`（未指定時は `gpt-realtime-whisper`）
-  - `ELEVENLABS_MODEL_ID`
-  - `VOICEVOX_SPEAKER_ID`
-  - `VOICEVOX_SPEED_SCALE`
-  - `RTC_ICE_ADVERTISE_IPS`（ローカル起動時に、RFC 1918またはTailscaleのIPv4をカンマ区切りで指定）
-  - `WEB_DIST_DIR`
-  - `WS_ADDR`
-  - `CONVERSATION_IDLE_TIMEOUT_SECONDS`（未設定時は 300 秒、`0` で idle reset 無効）
+  - `tts.provider: voicevox` または未指定の場合: 起動済みの VOICEVOX Engine と `tts.voicevox.endpoint`
+  - `tts.provider: elevenlabs` の場合: `ELEVENLABS_API_KEY` / `tts.elevenlabs.voice_id`
+- 任意の設定（`config.yaml`。全項目は `config.sample.yaml` を参照）:
+  - `tts.provider`（未指定時は `voicevox`）
+  - `tts.elevenlabs.model`
+  - `tts.voicevox.speaker_id`
+  - `tts.voicevox.speed_scale`
+  - `rtc.ice_advertise_ips`（ローカル起動時に、RFC 1918またはTailscaleのIPv4を指定。環境変数 `RTC_ICE_ADVERTISE_IPS` でも指定可）
+  - `server.web_dist_dir`
+  - `server.ws_addr`
+  - `conversation.idle_timeout_seconds`（未設定時は 300 秒、`0` で idle reset 無効）
   - Google Calendar 利用時の OAuth 関連設定
-
-### 音声入力・Google Speech 関連
-- 旧資料では、音声入力確認に Google Speech 系の認証設定が必要とされています。
-  - `GOOGLE_CLOUD_PROJECT`
-  - `GOOGLE_APPLICATION_CREDENTIALS_JSON` または Application Default Credentials
-- ただし、これらは現行 `README.md` には記載がありません。現行実装での必須条件はこの資料の参照範囲だけでは不明です。
 
 ### Google Calendar OAuth
 - Google Calendar を確認する場合は、`README.md` の記載どおり以下を設定します。
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
-  - `GOOGLE_REDIRECT_URL`（未設定時は `http://localhost:8081/oauth/google/callback`）
+  - `google_calendar.redirect_url`（未設定時は `http://localhost:8081/oauth/google/callback`）
 
 ### ブラウザ・操作条件
 - 旧資料では `macOS + Chrome` 前提です。
@@ -57,7 +46,7 @@
 go run ./cmd/smart-speaker
 ```
 
-- `README.md` では、デフォルトで `WS_ADDR=:8081`、`/ws/chat` を開く構成です。
+- `README.md` では、デフォルトで `server.ws_addr: :8081`、`/ws/chat` を開く構成です。
 - この起動だけでは、フロント画面をどの URL で確認するかは状況依存です。
   - `web/dist` が存在する場合は `http://localhost:8081/` が候補です。
   - `web/dist` が未生成の場合の画面確認方法は、`README.md` だけでは十分に確定できません。
@@ -100,7 +89,7 @@ docker compose -f docker-compose.yml up --build
 3. 画面確認を行う場合は、起動パターンに応じた URL を開く。
 
 確認ポイント:
-- `OPENAI_API_KEY` 未設定など、必須環境変数不足で起動失敗していない。
+- `OPENAI_API_KEY` 未設定など、必須環境変数不足や `config.yaml` の書き間違いで起動失敗していない。
 - 選択中の TTS provider に必要な設定不足で起動失敗していない。
 
 ### 手順2: Web UI 接続確認
@@ -166,30 +155,9 @@ rtcpeer: connection state=connected client_id=...
 - agent 応答が返る。
 - 応答音声が再生される。
 
-補足:
-- Google Speech 系の現行必須設定は参照資料だけでは確定できないため、音声入力が失敗した場合は認証設定差分の確認が必要です。
-
-### 手順3.5: 応答 pipeline の簡易確認
-実マイクや Google Speech-to-Text を使わず、テスト用の user 発話を pipeline に直接投入して、LLM 応答と TTS 音声生成まで確認できます。
-
-```sh
-go run ./cmd/local-verify-response
-```
-
-確認ポイント:
-- `USER_TEXT=...` が出る。
-- `ASSISTANT_TEXT=...` が出る。
-- `AUDIO_BYTES_BASE64=...` が出る。
-- graph log で `llm -> generationfilter -> tts -> scheduler -> router -> conversationcommitter` の流れが確認できる。
-
-任意の入力文で確認したい場合は `LOCAL_VERIFY_TEXT` を指定します。
-
-```sh
-LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go run ./cmd/local-verify-response
-```
-
-この確認は OpenAI API と選択中の TTS provider を実際に呼びます。
-そのため、`OPENAI_API_KEY` に加えて、ElevenLabs 利用時は `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID`、VOICEVOX 利用時は起動済みの VOICEVOX Engine と `VOICEVOX_ENDPOINT` が必要です。
+### 手順3.5: 外部APIを使わない会話経路の確認
+`cmd/local-verify-realtime` で、偽の Realtime API と VOICEVOX 互換の検証用サービスにつないだ状態で、本番と同じ `cmd/smart-speaker` を起動できます。
+手順は README の「外部APIを使わないローカル確認」を参照してください。
 
 ### 手順4: Google Calendar OAuth の確認
 1. Google Calendar を利用する場合は `http://localhost:8081/oauth/google/start` を開く、または画面上の Google 認証導線を使う。
@@ -225,8 +193,7 @@ LOCAL_VERIFY_TEXT="こんにちは。短く自己紹介してください。" go
 ### ログ・障害
 - `error`、`fatal`、`panic` が継続して出ない。
 - 接続、文字起こし、TTS、ツール実行の失敗箇所をログから切り分けられる。
-- idle reset を確認する場合、`sessionreset: reset requested_at=...`、`sessionreset: generation advanced ...`、`sessionreset: agent status set ... status=idle` のログが出る。
-- 無応答判定を確認する場合、`llm: no response generation=... request_id=... reason=idle_monologue_candidate text=...` のログが出る。
+- 無操作リセットを確認する場合、`conversation.idle_timeout_seconds` 経過後に UI の直近の会話の吹き出しが消え（`session_reset`）、Realtime API への再接続が起きる。
 
 ## 6. 将来の自動テスト観点
 - 起動確認:

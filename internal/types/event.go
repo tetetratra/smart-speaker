@@ -12,27 +12,19 @@ import (
 type EventKind int
 
 const (
-	EventHumanUtterance EventKind = iota
-	EventHumanInterimUtterance
-	EventSpeechStart
+	EventSpeechStart EventKind = iota
 	EventSpeechEnd
-	EventRTCVADStatus
 	EventRealtimeOutput
-	EventRealtimeAudio
 	EventToolRequest
 	EventWhiteboardUpdate
-	EventTTSEnd
 	EventRTCSignal
 	EventConversationCommitRequest
 	EventSessionReset
 	EventLLMRequest
 	EventTimelineItem
 	EventPlayableSpeech
-	EventScheduledItem
 	EventAgentTimelineEnd
-	EventAgentSpeechPlaybackEnd
 	EventRTCPeerAudioFrame
-	EventRTCSpeechAudio
 	EventRTCPeerOutputSink
 )
 
@@ -57,26 +49,16 @@ func (k EventKind) String() string {
 	case EventRealtimeStatus:
 		return "EventRealtimeStatus"
 
-	case EventHumanUtterance:
-		return "EventHumanUtterance"
-	case EventHumanInterimUtterance:
-		return "EventHumanInterimUtterance"
 	case EventSpeechStart:
 		return "EventSpeechStart"
 	case EventSpeechEnd:
 		return "EventSpeechEnd"
-	case EventRTCVADStatus:
-		return "EventRTCVADStatus"
 	case EventRealtimeOutput:
 		return "EventRealtimeOutput"
-	case EventRealtimeAudio:
-		return "EventRealtimeAudio"
 	case EventToolRequest:
 		return "EventToolRequest"
 	case EventWhiteboardUpdate:
 		return "EventWhiteboardUpdate"
-	case EventTTSEnd:
-		return "EventTTSEnd"
 	case EventRTCSignal:
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:
@@ -89,28 +71,16 @@ func (k EventKind) String() string {
 		return "EventTimelineItem"
 	case EventPlayableSpeech:
 		return "EventPlayableSpeech"
-	case EventScheduledItem:
-		return "EventScheduledItem"
 	case EventAgentTimelineEnd:
 		return "EventAgentTimelineEnd"
-	case EventAgentSpeechPlaybackEnd:
-		return "EventAgentSpeechPlaybackEnd"
 	case EventRTCPeerAudioFrame:
 		return "EventRTCPeerAudioFrame"
-	case EventRTCSpeechAudio:
-		return "EventRTCSpeechAudio"
 	case EventRTCPeerOutputSink:
 		return "EventRTCPeerOutputSink"
 	default:
 		return fmt.Sprintf("EventKind(%d)", int(k))
 	}
 }
-
-const (
-	RTCSpeechAudioStart = "start"
-	RTCSpeechAudioFrame = "audio"
-	RTCSpeechAudioEnd   = "end"
-)
 
 type RTCPeerAudioFrame struct {
 	PeerID     string
@@ -119,16 +89,6 @@ type RTCPeerAudioFrame struct {
 	SampleRate int
 	Channels   int
 	DurationMs int
-	CapturedAt time.Time
-}
-
-type RTCSpeechAudio struct {
-	PeerID     string
-	Type       string
-	PCM        []byte
-	Prebuffer  []byte
-	SampleRate int
-	Channels   int
 	CapturedAt time.Time
 }
 

@@ -37,7 +37,7 @@ type Config struct {
 	ClaudeCode         *agentbridge.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
-	SwitchBotDeviceMap string
+	SwitchBotDeviceMap map[string]string
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client
@@ -124,55 +124,6 @@ func newWebSearchTool(cfg Config) *websearch.Tool {
 		APIKey: cfg.OpenAIAPIKey,
 		Model:  cfg.OpenAIModel,
 	})
-}
-
-// Definitions はResponses API向けのtools定義を返します。
-func (r *Registry) Definitions() []any {
-	if r == nil {
-		return nil
-	}
-	defs := make([]any, 0, len(r.entries))
-	for _, e := range r.entries {
-		if e.def != nil {
-			defs = append(defs, e.def)
-		}
-	}
-	return defs
-}
-
-// DefinitionsForLLM は LLM 向け schema 生成用の tool 定義を返します。
-// set_whiteboard は root の追加フィールドとして扱うため、items 内 tool 定義からは除外します。
-func (r *Registry) DefinitionsForLLM() []any {
-	if r == nil {
-		return nil
-	}
-	defs := make([]any, 0, len(r.entries))
-	for _, e := range r.entries {
-		if e.def == nil {
-			continue
-		}
-		if name, ok := e.def["name"].(string); ok && name == "set_whiteboard" {
-			continue
-		}
-		defs = append(defs, e.def)
-	}
-	return defs
-}
-
-// DefinitionByName returns a tool definition by name.
-func (r *Registry) DefinitionByName(name string) (map[string]any, bool) {
-	if r == nil {
-		return nil, false
-	}
-	for _, e := range r.entries {
-		if e.def == nil {
-			continue
-		}
-		if defName, ok := e.def["name"].(string); ok && defName == name {
-			return e.def, true
-		}
-	}
-	return nil, false
 }
 
 // Handlers はtoolcaller向けのname->handlerマップを返します。

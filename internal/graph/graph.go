@@ -41,10 +41,6 @@ func (g *Graph) AddNode(stage *Stage) *Node {
 	return n
 }
 
-func (g *Graph) Connect(from, to *Node) {
-	g.connect(from, to, nil)
-}
-
 func (g *Graph) ConnectKinds(from, to *Node, kinds ...types.EventKind) {
 	allowed := make(map[types.EventKind]struct{}, len(kinds))
 	for _, kind := range kinds {

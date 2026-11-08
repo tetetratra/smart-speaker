@@ -17,7 +17,6 @@ type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
 type MemoryItem = {
   id: string
   content: string
-  tags: string[]
   created_at: string
   updated_at: string
 }
@@ -596,7 +595,6 @@ function normalizeMemoryItem(memory: MemoryItem): MemoryItem {
   return {
     id: String(memory.id),
     content: String(memory.content),
-    tags: Array.isArray(memory.tags) ? memory.tags.map(String) : [],
     created_at: String(memory.created_at),
     updated_at: String(memory.updated_at),
   }
@@ -860,10 +858,6 @@ function App() {
         case 'speech_end': {
           setSpeechDetectStatus('待機中')
           setSttStatus('最終結果待ち')
-          break
-        }
-        case 'agent_speech_end': {
-          setIsAiSpeaking(false)
           break
         }
         case 'session_reset': {
@@ -1380,6 +1374,32 @@ function App() {
   )
 }
 
+// 縦画面では幅が狭いので、編集・削除ボタンを縦に並べて本文の幅を確保する。
+// 作成日と更新日は折り返さず1行に並べ、1件あたりの高さを抑える。
+const memoryViewStyle = `
+  .memory-item-dates {
+    display: flex;
+    column-gap: 12px;
+    color: var(--live-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .memory-item-actions {
+    display: flex;
+    gap: 6px;
+  }
+  @media (orientation: portrait) {
+    .memory-item-dates {
+      column-gap: 8px;
+      font-size: 10px;
+    }
+    .memory-item-actions {
+      flex-direction: column;
+    }
+  }
+`
+
 function MemoryView(props: {
   visible: boolean
   memories: MemoryItem[]
@@ -1450,6 +1470,7 @@ function MemoryView(props: {
         boxSizing: 'border-box',
       }}
     >
+      <style>{memoryViewStyle}</style>
       {error && (
         <div
           style={{
@@ -1533,59 +1554,42 @@ function MemoryView(props: {
                 border: '1px solid var(--live-line)',
                 borderRadius: 8,
                 background: 'var(--live-panel)',
-                padding: 12,
+                padding: '8px 12px',
                 display: 'grid',
-                gap: 8,
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                columnGap: 12,
+                alignItems: 'center',
               }}
             >
-              {editingID === memory.id ? (
-                <textarea
-                  value={editingContent}
-                  onChange={(event) => setEditingContent(event.currentTarget.value)}
-                  rows={4}
-                  style={{
-                    width: '100%',
-                    resize: 'vertical',
-                    border: '1px solid var(--live-line-strong)',
-                    borderRadius: 8,
-                    padding: '10px 12px',
-                    color: 'var(--live-text)',
-                    fontSize: 14,
-                    lineHeight: 1.5,
-                    fontFamily: 'inherit',
-                  }}
-                />
-              ) : (
-                <div style={{ color: 'var(--live-text)', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {memory.content}
+              <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
+                {editingID === memory.id ? (
+                  <textarea
+                    value={editingContent}
+                    onChange={(event) => setEditingContent(event.currentTarget.value)}
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      resize: 'vertical',
+                      border: '1px solid var(--live-line-strong)',
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      color: 'var(--live-text)',
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                ) : (
+                  <div style={{ color: 'var(--live-text)', fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                    {memory.content}
+                  </div>
+                )}
+                <div className="memory-item-dates">
+                  <span>作成: {formatMemoryDate(memory.created_at)}</span>
+                  <span>更新: {formatMemoryDate(memory.updated_at)}</span>
                 </div>
-              )}
-              {memory.tags.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {memory.tags.map((tag) => (
-                    <span
-                      key={`${memory.id}-${tag}`}
-                      style={{
-                        border: '1px solid var(--live-line-strong)',
-                        borderRadius: 999,
-                        padding: '3px 8px',
-                        background: 'var(--live-panel-soft)',
-                        color: 'var(--live-muted)',
-                        fontSize: 12,
-                        lineHeight: 1.2,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--live-muted)', fontSize: 12 }}>
-                <span>作成: {formatMemoryDate(memory.created_at)}</span>
-                <span>更新: {formatMemoryDate(memory.updated_at)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="memory-item-actions">
                 {editingID === memory.id ? (
                   <>
                     <button
@@ -1596,9 +1600,10 @@ function MemoryView(props: {
                         border: '1px solid var(--ui-accent)',
                         background: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft)' : 'var(--ui-accent)',
                         color: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft-text)' : 'var(--ui-accent-text)',
-                        padding: '8px 12px',
+                        padding: '6px 10px',
                         fontSize: 13,
                         fontWeight: 800,
+                        whiteSpace: 'nowrap',
                         cursor: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'not-allowed' : 'pointer',
                       }}
                     >
@@ -1612,9 +1617,10 @@ function MemoryView(props: {
                         border: '1px solid var(--live-line-strong)',
                         background: 'var(--live-panel)',
                         color: 'var(--live-text)',
-                        padding: '8px 12px',
+                        padding: '6px 10px',
                         fontSize: 13,
                         fontWeight: 800,
+                        whiteSpace: 'nowrap',
                         cursor: pendingAction === `update:${memory.id}` ? 'not-allowed' : 'pointer',
                       }}
                     >
@@ -1631,9 +1637,10 @@ function MemoryView(props: {
                         border: '1px solid var(--live-line-strong)',
                         background: 'var(--live-panel)',
                         color: 'var(--live-text)',
-                        padding: '8px 12px',
+                        padding: '6px 10px',
                         fontSize: 13,
                         fontWeight: 800,
+                        whiteSpace: 'nowrap',
                         cursor: pendingAction !== '' ? 'not-allowed' : 'pointer',
                       }}
                     >
@@ -1647,9 +1654,10 @@ function MemoryView(props: {
                         border: '1px solid var(--ui-danger-line)',
                         background: 'var(--ui-danger-bg)',
                         color: 'var(--ui-danger-text)',
-                        padding: '8px 12px',
+                        padding: '6px 10px',
                         fontSize: 13,
                         fontWeight: 800,
+                        whiteSpace: 'nowrap',
                         cursor: pendingAction === `delete:${memory.id}` ? 'not-allowed' : 'pointer',
                       }}
                     >

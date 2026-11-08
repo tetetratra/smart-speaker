@@ -11,7 +11,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 対象はMacのローカルにあるセッションだけです。クラウド（claude.ai/code）のセッションは扱いません。公開APIがないためです。
 
 ## 登録条件
-- `AGENT_BRIDGE_URL` と `AGENT_BRIDGE_TOKEN` が両方設定されているときだけ、ツールと `/api/agent-events` を有効にします。
+- ブリッジのURL（`config.yaml` の `agent_bridge.url`）と共有トークン（環境変数 `AGENT_BRIDGE_TOKEN`）が両方設定されているときだけ、ツールと `/api/agent-events` を有効にします。
 - どちらかが空なら、ツールはRealtimeに渡さず、`/api/agent-events` は503を返します。
 
 ## ツール
@@ -68,7 +68,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 - 401はトークンの誤り、400は形式の誤りです。
 
 ## 設定
-- smart-speaker: `AGENT_BRIDGE_URL`（例: `http://<MacのTailscale IP>:8787`）と `AGENT_BRIDGE_TOKEN`。
+- smart-speaker: `config.yaml` の `agent_bridge.url`（例: `http://<MacのTailscale IP>:8787`）と、環境変数 `AGENT_BRIDGE_TOKEN`。
 - agent-bridge: `services/agent-bridge/README.md` を参照してください。
 
 ## 制約

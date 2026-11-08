@@ -6,7 +6,7 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// Store は LLM に渡す会話履歴の正本です。
+// Store は会話履歴の正本です。realtime が記録し、再接続時の文脈の復元と会話終了時のメモリ抽出に使います。
 type Store struct {
 	mu      sync.RWMutex
 	records []types.ConversationRecord
@@ -14,12 +14,6 @@ type Store struct {
 
 func NewStore() *Store {
 	return &Store{}
-}
-
-func (s *Store) Append(record types.ConversationRecord) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.records = append(s.records, cloneRecord(record))
 }
 
 func (s *Store) Snapshot() []types.ConversationRecord {
@@ -30,12 +24,6 @@ func (s *Store) Snapshot() []types.ConversationRecord {
 		out[i] = cloneRecord(rec)
 	}
 	return out
-}
-
-func (s *Store) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.records = nil
 }
 
 func cloneRecord(record types.ConversationRecord) types.ConversationRecord {

@@ -87,7 +87,7 @@ func AccessToken(ctx context.Context) (string, error) {
 }
 
 func tokenFilePath() string {
-	if path := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_TOKEN_PATH")); path != "" {
+	if path := strings.TrimSpace(currentConfig().TokenPath); path != "" {
 		return path
 	}
 	return defaultTokenPath

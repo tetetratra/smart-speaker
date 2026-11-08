@@ -27,22 +27,22 @@ STT信頼度（0〜1）は認識した単語確率の平均で、**正しく認�
 
 必須モードのオン・オフは、画面のスイッチと`set_wake_mode`ツール（引数は`required`だけ）、`PUT /api/wake-mode`（`{"required":true}`）で切り替えます。`GET /api/wake-mode`と`get_wake_mode`ツールで、現在の設定を確認できます。
 
-呼びかけの言葉と判定のしきい値は、**デプロイ時の環境変数で決める固定値**です。画面・ツール・APIからは変更できません。変えるときは、環境変数を設定して再デプロイします。
+呼びかけの言葉と判定のしきい値は、**`config.yaml`で決める固定値**です。画面・ツール・APIからは変更できません。変えるときは、`config.yaml`を書き換えて再起動（本番は再デプロイ）します。
 
-| 環境変数 | 内容 | 既定値 |
+| `config.yaml`の項目 | 内容 | 既定値 |
 |---|---|---|
-| `WAKE_WORDS` | 呼びかけの言葉（カンマ区切り） | `おきて,起きて,オッケー` |
-| `WAKE_MAX_PREFIX` | 呼びかけの前に許す文字数（0〜20） | `4` |
-| `WAKE_MIN_CONFIDENCE` | STT信頼度の下限（0より大きく1以下） | `0.55` |
-| `WAKE_MIN_SIMILARITY` | 言葉との類似度の下限（0より大きく1以下） | `0.65` |
+| `wake.words` | 呼びかけの言葉（リスト） | `[おきて, 起きて, オッケー]` |
+| `wake.max_prefix` | 呼びかけの前に許す文字数（0〜20） | `4` |
+| `wake.min_confidence` | STT信頼度の下限（0より大きく1以下） | `0.55` |
+| `wake.min_similarity` | 言葉との類似度の下限（0より大きく1以下） | `0.65` |
 
-範囲外の値を指定すると、サーバーは起動に失敗します。数値として読めない値は既定値になります。
+範囲外の値や、数値として読めない値を指定すると、サーバーは起動に失敗します。
 
 `GET`の応答には、会話中かどうか（`awake`）と終了予定時刻（`awake_until`）、直近の判定（`last`。信頼度・類似度・言葉との一致・受理・呼びかけだけか）も含みます。
 
-必須モードのオン・オフだけを`WAKE_MODE_STORE_PATH`（既定はメモリ保存ファイルと同じフォルダのwake-mode.json）へ保存します。以前の保存内容に言葉やしきい値が含まれていても無視します。認識中の音声、判定履歴、会話中の状態は再起動で失われます。
+必須モードのオン・オフだけを`wake.store_path`（既定はメモリ保存ファイルと同じフォルダのwake-mode.json）へ保存します。以前の保存内容に言葉やしきい値が含まれていても無視します。認識中の音声、判定履歴、会話中の状態は再起動で失われます。
 
-Docker Composeに`local-stt`サービスを追加しています。ホストへのポート公開はなく、アプリから`http://local-stt:8000/transcribe`へ送ります。`LOCAL_STT_MODEL`（既定small）と`LOCAL_STT_THREADS`（既定4）で調整できます。初回起動ではモデルをダウンロードしてDockerボリュームへ保持し、その後の推論はローカルです。単独実行時のアプリ設定は`LOCAL_STT_ENDPOINT`（既定http://localhost:8000/transcribe）です。`GET /health`が成功するのはモデルの読み込み後です。
+Docker Composeに`local-stt`サービスを追加しています。ホストへのポート公開はなく、アプリから`http://local-stt:8000/transcribe`へ送ります。`LOCAL_STT_MODEL`（既定small）と`LOCAL_STT_THREADS`（既定4）で調整できます。初回起動ではモデルをダウンロードしてDockerボリュームへ保持し、その後の推論はローカルです。接続先は`config.yaml`の`wake.local_stt_endpoint`（既定はCompose内の`http://local-stt:8000/transcribe`）で、Composeを使わずに単独実行する場合は`http://localhost:8000/transcribe`などを指定します。`GET /health`が成功するのはモデルの読み込み後です。
 
 ## 予約との組み合わせ
 

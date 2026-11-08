@@ -28,11 +28,11 @@
   - ブラウザからの JSON は `type`, `sdp`, `candidate` を読み取る。
   - `type` が `webrtc.` prefix の場合は `types.EventRTCSignal` に変換して `downstream` へ送る。
 - **WebSocket 出力**
-  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechStart`, `EventSpeechEnd`, `EventRTCVADStatus`, `EventWhiteboardUpdate`, `EventSessionReset`, `EventAgentSpeechPlaybackEnd` をブラウザ向け JSON に変換する。
+  - `EventRealtimeOutput`, `EventRTCSignal`, `EventSpeechStart`, `EventSpeechEnd`, `EventWhiteboardUpdate`, `EventSessionReset` をブラウザ向け JSON に変換する。
   - 上記以外の event は無視され、WebSocket には送信されない。
 - **チャットUI**
   - `web/src/ws.ts` は WebSocket 接続、JSON parse、JSON stringify送信、close を薄く包む。
-  - `web/src/main.tsx` は `message`, `speech_start`, `speech_end`, `agent_speech_end`, `session_reset`, `rtc_vad_status`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
+  - `web/src/main.tsx` は `message`, `speech_start`, `speech_end`, `session_reset`, `whiteboard_update`, `webrtc.answer`, `webrtc.ice` を処理する。
   - `tool_call` / `tool_result` は `type: "message"` かつ `role: "tool_call"` / `role: "tool_result"` として UI に流れる。
 - **RTC signaling**
   - ブラウザは WebSocket 接続後に `RTCPeerConnection` を作り、`webrtc.offer` と `webrtc.ice` を `/ws/chat` に送る。
@@ -42,15 +42,15 @@
 - **Realtime output**
   - `types.OutputLine` を `type: "message"` の JSON に変換する。
   - `role`, `text`, `response_id`, `final` を常に含め、`source` は空でない場合だけ含める。
-  - UIは `role` に応じて user / agent / system message として表示する。user message かつ `source == "stt"` または `source == "server-stt"` の場合は STT状態を完了、発話検知状態を待機中にする。
+  - UIは `role` に応じて user / agent / system message として表示する。realtime が送る user message の `source` は、音声の文字起こしなら `realtime-transcription`、テキスト入力なら `text` などになる。
 - **Whiteboard関連events**
   - `internal/tools/functions/whiteboard/tool.go` の `set_whiteboard` tool は `EventWhiteboardUpdate` を emit する。
   - `wschat` は `types.WhiteboardUpdate.Content` を `type: "whiteboard_update", content: ...` に変換する。
   - UIは `content` が空でなければ `boardEntries` の末尾へ追記する。通常画面ではentry間に罫線を表示し、追記時にスクロール位置を末尾へ移動する。
 - **Session reset関連events**
-  - `sessionreset` は idle timeout による reset 実行後に `EventSessionReset` を emit する。
+  - `realtime` は無操作によるセッションリセットの実行時に `EventSessionReset` を emit する。
   - `wschat` は `types.SessionResetEvent.RequestedAt` を `type: "session_reset", requested_at: ...` に変換する。
-  - UIは `session_reset` 受信時に通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に吹き出しを再表示する。
+  - UIは `session_reset` 受信時に、通常画面の直近会話の吹き出しを消す（`resetConversationBubble`）。
 
 ## 3. 主要なデータフロー
 
@@ -112,45 +112,38 @@ sequenceDiagram
 2. 発話開始UI: UIは remote stream の Web Audio graph を切断・再接続し、再生中の下り音声を中断する。あわせて発話検知を `検出中`、STT を `認識中` にする。
 3. 発話終了: upstreamから `EventSpeechEnd` が来ると、`wschat` は `speech_end` JSON を全接続に送る。
 4. 発話終了UI: UIは `speechDetectStatus` を `待機中`、`sttStatus` を `最終結果待ち` にする。
-5. VAD状態: upstreamから `EventRTCVADStatus` が来ると、`wschat` は `rtc_vad_status` JSON を全接続に送る。
-6. VAD状態UI: UIは `input_level` と `threshold` を丸めて state に反映する。
+5. 発話開始・終了は、realtime が Realtime API の VAD（`input_audio_buffer.speech_started` / `speech_stopped`）を受けて発行する。
 
 ```mermaid
 sequenceDiagram
-    participant VAD as rtcvad
+    participant RT as realtime
     participant WS as wschat
     participant UI as Browser UI
 
-    VAD->>WS: EventSpeechStart{Source, CapturedAt}
+    RT->>WS: EventSpeechStart{Source: "realtime-vad", CapturedAt}
     WS->>UI: {"type":"speech_start","source":"...","captured_at":"..."}
     UI->>UI: remote音声中断 / speech/STT status更新
-    VAD->>WS: EventSpeechEnd{Source, CapturedAt}
+    RT->>WS: EventSpeechEnd{Source: "realtime-vad", CapturedAt}
     WS->>UI: {"type":"speech_end","source":"...","captured_at":"..."}
     UI->>UI: speech/STT status更新
-    VAD->>WS: EventRTCVADStatus{InputLevel, Threshold, CapturedAt}
-    WS->>UI: {"type":"rtc_vad_status","input_level":...,"threshold":...,"captured_at":"..."}
-    UI->>UI: inputLevel / speechThreshold更新
 ```
 
 ### シナリオ: セッションリセットがUIの吹き出し表示に反映される
 
-1. idle timeout 到達: `sessionreset` が hook、会話履歴 reset、世代id前進を実行する。
-2. reset event発行: `sessionreset` が `EventSessionReset{RequestedAt}` を `wschat` へ流す。
+1. 無操作時間の到達: `realtime` が会話履歴を取り出して空にし、メモリ抽出を起動する。
+2. reset event発行: `realtime` が `EventSessionReset{RequestedAt}` を `wschat` へ流し、Realtime API との接続を張り直す。
 3. JSON変換: `wschat.handleEvent` が `session_reset` JSON に変換する。
-4. UI反映: UIは通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。
-5. 会話再開: 次の user message かつ `source == "stt"` または `source == "server-stt"` の `message` 受信時に、UIは吹き出しを再表示する。
+4. UI反映: UIは通常画面の直近会話の吹き出しを消す。
 
 ```mermaid
 sequenceDiagram
-    participant SR as sessionreset
+    participant RT as realtime
     participant WS as wschat
     participant UI as Browser UI
 
-    SR->>WS: EventSessionReset{RequestedAt}
+    RT->>WS: EventSessionReset{RequestedAt}
     WS->>UI: {"type":"session_reset","requested_at":"..."}
-    UI->>UI: 直近会話吹き出しを非表示 / メッセージ一覧を空にする
-    WS->>UI: {"type":"message","role":"user","source":"stt",...}
-    UI->>UI: 直近会話吹き出しを再表示
+    UI->>UI: 直近会話の吹き出しを消す
 ```
 
 ### シナリオ: whiteboard tool の更新がUIに表示される
@@ -222,14 +215,10 @@ sequenceDiagram
   - 例: `{ "type": "speech_start", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `speech_end`: 発話終了をUIへ通知する。
   - 例: `{ "type": "speech_end", "source": "server-vad", "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
-- `rtc_vad_status`: サーバー側VADの入力レベルとしきい値をUIへ通知する。
-  - 例: `{ "type": "rtc_vad_status", "input_level": 123, "threshold": 456, "captured_at": "2026-05-22T00:00:00.000000000+09:00" }`
 - `whiteboard_update`: ホワイトボード表示内容をUIへ通知する。
   - 例: `{ "type": "whiteboard_update", "content": "..." }`
 - `session_reset`: セッションリセット発火をUIへ通知する。
   - 例: `{ "type": "session_reset", "requested_at": "2026-05-27T12:00:00.000000123Z" }`
-- `agent_speech_end`: 当該 generation の AI タイムライン（speech 再生待ち・wait・tool）が scheduler で完了したことを UI へ通知する。
-  - 例: `{ "type": "agent_speech_end", "generation_id": 3, "completed_at": "2026-05-28T16:00:00.000000000+09:00" }`
 ### イベント変換仕様
 
 | graph event | payload型 | WebSocket type | 宛先 |
@@ -238,10 +227,8 @@ sequenceDiagram
 | `EventRTCSignal` | `types.RTCSignal` | `sig.Type` | `sig.ClientID` の接続のみ |
 | `EventSpeechStart` | `types.SpeechEvent` | `speech_start` | 全接続 |
 | `EventSpeechEnd` | `types.SpeechEvent` | `speech_end` | 全接続 |
-| `EventRTCVADStatus` | `types.RTCVADStatus` | `rtc_vad_status` | 全接続 |
 | `EventWhiteboardUpdate` | `types.WhiteboardUpdate` | `whiteboard_update` | 全接続 |
 | `EventSessionReset` | `types.SessionResetEvent` | `session_reset` | 全接続 |
-| `EventAgentSpeechPlaybackEnd` | `types.AgentSpeechPlaybackEnd` | `agent_speech_end` | 全接続 |
 
 ### エラー・終了時の挙動
 

@@ -11,7 +11,7 @@ func TestMatchingStagesFiltersByEventKind(t *testing.T) {
 	b := &Stage{Name: "b"}
 	targets := []edgeTarget{
 		{stage: a, kinds: map[types.EventKind]struct{}{types.EventRTCSignal: {}}},
-		{stage: b, kinds: map[types.EventKind]struct{}{types.EventHumanUtterance: {}}},
+		{stage: b, kinds: map[types.EventKind]struct{}{types.EventTimelineItem: {}}},
 	}
 
 	got := matchingStages(targets, types.EventRTCSignal)
@@ -19,9 +19,9 @@ func TestMatchingStagesFiltersByEventKind(t *testing.T) {
 		t.Fatalf("matchingStages(EventRTCSignal) = %#v, want only a", got)
 	}
 
-	got = matchingStages(targets, types.EventHumanUtterance)
+	got = matchingStages(targets, types.EventTimelineItem)
 	if len(got) != 1 || got[0] != b {
-		t.Fatalf("matchingStages(EventHumanUtterance) = %#v, want only b", got)
+		t.Fatalf("matchingStages(EventTimelineItem) = %#v, want only b", got)
 	}
 }
 

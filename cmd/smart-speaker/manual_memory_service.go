@@ -12,29 +12,16 @@ type manualMemoryWriter interface {
 	Delete(string) error
 }
 
-type memoryTagger interface {
-	CreateTags(context.Context, string) ([]string, error)
-}
-
 type manualMemoryService struct {
-	store  *memorystate.Store
-	tagger memoryTagger
+	store *memorystate.Store
 }
 
-func (s *manualMemoryService) Create(ctx context.Context, content string) (memorystate.Record, memorystate.UpsertResult, error) {
-	tags, err := s.tagger.CreateTags(ctx, content)
-	if err != nil {
-		return memorystate.Record{}, memorystate.UpsertResult{}, err
-	}
-	return s.store.Upsert(memorystate.UpsertInput{Content: content, Tags: tags})
+func (s *manualMemoryService) Create(_ context.Context, content string) (memorystate.Record, memorystate.UpsertResult, error) {
+	return s.store.Upsert(memorystate.UpsertInput{Content: content})
 }
 
-func (s *manualMemoryService) Update(ctx context.Context, id, content string) (memorystate.Record, error) {
-	tags, err := s.tagger.CreateTags(ctx, content)
-	if err != nil {
-		return memorystate.Record{}, err
-	}
-	return s.store.Update(id, memorystate.UpdateInput{Content: content, Tags: tags})
+func (s *manualMemoryService) Update(_ context.Context, id, content string) (memorystate.Record, error) {
+	return s.store.Update(id, memorystate.UpdateInput{Content: content})
 }
 
 func (s *manualMemoryService) Delete(id string) error {

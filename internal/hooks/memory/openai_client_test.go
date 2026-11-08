@@ -25,7 +25,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 			t.Fatalf("Decode request body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output_text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"ユーザーは朝にコーヒーを飲む\",\"tags\":[\"routine\",\"coffee\"]}]}"}`))
+		_, _ = w.Write([]byte(`{"output_text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"ユーザーは朝にコーヒーを飲む\"}]}"}`))
 	}))
 	defer srv.Close()
 
@@ -35,7 +35,6 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 		Endpoint:      srv.URL,
 		HTTPClient:    srv.Client(),
 		MaxOperations: 3,
-		MaxTags:       4,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAIClient() error = %v", err)
@@ -98,7 +97,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 	}
 	schema, _ := json.Marshal(format["schema"])
 	schemaText := string(schema)
-	for _, want := range []string{`"operations"`, `"action"`, `"target_id"`, `"content"`, `"tags"`, `"enum":["add","update","delete"]`, `"maxItems":3`, `"maxItems":4`, `"additionalProperties":false`} {
+	for _, want := range []string{`"operations"`, `"action"`, `"target_id"`, `"content"`, `"enum":["add","update","delete"]`, `"maxItems":3`, `"additionalProperties":false`} {
 		if !strings.Contains(schemaText, want) {
 			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
 		}
@@ -179,7 +178,6 @@ func TestOpenAIClientCreateOperationsReturnsEmptyWithoutHistory(t *testing.T) {
 		endpoint:      "http://127.0.0.1:1",
 		client:        &http.Client{},
 		maxOperations: DefaultMaxMemoryOperations,
-		maxTags:       DefaultMaxMemoryTags,
 	}
 	got, err := client.CreateOperations(context.Background(), nil, nil)
 	if err != nil {
@@ -194,7 +192,7 @@ func TestOpenAIClientCreateOperationsReadsOutputContentText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
 			"output": [
-				{"type":"message","content":[{"type":"output_text","text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"ユーザーはリビングの照明をSwitchBotで操作する\",\"tags\":[\"SwitchBot\",\"lighting\"]}]}"}]}
+				{"type":"message","content":[{"type":"output_text","text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"ユーザーはリビングの照明をSwitchBotで操作する\"}]}"}]}
 			]
 		}`))
 	}))
@@ -213,14 +211,14 @@ func TestOpenAIClientCreateOperationsReadsOutputContentText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOperations() error = %v", err)
 	}
-	if len(got) != 1 || got[0].Tags[0] != "SwitchBot" {
+	if len(got) != 1 || got[0].Content != "ユーザーはリビングの照明をSwitchBotで操作する" {
 		t.Fatalf("operations = %#v", got)
 	}
 }
 
 func TestOpenAIClientCreateOperationsNormalizesOperations(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"output_text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"  朝はコーヒー  \",\"tags\":[\" coffee \",\"Coffee\",\"morning\",\"routine\"]},{\"action\":\"add\",\"target_id\":\"\",\"content\":\"   \",\"tags\":[\"skip\"]},{\"action\":\"add\",\"target_id\":\"\",\"content\":\"雨の日に頭痛が出やすい\",\"tags\":[\"health\",\"weather\"]}]}"}`))
+		_, _ = w.Write([]byte(`{"output_text":"{\"operations\":[{\"action\":\"add\",\"target_id\":\"\",\"content\":\"  朝はコーヒー  \"},{\"action\":\"add\",\"target_id\":\"\",\"content\":\"   \"},{\"action\":\"add\",\"target_id\":\"\",\"content\":\"雨の日に頭痛が出やすい\"}]}"}`))
 	}))
 	defer srv.Close()
 
@@ -230,7 +228,6 @@ func TestOpenAIClientCreateOperationsNormalizesOperations(t *testing.T) {
 		Endpoint:      srv.URL,
 		HTTPClient:    srv.Client(),
 		MaxOperations: 1,
-		MaxTags:       2,
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAIClient() error = %v", err)
@@ -244,94 +241,6 @@ func TestOpenAIClientCreateOperationsNormalizesOperations(t *testing.T) {
 	}
 	if got[0].Content != "朝はコーヒー" {
 		t.Fatalf("Content = %q, want trimmed", got[0].Content)
-	}
-	wantTags := []string{"coffee", "morning"}
-	if !sameStringSlice(got[0].Tags, wantTags) {
-		t.Fatalf("Tags = %#v, want %#v", got[0].Tags, wantTags)
-	}
-}
-
-func TestOpenAIClientCreateTagsSendsStructuredOutputSchema(t *testing.T) {
-	var payload map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("Decode request body: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output_text":"{\"tags\":[\" coffee \",\"Coffee\",\"morning\",\"routine\"]}"}`))
-	}))
-	defer srv.Close()
-
-	client, err := NewOpenAIClient(OpenAIClientConfig{
-		APIKey:     "test-key",
-		Model:      "test-model",
-		Endpoint:   srv.URL,
-		HTTPClient: srv.Client(),
-		MaxTags:    2,
-	})
-	if err != nil {
-		t.Fatalf("NewOpenAIClient() error = %v", err)
-	}
-	got, err := client.CreateTags(context.Background(), "  ユーザーは朝にコーヒーを飲む  ")
-	if err != nil {
-		t.Fatalf("CreateTags() error = %v", err)
-	}
-
-	input := payload["input"].([]any)
-	if len(input) != 2 {
-		t.Fatalf("input len = %d, want 2", len(input))
-	}
-	if input[1].(map[string]any)["content"] != "ユーザーは朝にコーヒーを飲む" {
-		t.Fatalf("user content = %#v", input[1])
-	}
-	format := payload["text"].(map[string]any)["format"].(map[string]any)
-	if format["type"] != "json_schema" || format["name"] != "memory_tags" || format["strict"] != true {
-		t.Fatalf("format = %#v", format)
-	}
-	schema, _ := json.Marshal(format["schema"])
-	schemaText := string(schema)
-	for _, want := range []string{`"tags"`, `"maxItems":2`, `"additionalProperties":false`} {
-		if !strings.Contains(schemaText, want) {
-			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
-		}
-	}
-	if want := []string{"coffee", "morning"}; !sameStringSlice(got, want) {
-		t.Fatalf("tags = %#v, want %#v", got, want)
-	}
-}
-
-func TestOpenAIClientCreateTagsRejectsEmptyContent(t *testing.T) {
-	client := &OpenAIClient{
-		apiKey:   "test-key",
-		model:    "test-model",
-		endpoint: "http://127.0.0.1:1",
-		client:   &http.Client{},
-		maxTags:  DefaultMaxMemoryTags,
-	}
-	_, err := client.CreateTags(context.Background(), "   ")
-	if err == nil || !strings.Contains(err.Error(), "content is required") {
-		t.Fatalf("err = %v, want content is required", err)
-	}
-}
-
-func TestOpenAIClientCreateTagsReturnsParseError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"output_text":"not json"}`))
-	}))
-	defer srv.Close()
-
-	client, err := NewOpenAIClient(OpenAIClientConfig{
-		APIKey:     "test-key",
-		Model:      "test-model",
-		Endpoint:   srv.URL,
-		HTTPClient: srv.Client(),
-	})
-	if err != nil {
-		t.Fatalf("NewOpenAIClient() error = %v", err)
-	}
-	_, err = client.CreateTags(context.Background(), "ユーザーは朝にコーヒーを飲む")
-	if err == nil || !strings.Contains(err.Error(), "parse tags") {
-		t.Fatalf("err = %v, want it to contain parse tags", err)
 	}
 }
 
@@ -392,38 +301,26 @@ func TestNewOpenAIClientValidatesConfig(t *testing.T) {
 	}
 }
 
-func sameStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func TestNormalizeOperationsHandlesActions(t *testing.T) {
 	got := normalizeOperations([]Operation{
-		{Action: "ADD", TargetID: "ignored", Content: " 追加 ", Tags: []string{"a"}},
+		{Action: "ADD", TargetID: "ignored", Content: " 追加 "},
 		{Action: "update", TargetID: "", Content: "IDなし更新"},
-		{Action: "update", TargetID: " m-1 ", Content: "更新", Tags: []string{"b"}},
+		{Action: "update", TargetID: " m-1 ", Content: "更新"},
 		{Action: "delete", TargetID: ""},
-		{Action: "delete", TargetID: "m-2", Content: "無視される", Tags: []string{"c"}},
+		{Action: "delete", TargetID: "m-2", Content: "無視される"},
 		{Action: "unknown", Content: "不明"},
 		{Action: "", Content: "action省略は捨てる"},
-	}, 10, 5)
+	}, 10)
 	want := []Operation{
-		{Action: OperationAdd, Content: "追加", Tags: []string{"a"}},
-		{Action: OperationUpdate, TargetID: "m-1", Content: "更新", Tags: []string{"b"}},
+		{Action: OperationAdd, Content: "追加"},
+		{Action: OperationUpdate, TargetID: "m-1", Content: "更新"},
 		{Action: OperationDelete, TargetID: "m-2"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("operations = %#v, want %#v", got, want)
 	}
 	for i := range want {
-		if got[i].Action != want[i].Action || got[i].TargetID != want[i].TargetID || got[i].Content != want[i].Content || !sameStringSlice(got[i].Tags, want[i].Tags) {
+		if got[i].Action != want[i].Action || got[i].TargetID != want[i].TargetID || got[i].Content != want[i].Content {
 			t.Fatalf("operations[%d] = %#v, want %#v", i, got[i], want[i])
 		}
 	}

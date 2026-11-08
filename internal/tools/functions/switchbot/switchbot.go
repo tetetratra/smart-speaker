@@ -53,21 +53,19 @@ type Command struct {
 }
 
 // 設定値に基づいてクライアントを初期化する
-func NewSwitchbotClient(token, secret, deviceMapRaw string) *Client {
+func NewSwitchbotClient(token, secret string, deviceMap map[string]string) *Client {
 	token = strings.TrimSpace(token)
 	secret = strings.TrimSpace(secret)
 	if token == "" || secret == "" {
 		panic("SwitchBot token and secret must be provided")
 	}
 
-	deviceMap := parseDeviceMap(deviceMapRaw)
-
 	client := &Client{
 		token:     token,
 		secret:    secret,
 		http:      &http.Client{Timeout: 10 * time.Second},
 		baseURL:   baseURL,
-		deviceMap: deviceMap,
+		deviceMap: normalizeDeviceMap(deviceMap),
 	}
 	return client
 }
@@ -399,17 +397,10 @@ func switchBotDiagnosticCategory(httpStatus, statusCode int, message string) str
 	return "api_failure"
 }
 
-func parseDeviceMap(raw string) map[string]string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return map[string]string{}
-	}
-	var tmp map[string]string
-	if err := json.Unmarshal([]byte(raw), &tmp); err != nil {
-		panic("SWITCHBOT_DEVICE_MAP は JSON オブジェクトで指定してください")
-	}
-	normalized := make(map[string]string, len(tmp))
-	for k, v := range tmp {
+// normalizeDeviceMapは機器名の大文字・小文字と前後の空白を区別せずに引けるようにする。
+func normalizeDeviceMap(deviceMap map[string]string) map[string]string {
+	normalized := make(map[string]string, len(deviceMap))
+	for k, v := range deviceMap {
 		normalized[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
 	}
 	return normalized

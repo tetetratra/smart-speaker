@@ -15,12 +15,10 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
-	"github.com/tetetratra/smart-speaker/internal/components/openaistt"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/speechsegment"
-	"github.com/tetetratra/smart-speaker/internal/components/stt"
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
@@ -48,7 +46,8 @@ func main() {
 
 	setLocalTimeZone()
 
-	cfg := app.LoadConfig("system_prompt.txt")
+	cfg := app.LoadConfig()
+	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
 
 	ensureGoogleCalendarToken()
 
@@ -166,15 +165,13 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
 	}
 	memoryOperationCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Memory.Model,
-		MaxTags: cfg.Memory.MaxTags,
+		APIKey: cfg.APIKey,
+		Model:  cfg.Memory.Model,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory operation creator: %w", err)
 	}
 	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
-		History:          historyStore,
 		OperationCreator: memoryOperationCreator,
 		Memory:           memoryStore,
 	})
@@ -218,7 +215,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStageWithHistory(toolHandlers, toolModes, services.ToolHistory)
+	stages.tool = toolcaller.NewStage(toolHandlers, toolModes, services.ToolHistory)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)
@@ -235,31 +232,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.tool.Name = "toolcaller"
 	stages.rtcpeer.Name = "rtcpeer"
 	return stages, nil
-}
-
-func buildSTTStage(cfg app.Config) (*graph.Stage, error) {
-	provider := strings.TrimSpace(cfg.STTProvider)
-	if provider == "" {
-		provider = "google"
-	}
-	switch provider {
-	case "google":
-		return stt.NewStage(stt.Config{
-			SpeechProjectID:  cfg.GoogleCloudProject,
-			SpeechRecognizer: cfg.GoogleRecognizer,
-			SpeechLanguage:   cfg.GoogleLanguage,
-			SpeechCredsJSON:  cfg.GoogleCredentials,
-			SpeechPhrases:    cfg.STTPhrases,
-		})
-	case "openai":
-		return openaistt.NewStage(openaistt.Config{
-			APIKey:  cfg.APIKey,
-			Model:   cfg.OpenAISTTModel,
-			Phrases: cfg.STTPhrases,
-		})
-	default:
-		return nil, fmt.Errorf("stt: unknown provider %q", provider)
-	}
 }
 
 func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
@@ -285,7 +257,7 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
 func newClaudeCodeService(cfg app.AgentBridgeConfig, scheduled chan<- types.ScheduledPrompt) *agentbridge.Service {
 	if cfg.URL == "" || cfg.Token == "" {
-		log.Println("agent-bridge: AGENT_BRIDGE_URL or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
+		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
 		return nil
 	}
 	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), func(ctx context.Context, prompt types.ScheduledPrompt) error {

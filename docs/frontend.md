@@ -59,7 +59,7 @@
 ### 2.5 メモリ画面の責務
 - 通常画面への遷移導線を持つ。
 - 画面表示時に `GET /api/memories` を 1 回呼び出し、その時点の保存済みメモリ一覧を取得する。
-- 保存済みメモリの本文、タグ、作成日時、更新日時を表示する。
+- 保存済みメモリの本文、作成日時、更新日時を1件1行で表示し、編集・削除ボタンを右端に置く。縦画面ではボタンを縦に並べる。
 - ユーザー入力のメモリ文を追加できる。
 - 保存済みメモリの本文をインライン編集し、保存できる。
 - 保存済みメモリを確認ダイアログ後に削除できる。
@@ -124,8 +124,6 @@ sequenceDiagram
   - remote stream の Web Audio graph を切断して再接続し、現在再生中の下り音声を中断する。
   - `isAiSpeaking` を `false` にする。
   - 発話検知を `検出中`、STT を `認識中` にする。
-- `agent_speech_end`
-  - `isAiSpeaking` を `false` にする（AI ターンのタイムライン処理完了）。
 - `message`（agent）
   - 非空 `text` 受信時に `isAiSpeaking` を `true` にする。
 - `message`（user、STT 確定）
@@ -134,8 +132,6 @@ sequenceDiagram
   - `isAiSpeaking` を `false` にする。
 - 通常画面の `.live-bubble`
   - `isAiSpeaking === true` のとき `live-bubble-ai-speaking` クラスでネオン風ボーダーを表示する。
-- `rtc_vad_status`
-  - 入力音量としきい値を更新する。
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard の末尾に追記する。
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。

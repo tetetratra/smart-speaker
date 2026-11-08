@@ -1,190 +1,125 @@
 # Smart Speaker アーキテクチャ
 
-この文書は `smart-speaker` の現在の会話 pipeline を説明する。
-会話制御は旧 `conversation` component に集約せず、責務ごとの component と `internal/states/` 配下の共有Storeで構成する。
+この文書は `smart-speaker` の現在の会話処理の構成を説明する。
+会話の中心は OpenAI Realtime API で、`internal/components/realtime` が API との接続・応答生成の制御・ツール呼び出しの仲介をまとめて担う。
+音声合成以降は、読み上げ単位への分割、音声合成、フレーム化、送信タイミング調整、WebRTC 送信を別々の component が担う。
+
+構成は `cmd/smart-speaker/main.go` の `buildStages`（各 component の生成）と `wireGraph`（component 間の接続）で決まる。
 
 ## 全体像
 
 ```mermaid
-flowchart TB
-  USER{{"ユーザー発話<br/>マイクから入る人間の音声"}}
+flowchart LR
   Browser{{"ブラウザ<br/>Web UI、マイク入力、音声再生"}}
-  ToolRuntime{{ツールランタイム<br/>外部API呼び出しや副作用を実行}}
+  API{{"OpenAI Realtime API"}}
 
-  WS["wschat<br/>WebSocket境界でUI向けJSONとgraph eventを変換"]
-  RTCPeer["rtcpeer<br/>WebRTC signaling、peer lifecycle、track境界を担当"]
-  RTCVAD["rtcvad<br/>上り音声のVAD、prebuffer、保留中割り込み開始、UI向け状態通知を担当"]
-  STT["stt / openaistt<br/>選択中のSTT providerでinterim/final transcript出力を担当"]
-  IS["interimstopper<br/>interimでAI出力保留用の割り込みを開始する"]
-  RTCOut["rtcout<br/>assistant音声をWebRTC下りtrackへ書き込む"]
-  UB["utterancebuffer<br/>STT final transcriptを短時間バッファして1発話にまとめる"]
-  SR["sessionreset<br/>user発話後の無音時間を監視して履歴と世代をリセットする"]
-  COMMIT["conversationcommitter<br/>履歴保存後にUI表示やLLM要求へ振り分ける"]
-  LLM["llm<br/>履歴を読んでResponses APIからJSON timelineを作る"]
-  SA["sessionactivate<br/>speech通過時にagent statusをactiveへ戻す"]
-  GF1["generationfilter<br/>LLM出力の世代を検査・保留する"]
-  TTS["tts<br/>speechを音声化し、wait/toolは順序維持で通す"]
-  GF2["generationfilter<br/>TTS出力の世代を検査・保留する"]
-  SCH["scheduler<br/>speech/wait/toolを同じtimelineとして順番に発火する"]
-  GF3["generationfilter<br/>scheduler出力の世代を検査・保留する"]
-  ROUTER["router<br/>再生、agent保存、tool実行へ振り分ける"]
-  TOOL["toolcaller<br/>local tool handlerを呼び出して結果を会話へ戻す"]
+  WS["wschat<br/>WebSocketでUI向けJSONとgraph eventを変換"]
+  PEER["rtcpeer<br/>WebRTC signaling、上り音声のdecode"]
+  WAKE["wakegate<br/>呼びかけ必須モード中だけ音声を止め、<br/>ローカルSTTで呼びかけを判定する"]
+  RT["realtime<br/>API接続、応答生成の制御、<br/>履歴記録、ツール呼び出しの仲介"]
+  SEG["speechsegment<br/>応答テキストを読み上げ単位に分割"]
+  TTS["tts<br/>VOICEVOX / ElevenLabs で音声化"]
+  FRAME["audioframe<br/>24kHz PCM16を20ms単位に分割"]
+  PACE["audiopace<br/>フレームの送信時刻を調整"]
+  OUT["rtcout<br/>Opusに変換してWebRTCで送信"]
+  TOOL["toolcaller<br/>local toolを実行"]
 
-  GSTORE[("generation Store<br/>最新世代と保留中割り込みを保持する")]
-  HSTORE[("conversation history Store<br/>user/agent/tool_call/tool_resultの履歴を保持する")]
-  ASTORE[("agent status Store<br/>idle/activeを保持する")]
-
-  USER -.->|"音声入力<br/>ブラウザのマイクへ入る"| Browser
-  Browser <-.->|"/ws/chat<br/>UI表示とWebRTC signalingを送受信"| WS
-  Browser <-.->|"WebRTC音声<br/>マイク音声を送り、TTS音声を受け取る"| RTCPeer
-
-  WS -->|"EventRTCSignal<br/>offer/iceをrtcpeerへ渡す"| RTCPeer
-  RTCPeer -->|"EventRTCSignal<br/>answer/iceをブラウザへ返す"| WS
-  RTCPeer -->|"EventRTCPeerAudioFrame<br/>decode済みPCM frameを渡す"| RTCVAD
-  RTCVAD -->|"EventSpeechStart / EventSpeechEnd<br/>発話開始・終了をUIへ通知する"| WS
-  RTCVAD -->|"EventRTCVADStatus<br/>入力音量としきい値をUIへ通知する"| WS
-  RTCVAD -->|"EventRTCSpeechAudio<br/>発話開始、音声、終了を渡す"| STT
-  RTCVAD -.->|"speech startで保留中割り込みを開始する"| GSTORE
-  STT -->|"EventHumanInterimUtterance / EventHumanUtterance<br/>STT interim/final transcriptを流す"| IS
-  IS -.->|"interim transcriptで保留中割り込みを開始する"| GSTORE
-  IS -->|"EventHumanUtterance<br/>final transcriptだけを流す"| UB
-
-  UB -.->|"現在世代idをuser発話に付与する"| GSTORE
-  UB -->|"EventConversationCommitRequest<br/>user発話の保存を要求する"| COMMIT
-  UB -->|"EventConversationCommitRequest<br/>user発話だけをactivityとして監視する"| SR
-
-  COMMIT -.->|"user/agent/tool_call/tool_result履歴を保存する"| HSTORE
-  LLM -.->|"LLM入力用の履歴を読む"| HSTORE
-  LLM -.->|"ひとりごと候補判定用にidle/activeを読む"| ASTORE
-  LLM -.->|"空/非空timelineで割り込みを再開/確定する"| GSTORE
-  GF1 -.->|"最新世代idを読む"| GSTORE
-  GF2 -.->|"最新世代idを読む"| GSTORE
-  GF3 -.->|"最新世代idを読む"| GSTORE
-  SR -.->|"idle timeout後に履歴を空にする"| HSTORE
-  SR -.->|"idle timeout後に世代idを前進させる"| GSTORE
-  SR -.->|"idle timeout後にidleへ更新する"| ASTORE
-  SR -->|"EventSessionReset<br/>reset発火をUIへ通知する"| WS
-
-  COMMIT -->|"EventRealtimeOutput<br/>user/agent表示をUIへ送る"| WS
-  COMMIT -->|"EventLLMRequest<br/>LLM推論を開始する"| LLM
-
-  LLM -->|"EventTimelineItem<br/>speech/wait/toolを出力する"| SA
-  SA -.->|"speech通過時にactiveへ更新する"| ASTORE
-  SA -->|"EventTimelineItem<br/>payloadは変更せず通過させる"| GF1
-  GF1 -->|"EventTimelineItem<br/>通過対象の世代だけを通す"| TTS
-  TTS -->|"EventPlayableSpeech / EventTimelineItem<br/>音声化済みspeechとwait/toolを流す"| GF2
-  GF2 -->|"EventPlayableSpeech / EventTimelineItem<br/>通過対象の世代だけを通す"| SCH
-  SCH -->|"EventScheduledItem<br/>再生時間やwait秒数に従って発火する"| GF3
-  GF3 -->|"EventScheduledItem<br/>通過対象の世代だけを通す"| ROUTER
-
-  RTCPeer -->|"EventRTCPeerOutputSink<br/>下り音声を書けるpeer sinkを通知する"| RTCOut
-  ROUTER -->|"EventRealtimeAudio<br/>再生音声をrtcoutへ渡す"| RTCOut
-  ROUTER -->|"EventConversationCommitRequest<br/>agent発話の保存を要求する"| COMMIT
-  ROUTER -->|"EventToolRequest<br/>実行タイミングのtoolを渡す"| TOOL
-
-  TOOL -->|"tool実行<br/>登録済みhandlerへ処理を委譲する"| ToolRuntime
-  ToolRuntime -.->|"tool結果<br/>handlerの戻り値をtoolcallerへ返す"| TOOL
-  TOOL -->|"EventConversationCommitRequest<br/>read成功/writeエラー結果の保存を要求する"| COMMIT
+  Browser <-.->|"/ws/chat"| WS
+  Browser <-.->|"WebRTC音声"| PEER
+  WS <-->|"EventRTCSignal"| PEER
+  PEER -->|"EventRTCPeerAudioFrame<br/>EventRTCPeerOutputSink"| WAKE
+  WAKE -->|"音声フレーム、接続状態、<br/>EventLocalWakeUtterance"| RT
+  RT <-.->|"WebSocket"| API
+  RT -->|"EventResponseText"| SEG
+  SEG -->|"EventTimelineItem"| TTS
+  TTS -->|"EventPlayableSpeech"| FRAME
+  FRAME -->|"EventAudioFrame"| PACE
+  PACE -->|"EventAudioFrame"| OUT
+  OUT -->|"EventAudioSent"| RT
+  OUT -->|"EventAudioSent"| WS
+  PEER -->|"EventRTCPeerOutputSink"| OUT
+  RT -->|"EventToolRequest"| TOOL
+  TOOL -->|"EventConversationCommitRequest<br/>（ツール結果）"| RT
+  TOOL -->|"EventWhiteboardUpdate"| WS
+  RT -->|"世代変更、表示テキスト、発話開始/終了、<br/>接続状態、EventSessionReset"| WS
 ```
 
 ## 主要な責務
 
-- `interimstopper` は STT 由来の interim transcript で保留中割り込みを開始し、古いAI出力を既存の generationfilter で一時保留する。interim は履歴やLLM入力へ流さない。
-- `utterancebuffer` は STT 由来の final transcript を短時間バッファし、1つの user 発話にまとめて現在世代idを付与する。
-- `rtcpeer` は WebRTC signaling、peer lifecycle、remote track decode、下り音声 sink 通知を担当する。
-- `rtcvad` は decode済みPCMの server VAD、prebuffer、active speaker 制御、speech start 時の保留中割り込み開始、UI向け状態通知を担当する。
-- `stt` は Google Speech-to-Text v2 の streaming recognition と interim/final transcript 出力を担当する。
-- `openaistt` は OpenAI Realtime transcription への WebSocket 接続、24 kHz mono PCM16 への正規化、interim/final transcript 出力を担当する。
-- `rtcout` は agent 音声を WebRTC の下り audio track へ書き込む。
-- `sessionreset` は user 発話の commit request を監視し、一定時間新しい user 発話がなければ hook を実行してから会話履歴をクリアし、世代idを前進させ、agent status を idle に戻し、reset発火をUIへ通知する。
-- `conversationcommitter` は user / agent / tool_call / tool_result を会話履歴Storeへ保存し、保存後に LLM や UI へ振り分ける。
-- `llm` は会話履歴Storeの snapshot と agent status を使って OpenAI Responses API を呼び、Structured Outputs の JSON timeline を `speech` / `wait` / `tool` として検証する。保留中割り込みがある場合は、空 timeline で paused 世代を再開し、非空 timeline で candidate 世代を確定する。
-- `sessionactivate` は LLM 出力を payload 変更なしで通過させ、`speech` item が通過したときに agent status を active に更新する。
-- `generationfilter` は世代id付き event を通過、保留、破棄に分類する。保留中割り込みがない場合は最新世代だけを通し、保留中は candidate 世代を通し、paused 世代を判定確定まで保持する。
-- `tts` は `speech` item を選択中の TTS provider で音声化し、`wait` / `tool` item は順序維持のためそのまま通す。provider は `TTS_PROVIDER` で切り替え、未指定時は ElevenLabs、`voicevox` 指定時は VOICEVOX Engine を使う。
-- STT は `STT_PROVIDER` で切り替え、未指定時は Google Speech-to-Text の `stt`、`openai` 指定時は OpenAI Realtime transcription の `openaistt` を同じ graph 位置に接続する。
-- `scheduler` は `speech` / `wait` / `tool` を同じ timeline として扱い、speech の再生時間や wait 秒数に従って次 item へ進む。
-- `router` は実行タイミングが来た item を PLAY、会話コミッター、toolcaller へ振り分ける。
-- `toolcaller` は local tool を実行し、read 系 tool の結果や write 系 tool のエラー結果を `EventConversationCommitRequest` として会話コミッターへ戻す。write 系 tool の成功結果は commit しない。
+- `wschat` はブラウザとの WebSocket 境界。チャット表示、WebRTC signaling、発話状態、セッションリセット、ホワイトボード更新を JSON でやり取りする。
+- `rtcpeer` は WebRTC の signaling と peer の管理、上り音声（Opus）の decode、下り音声の送信先の通知を担う。
+- `wakegate` は呼びかけ必須モードの間だけ、音声を realtime へ渡さず、ローカルSTT（`local-stt` サービス）で呼びかけを判定する。通過した発話は `EventLocalWakeUtterance` としてテキストで渡す。呼びかけ不要モードや呼びかけ後の会話中は、音声をそのまま通す。詳細は [呼びかけ必須モードの仕様](wake-mode.md)。
+- `realtime` は会話の中心。主な責務は次のとおり。
+  - Realtime API との WebSocket 接続・切断・55分ごとの張り直しと、`session.update`（モデル、VAD、文字起こしモデル、ツール定義、システムプロンプト）の送信
+  - 再接続時に、会話履歴の要約と長期メモリをシステムプロンプトの後ろに付けて文脈を復元する
+  - マイク音声を 24kHz・モノラル PCM16 に変換して API へ送る
+  - API 内蔵の VAD による発話開始で世代を進め、古い応答の読み上げを止める
+  - API の自動応答は使わず、入力確定などの条件がそろったときに `response.create` を送る。応答はテキストだけで受け取り、音声合成は後段に任せる
+  - 割り込みで途中までしか読み上げられなかった応答は、API 側の会話履歴を「中断された」形に書き換えてから次の応答を作る
+  - ユーザー発話（非同期の文字起こし）、アシスタントの発言、ツール呼び出しと結果を会話履歴に記録する
+  - function call を `EventToolRequest` として `toolcaller` に渡し、結果を API に返す。`wait_for_user` は自身で処理する
+  - 呼びかけ必須モードの制御、予約ジョブの実行、無操作時のセッションリセット
+- `speechsegment` は応答テキストの差分を受け取り、句点などで読み上げ単位に分割して `EventTimelineItem` にする。応答の終わりで `EventAgentTimelineEnd` を出す。
+- `tts` は読み上げ単位を、選択中の provider（既定は VOICEVOX）で音声化する。provider は `config.yaml` の `tts.provider` と、画面からの切り替え（`GET` / `PUT /api/tts`）で決まる。
+- `audioframe` は 24kHz・モノラル PCM16 を 20ms 単位のフレームに分割し、`audiopace` が1フレームずつ送信時刻を進め、`rtcout` が 48kHz の Opus に変換して WebRTC で送る。送信したフレームは `EventAudioSent` として realtime と wschat に通知する。realtime は、実際に送信できたテキストを割り込み時の履歴補正に使う。
+- `toolcaller` は registry に登録された local tool の handler を実行し、結果を `EventConversationCommitRequest` として realtime へ戻す。ホワイトボード更新は `wschat` へ直接流す。
+
+## 世代と割り込み
+
+世代idは `internal/states/generation` が保持し、`internal/components/generationcontroller` を通して realtime が進める。
+ユーザーが話し始めたとき（API の `input_audio_buffer.speech_started`）、テキスト入力を受けたとき、接続が切れたときに新しい世代を始め、`EventGenerationChanged` を流す。
+
+後段の `speechsegment`、`tts`、`audioframe`、`audiopace`、`rtcout`、`wschat` には、`generationfilter.Attach` で受信直後の世代判定を付けている。
+現在の世代ではない event は、処理本体に入る前に捨てられるため、各 component は世代を意識せずに処理できる。
+`toolcaller` には `generationfilter.AttachToolRequests` を付けている。古い世代のツール要求は実行せず、「実行前に中断された」という結果を realtime へ返す。
+
+## 会話履歴とメモリ
+
+会話履歴は `internal/states/conversationhistory` が保持し、realtime が記録する。
+Realtime API との接続を張り直すときは、この履歴を Responses API で要約し（`conversation.ContextBuilder`）、システムプロンプトの後ろに付けて文脈を復元する。
+
+長期メモリは `internal/states/memory` が JSON ファイルに保存する。
+接続時には `internal/hooks/memory` の `ContextProvider` が保存済みメモリを文脈として渡す。
+会話終了時には、realtime が会話履歴を取り出し、`CreatorHook.ExecRecords` で保存済みメモリと会話を LLM に渡して、メモリの追加・更新・削除を反映する。詳細は [メモリ機能](hooks/memory.md)。
 
 ## Tool 呼び出し
 
-OpenAI Responses API の function calling は使わない。
-LLM には `{"items":[{"type":"tool","name":"...","args":{...}}]}` 形式の JSON timeline を出力させる。
-1回の LLM 応答に複数の tool item を出せる。system prompt では get 系 tool を末尾に置き、tool 前の speech は最小限とする。
+ツールは Realtime API の function calling で呼び出す。
+ツール定義は `internal/tools/registry` が組み立て（`DefinitionsForRealtime`）、`session.update` で API に渡す。
+API が function call を返すと、realtime がそれを `EventToolRequest` として `toolcaller` に渡し、`toolcaller` が handler を実行して結果を返す。
+realtime は結果を会話履歴に記録し、`function_call_output` として API に返す。
 
-各 tool 定義には `x_tool_mode: "read" | "write"` メタデータを持つ。
-write 系 tool の成功結果は `toolcaller` が会話履歴へ commit せず、LLM への再投入も行わない。
-read 系 tool の成功結果と、write 系 tool のエラー結果は従来どおり `conversationcommitter` 経由で履歴保存し LLM へ再投入する。
-
-`web_search` もこの local tool 経路で扱う。LLM は `web_search` を JSON timeline の `tool` item として呼び出し、`toolcaller` が local handler を実行する。handler 内部では OpenAI Responses API の hosted `web_search` を別 request で使うが、会話 pipeline 上は read 系 local tool と同じく成功結果を `conversationcommitter` へ戻す。引数は `query` のみ、戻り値は `result` のみとする。
-
-## 世代と履歴
-
-世代idは `internal/states/generation` が保持する。
-speech start 判定時に `generation.Store.BeginInterruption()` を呼び、旧世代を paused、新しい発話判定用世代を candidate として扱う。
-STT interim transcript が届く構成では `interimstopper` も同一発話中の初回 interim で `BeginInterruption()` を呼ぶ。
-確定 user 発話の commit は、その時点の現在世代idを使う。
-LLM が candidate 世代に対して空 timeline を返した場合は、誤検知・ひとりごととして paused 世代へ戻り、generationfilter が保留していた event を再開する。
-LLM が非空 timeline を返した場合は、追加発話として candidate 世代を確定し、generationfilter が保留していた paused 世代の event を破棄する。
-interim transcript による割り込み開始はAI出力保留専用であり、会話履歴やLLM入力には反映しない。
-また、長時間 user 発話がない場合は `sessionreset` が世代idをさらに前進させ、reset 前の古い event が後続へ反映されないようにする。
-
-会話履歴は `internal/states/conversationhistory` が保持する。
-LLM request は必ず保存済みの履歴 snapshot から作る。
-古い世代の tool result は実行済みの事実として保存し、`stale` metadata を付ける。
-`sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()` を呼び、次の user 発話で古い会話文脈を LLM に渡さない。
-
-agent status は `internal/states/agentstatus` が保持する。
-起動直後は `idle` で、`llm` は request ごとにこの状態を read する。
-`idle` かつ現在発話が明示依頼・疑問文ではない場合、LLM には「長期間無音だった」後のひとりごと候補として `{"items":[]}` を返してよいことを追加指示する。
-`sessionreset` は idle timeout 到達時に `idle` を write し、`sessionactivate` は `speech` timeline item 通過時に `active` を write する。
-LLM が `{"items":[]}` を返した場合は timeline event が発行されないため、agent status は `idle` のまま維持される。
-
-メモリは `internal/states/memory` が保持する。
-メモリStoreは、メモリ本文、関連タグ、作成更新時刻を JSON file に永続化する。
-`memory.Store.Upsert()` は前後の空白と英字の大文字小文字を無視して同じ本文だけを重複として扱う。言い換えによる重複は、メモリ作成時に LLM が保存済みメモリを見て `update` / `delete` を選ぶことで防ぐ。
-session reset hook は保存済みメモリと reset 前の発話から add / update / delete を生成して適用し、LLM は応答生成前に保存済みメモリを全件取得して system message として注入する。
+各ツールには、成功後に再び応答を生成するかと、そのときの追加指示（`tools.DefinitionWithResponsePolicy`）を設定できる。
+`web_search` も同じ経路の local tool で、handler の内部で Responses API の hosted `web_search` を別の request として呼ぶ。
 
 ## セッションリセット
 
-`CONVERSATION_IDLE_TIMEOUT_SECONDS` で指定した秒数だけ user 発話がない場合、`sessionreset` がリセットを実行する。
-未設定時は 300 秒、`0` は無効化、不正値や負値は既定値として扱う。
+最後の発話から `config.yaml` の `conversation.idle_timeout_seconds`（既定 300 秒、0 で無効）がたつと、realtime がセッションをリセットする。
+判定は realtime の定期処理（`tick`）で行い、応答中・ツール実行中・未送信の音声がある間はリセットしない。
 
-リセット時は登録済み hook の `Exec(context.Context) error` を順番に同期実行し、その後に会話履歴を空にして世代idを進め、agent status を `idle` に更新する。
-hook が error を返してもログに残して後続 hook とリセット処理を継続する。
-その後、`sessionreset` は `EventSessionReset` を `wschat` へ流し、`wschat` が WebSocket の `session_reset` message としてブラウザUIへ配信する。
-UIは `session_reset` を受けると通常画面の直近会話吹き出しを非表示にし、吹き出し算出元のメッセージ一覧を空にする。次の `stt` または `server-stt` 由来 user message で吹き出しを再表示する。
+リセット時は、会話履歴を取り出して空にし、取り出した履歴でメモリ抽出を別 goroutine で起動する。
+そのうえで `EventSessionReset` を `wschat` へ流し、Realtime API との接続を張り直す。
+`wschat` は WebSocket の `session_reset` メッセージとしてブラウザに配信し、UI は直近の会話の吹き出しを消す。
 
 ## 参照元
 
 - `cmd/smart-speaker/main.go`
 - `internal/graph/graph.go`
 - `internal/types/event.go`
-- `internal/types/timeline_item.go`
-- `internal/states/generation/store.go`
-- `internal/states/agentstatus/store.go`
-- `internal/states/conversationhistory/store.go`
-- `internal/states/memory/record.go`
-- `internal/states/memory/store.go`
-- `internal/states/memory/similarity.go`
-- `internal/components/utterancebuffer/stage.go`
-- `internal/components/interimstopper/stage.go`
-- `internal/components/sessionreset/stage.go`
-- `internal/components/conversationcommitter/stage.go`
-- `internal/components/llm/stage.go`
-- `internal/components/sessionactivate/stage.go`
-- `internal/components/generationfilter/stage.go`
-- `internal/components/tts/elevenlabs.go`
-- `internal/components/tts/provider.go`
-- `internal/components/tts/stage.go`
-- `internal/components/tts/voicevox.go`
-- `docs/services/voicevox.md`
-- `internal/components/scheduler/stage.go`
-- `internal/components/router/stage.go`
-- `internal/components/toolcaller/toolcaller.go`
-- `internal/components/rtcpeer/`
-- `internal/components/rtcvad/`
-- `internal/components/stt/`
-- `internal/components/openaistt/`
+- `internal/components/realtime/`
+- `internal/components/wakegate/`
+- `internal/components/speechsegment/stage.go`
+- `internal/components/tts/`
+- `internal/components/audioframe/stage.go`
+- `internal/components/audiopace/stage.go`
 - `internal/components/rtcout/`
+- `internal/components/rtcpeer/`
+- `internal/components/toolcaller/toolcaller.go`
+- `internal/components/generationfilter/connection.go`
+- `internal/components/generationcontroller/controller.go`
+- `internal/components/wschat/`
+- `internal/states/generation/store.go`
+- `internal/states/conversationhistory/store.go`
+- `internal/states/memory/store.go`
+- `internal/hooks/memory/`
+- `internal/tools/registry/registry.go`

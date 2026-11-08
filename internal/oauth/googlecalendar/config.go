@@ -2,16 +2,18 @@ package googlecalendar
 
 import (
 	"fmt"
-	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 const (
-	defaultRedirectURL = "http://localhost:8081/oauth/google/callback"
-	scopeCalendarRead  = "https://www.googleapis.com/auth/calendar.readonly"
+	// DefaultRedirectURL は設定ファイルで指定しない場合のOAuthコールバックURLです。
+	DefaultRedirectURL = "http://localhost:8081/oauth/google/callback"
+	// DefaultScope は設定ファイルで指定しない場合のOAuthスコープです。
+	DefaultScope       = scopeCalendarWrite
 	scopeCalendarWrite = "https://www.googleapis.com/auth/calendar.events"
 )
 
@@ -21,29 +23,35 @@ type Config struct {
 	ClientSecret string
 	RedirectURL  string
 	Scopes       []string
+	// TokenPath はトークンの保存先です。空の場合は data/google_oauth_token.json を使います。
+	TokenPath string
 }
 
-// LoadConfig は環境変数からOAuth設定を読み込みます。
+var (
+	configMu sync.RWMutex
+	current  = Config{RedirectURL: DefaultRedirectURL, Scopes: []string{DefaultScope}}
+)
+
+// Configure は起動時に読み込んだOAuth設定を登録します。
+func Configure(cfg Config) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	current = cfg
+}
+
+func currentConfig() Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return current
+}
+
+// LoadConfig は登録済みのOAuth設定を返します。client id/secret が無い場合はエラーにします。
 func LoadConfig() (Config, error) {
-	clientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
-	clientSecret := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET"))
-	if clientID == "" || clientSecret == "" {
+	cfg := currentConfig()
+	if strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
 		return Config{}, fmt.Errorf("google oauth client id/secret is required")
 	}
-	redirectURL := strings.TrimSpace(os.Getenv("GOOGLE_REDIRECT_URL"))
-	if redirectURL == "" {
-		redirectURL = defaultRedirectURL
-	}
-	scope := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_SCOPE"))
-	if scope == "" {
-		scope = scopeCalendarWrite
-	}
-	return Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		RedirectURL:  redirectURL,
-		Scopes:       []string{scope},
-	}, nil
+	return cfg, nil
 }
 
 // OAuthConfig はoauth2.Configを生成します。
@@ -55,9 +63,4 @@ func OAuthConfig(cfg Config) *oauth2.Config {
 		Scopes:       cfg.Scopes,
 		Endpoint:     google.Endpoint,
 	}
-}
-
-// Scopes は使えるスコープ一覧を返します。
-func Scopes() []string {
-	return []string{scopeCalendarRead, scopeCalendarWrite}
 }

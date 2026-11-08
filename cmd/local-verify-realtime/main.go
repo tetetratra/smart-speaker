@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/localverify"
 	"log"
 	"net"
@@ -42,11 +43,29 @@ func main() {
 	}
 	defer os.RemoveAll(dir)
 	base := "http://" + *fixtureAddr
+	// 検証用の設定を一時ディレクトリに書き出し、リポジトリのconfig.yamlやdataを使わないようにする。
+	configPath := filepath.Join(dir, "config.yaml")
+	config := fmt.Sprintf(`server:
+  ws_addr: %q
+openai:
+  realtime:
+    endpoint: %q
+conversation:
+  idle_timeout_seconds: 0
+memory:
+  store_path: %q
+tts:
+  provider: voicevox
+  voicevox:
+    endpoint: %q
+`, *addr, "ws://"+*fixtureAddr+"/realtime", filepath.Join(dir, "memories.json"), base)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		log.Fatal(err)
+	}
 	overrides := map[string]string{
-		"OPENAI_API_KEY": "local-verification-only", "OPENAI_REALTIME_ENDPOINT": "ws://" + *fixtureAddr + "/realtime",
-		"TTS_PROVIDER": "voicevox", "VOICEVOX_ENDPOINT": base,
-		"MEMORY_STORE_PATH": filepath.Join(dir, "memories.json"), "CONVERSATION_IDLE_TIMEOUT_SECONDS": "0",
-		"SWITCHBOT_TOKEN": "", "SWITCHBOT_SECRET": "", "WS_ADDR": *addr, "RTC_ICE_ADVERTISE_IPS": "",
+		"OPENAI_API_KEY": "local-verification-only", app.ConfigPathEnv: configPath,
+		"SWITCHBOT_TOKEN": "", "SWITCHBOT_SECRET": "", "RTC_ICE_ADVERTISE_IPS": "",
+		"GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "ELEVENLABS_API_KEY": "",
 	}
 	var env []string
 	for _, entry := range os.Environ() {

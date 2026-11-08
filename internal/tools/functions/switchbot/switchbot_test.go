@@ -15,7 +15,7 @@ import (
 )
 
 func newTestClient(server *httptest.Server) *Client {
-	client := NewSwitchbotClient("token", "secret", `{"hub2":"hub-device"}`)
+	client := NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	client.baseURL = server.URL
 	client.http = server.Client()
 	return client

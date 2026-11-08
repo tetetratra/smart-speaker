@@ -7,48 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/tetetratra/smart-speaker/internal/app"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
-
-func TestBuildSTTStageDefaultsToGoogle(t *testing.T) {
-	st, err := buildSTTStage(app.Config{
-		APIKey: "openai",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st == nil {
-		t.Fatal("expected stage")
-	}
-	_ = st.Close()
-}
-
-func TestBuildSTTStageSelectsOpenAI(t *testing.T) {
-	st, err := buildSTTStage(app.Config{
-		APIKey:         "openai",
-		STTProvider:    "openai",
-		OpenAISTTModel: "gpt-realtime-whisper",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st == nil {
-		t.Fatal("expected stage")
-	}
-	_ = st.Close()
-}
-
-func TestBuildSTTStageRejectsUnknownProvider(t *testing.T) {
-	if _, err := buildSTTStage(app.Config{STTProvider: "unknown"}); err == nil {
-		t.Fatal("expected error")
-	}
-}
 
 func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
@@ -57,14 +21,12 @@ func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	}
 	oldRecord, _, err := store.Upsert(memorystate.UpsertInput{
 		Content: "朝はコーヒーを飲む",
-		Tags:    []string{"coffee"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	newRecord, _, err := store.Upsert(memorystate.UpsertInput{
 		Content: "辛い料理が苦手",
-		Tags:    []string{"food"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,9 +56,6 @@ func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	if got.Memories[0].Content != newRecord.Content {
 		t.Fatalf("content = %q, want %q", got.Memories[0].Content, newRecord.Content)
 	}
-	if len(got.Memories[0].Tags) != 1 || got.Memories[0].Tags[0] != "food" {
-		t.Fatalf("tags = %#v, want [food]", got.Memories[0].Tags)
-	}
 	if got.Memories[0].CreatedAt.IsZero() || got.Memories[0].UpdatedAt.IsZero() {
 		t.Fatalf("timestamps must be set: %#v", got.Memories[0])
 	}
@@ -107,7 +66,6 @@ func TestRegisterMemoryAPICreatesMemory(t *testing.T) {
 		createRecord: memorystate.Record{
 			ID:      "memory-1",
 			Content: "ユーザーは朝にコーヒーを飲む",
-			Tags:    []string{"coffee"},
 		},
 	}
 	mux := http.NewServeMux()
@@ -126,7 +84,7 @@ func TestRegisterMemoryAPICreatesMemory(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Memory.ID != "memory-1" || got.Memory.Tags[0] != "coffee" {
+	if got.Memory.ID != "memory-1" {
 		t.Fatalf("response = %#v", got)
 	}
 }
@@ -136,7 +94,6 @@ func TestRegisterMemoryAPIUpdatesMemory(t *testing.T) {
 		updateRecord: memorystate.Record{
 			ID:      "memory-1",
 			Content: "ユーザーは朝に紅茶を飲む",
-			Tags:    []string{"tea"},
 		},
 	}
 	mux := http.NewServeMux()
@@ -155,7 +112,7 @@ func TestRegisterMemoryAPIUpdatesMemory(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Memory.ID != "memory-1" || got.Memory.Tags[0] != "tea" {
+	if got.Memory.ID != "memory-1" {
 		t.Fatalf("response = %#v", got)
 	}
 }
@@ -223,53 +180,6 @@ func TestRegisterMemoryAPIReportsWriteErrors(t *testing.T) {
 				t.Fatalf("status = %d, want %d body=%s", rec.Code, tt.status, rec.Body.String())
 			}
 		})
-	}
-}
-
-func TestManualMemoryServiceCreatesWithRecalculatedTags(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tagger := &fakeMemoryTagger{tags: []string{"coffee", "morning"}}
-	service := &manualMemoryService{store: store, tagger: tagger}
-
-	record, result, err := service.Create(context.Background(), "ユーザーは朝にコーヒーを飲む")
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-	if !result.Created {
-		t.Fatal("Created = false, want true")
-	}
-	if tagger.content != "ユーザーは朝にコーヒーを飲む" {
-		t.Fatalf("tagger content = %q", tagger.content)
-	}
-	if !reflect.DeepEqual(record.Tags, []string{"coffee", "morning"}) {
-		t.Fatalf("tags = %#v", record.Tags)
-	}
-}
-
-func TestManualMemoryServiceUpdatesWithRecalculatedTags(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, _, err := store.Upsert(memorystate.UpsertInput{Content: "古い記憶"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tagger := &fakeMemoryTagger{tags: []string{"tea"}}
-	service := &manualMemoryService{store: store, tagger: tagger}
-
-	updated, err := service.Update(context.Background(), record.ID, "ユーザーは朝に紅茶を飲む")
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	if tagger.content != "ユーザーは朝に紅茶を飲む" {
-		t.Fatalf("tagger content = %q", tagger.content)
-	}
-	if !reflect.DeepEqual(updated.Tags, []string{"tea"}) {
-		t.Fatalf("tags = %#v", updated.Tags)
 	}
 }
 
@@ -362,20 +272,6 @@ func (f *fakeManualMemoryWriter) Delete(id string) error {
 	return f.deleteErr
 }
 
-type fakeMemoryTagger struct {
-	content string
-	tags    []string
-	err     error
-}
-
-func (f *fakeMemoryTagger) CreateTags(ctx context.Context, content string) ([]string, error) {
-	f.content = content
-	if f.err != nil {
-		return nil, f.err
-	}
-	return append([]string(nil), f.tags...), nil
-}
-
 type fakeSwitchBotSceneClient struct {
 	scenes          []switchbot.Scene
 	listErr         error
@@ -397,4 +293,21 @@ func (f *fakeSwitchBotSceneClient) ExecuteScene(ctx context.Context, sceneID str
 		return nil, f.executeErr
 	}
 	return f.executeResult, nil
+}
+
+func TestManualMemoryServiceCreatesAndUpdatesContent(t *testing.T) {
+	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &manualMemoryService{store: store}
+
+	record, result, err := service.Create(context.Background(), "ユーザーは朝にコーヒーを飲む")
+	if err != nil || !result.Created || record.Content != "ユーザーは朝にコーヒーを飲む" {
+		t.Fatalf("Create() = %#v, %#v, %v", record, result, err)
+	}
+	updated, err := service.Update(context.Background(), record.ID, "ユーザーは朝に紅茶を飲む")
+	if err != nil || updated.ID != record.ID || updated.Content != "ユーザーは朝に紅茶を飲む" {
+		t.Fatalf("Update() = %#v, %v", updated, err)
+	}
 }
