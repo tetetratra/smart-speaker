@@ -22,7 +22,7 @@ func TestDefaultWordsAcceptWakeWordNearSentenceStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 判定ごとに会話中の状態を持ち越さないよう、受理のたびに1分以上進める。
+	// 判定ごとに会話中の状態を持ち越さないよう、受理のたびに会話中の時間より長く進める。
 	now := time.Now()
 	for _, test := range []struct {
 		text               string
@@ -40,7 +40,7 @@ func TestDefaultWordsAcceptWakeWordNearSentenceStart(t *testing.T) {
 		{"会議の続きはどうですか", 0.9, false, false},
 		{"起きて、教えて", 0.1, false, false},
 	} {
-		now = now.Add(2 * ConversationTimeout)
+		now = now.Add(2 * DefaultConversationTimeout)
 		d := s.Evaluate(test.text, test.confidence, m.Revision, false, now)
 		if d.Accepted != test.accepted || d.WakeOnly != test.wakeOnly {
 			t.Fatal(test, d)
@@ -50,13 +50,16 @@ func TestDefaultWordsAcceptWakeWordNearSentenceStart(t *testing.T) {
 	if err != nil || !restored.Snapshot(time.Now()).Required {
 		t.Fatal(err)
 	}
-	if d := s.Evaluate("起きて", 0.9, m.Revision-1, false, now.Add(2*ConversationTimeout)); d.Accepted {
+	if d := s.Evaluate("起きて", 0.9, m.Revision-1, false, now.Add(2*DefaultConversationTimeout)); d.Accepted {
 		t.Fatal("旧設定で受理しました")
 	}
 }
 
-func TestWakeKeepsConversationUntilOneMinuteAfterLastUtterance(t *testing.T) {
-	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
+// 会話中の時間は設定値に従う。ここでは1分を指定して確かめる。
+func TestWakeKeepsConversationUntilTimeoutAfterLastUtterance(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ConversationTimeout = time.Minute
+	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), settings)
 	m, _ := s.SetRequired(true, time.Now())
 	now := time.Now()
 	if !s.Snapshot(now).Gated() {
@@ -97,18 +100,20 @@ func TestWakeKeepsConversationUntilOneMinuteAfterLastUtterance(t *testing.T) {
 func TestSettingsAreValidatedAndOnlyRequiredIsPersisted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mode.json")
 	for _, settings := range []Settings{
-		{Words: []string{"！？"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5},
-		{Words: []string{"ねえ"}, MaxPrefix: -1, MinConfidence: 0.5, MinSimilarity: 0.5},
-		{Words: []string{"ねえ"}, MaxPrefix: 21, MinConfidence: 0.5, MinSimilarity: 0.5},
-		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: math.NaN(), MinSimilarity: 0.5},
-		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0},
-		{MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5},
+		{Words: []string{"！？"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5, ConversationTimeout: time.Minute},
+		{Words: []string{"ねえ"}, MaxPrefix: -1, MinConfidence: 0.5, MinSimilarity: 0.5, ConversationTimeout: time.Minute},
+		{Words: []string{"ねえ"}, MaxPrefix: 21, MinConfidence: 0.5, MinSimilarity: 0.5, ConversationTimeout: time.Minute},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: math.NaN(), MinSimilarity: 0.5, ConversationTimeout: time.Minute},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0, ConversationTimeout: time.Minute},
+		{MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5, ConversationTimeout: time.Minute},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5},
+		{Words: []string{"ねえ"}, MaxPrefix: 4, MinConfidence: 0.5, MinSimilarity: 0.5, ConversationTimeout: -time.Second},
 	} {
 		if _, err := NewStore(path, settings); err == nil {
 			t.Fatal("不正な設定を受理しました", settings)
 		}
 	}
-	settings := Settings{Words: []string{"ヘイ", "hello"}, MaxPrefix: 0, MinConfidence: 0.55, MinSimilarity: 1}
+	settings := Settings{Words: []string{"ヘイ", "hello"}, MaxPrefix: 0, MinConfidence: 0.55, MinSimilarity: 1, ConversationTimeout: DefaultConversationTimeout}
 	s, err := NewStore(path, settings)
 	if err != nil {
 		t.Fatal(err)
@@ -121,10 +126,10 @@ func TestSettingsAreValidatedAndOnlyRequiredIsPersisted(t *testing.T) {
 	if d := s.Evaluate("へい、天気", 0.9, m.Revision, false, now); !d.Accepted {
 		t.Fatal("カタカナの言葉がひらがなの認識結果に一致しません", d)
 	}
-	if d := s.Evaluate("Hello, weather", 0.9, m.Revision, false, now.Add(2*ConversationTimeout)); !d.Accepted {
+	if d := s.Evaluate("Hello, weather", 0.9, m.Revision, false, now.Add(2*DefaultConversationTimeout)); !d.Accepted {
 		t.Fatal("英字の大小を区別しました", d)
 	}
-	if d := s.Evaluate("ねえヘイ", 0.9, m.Revision, false, now.Add(4*ConversationTimeout)); d.Accepted {
+	if d := s.Evaluate("ねえヘイ", 0.9, m.Revision, false, now.Add(4*DefaultConversationTimeout)); d.Accepted {
 		t.Fatal("許容文字数を超える前置きを許しました", d)
 	}
 	// 保存するのは必須モードだけで、判定の設定は起動時に渡した値を使う。
@@ -155,8 +160,11 @@ func TestLegacySavedSettingsAreIgnored(t *testing.T) {
 	}
 }
 
+// 質問の後に会話中にする時間も、呼びかけ後と同じ設定値に従う。ここでは1分を指定して確かめる。
 func TestAwakenStartsConversationOnlyWhenRequired(t *testing.T) {
-	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
+	settings := DefaultSettings()
+	settings.ConversationTimeout = time.Minute
+	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), settings)
 	now := time.Now()
 	s.Awaken(now)
 	if s.Snapshot(now).Awake {

@@ -73,6 +73,32 @@ type LocalWakeUtterance struct {
 	WakeOnly bool
 }
 
+const EventWakeTranscription EventKind = 121
+
+// WakeTranscriptionの結果の種類。
+const (
+	// WakeTranscriptionJudgedは呼びかけを判定した結果。受理・拒否の両方を含む。
+	WakeTranscriptionJudged = "judged"
+	// WakeTranscriptionDiscardedReconnectは端末の再接続で、判定せずに捨てた認識結果。
+	WakeTranscriptionDiscardedReconnect = "discarded_reconnect"
+	// WakeTranscriptionDiscardedModeChangeは設定の変更で、判定せずに捨てた認識結果。
+	WakeTranscriptionDiscardedModeChange = "discarded_mode_change"
+)
+
+// WakeTranscriptionは呼びかけ必須モードでローカルSTTが書き起こした1回の発話と、その扱い。
+// 呼びかけの見逃しを調べるため、拒否・破棄した発話も含めて画面のログへ送る。
+type WakeTranscription struct {
+	PeerID, Text string
+	Outcome      string
+	// Confidence以降は判定した結果（Outcomeがjudgedのとき）。破棄したときはConfidenceにSTTの信頼度だけを入れる。
+	Confidence, Similarity      float64
+	Matched, Accepted, WakeOnly bool
+	// Awakeは判定の時点で会話中だったか。
+	Awake bool
+	// ErrorはSTTの失敗内容。成功したときは空。
+	Error string
+}
+
 // ScheduledPrompt は登録済みの自然言語ジョブや外部エージェントの通知を会話処理へ渡す。
 type ScheduledPrompt struct {
 	ID, Name, Instruction string

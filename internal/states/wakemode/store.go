@@ -13,8 +13,8 @@ import (
 	"unicode/utf8"
 )
 
-// ConversationTimeoutは、呼びかけ後に呼びかけなしで話せる時間。最後のユーザー発話から数える。
-const ConversationTimeout = time.Minute
+// DefaultConversationTimeoutは、呼びかけ後に呼びかけなしで話せる時間の既定値。最後のユーザー発話から数える。
+const DefaultConversationTimeout = 5 * time.Minute
 
 // DefaultWordsは既定の呼びかけ。STTが漢字・かなのどちらで書き起こしても通るよう両方を持ち、
 // 短い「起きて」をSTTが聞き違えやすい「オッケー」も含める。
@@ -33,11 +33,13 @@ type Settings struct {
 	MaxPrefix     int     `json:"max_prefix"`
 	MinConfidence float64 `json:"min_confidence"`
 	MinSimilarity float64 `json:"min_similarity"`
+	// ConversationTimeoutは、呼びかけ後に呼びかけなしで話せる時間。最後のユーザー発話から数える。
+	ConversationTimeout time.Duration `json:"-"`
 }
 
 // DefaultSettingsは環境変数で指定しない場合の判定の設定。
 func DefaultSettings() Settings {
-	return Settings{Words: append([]string(nil), DefaultWords...), MaxPrefix: 4, MinConfidence: 0.55, MinSimilarity: 0.65}
+	return Settings{Words: append([]string(nil), DefaultWords...), MaxPrefix: 4, MinConfidence: 0.55, MinSimilarity: 0.65, ConversationTimeout: DefaultConversationTimeout}
 }
 
 // Configは画面・ツールで切り替える必須モードと、固定の判定の設定。保存するのはRequiredだけ。
@@ -124,6 +126,9 @@ func validSettings(c Settings) error {
 			return fmt.Errorf("判定のしきい値は0より大きく1以下で指定してください")
 		}
 	}
+	if c.ConversationTimeout <= 0 {
+		return fmt.Errorf("呼びかけなしで話せる時間は0より大きい値で指定してください")
+	}
 	return nil
 }
 func (s *Store) snapshotLocked(now time.Time) Snapshot {
@@ -206,7 +211,7 @@ func (s *Store) Evaluate(text string, confidence float64, revision uint64, faile
 		s.last = &d
 	}
 	if d.Accepted {
-		s.awakeUntil = now.Add(ConversationTimeout)
+		s.awakeUntil = now.Add(s.config.ConversationTimeout)
 	}
 	return d
 }
@@ -216,7 +221,7 @@ func (s *Store) Touch(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.config.Required && now.Before(s.awakeUntil) {
-		s.awakeUntil = now.Add(ConversationTimeout)
+		s.awakeUntil = now.Add(s.config.ConversationTimeout)
 	}
 }
 
@@ -225,7 +230,7 @@ func (s *Store) Awaken(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.config.Required {
-		s.awakeUntil = now.Add(ConversationTimeout)
+		s.awakeUntil = now.Add(s.config.ConversationTimeout)
 	}
 }
 

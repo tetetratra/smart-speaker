@@ -39,6 +39,7 @@ services:
     environment:
       LOCAL_STT_MODEL: ${LOCAL_STT_MODEL:-small}
       LOCAL_STT_THREADS: ${LOCAL_STT_THREADS:-4}
+      LOCAL_STT_VAD_THRESHOLD: ${LOCAL_STT_VAD_THRESHOLD:-0.35}
     volumes:
       - local-stt-model-cache:/models
 

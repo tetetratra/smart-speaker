@@ -95,14 +95,17 @@ func TestBuildConfigDefaults(t *testing.T) {
 	if cfg.Voicevox.SpeakerID != 1 || cfg.Voicevox.SpeedScale != nil {
 		t.Errorf("Voicevox = %+v", cfg.Voicevox)
 	}
-	if cfg.ConversationIdleTimeout != 5*time.Minute {
+	if cfg.ConversationIdleTimeout != 30*time.Minute {
 		t.Errorf("ConversationIdleTimeout = %s", cfg.ConversationIdleTimeout)
 	}
 	if len(cfg.RTCIceAdvertiseIPs) != 0 {
 		t.Errorf("RTCIceAdvertiseIPs = %#v", cfg.RTCIceAdvertiseIPs)
 	}
+	if cfg.WakeEnergyThreshold != 0.005 {
+		t.Errorf("WakeEnergyThreshold = %v, want 0.005", cfg.WakeEnergyThreshold)
+	}
 	w := cfg.WakeSettings
-	if len(w.Words) != 3 || w.MaxPrefix != 4 || w.MinConfidence != 0.55 || w.MinSimilarity != 0.65 {
+	if len(w.Words) != 3 || w.MaxPrefix != 4 || w.MinConfidence != 0.55 || w.MinSimilarity != 0.65 || w.ConversationTimeout != 5*time.Minute {
 		t.Errorf("WakeSettings = %+v", w)
 	}
 }
@@ -145,6 +148,8 @@ wake:
   max_prefix: 0
   min_confidence: 0.4
   min_similarity: 0.7
+  energy_threshold: 0.003
+  conversation_timeout_seconds: 120
 switchbot:
   device_map:
     hub2: hub-device
@@ -210,8 +215,11 @@ google_calendar:
 	if want := map[string]string{"hub2": "hub-device"}; !reflect.DeepEqual(cfg.SwitchBot.DeviceMap, want) {
 		t.Errorf("SwitchBot.DeviceMap = %#v", cfg.SwitchBot.DeviceMap)
 	}
+	if cfg.WakeEnergyThreshold != 0.003 {
+		t.Errorf("WakeEnergyThreshold = %v, want 0.003", cfg.WakeEnergyThreshold)
+	}
 	w := cfg.WakeSettings
-	if want := []string{"おきて", "起きて", "オッケー"}; !reflect.DeepEqual(w.Words, want) || w.MaxPrefix != 0 || w.MinConfidence != 0.4 || w.MinSimilarity != 0.7 {
+	if want := []string{"おきて", "起きて", "オッケー"}; !reflect.DeepEqual(w.Words, want) || w.MaxPrefix != 0 || w.MinConfidence != 0.4 || w.MinSimilarity != 0.7 || w.ConversationTimeout != 2*time.Minute {
 		t.Errorf("WakeSettings = %+v", w)
 	}
 }
@@ -234,11 +242,33 @@ func TestBuildConfigRTCIceAdvertiseIPsEnvOverridesYAML(t *testing.T) {
 
 func TestBuildConfigFallsBackOnOutOfRangeNumbers(t *testing.T) {
 	cfg := mustLoadFromYAML(t, "conversation:\n  idle_timeout_seconds: -1\ntts:\n  voicevox:\n    speed_scale: -1\n", minimalEnv)
-	if cfg.ConversationIdleTimeout != 5*time.Minute {
+	if cfg.ConversationIdleTimeout != 30*time.Minute {
 		t.Errorf("ConversationIdleTimeout = %s, want default", cfg.ConversationIdleTimeout)
 	}
 	if cfg.Voicevox.SpeedScale != nil {
 		t.Errorf("Voicevox.SpeedScale = %v, want nil", *cfg.Voicevox.SpeedScale)
+	}
+}
+
+// 呼びかけなしで話せる時間は、無操作リセットより短くなければ起動時にエラーにする。
+// 無操作リセットが無効（0）なら比べない。
+func TestBuildConfigRequiresWakeTimeoutShorterThanIdleTimeout(t *testing.T) {
+	for _, content := range []string{
+		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 300\n",
+		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 301\n",
+		"conversation:\n  idle_timeout_seconds: 240\n",
+	} {
+		if _, err := loadFromYAML(t, content, minimalEnv); err == nil {
+			t.Errorf("無操作リセット以上の会話中の時間を受理しました: %q", content)
+		}
+	}
+	for _, content := range []string{
+		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 299\n",
+		"conversation:\n  idle_timeout_seconds: 0\nwake:\n  conversation_timeout_seconds: 3600\n",
+	} {
+		if _, err := loadFromYAML(t, content, minimalEnv); err != nil {
+			t.Errorf("%q: %v", content, err)
+		}
 	}
 }
 
@@ -305,5 +335,18 @@ func TestBuildConfigReadsAgentBridgeURLFromYAMLAndTokenFromEnv(t *testing.T) {
 	want := AgentBridgeConfig{URL: "http://100.64.0.2:8787", Token: "secret"}
 	if cfg.AgentBridge != want {
 		t.Fatalf("AgentBridge = %#v, want %#v", cfg.AgentBridge, want)
+	}
+}
+
+// 発話とみなす音量の範囲外の値は、起動時にエラーにする。
+func TestBuildConfigRejectsOutOfRangeWakeEnergyThreshold(t *testing.T) {
+	for _, value := range []string{"0", "-0.001", "1.5"} {
+		if _, err := loadFromYAML(t, "wake:\n  energy_threshold: "+value+"\n", minimalEnv); err == nil {
+			t.Errorf("範囲外の音量しきい値を受理しました: %s", value)
+		}
+	}
+	cfg, err := loadFromYAML(t, "wake:\n  energy_threshold: 1\n", minimalEnv)
+	if err != nil || cfg.WakeEnergyThreshold != 1 {
+		t.Errorf("WakeEnergyThreshold = %v, err = %v", cfg.WakeEnergyThreshold, err)
 	}
 }

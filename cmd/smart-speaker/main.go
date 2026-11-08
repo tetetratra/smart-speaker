@@ -222,7 +222,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		}
 	}
 	generationfilter.AttachToolRequests(stages.tool, generationStore)
-	stages.wakegate = wakegate.NewStage(wakegate.Config{Store: services.WakeMode, STT: &wakegate.HTTPClient{Endpoint: cfg.LocalSTTEndpoint}})
+	stages.wakegate = wakegate.NewStage(wakegate.Config{Store: services.WakeMode, STT: &wakegate.HTTPClient{Endpoint: cfg.LocalSTTEndpoint}, EnergyThreshold: cfg.WakeEnergyThreshold})
 	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs})
 	if err != nil {
 		closeStages(stages.all()...)
@@ -306,6 +306,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	wake := add(s.wakegate)
 	connectKinds(g, peer, wake, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
 	connectKinds(g, wake, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink, types.EventLocalWakeUtterance)
+	connectKinds(g, wake, chat, types.EventWakeTranscription)
 	connectKinds(g, rt, segment, types.EventResponseText)
 	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
 	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)

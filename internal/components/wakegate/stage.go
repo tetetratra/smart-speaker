@@ -16,7 +16,8 @@ type Config struct {
 	Store *wakemode.Store
 	STT   Transcriber
 	// EnergyThresholdは発話とみなす音量（RMS）、MinVoicedは発話とみなす最短の有声時間。
-	// スマホのマイクで短い「起きて」が捨てられないよう、実測（最大RMS 0.02前後・有声60〜120ms）をもとに決めた。
+	// MinVoicedは、スマホのマイクで短い「起きて」が捨てられないよう、実測（有声60〜120ms）をもとに決めた。
+	// EnergyThresholdはconfig.yamlのwake.energy_thresholdで決める（未指定なら0.005）。
 	EnergyThreshold float64
 	MinVoiced       time.Duration
 }
@@ -49,7 +50,7 @@ type result struct {
 func NewStage(cfg Config) *graph.Stage {
 	node := &graph.Stage{Name: "wakegate", Upstream: make(chan types.Event), Downstream: make(chan types.Event), CloseFn: func() error { return nil }}
 	if cfg.EnergyThreshold <= 0 {
-		cfg.EnergyThreshold = 0.006
+		cfg.EnergyThreshold = 0.005
 	}
 	if cfg.MinVoiced <= 0 {
 		cfg.MinVoiced = 60 * time.Millisecond
@@ -99,17 +100,23 @@ func NewStage(cfg Config) *graph.Stage {
 				b := peers[r.peer]
 				if b == nil || b.epoch != r.epoch || cfg.Store == nil {
 					log.Printf("wakegate: 端末の再接続で認識結果を破棄 peer=%s text=%q", r.peer, r.transcript.Text)
+					emit(types.Event{Kind: types.EventWakeTranscription, Payload: transcription(r, types.WakeTranscriptionDiscardedReconnect)})
 					continue
 				}
 				mode := cfg.Store.Snapshot(time.Now())
 				if !mode.Required || mode.Revision != r.revision {
 					log.Printf("wakegate: 設定の変更で認識結果を破棄 peer=%s text=%q", r.peer, r.transcript.Text)
+					emit(types.Event{Kind: types.EventWakeTranscription, Payload: transcription(r, types.WakeTranscriptionDiscardedModeChange)})
 					continue
 				}
 				// 呼びかけの確定前に区切った発話は、会話中へ移った後に結果が届いても受け付ける。
 				d := cfg.Store.Evaluate(r.transcript.Text, r.transcript.Confidence, r.revision, r.err != nil, time.Now())
 				// 原因調査用に、STTがどう書き起こしたかと判定を残す。呼びかけのない発話の内容も含む。
 				log.Printf("wakegate: 判定 peer=%s text=%q confidence=%.3f similarity=%.3f matched=%t accepted=%t wake_only=%t awake=%t err=%v", r.peer, r.transcript.Text, d.Confidence, d.Similarity, d.Matched, d.Accepted, d.WakeOnly, mode.Awake, r.err)
+				tr := transcription(r, types.WakeTranscriptionJudged)
+				tr.Confidence, tr.Similarity = d.Confidence, d.Similarity
+				tr.Matched, tr.Accepted, tr.WakeOnly, tr.Awake = d.Matched, d.Accepted, d.WakeOnly, mode.Awake
+				emit(types.Event{Kind: types.EventWakeTranscription, Payload: tr})
 				if d.Accepted {
 					emit(types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, WakeOnly: d.WakeOnly}})
 				}
@@ -219,6 +226,16 @@ func NewStage(cfg Config) *graph.Stage {
 	}
 	return node
 }
+
+// transcriptionは、画面のログへ送る認識結果を作る。判定の値は呼び出し側で埋める。
+func transcription(r result, outcome string) types.WakeTranscription {
+	tr := types.WakeTranscription{PeerID: r.peer, Text: r.transcript.Text, Outcome: outcome, Confidence: r.transcript.Confidence}
+	if r.err != nil {
+		tr.Error = r.err.Error()
+	}
+	return tr
+}
+
 func rms(pcm []byte) float64 {
 	var sum float64
 	for i := 0; i+1 < len(pcm); i += 2 {

@@ -20,9 +20,11 @@ import (
 
 // Config holds runtime settings.
 type Config struct {
-	WakeModeStorePath          string
-	WakeSettings               wakemode.Settings
-	LocalSTTEndpoint           string
+	WakeModeStorePath string
+	WakeSettings      wakemode.Settings
+	LocalSTTEndpoint  string
+	// WakeEnergyThresholdは、呼びかけ必須モードで発話とみなすマイクの音量（RMS、0より大きく1以下）。
+	WakeEnergyThreshold        float64
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
@@ -200,6 +202,10 @@ type configFile struct {
 		MaxPrefix        *int     `yaml:"max_prefix"`
 		MinConfidence    *float64 `yaml:"min_confidence"`
 		MinSimilarity    *float64 `yaml:"min_similarity"`
+		// EnergyThresholdは、発話とみなすマイクの音量（RMS）。小さい声も拾うには下げる。
+		EnergyThreshold *float64 `yaml:"energy_threshold"`
+		// ConversationTimeoutSecondsは、呼びかけ後に呼びかけなしで話せる時間（秒）。
+		ConversationTimeoutSeconds *int `yaml:"conversation_timeout_seconds"`
 	} `yaml:"wake"`
 	SwitchBot struct {
 		DeviceMap map[string]string `yaml:"device_map"`
@@ -264,6 +270,22 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		iceIPs = splitComma(raw)
 	}
 
+	idleTimeout := conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds)
+	wake := wakeSettings(file)
+	// 無操作リセットで会話が終わった後も呼びかけなしで話せると、文脈のない会話が始まってしまうため、
+	// 呼びかけなしで話せる時間は無操作リセットより短くする。無操作リセットが無効（0）なら比べない。
+	if idleTimeout > 0 && wake.ConversationTimeout >= idleTimeout {
+		return Config{}, fmt.Errorf("wake.conversation_timeout_seconds (%s) must be shorter than conversation.idle_timeout_seconds (%s)", wake.ConversationTimeout, idleTimeout)
+	}
+
+	energyThreshold := DefaultWakeEnergyThreshold
+	if v := file.Wake.EnergyThreshold; v != nil {
+		if *v <= 0 || *v > 1 {
+			return Config{}, fmt.Errorf("wake.energy_threshold (%g) must be greater than 0 and at most 1", *v)
+		}
+		energyThreshold = *v
+	}
+
 	return Config{
 		APIKey:                     apiKey,
 		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
@@ -274,11 +296,12 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		ResponsesModel:             responsesModel,
 		SubagentModel:              stringOr(file.OpenAI.SubagentModel, "gpt-5.4"),
 		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
-		WakeSettings:               wakeSettings(file),
+		WakeSettings:               wake,
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
+		WakeEnergyThreshold:        energyThreshold,
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
 		Memory:                     memoryCfg,
-		ConversationIdleTimeout:    conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds),
+		ConversationIdleTimeout:    idleTimeout,
 		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
 		ElevenLabs: ElevenLabsConfig{
 			APIKey:  env("ELEVENLABS_API_KEY"),
@@ -312,6 +335,10 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 	}, nil
 }
 
+// DefaultWakeEnergyThresholdは、呼びかけ必須モードで発話とみなす音量（RMS）の既定値。
+// 小さい声の「起きて」を取りこぼしていたため、当初の0.006から下げた。
+const DefaultWakeEnergyThreshold = 0.005
+
 // wakeSettingsは呼びかけの判定の設定を作る。値の範囲はwakemode.NewStoreで検証する。
 func wakeSettings(file configFile) wakemode.Settings {
 	settings := wakemode.DefaultSettings()
@@ -324,6 +351,9 @@ func wakeSettings(file configFile) wakemode.Settings {
 	}
 	if file.Wake.MinSimilarity != nil {
 		settings.MinSimilarity = *file.Wake.MinSimilarity
+	}
+	if file.Wake.ConversationTimeoutSeconds != nil {
+		settings.ConversationTimeout = time.Duration(*file.Wake.ConversationTimeoutSeconds) * time.Second
 	}
 	return settings
 }
@@ -352,7 +382,7 @@ func positiveFloat(value *float64) *float64 {
 
 // conversationIdleTimeoutは会話終了までの無操作時間を返す。0は無効、負の値は既定値にする。
 func conversationIdleTimeout(seconds *int) time.Duration {
-	const defaultConversationIdleTimeout = 5 * time.Minute
+	const defaultConversationIdleTimeout = 30 * time.Minute
 	if seconds == nil || *seconds < 0 {
 		return defaultConversationIdleTimeout
 	}

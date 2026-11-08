@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-// awakeは呼びかけ後の会話中で、最後の発話から1分間は呼びかけなしで話せる状態。
+// awakeは呼びかけ後の会話中で、最後の発話から設定された時間（既定5分）は呼びかけなしで話せる状態。
 type WakeMode = { required: boolean, awake?: boolean }
 
 export function WakeModeControl({ backendURL }: { backendURL: URL }) {

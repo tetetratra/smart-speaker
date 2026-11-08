@@ -52,8 +52,9 @@ openai:
     # endpoint: ""
 
 conversation:
-  # 会話終了（履歴リセット）までの無操作時間（秒）。0 で無効。既定: 300
-  # idle_timeout_seconds: 300
+  # 会話終了（履歴リセット）までの無操作時間（秒）。0 で無効。既定: 1800
+  # 0 以外では wake.conversation_timeout_seconds より長くしてください（短いと起動時にエラーになります）。
+  # idle_timeout_seconds: 1800
 
 memory:
   # メモリの追加・更新・削除の判断に使う Responses API のモデル。既定: openai.responses_model と同じ
@@ -110,6 +111,14 @@ wake:
 
   # 言葉との類似度の下限（0より大きく1以下）。既定: 0.65
   # min_similarity: 0.65
+
+  # 発話とみなすマイクの音量（RMS、0より大きく1以下）。小さい声も拾うには下げます。既定: 0.005
+  # 下げすぎると雑音もローカルSTTへ送られ、認識の待ちが増えます。
+  # energy_threshold: 0.005
+
+  # 呼びかけ後に、呼びかけなしで話せる時間（秒）。最後の発話から数えます。0より大きい値。既定: 300
+  # conversation.idle_timeout_seconds が 0 以外なら、それより短くしてください。
+  # conversation_timeout_seconds: 300
 
 switchbot:
   # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし

@@ -132,8 +132,29 @@ func TestDisabledPassesAudioWithoutSTT(t *testing.T) {
 	default:
 	}
 }
+
+// transcribedは、画面のログへ送る認識結果を1件受け取る。
+func (r *gateRig) transcribed(t *testing.T) types.WakeTranscription {
+	t.Helper()
+	select {
+	case e := <-r.node.Downstream:
+		p, ok := e.Payload.(types.WakeTranscription)
+		if !ok || e.Kind != types.EventWakeTranscription || p.PeerID != "a" {
+			t.Fatal(e)
+		}
+		return p
+	case <-r.ctx.Done():
+		t.Fatal(r.ctx.Err())
+	}
+	return types.WakeTranscription{}
+}
+
+// wakeは、受理した認識結果のログと、Realtimeへ渡す発話を順に受け取る。
 func (r *gateRig) wake(t *testing.T, text string) types.LocalWakeUtterance {
 	t.Helper()
+	if tr := r.transcribed(t); tr.Text != text || tr.Outcome != types.WakeTranscriptionJudged || !tr.Accepted {
+		t.Fatal("受理した認識結果のログが違います", tr)
+	}
 	select {
 	case e := <-r.node.Downstream:
 		p, ok := e.Payload.(types.LocalWakeUtterance)
@@ -148,7 +169,8 @@ func (r *gateRig) wake(t *testing.T, text string) types.LocalWakeUtterance {
 }
 func TestUtterancesAreGatedUntilWakeAndThenPassRawAudio(t *testing.T) {
 	r := newGate(t, true)
-	// 呼びかけがない・文頭にない・低信頼度・認識失敗の発話は送らない。
+	// 呼びかけがない・文頭にない・低信頼度・認識失敗の発話はRealtimeへ送らない。
+	// 見逃しを調べるため、書き起こしと判定は画面のログへ送る。
 	for _, answer := range []result{
 		{transcript: Transcript{Text: "続きも教えて", Confidence: 0.9}},
 		{transcript: Transcript{Text: "明日は早く家を出るので起きて", Confidence: 0.9}},
@@ -157,6 +179,13 @@ func TestUtterancesAreGatedUntilWakeAndThenPassRawAudio(t *testing.T) {
 	} {
 		r.utterance(t)
 		r.stt.answers <- answer
+		tr := r.transcribed(t)
+		if tr.Text != answer.transcript.Text || tr.Outcome != types.WakeTranscriptionJudged || tr.Accepted {
+			t.Fatal("拒否した認識結果のログが違います", tr)
+		}
+		if answer.err != nil && tr.Error != answer.err.Error() {
+			t.Fatal("STTの失敗内容がログにありません", tr)
+		}
 		r.noEvent(t)
 	}
 	r.utterance(t)
@@ -210,6 +239,14 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 				r.sink(t, true)
 			}
 			r.stt.answers <- result{transcript: Transcript{Text: "起きて、今何時", Confidence: 0.9}}
+			// 捨てた認識結果も、理由とともに画面のログへ送る。
+			want := types.WakeTranscriptionDiscardedModeChange
+			if change == "peer" {
+				want = types.WakeTranscriptionDiscardedReconnect
+			}
+			if tr := r.transcribed(t); tr.Text != "起きて、今何時" || tr.Outcome != want || tr.Accepted {
+				t.Fatal("捨てた認識結果のログが違います", tr)
+			}
 			r.noEvent(t)
 		})
 	}
@@ -218,7 +255,7 @@ func TestPendingRecognitionIsDiscardedAfterModeChangeOrReconnect(t *testing.T) {
 // 小さめの声の短い「起きて」（RMS約0.009・有声100ms）もSTTへ送り、それより小さい音は送らない。
 func TestShortQuietUtteranceIsSentToSTT(t *testing.T) {
 	r := newGate(t, true)
-	// RMS約0.003はしきい値（0.006）未満なので発話とみなさない。
+	// RMS約0.003はしきい値（0.005）未満なので発話とみなさない。
 	r.frameAt(t, 100)
 	for i := 0; i < 8; i++ {
 		r.frame(t, false)
