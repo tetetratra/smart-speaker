@@ -33,6 +33,8 @@ type OpenAIClient struct {
 	endpoint      string
 	client        *http.Client
 	maxOperations int
+	// now は今の日時。古くなった記憶を判断する基準として渡す。テストで差し替える。
+	now func() time.Time
 }
 
 const (
@@ -54,6 +56,8 @@ type Operation struct {
 type ExistingMemory struct {
 	ID      string `json:"id"`
 	Content string `json:"content"`
+	// UpdatedAt は日本時間のRFC3339。古くなって不要になった記憶を見分けるために渡す。
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
@@ -87,6 +91,7 @@ func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
 		endpoint:      endpoint,
 		client:        httpClient,
 		maxOperations: maxOperations,
+		now:           time.Now,
 	}, nil
 }
 
@@ -95,7 +100,7 @@ func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.Con
 	if len(conversation) == 0 {
 		return nil, nil
 	}
-	inputJSON, err := encodeOperationInput(conversation, existing)
+	inputJSON, err := encodeOperationInput(c.now(), conversation, existing)
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +147,10 @@ func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[str
 	return readOpenAIResponseBody(resp.Body)
 }
 
-const memoryOperationInstructions = `あなたはスマートスピーカーの長期記憶を管理します。
-入力 JSON の conversation（ユーザーとアシスタントの会話）と existing_memories（保存済みの長期記憶）を読み、長期記憶に対する変更操作だけを operations として出力してください。
-
-## 保存する価値の判断基準
-「数週間後の別の会話で、これを知っているとアシスタントの応答が明確に良くなるか」で判断してください。
-迷ったら保存しないでください。変更が不要なら operations を空配列にしてください。多くの会話では空配列が正解です。
+// RetentionCriteria は、長期記憶に残す価値があるかの判断基準。
+// 会話終了時の抽出と、会話中にメモリを操作するツール（internal/tools/functions/memory）で共有する。
+const RetentionCriteria = `「数週間後の別の会話で、これを知っているとアシスタントの応答が明確に良くなるか」で判断してください。
+迷ったら保存しないでください。変更が不要なら operations を空配列にしてください。多くの会話では空配列が正解です（下の「不要になった記憶の削除」に当たる記憶があるときを除きます）。
 
 保存してよいもの:
 - ユーザー本人が話した、長く変わらないプロフィール（住んでいる地域、仕事、経歴、家族など）
@@ -161,16 +164,33 @@ const memoryOperationInstructions = `あなたはスマートスピーカーの�
 - 「〜を頼むことがある」「〜をよく尋ねる」のような利用傾向
 - アシスタント自体の動作確認・開発・テストの話（音の回り込み、マイク、端末での検証など）
 - アシスタントの発言だけを根拠にした推測。ユーザーの発言を根拠にしてください
-- 会話ログの生コピーや秘密情報らしき内容
+- 会話ログの生コピーや秘密情報らしき内容`
+
+const memoryOperationInstructions = `あなたはスマートスピーカーの長期記憶を管理します。
+入力 JSON の now（今の日時）、conversation（ユーザーとアシスタントの会話）、existing_memories（保存済みの長期記憶。updated_at は最後に書き換えた日時）を読み、長期記憶に対する変更操作だけを operations として出力してください。
+
+## 保存する価値の判断基準
+` + RetentionCriteria + `
 
 ユーザーが「覚えておいて」と明示した内容は、上の基準にかかわらず保存してください。ただしパスワード、暗証番号、カード番号などの秘密情報は保存しないでください。「忘れて」と言われた内容は delete してください。
+アシスタントが「覚えておこうか？」などと保存を提案し、ユーザーが断った内容は保存しないでください。
 
 ## 操作
 - add: existing_memories にない新しい事実を追加します。target_id は空文字にしてください。
 - update: existing_memories の記憶が変わった・補足されたとき、target_id の記憶を content で置き換えます。同じ話題は add せず update で1件にまとめてください。好みや状況が別のものに変わった場合も、delete ではなく新しい内容への update にしてください。
-- delete: ユーザーが「もう当てはまらない」「間違っている」「忘れて」と言い、置き換える内容がない記憶だけを target_id で削除します。content は空文字にしてください。
+- delete: ユーザーが「もう当てはまらない」「間違っている」「忘れて」と言い、置き換える内容がない記憶を target_id で削除します。下の「不要になった記憶の削除」に当たる記憶も削除します。content は空文字にしてください。
 - existing_memories と同じ内容を言い換えて add しないでください。
 - target_id には existing_memories の id をそのまま使ってください。1つの記憶に対する操作は1件までにしてください。
+
+## 不要になった記憶の削除
+existing_memories には、ユーザーに頼まれて保存した、その場限りの記憶も含まれます（例: 特定の日の天気、その日の予定、一度きりの用事）。
+今回の会話で話題に出ていなくても、existing_memories を1件ずつ見て、次に当たる記憶は delete してください。
+- 特定の日付に結びついた天気・予定・用事・出来事で、その日付が now の日付より前のもの（例: now が 2026-11-09 なら「2026-11-08の天気は晴れ」「2026-10-25に歯医者の予約がある」は削除）
+- 日付が書かれていないその場限りの情報で、updated_at から3日以上たったもの
+次の記憶は削除しないでください。
+- 日付が now の日付と同じか、それより後のもの（例: 今日の天気、来月の旅行の予定）
+- 誕生日や記念日のように、毎年くり返す日付
+- 上の「保存してよいもの」に当たる記憶（長く変わらないプロフィール、好き嫌い、習慣、応答の仕方の希望）。updated_at が古くても削除しません
 
 ## content の書き方
 - content は1件につき1つの話題を、「ユーザーは」で始まる短い自然文で書いてください。
@@ -199,6 +219,7 @@ type conversationTurn struct {
 }
 
 type operationInput struct {
+	Now              string             `json:"now"`
 	ExistingMemories []ExistingMemory   `json:"existing_memories"`
 	Conversation     []conversationTurn `json:"conversation"`
 }
@@ -225,11 +246,11 @@ func conversationTurns(records []types.ConversationRecord) []conversationTurn {
 	return turns
 }
 
-func encodeOperationInput(conversation []conversationTurn, existing []ExistingMemory) (string, error) {
+func encodeOperationInput(now time.Time, conversation []conversationTurn, existing []ExistingMemory) (string, error) {
 	if existing == nil {
 		existing = []ExistingMemory{}
 	}
-	raw, err := json.Marshal(operationInput{ExistingMemories: existing, Conversation: conversation})
+	raw, err := json.Marshal(operationInput{Now: now.In(japanLocation).Format(time.RFC3339), ExistingMemories: existing, Conversation: conversation})
 	if err != nil {
 		return "", fmt.Errorf("memory openai: encode operation input: %w", err)
 	}

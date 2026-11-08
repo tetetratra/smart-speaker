@@ -72,7 +72,7 @@ func TestBuildConfigDefaults(t *testing.T) {
 		"RealtimeVAD":                {cfg.RealtimeVAD, "semantic_vad"},
 		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-4o-mini-transcribe"},
 		"RealtimeEndpoint":           {cfg.RealtimeEndpoint, ""},
-		"Memory.Model":               {cfg.Memory.Model, "gpt-5.4-nano-2026-03-17"},
+		"Memory.Model":               {cfg.Memory.Model, "gpt-5.6-luna"},
 		"Memory.StorePath":           {cfg.Memory.StorePath, "data/memories.json"},
 		"WakeModeStorePath":          {cfg.WakeModeStorePath, "data/wake-mode.json"},
 		"AutomationStorePath":        {cfg.AutomationStorePath, "data/automations.json"},

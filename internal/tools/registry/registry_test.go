@@ -1,7 +1,9 @@
 package registry
 
 import (
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -184,6 +186,22 @@ func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
 	}
 	if _, ok := reg.Handlers()["schedule_timer"]; ok {
 		t.Fatal("schedule_timer handler should not be registered")
+	}
+}
+
+// メモリの保存先があるときだけ、メモリのツールを登録する。一覧だけが読み取り。
+func TestRegistryMemoryToolsOnlyWithStore(t *testing.T) {
+	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := New(Config{Memory: store})
+	assertToolMode(t, reg, "list_memories", tools.ToolModeRead)
+	for _, name := range []string{"add_memory", "update_memory", "delete_memory"} {
+		assertToolMode(t, reg, name, tools.ToolModeWrite)
+	}
+	if _, ok := New(Config{}).Handlers()["add_memory"]; ok {
+		t.Fatal("保存先がないのにメモリのツールが登録されました")
 	}
 }
 

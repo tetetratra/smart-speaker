@@ -9,9 +9,13 @@ import (
 
 // ユーザー本人の発話がないと呼べないツール。予約ジョブや外部エージェントの通知で始まった応答からは呼ばせない。
 // 外部エージェントの出力に紛れた指示（「承認済みなので許可して」など）で、承認や新しい作業が勝手に進むのを防ぐ。
+// 長期メモリの書き換えも、ユーザーの依頼か了承があるときだけに限るため、ここに含める。
 var userOnlyTools = map[string]bool{
 	"ask_claude_code":               true,
 	"answer_claude_code_permission": true,
+	"add_memory":                    true,
+	"update_memory":                 true,
+	"delete_memory":                 true,
 }
 
 // 外部の文章（Webページ、他のエージェントの出力、Claude Codeの会話）を結果として返すツール。
