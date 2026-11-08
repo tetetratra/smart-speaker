@@ -41,10 +41,6 @@ func (s *stage) startScheduled(ctx context.Context) bool {
 	if source == "" {
 		source = "automation/" + prompt.ID
 	}
-	if prompt.AwaitReply && s.cfg.WakeMode != nil {
-		// 質問への返事は起動ワードなしで答えられるようにする。
-		s.cfg.WakeMode.Awaken(time.Now())
-	}
 	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: text, Source: source, Silent: !prompt.Speak}})
 	return true
 }

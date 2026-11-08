@@ -111,6 +111,4 @@ type ScheduledPrompt struct {
 	ExpiresAt time.Time
 	// Valid が false を返したものは実行せずに捨てる（承認依頼が既に片付いた場合など）。
 	Valid func() bool
-	// AwaitReply は、読み上げた後にユーザーの返事を待つことを表す。起動ワード必須でも返事を受け付ける。
-	AwaitReply bool
 }
