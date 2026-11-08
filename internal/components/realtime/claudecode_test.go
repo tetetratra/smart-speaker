@@ -48,18 +48,24 @@ func TestBlockedMachineToolBySource(t *testing.T) {
 	s.rememberMachineGeneration(2, "agent/e1")
 	s.rememberMachineGeneration(3, "tool/read_claude_code_session")
 	for _, generation := range []types.GenerationID{1, 2, 3} {
-		for _, name := range []string{"ask_claude_code", "answer_claude_code_permission"} {
+		for _, name := range []string{"ask_claude_code", "answer_claude_code_permission", "add_memory", "update_memory", "delete_memory"} {
 			if s.blockedMachineTool(types.ToolRequest{Name: name, GenerationID: generation}) == "" {
 				t.Fatalf("世代%dで%sが止まりません", generation, name)
 			}
 		}
-		if s.blockedMachineTool(types.ToolRequest{Name: "set_whiteboard", GenerationID: generation}) != "" {
-			t.Fatal("ほかのツールまで止まりました")
+		// userOnlyTools 以外のツールは止めない。
+		for _, name := range []string{"set_whiteboard", "list_memories"} {
+			if s.blockedMachineTool(types.ToolRequest{Name: name, GenerationID: generation}) != "" {
+				t.Fatalf("ほかのツール（%s）まで止まりました", name)
+			}
 		}
 	}
 	// ユーザー本人の発話で始まった世代では呼べる。
-	if s.blockedMachineTool(types.ToolRequest{Name: "answer_claude_code_permission", GenerationID: 4}) != "" {
-		t.Fatal("ユーザーの世代で止まりました")
+	// 提案に「うん」と答えた場合も、ユーザーの世代なのでメモリを書き換えられる。
+	for _, name := range []string{"answer_claude_code_permission", "add_memory", "update_memory", "delete_memory"} {
+		if s.blockedMachineTool(types.ToolRequest{Name: name, GenerationID: 4}) != "" {
+			t.Fatalf("ユーザーの世代で%sが止まりました", name)
+		}
 	}
 }
 

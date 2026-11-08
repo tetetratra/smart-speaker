@@ -178,7 +178,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, toolModes, responsePolicies := buildToolRegistry(cfg, services)
+	toolSchemas, toolHandlers, toolModes, responsePolicies := buildToolRegistry(cfg, memoryStore, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
@@ -233,7 +233,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
+func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -243,6 +243,7 @@ func buildToolRegistry(cfg app.Config, services runtimeServices) ([]any, map[str
 	reg := registry.New(registry.Config{
 		WakeMode:        services.WakeMode,
 		Automations:     services.Automations,
+		Memory:          memoryStore,
 		ClaudeCode:      services.ClaudeCode,
 		SwitchBotClient: switchBotClient,
 		SwitchBotScenes: scenes,

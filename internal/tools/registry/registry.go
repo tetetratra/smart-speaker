@@ -3,9 +3,11 @@ package registry
 import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
+	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
@@ -31,6 +33,7 @@ type entry struct {
 type Config struct {
 	WakeMode           *wakemode.Store
 	Automations        *automations.Service
+	Memory             *memorystate.Store
 	ClaudeCode         *agentbridge.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
@@ -77,6 +80,12 @@ func New(cfg Config) *Registry {
 	if cfg.Automations != nil {
 		for _, operation := range []string{"register_job", "list_jobs", "update_job", "delete_job"} {
 			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
+			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
+		}
+	}
+	if cfg.Memory != nil {
+		for _, operation := range memorytool.Operations {
+			t := &memorytool.Tool{Store: cfg.Memory, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
