@@ -57,8 +57,10 @@ worktreeは消えることがあるので、以下はリポジトリの本来の
    (cd services/agent-bridge && npm install)
    ```
 3. LaunchAgentの設定ファイル（plist）を書き出します。リポジトリ直下で実行すると、`node` と `direnv` の場所、リポジトリの場所が埋まります。
-   ブリッジは `direnv exec` 経由で起動し、`.envrc` の環境変数を受け取ります。
-   `PATH` には `git` の場所を含めます。`git` は、セッションの一覧でworktreeを判定するためにSDKが使います。
+   起動するのは `bin/smart-speaker-agent-bridge` です。このスクリプトが `direnv exec` で `.envrc` を読み込んでから、ブリッジを起動します。macOSの「バックグラウンドでのアクティビティ」の通知や一覧には、このスクリプトの名前が出ます。
+   `PATH` には、`node` と `direnv` の場所に加えて、次のものを含めます。
+   - `git`（`/usr/bin`）。セッションの一覧でworktreeを判定するためにSDKが使います。
+   - `/usr/sbin`。`.envrc` の中で `ipconfig` などを使っている場合に必要です。
    ```sh
    NODE="$(node -p process.execPath)"
    DIRENV="$(command -v direnv)"
@@ -71,18 +73,14 @@ worktreeは消えることがあるので、以下はリポジトリの本来の
      <string>com.tetetratra.smart-speaker.agent-bridge</string>
      <key>ProgramArguments</key>
      <array>
-       <string>$DIRENV</string>
-       <string>exec</string>
-       <string>$PWD</string>
-       <string>$NODE</string>
-       <string>$PWD/services/agent-bridge/src/main.ts</string>
+       <string>$PWD/services/agent-bridge/bin/smart-speaker-agent-bridge</string>
      </array>
      <key>WorkingDirectory</key>
      <string>$PWD/services/agent-bridge</string>
      <key>EnvironmentVariables</key>
      <dict>
        <key>PATH</key>
-       <string>$(dirname "$NODE"):$(dirname "$DIRENV"):/usr/bin:/bin</string>
+       <string>$(dirname "$NODE"):$(dirname "$DIRENV"):/usr/bin:/bin:/usr/sbin:/sbin</string>
        <key>LANG</key>
        <string>ja_JP.UTF-8</string>
      </dict>
@@ -121,11 +119,11 @@ Tailscaleのアクセス制御で、サーバーからMacの待ち受けポー�
 
 | メソッドとパス | 用途 |
 | --- | --- |
-| `POST /tasks {input, session_id}` | 作業を始める。`202 {task_id, session_id}`。409は同じセッションが作業中、429は同時実行数の上限、404はセッションがない |
+| `POST /tasks {input, session_id, workdir}` | 作業を始める。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続き（`session_id` あり）はセッションを始めた場所で再開する。`202 {task_id, session_id, workdir}`。400はない名前（候補の一覧つき）、409は同じセッションが作業中、429は同時実行数の上限、404はセッションがない |
 | `POST /permissions/{request_id} {allow, message}` | 承認依頼に答える。`204`。404は保留中の依頼がない |
 | `POST /tasks/{task_id}/cancel` | 作業を止める。`204` |
 | `POST /sessions/{session_id}/cancel` | セッションで実行中の作業を止める。`204`。404は実行中の作業がない |
 | `GET /tasks/{task_id}` | 作業の状態（動作確認用） |
-| `GET /sessions?limit=20` | 作業ディレクトリのセッション一覧（新しい順）。実行中なら `task_id` も入る |
+| `GET /sessions?limit=20` | すべての候補のセッション一覧（新しい順）。`{workdirs, sessions}` を返し、各セッションに `workdir` が入る。実行中なら `task_id` も入る |
 | `GET /sessions/{session_id}/messages?limit=10&offset=0` | 会話の内容。`offset` は新しい側から数える |
 | `GET /healthz` | 死活確認 |
