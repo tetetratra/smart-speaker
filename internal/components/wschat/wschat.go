@@ -212,17 +212,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
-	case types.EventRTCVADStatus:
-		status, ok := evt.Payload.(types.RTCVADStatus)
-		if !ok {
-			return nil, "", false
-		}
-		msg = map[string]any{
-			"type":        "rtc_vad_status",
-			"input_level": status.InputLevel,
-			"threshold":   status.Threshold,
-			"captured_at": status.CapturedAt.Format(time.RFC3339Nano),
-		}
 	case types.EventWhiteboardUpdate:
 		update, ok := evt.Payload.(types.WhiteboardUpdate)
 		if !ok {
@@ -240,16 +229,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 		msg = map[string]any{
 			"type":         "session_reset",
 			"requested_at": reset.RequestedAt.Format(time.RFC3339Nano),
-		}
-	case types.EventAgentSpeechPlaybackEnd:
-		end, ok := evt.Payload.(types.AgentSpeechPlaybackEnd)
-		if !ok {
-			return nil, "", false
-		}
-		msg = map[string]any{
-			"type":          "agent_speech_end",
-			"generation_id": uint64(end.GenerationID),
-			"completed_at":  end.CompletedAt.Format(time.RFC3339Nano),
 		}
 	default:
 		return nil, "", false

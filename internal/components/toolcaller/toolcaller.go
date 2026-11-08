@@ -28,11 +28,8 @@ type toolCaller struct {
 	history   *toolhistory.Store
 }
 
-func NewStage(handlers map[string]tools.Handler, toolModes map[string]string) *graph.Stage {
-	return NewStageWithHistory(handlers, toolModes, nil)
-}
-
-func NewStageWithHistory(handlers map[string]tools.Handler, toolModes map[string]string, history *toolhistory.Store) *graph.Stage {
+// NewStage は tool の実行 stage を作る。history を渡すと、実行の開始と終了をツール呼び出し履歴に記録する。
+func NewStage(handlers map[string]tools.Handler, toolModes map[string]string, history *toolhistory.Store) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}

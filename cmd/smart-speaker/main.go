@@ -170,7 +170,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory operation creator: %w", err)
 	}
 	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
-		History:          historyStore,
 		OperationCreator: memoryOperationCreator,
 		Memory:           memoryStore,
 	})
@@ -214,7 +213,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStageWithHistory(toolHandlers, toolModes, services.ToolHistory)
+	stages.tool = toolcaller.NewStage(toolHandlers, toolModes, services.ToolHistory)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)

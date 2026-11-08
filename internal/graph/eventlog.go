@@ -14,23 +14,17 @@ type EventDetailFormatter func(types.Event) string
 
 func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
 	return map[types.EventKind]struct{}{
-		types.EventRTCVADStatus:      {},
-		types.EventRealtimeAudio:     {},
 		types.EventAudioFrame:        {},
 		types.EventAudioSent:         {},
 		types.EventResponseText:      {},
 		types.EventRTCPeerAudioFrame: {},
-		types.EventRTCSpeechAudio:    {},
 	}
 }
 
 func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 	return map[types.EventKind]EventDetailFormatter{
-		types.EventHumanUtterance:            formatOutputLineDetail,
-		types.EventHumanInterimUtterance:     formatOutputLineDetail,
 		types.EventSpeechEnd:                 formatSpeechEventDetail,
 		types.EventRealtimeOutput:            formatOutputLineDetail,
-		types.EventRealtimeAudio:             formatRealtimeAudioDetail,
 		types.EventToolRequest:               formatToolRequestDetail,
 		types.EventWhiteboardUpdate:          formatWhiteboardUpdateDetail,
 		types.EventRTCSignal:                 formatRTCSignalDetail,
@@ -38,9 +32,7 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventLLMRequest:                formatLLMRequestDetail,
 		types.EventTimelineItem:              formatTimelineItemDetail,
 		types.EventPlayableSpeech:            formatPlayableSpeechDetail,
-		types.EventScheduledItem:             formatScheduledItemDetail,
 		types.EventAgentTimelineEnd:          formatAgentTimelineEndDetail,
-		types.EventAgentSpeechPlaybackEnd:    formatAgentSpeechPlaybackEndDetail,
 	}
 }
 
@@ -50,16 +42,6 @@ func (g *Graph) shouldLogForwardEvent(kind types.EventKind) bool {
 	}
 	_, suppressed := g.suppressedForwardLogKinds[kind]
 	return !suppressed
-}
-
-func (g *Graph) RegisterEventDetailFormatter(kind types.EventKind, fn EventDetailFormatter) {
-	if g == nil {
-		return
-	}
-	if g.eventDetailFormatters == nil {
-		g.eventDetailFormatters = map[types.EventKind]EventDetailFormatter{}
-	}
-	g.eventDetailFormatters[kind] = fn
 }
 
 func (g *Graph) eventDetail(evt types.Event) (string, bool) {
@@ -134,20 +116,6 @@ func formatToolRequestDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatRealtimeAudioDetail(evt types.Event) string {
-	audio, ok := evt.Payload.(types.OutputAudio)
-	if !ok {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("audio_bytes=%d", len(audio.Audio)),
-	}
-	if audio.Role != "" {
-		parts = append(parts, fmt.Sprintf("role=%s", audio.Role))
-	}
-	return strings.Join(parts, ", ")
-}
-
 func formatSpeechEventDetail(evt types.Event) string {
 	speech, ok := evt.Payload.(types.SpeechEvent)
 	if !ok {
@@ -207,9 +175,6 @@ func formatTimelineItemDetail(evt types.Event) string {
 	if item.Text != "" {
 		parts = append(parts, fmt.Sprintf("text=%s", quoteText(item.Text)))
 	}
-	if item.ToolName != "" {
-		parts = append(parts, fmt.Sprintf("tool=%s", item.ToolName))
-	}
 	return strings.Join(parts, ", ")
 }
 
@@ -227,25 +192,6 @@ func formatAgentTimelineEndDetail(evt types.Event) string {
 		return ""
 	}
 	return fmt.Sprintf("generation=%d", end.GenerationID)
-}
-
-func formatAgentSpeechPlaybackEndDetail(evt types.Event) string {
-	end, ok := evt.Payload.(types.AgentSpeechPlaybackEnd)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("generation=%d, completed_at=%s", end.GenerationID, end.CompletedAt.Format(time.RFC3339Nano))
-}
-
-func formatScheduledItemDetail(evt types.Event) string {
-	switch payload := evt.Payload.(type) {
-	case types.PlayableSpeech:
-		return fmt.Sprintf("speech=%s, generation=%d", quoteText(payload.Text), payload.GenerationID)
-	case types.ToolRequest:
-		return fmt.Sprintf("tool=%s, generation=%d", payload.Name, payload.GenerationID)
-	default:
-		return ""
-	}
 }
 
 func formatRTCSignalDetail(evt types.Event) string {

@@ -44,16 +44,14 @@ func TestStagePassesThroughNonSpeechTimelineItemsAndAgentTimelineEnd(t *testing.
 	go stage.Run(ctx)
 	defer stage.Close()
 
-	waitItem := types.TimelineItem{Kind: types.TimelineKindWait, Sec: 1}
-	toolItem := types.TimelineItem{Kind: types.TimelineKindTool, ToolName: "timer"}
+	// speech 以外の item は音声化せず、そのまま下流へ流す。
+	otherItem := types.TimelineItem{Kind: "other", Text: "読み上げない"}
 	go func() {
-		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: waitItem}
-		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: toolItem}
+		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: otherItem}
 		stage.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd}
 	}()
 
-	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: waitItem})
-	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: toolItem})
+	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: otherItem})
 	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventAgentTimelineEnd})
 	if len(synth.Calls()) != 0 {
 		t.Fatalf("expected no synthesize calls, got %v", synth.Calls())

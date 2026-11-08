@@ -4,44 +4,50 @@
 
 `internal/graph` は stage 間の接続と event 転送だけを担当します。
 業務判断、世代判定、履歴保存、tool result の扱いは各 component 側に閉じます。
+接続は `cmd/smart-speaker/main.go` の `wireGraph` で、event の種類ごとに張ります。全体の流れは [アーキテクチャ](architecture.md) を参照してください。
 
 ## 主要 event
 
-- `EventHumanInterimUtterance`: STT の未確定テキスト。AI出力保留の早期シグナルとして使い、履歴やLLM入力には流さない。
-- `EventHumanUtterance`: STT の確定テキスト。
-- `EventConversationCommitRequest`: user / agent / tool_call / tool_result の履歴保存要求。
-- `EventLLMRequest`: LLM component への推論要求。
-- `EventTimelineItem`: LLM が返す `speech` / `wait` / `tool` item。
-- `EventPlayableSpeech`: TTS 済みの speech item。
-- `EventScheduledItem`: scheduler が実行タイミングに到達した item。
-- `EventToolRequest`: router から toolcaller へ渡す tool 実行要求。
-- `EventRealtimeOutput`: UI 表示用の user / agent message。
-- `EventRealtimeAudio`: rtcout 再生用の agent 音声。
-- `EventRTCPeerAudioFrame`: rtcpeer から rtcvad へ渡す decode 済み PCM frame。
-- `EventRTCSpeechAudio`: rtcvad から stt へ渡す発話開始、音声 frame、発話終了。
-- `EventRTCPeerOutputSink`: rtcpeer から rtcout へ通知する WebRTC 下り音声 sink。
-- `EventSessionReset`: idle timeout によるセッション reset 通知。
-- `EventAgentTimelineEnd`: LLM が当該 generation の timeline item をすべて発行し終えた印。
-- `EventAgentSpeechPlaybackEnd`: scheduler が当該 generation の timeline（speech 再生待ち・wait・tool）を完了した印。`wschat` が `agent_speech_end` として UI へ通知する。
+- `EventRTCSignal`: wschat と rtcpeer の間でやり取りする WebRTC signaling（offer / answer / ICE、音量）。
+- `EventRTCPeerAudioFrame`: rtcpeer が decode した上り音声の PCM frame。wakegate を経由して realtime へ渡る。
+- `EventRTCPeerOutputSink`: rtcpeer が通知する WebRTC 下り音声の送信先。rtcout と、wakegate 経由で realtime が受け取る。
+- `EventLocalWakeUtterance`: 呼びかけ必須モード中に、wakegate がローカルSTTで呼びかけと判定した発話のテキスト。
+- `EventLLMRequest`: realtime 内部で扱うテキスト入力（呼びかけと判定された発話、予約ジョブ）。他の component からは流れてこない。
+- `EventGenerationChanged`: realtime が新しい世代を始めた通知。後段は古い世代の event を捨てる。
+- `EventSpeechStart` / `EventSpeechEnd`: Realtime API の VAD による発話開始・終了。wschat が UI へ通知する。
+- `EventRealtimeOutput`: UI 表示用の user / agent メッセージ。
+- `EventRealtimeStatus`: Realtime API との接続状態。
+- `EventResponseText`: realtime が受け取った応答テキストの差分。speechsegment が読み上げ単位に分割する。
+- `EventTimelineItem`: speechsegment が作る読み上げ単位（`speech` item）。
+- `EventAgentTimelineEnd`: 1つの応答の読み上げ単位をすべて出し終えた印。
+- `EventPlayableSpeech`: tts が音声化した読み上げ単位。
+- `EventAudioFrame`: audioframe が 20ms 単位に分割した音声フレーム。audiopace を経て rtcout へ渡る。
+- `EventAudioSent`: rtcout が送信し終えたフレームの通知。realtime は割り込み時の履歴補正に、wschat は表示に使う。
+- `EventToolRequest`: realtime から toolcaller へ渡すツール実行要求。
+- `EventConversationCommitRequest`: toolcaller から realtime へ戻すツール実行結果。
+- `EventWhiteboardUpdate`: toolcaller（`set_whiteboard`）から wschat へ渡すホワイトボード更新。
+- `EventSessionReset`: realtime が無操作でセッションをリセットした通知。wschat が UI へ `session_reset` を送る。
 
 ## 共有Store
 
-- `internal/states/generation` は最新世代idと保留中割り込みを保持する。VAD speech start や interim transcript 到着時は `BeginInterruption()` で旧世代を paused、新しい発話判定用世代を candidate として扱う。LLM の空 timeline では `ResumeIfPending()` で paused 世代を再開し、非空 timeline では `ConfirmIfPending()` で candidate 世代を確定する。
-- `internal/states/conversationhistory` は LLM に渡す会話履歴を保持する。
-- `internal/states/agentstatus` は LLM がひとりごと候補判定で参照する `idle` / `active` 状態を保持する。
-- Store は graph node ではなく、必要な component へ依存注入する。
-- `sessionreset` は idle timeout 到達時に `conversationhistory.Store.Reset()`、`generation.Store.Next()`、`agentstatus.Store.SetIdle()` を呼び、履歴クリア、古い世代の抑止、ひとりごと候補判定の再有効化を同時に行う。
-- `sessionactivate` は `speech` timeline item 通過時に `agentstatus.Store.SetActive()` を呼び、LLM 応答が始まったセッションを active に戻す。
+Store は graph node ではなく、必要な component へ依存注入する。
+
+- `internal/states/generation` は最新の世代idを保持する。realtime が `generationcontroller` を通して進め、後段の component は `generationfilter.Attach` で受信直後に現在の世代かを判定する。
+- `internal/states/conversationhistory` は会話履歴を保持する。realtime が記録し、再接続時の文脈の復元と、会話終了時のメモリ抽出に使う。
+- `internal/states/memory` は長期メモリを JSON ファイルに保持する。
+- `internal/states/wakemode` は呼びかけ必須モードのオン・オフと判定の設定を保持する。
+- `internal/states/toolhistory` はツール呼び出し履歴の最新200件をメモリ上に保持する。
+- `internal/states/userlocation` は現在地API（`/api/location`）で受け取った最後の場所をメモリ上に保持する。
 
 ## セッションリセット
 
-- `sessionreset` は `utterancebuffer` から出る user の `EventConversationCommitRequest` を横付けで監視する。
-- `conversation.idle_timeout_seconds` 秒だけ user 発話がない場合、登録済み hook の `Exec(ctx)` を同期実行し、会話履歴を空にして世代idを前進させ、agent status を `idle` にする。
-- `conversation.idle_timeout_seconds: 0` の場合、idle reset は無効になる。
+- realtime が定期処理（`tick`）で、最後の発話から `conversation.idle_timeout_seconds` 秒たったかを判定する。応答中・ツール実行中・未送信の音声がある間はリセットしない。
+- リセット時は会話履歴を取り出して空にし、取り出した履歴でメモリ抽出を起動して、Realtime API との接続を張り直す。
+- `conversation.idle_timeout_seconds: 0` の場合、無操作リセットは無効になる。
 - reset 用の graph event として `EventSessionReset` を発行し、`wschat` が UI へ `session_reset` を通知する。
 
 ## function calling
 
-OpenAI function calling 用の event と payload は削除済みです。
-tool 呼び出しは LLM が Structured Outputs の JSON timeline 内の `tool` item として出力し、scheduler / router を通って `toolcaller` へ到達します。
-1 応答に複数の tool item を出せます。各 tool 定義の `x_tool_mode` が `write` の場合、成功結果は `toolcaller` が会話履歴へ commit せず LLM への再投入も行いません。read 系 tool の成功結果と write 系 tool のエラー結果だけが `EventConversationCommitRequest` として `conversationcommitter` へ渡ります。
+ツールは Realtime API の function calling で呼び出します。
+realtime が API の function call を `EventToolRequest` として toolcaller へ渡し、toolcaller の実行結果を `function_call_output` として API へ返します。
+成功後に再び応答を生成するかどうかは、ツールごとの応答方針（`tools.DefinitionWithResponsePolicy`）で決まります。

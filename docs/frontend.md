@@ -124,8 +124,6 @@ sequenceDiagram
   - remote stream の Web Audio graph を切断して再接続し、現在再生中の下り音声を中断する。
   - `isAiSpeaking` を `false` にする。
   - 発話検知を `検出中`、STT を `認識中` にする。
-- `agent_speech_end`
-  - `isAiSpeaking` を `false` にする（AI ターンのタイムライン処理完了）。
 - `message`（agent）
   - 非空 `text` 受信時に `isAiSpeaking` を `true` にする。
 - `message`（user、STT 確定）
@@ -134,8 +132,6 @@ sequenceDiagram
   - `isAiSpeaking` を `false` にする。
 - 通常画面の `.live-bubble`
   - `isAiSpeaking === true` のとき `live-bubble-ai-speaking` クラスでネオン風ボーダーを表示する。
-- `rtc_vad_status`
-  - 入力音量としきい値を更新する。
 - `whiteboard_update`
   - 空文字でない `content` を whiteboard の末尾に追記する。
   - 通常画面では追記時に whiteboard のスクロール位置を末尾へ移動する。

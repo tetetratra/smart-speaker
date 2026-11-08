@@ -252,9 +252,8 @@ func TestNewCreatorHookValidatesConfig(t *testing.T) {
 		cfg  CreatorHookConfig
 		want string
 	}{
-		{name: "history", cfg: CreatorHookConfig{}, want: "history is required"},
-		{name: "operation creator", cfg: CreatorHookConfig{History: &fakeHistory{}}, want: "operation creator is required"},
-		{name: "memory", cfg: CreatorHookConfig{History: &fakeHistory{}, OperationCreator: &fakeOperationCreator{}}, want: "memory is required"},
+		{name: "operation creator", cfg: CreatorHookConfig{}, want: "operation creator is required"},
+		{name: "memory", cfg: CreatorHookConfig{OperationCreator: &fakeOperationCreator{}}, want: "memory is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -266,27 +265,31 @@ func TestNewCreatorHookValidatesConfig(t *testing.T) {
 	}
 }
 
-func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationCreator, store *fakeMemoryWriter) *CreatorHook {
+// testHookは、会話終了時に realtime が渡す履歴（fakeHistory）で ExecRecords を呼ぶためのテスト用の包み。
+type testHook struct {
+	*CreatorHook
+	history *fakeHistory
+}
+
+func (h testHook) Exec(ctx context.Context) error {
+	return h.ExecRecords(ctx, h.history.records)
+}
+
+func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationCreator, store *fakeMemoryWriter) testHook {
 	t.Helper()
 	hook, err := NewCreatorHook(CreatorHookConfig{
-		History:          history,
 		OperationCreator: creator,
 		Memory:           store,
 	})
 	if err != nil {
 		t.Fatalf("NewCreatorHook() error = %v", err)
 	}
-	return hook
+	return testHook{CreatorHook: hook, history: history}
 }
 
+// fakeHistoryは、realtime が会話終了時に取り出す会話履歴の代わり。
 type fakeHistory struct {
 	records []types.ConversationRecord
-}
-
-func (f *fakeHistory) Snapshot() []types.ConversationRecord {
-	out := make([]types.ConversationRecord, len(f.records))
-	copy(out, f.records)
-	return out
 }
 
 type fakeOperationCreator struct {
