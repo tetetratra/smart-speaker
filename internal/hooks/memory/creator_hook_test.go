@@ -275,6 +275,21 @@ func (h testHook) Exec(ctx context.Context) error {
 	return h.ExecRecords(ctx, h.history.records)
 }
 
+// 古くなった記憶を見分けられるよう、保存済みメモリの更新日時を日本時間で渡す。
+func TestCreatorHookPassesUpdatedAtInJapanTime(t *testing.T) {
+	creator := &fakeOperationCreator{}
+	store := &fakeMemoryWriter{records: []memorystate.Record{
+		{ID: "1", Content: "ユーザーの2026-11-01の天気は晴れ", UpdatedAt: time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)},
+	}}
+	hook := mustCreatorHook(t, &fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "おはよう"}}}, creator, store)
+	if err := hook.Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(creator.existing) != 1 || creator.existing[0].UpdatedAt != "2026-11-01T09:30:00+09:00" {
+		t.Fatalf("existing = %#v", creator.existing)
+	}
+}
+
 func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationCreator, store *fakeMemoryWriter) testHook {
 	t.Helper()
 	hook, err := NewCreatorHook(CreatorHookConfig{

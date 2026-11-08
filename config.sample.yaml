@@ -31,7 +31,7 @@ rtc:
   #   - 192.168.0.10
 
 openai:
-  # 長い履歴の要約・メモリ抽出の既定モデル・Web検索に使う Responses API のモデル。
+  # 長い履歴の要約・Web検索に使う Responses API のモデル（メモリの抽出は memory.model）。
   # 既定: "gpt-5.4-nano-2026-03-17"
   # responses_model: "gpt-5.4-nano-2026-03-17"
 
@@ -54,8 +54,8 @@ conversation:
   # idle_timeout_seconds: 1800
 
 memory:
-  # メモリの追加・更新・削除の判断に使う Responses API のモデル。既定: openai.responses_model と同じ
-  # model: ""
+  # メモリの追加・更新・削除の判断に使う Responses API のモデル。既定: "gpt-5.6-luna"
+  # model: "gpt-5.6-luna"
 
   # メモリの保存先。既定: "data/memories.json"
   # wake.store_path、automations.store_path、google_calendar.token_path の既定値は、このファイルと同じディレクトリになります。

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
@@ -15,8 +16,16 @@ import (
 // Operations は登録するツール名。書き込みの3つは、ユーザー本人の発話がないと呼べない（realtimeの userOnlyTools）。
 var Operations = []string{"list_memories", "add_memory", "update_memory", "delete_memory"}
 
+// memoryRole は、長期メモリが何のためのものかの説明。全ツールの説明の冒頭に添える。
+const memoryRole = "長期メモリは、次回以降の別の会話でもあなたが参照する、ユーザーについての情報です。会話の冒頭に毎回渡されます。"
+
 // ユーザーの依頼か了承があるときだけ書き換えるよう、書き込みツールの説明に共通で添える。
-const writePolicy = "パスワード、暗証番号、カード番号などの秘密情報は、頼まれても保存しません。呼び出してよいのは、ユーザーが「覚えて」「変えて」「忘れて」などとはっきり頼んだときか、あなたの提案にユーザーが了承したときだけです。はっきり頼まれたときは、聞き返さずにそのまま呼び出します。ユーザーが覚えておけそうな事実を話しただけのときは呼び出さず、まず残す内容を口頭で伝えて「覚えておこうか？」と提案し、返事を待ってください。"
+// 提案してよいものの基準は、会話終了時の自動抽出と同じものを使う。
+const writePolicy = "呼び出してよいのは、ユーザーが「覚えて」「変えて」「忘れて」などとはっきり頼んだときか、あなたの提案にユーザーが了承したときだけです。" +
+	"はっきり頼まれたときは、その場限りの内容でも、聞き返さずにそのまま呼び出します（その場限りの内容は、不要になると会話終了時に自動で削除されます）。ただしパスワード、暗証番号、カード番号などの秘密情報は、頼まれても保存しません。" +
+	"ユーザーが覚えておけそうな事実を話しただけのときは呼び出さず、次の基準で残す価値があるときだけ、残す内容を口頭で伝えて「覚えておこうか？」と提案し、返事を待ってください。\n" +
+	memoryhook.RetentionCriteria + "\n" +
+	"この基準は、あなたから提案するかを決めるときだけに使います。ユーザーにはっきり頼まれたときは、基準で「保存しないもの」に当たる内容（その日の天気など）でも断らずに保存してください。"
 
 type Tool struct {
 	Store     *memorystate.Store
@@ -74,7 +83,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 func (t *Tool) Definition() map[string]any {
 	idProp := map[string]any{"type": "string", "description": "list_memoriesで確かめたメモリのID"}
 	// 会話終了時の自動抽出（internal/hooks/memory）と書き方を揃え、言い換えの重複を防ぐ。
-	contentProp := map[string]any{"type": "string", "description": "メモリの本文。1件に1つの話題を、「ユーザーは」か「ユーザーの」で始まる短い1文で書く。例: ユーザーの長女の誕生日は5月3日"}
+	contentProp := map[string]any{"type": "string", "description": "メモリの本文。1件に1つの話題を、「ユーザーは」か「ユーザーの」で始まる短い1文で書く。「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。例: ユーザーの長女の誕生日は5月3日、ユーザーの2026-05-03の天気は晴れ"}
 	props := map[string]any{}
 	required := []string{}
 	mode := tools.ToolModeWrite
@@ -82,17 +91,17 @@ func (t *Tool) Definition() map[string]any {
 	switch t.Operation {
 	case "list_memories":
 		mode = tools.ToolModeRead
-		description = "保存済みの長期メモリを、ID・本文・更新日時つきで一覧します。メモリの変更・削除の前に、対象のIDを確かめるために使います。"
+		description = memoryRole + "保存済みの長期メモリを、ID・本文・更新日時つきで一覧します。メモリの変更・削除の前に、対象のIDを確かめるために使います。"
 	case "add_memory":
-		description = "長期メモリを1件追加します。同じ話題のメモリが既にあるときは、追加せずupdate_memoryで書き換えてください。同じ本文が既にあれば追加せず、既存のメモリを返します（created=false）。" + writePolicy
+		description = memoryRole + "長期メモリを1件追加します。同じ話題のメモリが既にあるときは、追加せずupdate_memoryで書き換えてください。同じ本文が既にあれば追加せず、既存のメモリを返します（created=false）。" + writePolicy
 		props = map[string]any{"content": contentProp}
 		required = []string{"content"}
 	case "update_memory":
-		description = "長期メモリ1件の本文を書き換えます。先にlist_memoriesで対象のIDを確かめてください。" + writePolicy
+		description = memoryRole + "長期メモリ1件の本文を書き換えます。先にlist_memoriesで対象のIDを確かめてください。" + writePolicy
 		props = map[string]any{"id": idProp, "content": contentProp}
 		required = []string{"id", "content"}
 	case "delete_memory":
-		description = "長期メモリを1件削除し、削除した本文を返します。先にlist_memoriesで対象のIDを確かめてください。" + writePolicy
+		description = memoryRole + "長期メモリを1件削除し、削除した本文を返します。先にlist_memoriesで対象のIDを確かめてください。" + writePolicy
 		props = map[string]any{"id": idProp}
 		required = []string{"id"}
 	}

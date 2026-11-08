@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
@@ -101,13 +102,17 @@ func TestMemoryToolDefinitions(t *testing.T) {
 		}
 		mode := tools.ModeFromDefinition(def)
 		description := def["description"].(string)
+		if !strings.Contains(description, memoryRole) {
+			t.Fatal(operation, "メモリの役割の説明がありません")
+		}
 		if operation == "list_memories" {
 			if mode != tools.ToolModeRead {
 				t.Fatal(operation, mode)
 			}
 			continue
 		}
-		if mode != tools.ToolModeWrite || !strings.Contains(description, "了承") {
+		// 何を残す価値があるかは、会話終了時の自動抽出と同じ基準を示す。
+		if mode != tools.ToolModeWrite || !strings.Contains(description, "了承") || !strings.Contains(description, memoryhook.RetentionCriteria) {
 			t.Fatal(operation, mode, description)
 		}
 	}

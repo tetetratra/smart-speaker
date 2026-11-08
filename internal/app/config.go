@@ -246,10 +246,11 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		return Config{}, errors.New("OPENAI_API_KEY is not set")
 	}
 
-	// Responsesは履歴の要約・長期メモリ・検索用に使用する。
+	// Responsesは履歴の要約・検索用に使用する。
 	responsesModel := stringOr(file.OpenAI.ResponsesModel, "gpt-5.4-nano-2026-03-17")
 	memoryCfg := MemoryConfig{
-		Model:     stringOr(file.Memory.Model, responsesModel),
+		// 長期メモリの抽出は、古くなった記憶の削除で日付を比べる。gpt-5.4-nano では判断が安定しなかったため、別の既定値にする。
+		Model:     stringOr(file.Memory.Model, "gpt-5.6-luna"),
 		StorePath: stringOr(file.Memory.StorePath, "data/memories.json"),
 	}
 	dataDir := filepath.Dir(memoryCfg.StorePath)

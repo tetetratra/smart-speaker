@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -56,7 +57,11 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 	byRef := make(map[string]memorystate.Record, len(snapshot))
 	for i, record := range snapshot {
 		ref := strconv.Itoa(i + 1)
-		existing = append(existing, ExistingMemory{ID: ref, Content: record.Content})
+		item := ExistingMemory{ID: ref, Content: record.Content}
+		if !record.UpdatedAt.IsZero() {
+			item.UpdatedAt = record.UpdatedAt.In(japanLocation).Format(time.RFC3339)
+		}
+		existing = append(existing, item)
 		byRef[ref] = record
 	}
 	operations, err := h.operationCreator.CreateOperations(ctx, records, existing)
