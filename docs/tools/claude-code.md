@@ -17,7 +17,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 ## ツール
 | ツール | 用途 | 結果 |
 | --- | --- | --- |
-| `ask_claude_code(input, session_id, workdir)` | 作業を依頼する。続きは同じ `session_id` を指定する。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続きの依頼は、セッションを始めた場所で再開する | すぐに `{status: "started", task_id, session_id, workdir}` を返す |
+| `ask_claude_code(input, session_id, workdir)` | 作業を依頼する。ユーザーの指示がない限り、同じ会話の中では最初の依頼で返った `session_id` を指定し続け、セッションをひとつにまとめる。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続きの依頼は、セッションを始めた場所で再開する | すぐに `{status: "started", task_id, session_id, workdir}` を返す |
 | `answer_claude_code_permission(request_id, allow)` | 承認依頼に答える | `{status: "answered"}` |
 | `cancel_claude_code(task_id, session_id)` | 実行中の作業を止める。`task_id` が分からなければ `session_id` で指定する | `{status: "cancel_requested"}` |
 | `list_claude_code_sessions(limit)` | すべての候補のセッションを新しい順に一覧する | 作業ディレクトリの候補の名前（`workdirs`）と、各セッションのタイトル、作業ディレクトリの名前（`workdir`）、作成・最終更新日時（日本時間）、最初の依頼、実行中かどうか（実行中なら `task_id`） |

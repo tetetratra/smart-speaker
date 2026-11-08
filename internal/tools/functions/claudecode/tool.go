@@ -177,8 +177,8 @@ func (t *Tool) Definition() map[string]any {
 	policy := tools.ResponsePolicy{OnSuccess: true}
 	switch t.Operation {
 	case OpAsk:
-		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。初回はsession_idを空にし、同じ作業の続きは返されたsession_idを指定します。作業する場所はworkdirに候補の名前で指定します。候補はlist_claude_code_sessionsの結果のworkdirsで分かり、先頭が既定です。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
-		properties = map[string]any{"input": str("Claude Codeへの依頼文。ユーザーの言葉をもとに日本語で書く。英語に訳さない"), "session_id": str("初回は空文字、続きを頼むときは対象のセッションID"), "workdir": str("作業する場所の候補の名前。ユーザーが場所を言わなければ空文字（既定の場所）。続きの依頼ではセッションを始めた場所で再開するので空文字")}
+		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。この会話で最初の依頼はsession_idを空にし、2回目以降はユーザーの指示がない限り、返されたsession_idを指定して同じセッションを使い続けます。作業する場所はworkdirに候補の名前で指定します。候補はlist_claude_code_sessionsの結果のworkdirsで分かり、先頭が既定です。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
+		properties = map[string]any{"input": str("Claude Codeへの依頼文。ユーザーの言葉をもとに日本語で書く。英語に訳さない"), "session_id": str("この会話で最初の依頼なら空文字。2回目以降は、ユーザーが新しいセッションを頼まない限り、この会話で使っているセッションID"), "workdir": str("作業する場所の候補の名前。ユーザーが場所を言わなければ空文字（既定の場所）。続きの依頼ではセッションを始めた場所で再開するので空文字")}
 		mode = tools.ToolModeWrite
 		policy.Instructions = "Claude Codeに依頼したことと、終わったら知らせることだけを短く伝えてください。結果を予想して話さないでください。"
 	case OpAnswer:
