@@ -33,6 +33,10 @@ type Deps = {
 };
 
 const MAX_INPUT = 20_000;
+// セッションの記録に残す起動元。SDKは指定がなければ「sdk-ts」にするが、Claude Code のCLIは
+// 起動元が sdk-ts・sdk-py・sdk-cli のセッションを `claude --resume` の一覧から外すため、PCで続きを開けなくなる。
+// 「cli」を指定しても非対話の実行では「sdk-cli」に書き換えられるので、独自の値にする。
+export const ENTRYPOINT = "smart-speaker-agent-bridge";
 // 音読用の本文の上限文字数。Go側（internal/agentbridge/service.go の maxReadAloud）と合わせる。
 const MAX_READ_ALOUD = 6000;
 const TIMEOUT = "timeout";
@@ -165,7 +169,7 @@ export class TaskManager {
           systemPrompt: { type: "preset", preset: "claude_code", append: APPEND_SYSTEM_PROMPT },
           abortController: task.abort,
           pathToClaudeCodeExecutable: this.#deps.claudePath,
-          env: childEnv(),
+          env: { ...childEnv(), CLAUDE_CODE_ENTRYPOINT: ENTRYPOINT },
           // 声では答えられない問い合わせ（選択肢の質問や計画の承認）は使わせない。
           disallowedTools: ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"],
         },
