@@ -164,6 +164,24 @@ func TestCompletionInvalidatesPendingPermissionsAndQuotesData(t *testing.T) {
 	}
 }
 
+func TestCompletionPassesReadAloudText(t *testing.T) {
+	service, _, delivered := newTestService(t)
+	completed := Event{Type: EventCompleted, EventID: "e1", TaskID: "t1", SessionID: "s1", Request: "はじめにを読んで", Summary: "読みました", ReadAloud: "第1段落。\n第2段落。"}
+	if err := service.HandleEvent(context.Background(), completed); err != nil {
+		t.Fatal(err)
+	}
+	text := (*delivered)[0].Text
+	if !strings.Contains(text, `"read_aloud":"第1段落。\n第2段落。"`) || !strings.Contains(text, "省略・要約・言い換えをせずに") {
+		t.Fatal(text)
+	}
+
+	plain := Event{Type: EventCompleted, EventID: "e2", TaskID: "t2", SessionID: "s2", Request: "調べて", Summary: "調べました"}
+	_ = service.HandleEvent(context.Background(), plain)
+	if text := (*delivered)[1].Text; strings.Contains(text, "read_aloud") {
+		t.Fatal("音読を頼んでいないのに読み上げの指示が入っています: " + text)
+	}
+}
+
 func TestHandleEventValidatesAndAllowsRetryAfterDeliveryFailure(t *testing.T) {
 	service, _, _ := newTestService(t)
 	for _, event := range []Event{
