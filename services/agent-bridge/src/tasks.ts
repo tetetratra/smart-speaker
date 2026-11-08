@@ -190,13 +190,19 @@ export function interpret(result: SDKResultMessage | undefined, error: unknown, 
   };
 }
 
-// childEnv は Claude 系の環境変数（ANTHROPIC_BASE_URL、CLAUDECODE など）だけを除いて引き継ぐ。
-// 引き継ぐと、CLIのログイン情報ではなく別の接続先を使おうとして失敗することがある。
+// childEnv は、Claude Code に引き継がない環境変数を除いた残りを返す。
+// - ANTHROPIC_ と CLAUDE で始まるもの（ANTHROPIC_BASE_URL、CLAUDECODE など）。
+//   引き継ぐと、CLIのログイン情報ではなく別の接続先を使おうとして失敗することがある。
+// - AGENT_BRIDGE_ で始まるもの。共有トークンがあれば、Claude Code が自分の承認依頼を自分で許可できてしまう。
+// - 名前が _TOKEN、_KEY、_SECRET、_PASSWORD で終わるもの。ブリッジは .envrc を direnv で読んで起動するため、
+//   サーバー用のシークレット（OPENAI_API_KEY など）も環境変数に入っている。
 // ほかの変数は、ユーザーのMCP設定が参照することがあるので残す。
+const HIDDEN_ENV = /^(ANTHROPIC_|CLAUDE|AGENT_BRIDGE_)|_(TOKEN|KEY|SECRET|PASSWORD)$/i;
+
 export function childEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && !/^(ANTHROPIC_|CLAUDE)/.test(key)) env[key] = value;
+    if (value !== undefined && !HIDDEN_ENV.test(key)) env[key] = value;
   }
   return env;
 }
