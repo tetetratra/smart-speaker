@@ -35,9 +35,6 @@ openai:
   # 既定: "gpt-5.4-nano-2026-03-17"
   # responses_model: "gpt-5.4-nano-2026-03-17"
 
-  # サブエージェントに使うモデル。Responses API と Structured Outputs に対応するモデルが必要です。既定: "gpt-5.4"
-  # subagent_model: "gpt-5.4"
-
   realtime:
     # 会話モデル。既定: "gpt-realtime-2.1"
     # model: "gpt-realtime-2.1"

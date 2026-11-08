@@ -105,7 +105,6 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		return nil, fmt.Errorf("realtime: 発話区切りはsemantic_vadまたはserver_vadを指定してください: %s", cfg.TurnDetection)
 	}
 	cfg.Tools = withWaitTool(cfg.Tools)
-	cfg.Instructions = withSubagentInstructions(cfg.Instructions, cfg.Tools)
 	cfg.Instructions = withClaudeCodeInstructions(cfg.Instructions, cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {
 		return nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")

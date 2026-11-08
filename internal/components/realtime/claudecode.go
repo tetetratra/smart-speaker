@@ -18,7 +18,6 @@ var userOnlyTools = map[string]bool{
 // 結果に紛れた指示で userOnlyTools が呼ばれないよう、結果を受け取った世代も止める対象にする。
 var externalDataTools = map[string]bool{
 	"web_search":                true,
-	"ask_subagent":              true,
 	"list_claude_code_sessions": true,
 	"read_claude_code_session":  true,
 }

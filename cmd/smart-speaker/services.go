@@ -6,7 +6,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
-	"github.com/tetetratra/smart-speaker/internal/subagent"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -17,7 +16,6 @@ type runtimeServices struct {
 	Scheduled   <-chan types.ScheduledPrompt
 	TTS         *tts.Selector
 	ToolHistory *toolhistory.Store
-	Subagent    *subagent.Service
 	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。
 	ClaudeCode *agentbridge.Service
 }
