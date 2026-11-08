@@ -41,20 +41,38 @@ const info: SDKSessionInfo = {
   tag: "smart-speaker",
 };
 
+const WORKDIRS = [
+  { name: "work", path: "/work" },
+  { name: "speaker", path: "/speaker" },
+];
+
+// s1 は /work で、s2 は /speaker で始めたセッションとする。cwd は s1 を始めた場所の記録。
 function reader(running = new Set<string>(), cwd = "/work") {
   const calls: unknown[] = [];
+  const older: SDKSessionInfo = { ...info, sessionId: "s2", summary: "古い作業", lastModified: Date.parse("2026-11-07T07:00:00Z"), tag: undefined };
   const api = {
-    listSessions: async (options: unknown) => (calls.push(options), [info]),
-    getSessionInfo: async (id: string) => (id === "s1" ? { ...info, cwd } : undefined),
+    listSessions: async (options: { dir: string }) => (calls.push(options), options.dir === "/work" ? [info] : [older]),
+    getSessionInfo: async (id: string, options: { dir: string }) => {
+      if (id === "s1" && options.dir === "/work") return { ...info, cwd };
+      if (id === "s2" && options.dir === "/speaker") return { ...older, cwd: "/speaker" };
+      return undefined;
+    },
     getSessionMessages: async () => conversation,
   };
-  return { reader: new SessionReader(api, "/work", { runningTask: (id: string) => (running.has(id) ? { id: "t1" } : undefined), pendingCount: () => 1 }), calls };
+  return { reader: new SessionReader(api, WORKDIRS, { runningTask: (id: string) => (running.has(id) ? { id: "t1" } : undefined), pendingCount: () => 1 }), calls };
 }
 
-test("list は作業ディレクトリだけを対象にし、実行中かどうかを足す", async () => {
+test("list はすべての候補のセッションを新しい順にまとめ、実行中かどうかを足す", async () => {
   const { reader: r, calls } = reader(new Set(["s1"]));
-  const [s] = await r.list(5);
-  assert.deepEqual(calls, [{ dir: "/work", limit: 5, includeWorktrees: false }]);
+  const { workdirs, sessions } = await r.list(5);
+  assert.deepEqual(calls, [
+    { dir: "/work", limit: 5, includeWorktrees: false },
+    { dir: "/speaker", limit: 5, includeWorktrees: false },
+  ]);
+  assert.deepEqual(workdirs, ["work", "speaker"]);
+  assert.deepEqual(sessions.map((s) => [s.session_id, s.workdir]), [["s1", "work"], ["s2", "speaker"]]);
+  assert.equal((await r.list(1)).sessions.length, 1);
+  const s = sessions[0];
   assert.equal(s.title, "PDFの要約");
   assert.equal(s.created_at, "2026-11-07T08:00:00.000Z");
   assert.equal(s.from_smart_speaker, true);
@@ -66,6 +84,7 @@ test("list は作業ディレクトリだけを対象にし、実行中かどう
 test("messages の offset は新しい側から数える", async () => {
   const { reader: r } = reader();
   const latest = await r.messages("s1", 2, 0);
+  assert.equal(latest.workdir, "work");
   assert.equal(latest.total, 6);
   assert.deepEqual(latest.messages.map((m) => m.text), ["続けて", "続けました。"]);
   const older = await r.messages("s1", 2, 4);
@@ -79,6 +98,7 @@ test("ないセッションは404にする", async () => {
 });
 
 test("worktreeなど別の場所で始めたセッションは、作業ディレクトリのセッションとして扱わない", async () => {
-  assert.equal(await reader(new Set(), "/work/").reader.exists("s1"), true);
-  assert.equal(await reader(new Set(), "/work/.claude/worktrees/x").reader.exists("s1"), false);
+  assert.equal((await reader(new Set(), "/work/").reader.find("s1"))?.name, "work");
+  assert.equal((await reader(new Set(), "/work/.claude/worktrees/x").reader.find("s1")), undefined);
+  assert.equal((await reader().reader.find("s2"))?.name, "speaker");
 });

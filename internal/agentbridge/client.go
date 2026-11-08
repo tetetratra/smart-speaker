@@ -43,9 +43,10 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("Claude Codeのブリッジがエラーを返しました（%d）: %s", e.Status, e.Message)
 }
 
-func (c *Client) StartTask(ctx context.Context, input, sessionID string) (TaskAccepted, error) {
+// StartTask は作業を依頼する。workdir は作業ディレクトリの候補の名前で、空ならブリッジが先頭の候補を使う。
+func (c *Client) StartTask(ctx context.Context, input, sessionID, workdir string) (TaskAccepted, error) {
 	var out TaskAccepted
-	err := c.do(ctx, http.MethodPost, "/tasks", map[string]string{"input": input, "session_id": sessionID}, &out)
+	err := c.do(ctx, http.MethodPost, "/tasks", map[string]string{"input": input, "session_id": sessionID, "workdir": workdir}, &out)
 	return out, err
 }
 
@@ -62,12 +63,10 @@ func (c *Client) CancelSession(ctx context.Context, sessionID string) error {
 	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/cancel", nil, nil)
 }
 
-func (c *Client) ListSessions(ctx context.Context, limit int) ([]SessionSummary, error) {
-	var out struct {
-		Sessions []SessionSummary `json:"sessions"`
-	}
+func (c *Client) ListSessions(ctx context.Context, limit int) (SessionList, error) {
+	var out SessionList
 	err := c.do(ctx, http.MethodGet, "/sessions?limit="+strconv.Itoa(limit), nil, &out)
-	return out.Sessions, err
+	return out, err
 }
 
 func (c *Client) ReadSession(ctx context.Context, sessionID string, limit, offset int) (SessionMessages, error) {

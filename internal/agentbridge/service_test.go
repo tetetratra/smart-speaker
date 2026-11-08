@@ -38,7 +38,7 @@ func newBridgeStub(t *testing.T) *bridgeStub {
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"task_id":"t1","session_id":"s1"}`))
 		case r.URL.Path == "/sessions":
-			_, _ = w.Write([]byte(`{"sessions":[{"session_id":"s1","title":"PDFの要約","last_modified":"2026-11-07T09:00:00.000Z","running":true}]}`))
+			_, _ = w.Write([]byte(`{"workdirs":["work"],"sessions":[{"session_id":"s1","workdir":"work","title":"PDFの要約","last_modified":"2026-11-07T09:00:00.000Z","running":true}]}`))
 		case strings.HasPrefix(r.URL.Path, "/sessions/"):
 			_, _ = w.Write([]byte(`{"session_id":"s1","total":3,"offset":0,"messages":[{"role":"user","text":"読んで","at":"2026-11-07T09:00:00.000Z"}]}`))
 		default:
@@ -196,13 +196,13 @@ func TestClientCallsBridgeAPI(t *testing.T) {
 	stub := newBridgeStub(t)
 	client := NewClient(stub.server.URL+"/", "token")
 	ctx := context.Background()
-	accepted, err := client.StartTask(ctx, "PDFを読んで", "")
+	accepted, err := client.StartTask(ctx, "PDFを読んで", "", "")
 	if err != nil || accepted.TaskID != "t1" || accepted.SessionID != "s1" {
 		t.Fatal(accepted, err)
 	}
-	sessions, err := client.ListSessions(ctx, 5)
-	if err != nil || len(sessions) != 1 || !sessions[0].Running {
-		t.Fatal(sessions, err)
+	list, err := client.ListSessions(ctx, 5)
+	if err != nil || len(list.Workdirs) != 1 || len(list.Sessions) != 1 || !list.Sessions[0].Running || list.Sessions[0].Workdir != "work" {
+		t.Fatal(list, err)
 	}
 	messages, err := client.ReadSession(ctx, "s1", 3, 0)
 	if err != nil || messages.Total != 3 || messages.Messages[0].Text != "読んで" {

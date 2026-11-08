@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `AGENT_BRIDGE_LISTEN` | ○ | 待ち受けるアドレス。例: `100.x.y.z:8787`（MacのTailscale IP） |
 | `AGENT_BRIDGE_TOKEN` または `AGENT_BRIDGE_TOKEN_FILE` | ○ | smart-speakerと共有するトークン（16文字以上）。ファイルから読む場合は後者 |
-| `AGENT_BRIDGE_WORKDIR` | ○ | Claude Codeの作業ディレクトリ。一覧に出すのもこのディレクトリのセッションだけ |
+| `AGENT_BRIDGE_WORKDIRS` | ○ | Claude Codeの作業ディレクトリの候補。`名前=絶対パス` をカンマ区切りで並べ、先頭を既定にする。例: `work=$HOME/p/work,speaker=$HOME/p/smart-speaker`。音声エージェントは名前で場所を選ぶ。一覧に出すのも、これらのディレクトリのセッションだけ |
 | `AGENT_BRIDGE_EVENTS_URL` | ○ | 通知先。例: `http://<サーバーのTailscale IP>:8081/api/agent-events` |
 | `AGENT_BRIDGE_CLAUDE_PATH` | | 使う `claude` の場所。未設定ならSDK同梱のClaude Code |
 | `AGENT_BRIDGE_PERMISSION_TIMEOUT_SECONDS` | | 承認の返事を待つ秒数。既定300 |
@@ -32,7 +32,7 @@
 ```sh
 cd services/agent-bridge
 npm install
-AGENT_BRIDGE_LISTEN=127.0.0.1:8787 AGENT_BRIDGE_TOKEN=... AGENT_BRIDGE_WORKDIR=$HOME/work \
+AGENT_BRIDGE_LISTEN=127.0.0.1:8787 AGENT_BRIDGE_TOKEN=... AGENT_BRIDGE_WORKDIRS=work=$HOME/work \
   AGENT_BRIDGE_EVENTS_URL=http://127.0.0.1:8081/api/agent-events npm start
 ```
 
@@ -49,7 +49,7 @@ worktreeは消えることがあるので、以下はリポジトリの本来の
    ```sh
    export AGENT_BRIDGE_TOKEN=<openssl rand -hex 32 などで作った値>
    export AGENT_BRIDGE_LISTEN=<MacのTailscale IP>:8787
-   export AGENT_BRIDGE_WORKDIR=$HOME/work
+   export AGENT_BRIDGE_WORKDIRS="work=$HOME/work,speaker=$HOME/p/smart-speaker"
    export AGENT_BRIDGE_EVENTS_URL=http://<サーバーのTailscale IP>:8081/api/agent-events
    ```
 2. 依存を入れます。

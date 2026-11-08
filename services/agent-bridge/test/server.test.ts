@@ -9,7 +9,7 @@ const calls: unknown[][] = [];
 const server = createBridgeServer({
   token: TOKEN,
   tasks: {
-    start: async (input: string, sessionId?: string) => (calls.push(["start", input, sessionId]), { task_id: "t1", session_id: "s1" }),
+    start: async (input: string, sessionId?: string, workdir?: string) => (calls.push(["start", input, sessionId, workdir]), { task_id: "t1", session_id: "s1", workdir: "work" }),
     cancel: (id: string) => {
       if (id !== "t1") throw new HttpError(404, "作業が見つかりません");
       calls.push(["cancel", id]);
@@ -22,8 +22,8 @@ const server = createBridgeServer({
     pendingFor: () => [],
   },
   sessions: {
-    list: async (limit: number) => (calls.push(["list", limit]), []),
-    messages: async (id: string, limit: number, offset: number) => (calls.push(["messages", id, limit, offset]), { session_id: id, total: 0, offset, messages: [] }),
+    list: async (limit: number) => (calls.push(["list", limit]), { workdirs: ["work"], sessions: [] }),
+    messages: async (id: string, limit: number, offset: number) => (calls.push(["messages", id, limit, offset]), { session_id: id, workdir: "work", total: 0, offset, messages: [] }),
   },
   log: () => {},
 });
@@ -45,15 +45,15 @@ test("トークンがなければ401、healthzは認証なし", async () => {
 });
 
 test("作業の開始・承認の返事・中止", async () => {
-  const started = await call("/tasks", { method: "POST", body: JSON.stringify({ input: "やって", session_id: "" }) });
+  const started = await call("/tasks", { method: "POST", body: JSON.stringify({ input: "やって", session_id: "", workdir: "work" }) });
   assert.equal(started.status, 202);
-  assert.deepEqual(await started.json(), { task_id: "t1", session_id: "s1" });
+  assert.deepEqual(await started.json(), { task_id: "t1", session_id: "s1", workdir: "work" });
   assert.equal((await call("/permissions/r1", { method: "POST", body: JSON.stringify({ allow: false }) })).status, 204);
   assert.equal((await call("/tasks/t1/cancel", { method: "POST" })).status, 204);
   assert.equal((await call("/tasks/t2/cancel", { method: "POST" })).status, 404);
   assert.equal((await call("/sessions/s1/cancel", { method: "POST" })).status, 204);
   assert.deepEqual(calls.splice(0), [
-    ["start", "やって", ""],
+    ["start", "やって", "", "work"],
     ["answer", "r1", false, undefined],
     ["cancel", "t1"],
     ["cancelSession", "s1"],
@@ -69,7 +69,9 @@ test("不正な本文とパラメータは400", async () => {
 });
 
 test("一覧と会話の取得", async () => {
-  assert.equal((await call("/sessions")).status, 200);
+  const list = await call("/sessions");
+  assert.equal(list.status, 200);
+  assert.deepEqual(await list.json(), { workdirs: ["work"], sessions: [] });
   assert.equal((await call("/sessions/abc/messages?limit=3&offset=4")).status, 200);
   assert.deepEqual(calls.splice(0), [
     ["list", 20],

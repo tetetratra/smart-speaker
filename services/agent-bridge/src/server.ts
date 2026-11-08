@@ -39,7 +39,8 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse): Pr
     const body = await readJSON(req);
     const input = stringField(body, "input", true);
     const sessionId = stringField(body, "session_id", false);
-    return send(res, 202, await deps.tasks.start(input, sessionId));
+    const workdir = stringField(body, "workdir", false);
+    return send(res, 202, await deps.tasks.start(input, sessionId, workdir));
   }
   if (method === "POST" && (match = path.match(/^\/permissions\/([^/]+)$/))) {
     const body = await readJSON(req);
@@ -58,7 +59,7 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse): Pr
   }
   if (method === "GET" && path === "/sessions") {
     const limit = intParam(url, "limit", 20, 1, 100);
-    return send(res, 200, { sessions: await deps.sessions.list(limit) });
+    return send(res, 200, await deps.sessions.list(limit));
   }
   if (method === "POST" && (match = path.match(/^\/sessions\/([^/]+)\/cancel$/))) {
     deps.tasks.cancelSession(pathParam(match[1]));

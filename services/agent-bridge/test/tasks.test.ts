@@ -11,7 +11,13 @@ function success(structured: unknown): SDKResultMessage {
   return { type: "result", subtype: "success", is_error: false, result: "raw", structured_output: structured, permission_denials: [] } as unknown as SDKResultMessage;
 }
 
-function setup(run: (options: Options) => AsyncIterable<SDKMessage>, exists = true) {
+const WORKDIRS = [
+  { name: "work", path: "/work" },
+  { name: "speaker", path: "/speaker" },
+];
+
+// found はセッションを始めた作業ディレクトリ。null なら見つからないセッションとして扱う。
+function setup(run: (options: Options) => AsyncIterable<SDKMessage>, found: (typeof WORKDIRS)[number] | null = WORKDIRS[1]) {
   const events: EventInput[] = [];
   const queries: Options[] = [];
   const tags: string[] = [];
@@ -25,11 +31,11 @@ function setup(run: (options: Options) => AsyncIterable<SDKMessage>, exists = tr
   const broker = new PermissionBroker(notify, 1000);
   const manager = new TaskManager({
     query: ({ options }) => (queries.push(options!), run(options!)),
-    tagSession: async (id, tag) => void tags.push(`${id}:${tag}`),
-    sessionExists: async () => exists,
+    tagSession: async (id, tag, options) => void tags.push(`${id}:${tag}:${options?.dir}`),
+    findSession: async () => found ?? undefined,
     broker,
     notify,
-    workdir: "/work",
+    workdirs: WORKDIRS,
     maxTasks: 1,
     taskTimeoutMs: 60_000,
     log: () => {},
@@ -48,7 +54,8 @@ test("新しい依頼は sessionId を発行し、完了したらタグを付け
   assert.equal(options.resume, undefined);
   assert.equal(options.permissionMode, "auto");
   assert.equal(options.cwd, "/work");
-  assert.deepEqual(tags, [`${accepted.session_id}:smart-speaker`]);
+  assert.deepEqual(tags, [`${accepted.session_id}:smart-speaker:/work`]);
+  assert.equal(accepted.workdir, "work");
   assert.deepEqual(events[0], { type: "completed", summary: "終わりました", details: ["a.txt を作成"], task_id: accepted.task_id, session_id: accepted.session_id, request: "ファイルを作って" });
   assert.deepEqual(options.disallowedTools, ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"]);
 });
@@ -57,9 +64,12 @@ test("続きの依頼は resume を使い、タグは付け直さない", async 
   const { manager, queries, tags, finished } = setup(async function* () {
     yield success({ summary: "ok", details: [] });
   });
-  const accepted = await manager.start("続き", SESSION);
+  // 続きの依頼は、指定した名前ではなくセッションを始めた場所で再開する。
+  const accepted = await manager.start("続き", SESSION, "work");
   await finished;
   assert.equal(accepted.session_id, SESSION);
+  assert.equal(accepted.workdir, "speaker");
+  assert.equal(queries[0].cwd, "/speaker");
   assert.equal(queries[0].resume, SESSION);
   assert.equal(queries[0].sessionId, undefined);
   assert.deepEqual(tags, []);
@@ -97,8 +107,20 @@ test("入力の誤り・実行中・上限・存在しないセッションを�
   release();
   await finished;
 
-  const missing = setup(async function* () {}, false);
+  const missing = setup(async function* () {}, null);
   await assert.rejects(missing.manager.start("x", SESSION), { status: 404 });
+});
+
+test("作業ディレクトリは名前で選び、ない名前は候補つきで断る", async () => {
+  const { manager, queries, tags, finished } = setup(async function* () {
+    yield success({ summary: "ok", details: [] });
+  });
+  await assert.rejects(manager.start("x", undefined, "none"), { status: 400, message: "作業ディレクトリ「none」はありません。候補: work, speaker" });
+  const accepted = await manager.start("x", undefined, "speaker");
+  await finished;
+  assert.equal(accepted.workdir, "speaker");
+  assert.equal(queries[0].cwd, "/speaker");
+  assert.deepEqual(tags, [`${accepted.session_id}:smart-speaker:/speaker`]);
 });
 
 test("中止すると失敗として通知する", async () => {

@@ -20,12 +20,20 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 		requests = append(requests, r.Method+" "+r.URL.RequestURI())
 		switch {
 		case r.URL.Path == "/tasks":
+			// 送られた作業ディレクトリの名前を返し、ツールが渡せているか確かめる。空なら既定の候補を使ったことにする。
+			var body struct {
+				Workdir string `json:"workdir"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Workdir == "" {
+				body.Workdir = "work"
+			}
 			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte(`{"task_id":"t1","session_id":"s1"}`))
+			_ = json.NewEncoder(w).Encode(map[string]string{"task_id": "t1", "session_id": "s1", "workdir": body.Workdir})
 		case r.URL.Path == "/sessions":
-			_, _ = w.Write([]byte(`{"sessions":[{"session_id":"s1","title":"PDFの要約","created_at":"2026-11-07T08:00:00.000Z","last_modified":"2026-11-07T09:30:00.000Z","first_prompt":"PDFを読んで","running":false,"from_smart_speaker":true}]}`))
+			_, _ = w.Write([]byte(`{"workdirs":["work","speaker"],"sessions":[{"session_id":"s1","workdir":"speaker","title":"PDFの要約","created_at":"2026-11-07T08:00:00.000Z","last_modified":"2026-11-07T09:30:00.000Z","first_prompt":"PDFを読んで","running":false,"from_smart_speaker":true}]}`))
 		case strings.HasPrefix(r.URL.Path, "/sessions/"):
-			_, _ = w.Write([]byte(`{"session_id":"s1","total":5,"offset":0,"messages":[{"role":"assistant","text":"読みました","tools":["[Read] a.pdf"],"at":"2026-11-07T09:30:00.000Z"}]}`))
+			_, _ = w.Write([]byte(`{"session_id":"s1","workdir":"speaker","total":5,"offset":0,"messages":[{"role":"assistant","text":"読みました","tools":["[Read] a.pdf"],"at":"2026-11-07T09:30:00.000Z"}]}`))
 		default:
 			w.WriteHeader(http.StatusNoContent)
 		}
@@ -41,8 +49,12 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 
 func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
 	tools, _, requests := newTools(t)
-	result, err := tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": ""})
-	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" {
+	result, err := tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": ""})
+	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" || result["workdir"] != "work" {
+		t.Fatal(result, err)
+	}
+	result, err = tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": "speaker"})
+	if err != nil || result["workdir"] != "speaker" {
 		t.Fatal(result, err)
 	}
 	if _, err := tools[OpAsk].Run(map[string]any{"input": " ", "session_id": ""}); err == nil {
@@ -61,11 +73,14 @@ func TestListAndReadFormatForVoice(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := list["sessions"].([]map[string]any)[0]
+	if workdirs := list["workdirs"].([]string); len(workdirs) != 2 || workdirs[0] != "work" || session["workdir"] != "speaker" {
+		t.Fatal(list)
+	}
 	if session["title"] != "PDFの要約" || session["last_modified"] != "2026-11-07 18:30" || session["created_at"] != "2026-11-07 17:00" || list["count"] != 1 {
 		t.Fatal(list)
 	}
 	read, err := tools[OpRead].Run(map[string]any{"session_id": "s1", "limit": float64(2), "offset": float64(0)})
-	if err != nil || read["has_older"] != true || read["messages"].([]map[string]any)[0]["at"] != "2026-11-07 18:30" {
+	if err != nil || read["workdir"] != "speaker" || read["has_older"] != true || read["messages"].([]map[string]any)[0]["at"] != "2026-11-07 18:30" {
 		t.Fatal(read, err)
 	}
 	if _, err := tools[OpList].Run(map[string]any{"limit": float64(100)}); err == nil {

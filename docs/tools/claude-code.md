@@ -17,10 +17,10 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 ## ツール
 | ツール | 用途 | 結果 |
 | --- | --- | --- |
-| `ask_claude_code(input, session_id)` | 作業を依頼する。続きは同じ `session_id` を指定する | すぐに `{status: "started", task_id, session_id}` を返す |
+| `ask_claude_code(input, session_id, workdir)` | 作業を依頼する。続きは同じ `session_id` を指定する。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続きの依頼は、セッションを始めた場所で再開する | すぐに `{status: "started", task_id, session_id, workdir}` を返す |
 | `answer_claude_code_permission(request_id, allow)` | 承認依頼に答える | `{status: "answered"}` |
 | `cancel_claude_code(task_id, session_id)` | 実行中の作業を止める。`task_id` が分からなければ `session_id` で指定する | `{status: "cancel_requested"}` |
-| `list_claude_code_sessions(limit)` | セッションを新しい順に一覧する | タイトル、作成・最終更新日時（日本時間）、最初の依頼、実行中かどうか（実行中なら `task_id`） |
+| `list_claude_code_sessions(limit)` | すべての候補のセッションを新しい順に一覧する | 作業ディレクトリの候補の名前（`workdirs`）と、各セッションのタイトル、作業ディレクトリの名前（`workdir`）、作成・最終更新日時（日本時間）、最初の依頼、実行中かどうか（実行中なら `task_id`） |
 | `read_claude_code_session(session_id, limit, offset)` | セッションの会話を読む | 直近のやり取り。`offset` は新しい側から数える |
 
 - 利用方針は `internal/components/realtime/claudecode.go` の `withClaudeCodeInstructions` で、ツールがあるときだけシステムプロンプトに足します。
@@ -49,6 +49,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 - **古い承認依頼は尋ねない**: 承認依頼は、期限（`ExpiresAt`）を過ぎたり、作業が終わったり、既に答えたりしたら読み上げずに捨てます。作業が終わった後に遅れて届いた承認依頼も捨てます。ブリッジも、片付いた承認依頼の通知は再送しません。
 - **承認の状態はブリッジが持つ**: サーバーを再起動して承認依頼の控えを失っても、返事はそのままブリッジへ送ります。答え済みや期限切れなら、ブリッジが404を返します。
 - **Claude Codeに渡す環境変数を絞る**: ブリッジは、`AGENT_BRIDGE_` で始まる環境変数（共有トークンを含む）と、名前が `_TOKEN`・`_KEY`・`_SECRET`・`_PASSWORD` で終わる環境変数を、Claude Codeへ引き継ぎません。共有トークンがあると、Claude Codeが自分の承認依頼を自分で許可できてしまうためです。
+- **作業ディレクトリは名前で選ぶ**: `ask_claude_code` は、ブリッジの `AGENT_BRIDGE_WORKDIRS` に登録した候補の名前だけを受け付け、パスは受け付けません。聞き間違いや外部の文章に紛れた指示で、登録していない場所を作業させないためです。ない名前を指定すると、ブリッジが候補の一覧つきのエラーを返します。
 - **声で答えられないツールは使わない**: ブリッジは `AskUserQuestion`、`EnterPlanMode`、`ExitPlanMode` を使わせません。
 
 危険な操作を必ず承認に回したい場合は、Mac側のClaude Codeの設定（`~/.claude/settings.json` の `permissions.ask`）に、`Bash(git push:*)` などのルールを足してください。`ask` ルールに当たった操作は、`auto` モードでも承認依頼になります。

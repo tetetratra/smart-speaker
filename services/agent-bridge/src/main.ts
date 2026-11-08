@@ -13,19 +13,19 @@ let sessions: SessionReader;
 const tasks = new TaskManager({
   query,
   tagSession,
-  sessionExists: (id) => sessions.exists(id),
+  findSession: (id) => sessions.find(id),
   broker,
   notify: notifier.send,
-  workdir: config.workdir,
+  workdirs: config.workdirs,
   claudePath: config.claudePath,
   maxTasks: config.maxTasks,
   taskTimeoutMs: config.taskTimeoutMs,
 });
-sessions = new SessionReader({ listSessions, getSessionInfo, getSessionMessages }, config.workdir, tasks);
+sessions = new SessionReader({ listSessions, getSessionInfo, getSessionMessages }, config.workdirs, tasks);
 
 const server = createBridgeServer({ token: config.token, tasks, broker, sessions });
 server.listen(config.listen.port, config.listen.host, () => {
-  console.log(`agent-bridge: ${config.listen.host}:${config.listen.port} で待ち受けています（作業ディレクトリ: ${config.workdir}）`);
+  console.log(`agent-bridge: ${config.listen.host}:${config.listen.port} で待ち受けています（作業ディレクトリ: ${config.workdirs.map((w) => `${w.name}=${w.path}`).join(", ")}）`);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
