@@ -50,6 +50,7 @@ Claude Codeは本番サーバーではなくMacで動かします。セッショ
 - **承認の状態はブリッジが持つ**: サーバーを再起動して承認依頼の控えを失っても、返事はそのままブリッジへ送ります。答え済みや期限切れなら、ブリッジが404を返します。
 - **Claude Codeに渡す環境変数を絞る**: ブリッジは、`AGENT_BRIDGE_` で始まる環境変数（共有トークンを含む）と、名前が `_TOKEN`・`_KEY`・`_SECRET`・`_PASSWORD` で終わる環境変数を、Claude Codeへ引き継ぎません。共有トークンがあると、Claude Codeが自分の承認依頼を自分で許可できてしまうためです。
 - **作業ディレクトリは名前で選ぶ**: `ask_claude_code` は、ブリッジの `AGENT_BRIDGE_WORKDIRS` に登録した候補の名前だけを受け付け、パスは受け付けません。聞き間違いや外部の文章に紛れた指示で、登録していない場所を作業させないためです。ない名前を指定すると、ブリッジが候補の一覧つきのエラーを返します。
+- **PCの再開一覧に出す**: ブリッジは起動元（環境変数 `CLAUDE_CODE_ENTRYPOINT`）を `smart-speaker-agent-bridge` にして Claude Code を起動します。SDKの既定の `sdk-ts` のままだと、CLIの `claude --resume` の一覧に出ず、PCで続きを開きにくいためです。
 - **声で答えられないツールは使わない**: ブリッジは `AskUserQuestion`、`EnterPlanMode`、`ExitPlanMode` を使わせません。
 
 危険な操作を必ず承認に回したい場合は、Mac側のClaude Codeの設定（`~/.claude/settings.json` の `permissions.ask`）に、`Bash(git push:*)` などのルールを足してください。`ask` ルールに当たった操作は、`auto` モードでも承認依頼になります。

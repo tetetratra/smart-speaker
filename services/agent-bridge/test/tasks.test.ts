@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Options, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { EventInput } from "../src/protocol.ts";
 import { PermissionBroker } from "../src/permissions.ts";
-import { TaskManager, interpret, childEnv } from "../src/tasks.ts";
+import { TaskManager, interpret, childEnv, ENTRYPOINT } from "../src/tasks.ts";
 
 const SESSION = "11111111-2222-4333-8444-555555555555";
 
@@ -54,6 +54,8 @@ test("新しい依頼は sessionId を発行し、完了したらタグを付け
   assert.equal(options.resume, undefined);
   assert.equal(options.permissionMode, "auto");
   assert.equal(options.cwd, "/work");
+  // CLIの再開一覧に出るよう、起動元を sdk- で始まらない値にする。
+  assert.equal(options.env?.CLAUDE_CODE_ENTRYPOINT, ENTRYPOINT);
   assert.deepEqual(tags, [`${accepted.session_id}:smart-speaker:/work`]);
   assert.equal(accepted.workdir, "work");
   assert.deepEqual(events[0], { type: "completed", summary: "終わりました", details: ["a.txt を作成"], task_id: accepted.task_id, session_id: accepted.session_id, request: "ファイルを作って" });
