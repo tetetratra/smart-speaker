@@ -62,18 +62,22 @@ func main() {
 	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	scheduled := make(chan types.ScheduledPrompt, 100)
 	services.Scheduled = scheduled
-	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
+	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、realtime が会話の空いたときに処理する経路へ送る。
+	services.Deliver = func(ctx context.Context, prompt types.ScheduledPrompt) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case scheduled <- types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction, Speak: delivery.Speak}:
+		case scheduled <- prompt:
 			return nil
 		}
+	}
+	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
+		return services.Deliver(ctx, types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction, Speak: delivery.Speak})
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, scheduled)
+	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, services.Deliver)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
 		log.Fatal(err)
@@ -240,32 +244,26 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 	}
 
 	reg := registry.New(registry.Config{
-		WakeMode:        services.WakeMode,
-		Automations:     services.Automations,
-		Memory:          memoryStore,
-		ClaudeCode:      services.ClaudeCode,
-		SwitchBotClient: switchBotClient,
-		SwitchBotScenes: scenes,
-		OpenAIAPIKey:    cfg.APIKey,
-		OpenAIModel:     cfg.ResponsesModel,
+		WakeMode:         services.WakeMode,
+		Automations:      services.Automations,
+		Memory:           memoryStore,
+		ClaudeCode:       services.ClaudeCode,
+		SwitchBotClient:  switchBotClient,
+		SwitchBotScenes:  scenes,
+		OpenAIAPIKey:     cfg.APIKey,
+		OpenAIModel:      cfg.ResponsesModel,
+		WebSearchDeliver: services.Deliver,
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
 }
 
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
-func newClaudeCodeService(cfg app.AgentBridgeConfig, scheduled chan<- types.ScheduledPrompt) *agentbridge.Service {
+func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver func(context.Context, types.ScheduledPrompt) error) *agentbridge.Service {
 	if cfg.URL == "" || cfg.Token == "" {
 		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
 		return nil
 	}
-	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), func(ctx context.Context, prompt types.ScheduledPrompt) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case scheduled <- prompt:
-			return nil
-		}
-	})
+	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), deliver)
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
