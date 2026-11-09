@@ -38,6 +38,9 @@ func TestToolRunEmitsWhiteboardUpdate(t *testing.T) {
 	if update.Content != "- 10:00 会議\n- 13:00 歯医者" {
 		t.Fatalf("update content = %q", update.Content)
 	}
+	if update.UpdatedAt.IsZero() {
+		t.Fatal("update UpdatedAt is zero")
+	}
 }
 
 func TestToolRunRequiresContent(t *testing.T) {

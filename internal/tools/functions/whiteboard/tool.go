@@ -3,6 +3,7 @@ package whiteboard
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -45,7 +46,8 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 		t.emit(types.Event{
 			Kind: types.EventWhiteboardUpdate,
 			Payload: types.WhiteboardUpdate{
-				Content: content,
+				Content:   content,
+				UpdatedAt: time.Now(),
 			},
 		})
 	}

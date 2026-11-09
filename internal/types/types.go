@@ -32,6 +32,8 @@ type AgentTimelineEnd struct {
 // WhiteboardUpdate はアプリ画面の白板表示更新を表します。
 type WhiteboardUpdate struct {
 	Content string
+	// UpdatedAt はサーバーで書き込んだ時刻。画面でツール呼び出しの表示と同じ時計で並べるために使う。
+	UpdatedAt time.Time
 }
 
 type RTCIceCandidate struct {
