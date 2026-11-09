@@ -622,6 +622,8 @@ type LiveViewProps = {
   isConversationBubbleHidden: boolean
   // 吹き出しに表示中の読み上げ区間。区間が変わるたびに再生時間に合わせて自動スクロールする。
   assistantSpeech?: PlaybackSpeech
+  // 今再生中の読み上げ区間。ホワイトボードのスクロールの速さを読み上げに合わせるのに使う。
+  playbackSpeech?: PlaybackSpeech
   boardEntries: BoardEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
@@ -1289,6 +1291,7 @@ function App() {
           isAiSpeaking={isAiSpeaking}
           isConversationBubbleHidden={!bubble.visible}
           assistantSpeech={bubble.assistant ? playbackSpeech : undefined}
+          playbackSpeech={playbackSpeech}
           boardEntries={boardEntries}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
@@ -1902,6 +1905,7 @@ function LiveView(props: LiveViewProps) {
     isAiSpeaking,
     isConversationBubbleHidden,
     assistantSpeech,
+    playbackSpeech,
     boardEntries,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
@@ -1934,7 +1938,7 @@ function LiveView(props: LiveViewProps) {
       <div className="live-frame">
         <div className="live-main">
           <div className="live-left">
-            <Whiteboard entries={boardEntries} backendURL={backendURL} />
+            <Whiteboard entries={boardEntries} backendURL={backendURL} speech={playbackSpeech} />
             <div className="live-bubble-slot">
               {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>

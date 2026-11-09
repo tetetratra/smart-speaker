@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import type { PlaybackSpeech } from './audio'
+import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
 
 type BoardEntry = { id: number; content: string; timestamp: number }
 type ToolEntry = {
@@ -20,12 +22,42 @@ function prettyJSON(value: string) {
   try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
 }
 
-export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; backendURL: URL }) {
+// speech は今再生中の読み上げ区間。書き込みのスクロールの速さを読み上げに合わせるのに使う。
+export function Whiteboard({ entries, backendURL, speech }: { entries: BoardEntry[]; backendURL: URL; speech?: PlaybackSpeech }) {
   const [tools, setTools] = useState<ToolEntry[]>([])
   const [error, setError] = useState('')
   const boardRef = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
   const refreshTools = useRef<() => void>(() => {})
+  const contentRef = useRef<HTMLDivElement>(null)
+  const scroller = useRef<WhiteboardAutoScroll>()
+  const speechTiming = useRef<SpeechTiming>()
+  const boardCount = useRef<number>()
+
+  useEffect(() => {
+    const board = boardRef.current
+    const content = contentRef.current
+    if (!board || !content) return
+    const current = createWhiteboardAutoScroll(board, content)
+    scroller.current = current
+    return () => {
+      current.stop()
+      scroller.current = undefined
+    }
+  }, [])
+
+  // 読み上げ区間が始まったら、スクロール中であればその区間に合わせて速さを計算し直す。
+  // 割り込みで読み上げが止まっても速さは変えず、そのまま末尾までスクロールし切る。
+  useEffect(() => {
+    if (!speech) {
+      speechTiming.current = undefined
+      return
+    }
+    const timing = { startedAt: Date.now(), durationMs: speech.durationMs }
+    speechTiming.current = timing
+    const current = scroller.current
+    if (current?.isActive()) current.run(whiteboardScrollSpeed(current.distance(), timing, timing.startedAt))
+  }, [speech])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -76,7 +108,22 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
 
   useEffect(() => {
     const board = boardRef.current
-    if (board && follow.current) board.scrollTop = board.scrollHeight
+    const current = scroller.current
+    const previous = boardCount.current
+    boardCount.current = entries.length
+    if (!board || !current || !follow.current) return
+    if (previous === undefined) {
+      // 最初の表示では、既にある内容の末尾へそのまま移る。
+      board.scrollTop = board.scrollHeight
+      return
+    }
+    if (entries.length > previous) {
+      // 書き込みは今の読み上げに合わせた速さで動かす。
+      current.run(whiteboardScrollSpeed(current.distance(), speechTiming.current, Date.now()))
+    } else if (!current.isActive()) {
+      // ツール呼び出しの表示は高さがほぼ決まっているので、決まった速さで動かす。
+      current.run(WHITEBOARD_FIXED_SPEED)
+    }
   }, [events])
 
   return (
@@ -85,6 +132,7 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
       if (board) follow.current = board.scrollHeight - board.clientHeight - board.scrollTop < 32
     }}>
       <style>{`
+        .live-board-content { display: flow-root; }
         .live-board-event + .live-board-event { margin-top: 6px; }
         .live-board-event.live-board-entry + .live-board-entry { border-top: 1px solid var(--live-line); padding-top: 10px; }
         .live-tool-entry { min-width: 0; }
@@ -100,32 +148,34 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
         .live-tool-entry-body h3 { margin: 8px 0 4px; font-size: 12px; }
         .live-tool-entry-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
       `}</style>
-      {error && <div role="alert">{error}</div>}
-      {events.map(event => {
-        if (event.kind === 'board') {
-          return <div key={event.id} className="live-board-event live-board-entry">{event.entry.content}</div>
-        }
-        const entry = event.entry
-        // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する
-        const state = entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
-        return (
-          <details key={event.id} className="live-board-event live-tool-entry" onToggle={event => {
-            if (event.currentTarget.open) follow.current = false
-          }}>
-            <summary className={`live-tool-toast ${state}`}>
-              <span className="live-tool-toast-tool">{entry.name}</span>
-              <span className="live-tool-entry-status">▾</span>
-            </summary>
-            <div className="live-tool-entry-body">
-              <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.status === 'failed' && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
-              <h3>引数</h3>
-              <pre>{prettyJSON(entry.arguments)}</pre>
-              <h3>レスポンス</h3>
-              <pre>{entry.status === 'running' ? '結果を待っています…' : prettyJSON(entry.output)}</pre>
-            </div>
-          </details>
-        )
-      })}
+      <div className="live-board-content" ref={contentRef}>
+        {error && <div role="alert">{error}</div>}
+        {events.map(event => {
+          if (event.kind === 'board') {
+            return <div key={event.id} className="live-board-event live-board-entry">{event.entry.content}</div>
+          }
+          const entry = event.entry
+          // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する
+          const state = entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
+          return (
+            <details key={event.id} className="live-board-event live-tool-entry" onToggle={event => {
+              if (event.currentTarget.open) follow.current = false
+            }}>
+              <summary className={`live-tool-toast ${state}`}>
+                <span className="live-tool-toast-tool">{entry.name}</span>
+                <span className="live-tool-entry-status">▾</span>
+              </summary>
+              <div className="live-tool-entry-body">
+                <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.status === 'failed' && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
+                <h3>引数</h3>
+                <pre>{prettyJSON(entry.arguments)}</pre>
+                <h3>レスポンス</h3>
+                <pre>{entry.status === 'running' ? '結果を待っています…' : prettyJSON(entry.output)}</pre>
+              </div>
+            </details>
+          )
+        })}
+      </div>
     </div>
   )
 }
