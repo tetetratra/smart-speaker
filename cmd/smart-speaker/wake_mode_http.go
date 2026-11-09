@@ -45,4 +45,19 @@ func registerWakeModeAPI(mux *http.ServeMux, store *wakemode.Store) {
 		}
 		writeJSON(w, 200, mode)
 	})
+	// 呼びかけの発話の代わりに、会話中（呼びかけなしで話せる状態）にする。
+	// 呼びかけの音声認識が外れやすいため、スマホのショートカットなどから確実に話し始められるようにする。
+	mux.HandleFunc("/api/wake-mode/wake", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			w.WriteHeader(405)
+			return
+		}
+		if store == nil {
+			http.Error(w, "待機モードを利用できません", 503)
+			return
+		}
+		writeJSON(w, 200, store.Wake(time.Now()))
+	})
 }
