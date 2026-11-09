@@ -159,3 +159,26 @@ func TestLegacySavedSettingsAreIgnored(t *testing.T) {
 		t.Fatal(mode)
 	}
 }
+
+func TestWakeStartsConversationWithoutWakeWord(t *testing.T) {
+	settings := DefaultSettings()
+	settings.ConversationTimeout = time.Minute
+	s, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), settings)
+	now := time.Now()
+	// 必須モードでないときは、もともと呼びかけ不要なので会話中にはしない。
+	if mode := s.Wake(now); mode.Awake || mode.Gated() {
+		t.Fatal("必須モードでないのに会話中になりました", mode)
+	}
+	m, _ := s.SetRequired(true, now)
+	mode := s.Wake(now)
+	if mode.Gated() || !mode.Awake || mode.AwakeUntil == nil || !mode.AwakeUntil.Equal(now.Add(time.Minute)) {
+		t.Fatal("呼びかけなしで会話中になりません", mode)
+	}
+	// 会話中は呼びかけのない発話も受け付ける。
+	if d := s.Evaluate("今日の天気は", 0.9, m.Revision, false, now.Add(30*time.Second)); !d.Accepted {
+		t.Fatal(d)
+	}
+	if !s.Snapshot(now.Add(91 * time.Second)).Gated() {
+		t.Fatal("最後の発話から1分を過ぎても会話中のままです")
+	}
+}

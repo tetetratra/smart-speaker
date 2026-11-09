@@ -39,3 +39,32 @@ func TestWakeModeAPIControlsPersistentSettings(t *testing.T) {
 		t.Fatal(rec.Code)
 	}
 }
+
+func TestWakeModeAPIWakesWithoutWakeWord(t *testing.T) {
+	store, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	if _, err := store.SetRequired(true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	registerWakeModeAPI(mux, store)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/wake-mode/wake", nil))
+	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" || !strings.Contains(rec.Body.String(), `"awake":true`) {
+		t.Fatal(rec.Code, rec.Body)
+	}
+	if store.Snapshot(time.Now()).Gated() {
+		t.Fatal("呼びかけなしで話せる状態になっていません")
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/wake-mode/wake", nil))
+	if rec.Code != 405 || rec.Header().Get("Allow") != "POST" {
+		t.Fatal(rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	unavailable := http.NewServeMux()
+	registerWakeModeAPI(unavailable, nil)
+	unavailable.ServeHTTP(rec, httptest.NewRequest("POST", "/api/wake-mode/wake", nil))
+	if rec.Code != 503 {
+		t.Fatal(rec.Code)
+	}
+}

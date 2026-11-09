@@ -216,6 +216,17 @@ func (s *Store) Evaluate(text string, confidence float64, revision uint64, faile
 	return d
 }
 
+// Wakeは呼びかけの発話なしで会話中にする。画面以外（スマホのショートカットなど）から話し始める合図に使う。
+// 必須モードでなければ呼びかけはもともと不要なので、何も変えずに今の状態を返す。
+func (s *Store) Wake(now time.Time) Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.config.Required {
+		s.awakeUntil = now.Add(s.config.ConversationTimeout)
+	}
+	return s.snapshotLocked(now)
+}
+
 // Touchは会話中のユーザー発話で、会話中の時間を最後の発話から数え直す。会話中でなければ何もしない。
 func (s *Store) Touch(now time.Time) {
 	s.mu.Lock()
