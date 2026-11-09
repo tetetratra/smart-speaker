@@ -221,6 +221,10 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"type":    "whiteboard_update",
 			"content": update.Content,
 		}
+		if !update.UpdatedAt.IsZero() {
+			// ツール履歴の started_at と同じサーバーの時計で並べられるよう、書き込み時刻をミリ秒で送る。
+			msg["timestamp"] = update.UpdatedAt.UnixMilli()
+		}
 	case types.EventWakeTranscription:
 		tr, ok := evt.Payload.(types.WakeTranscription)
 		if !ok {
