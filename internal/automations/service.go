@@ -15,11 +15,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 )
 
-func remindScript(text string) string {
-	quoted, _ := json.Marshal(text)
-	return "remind(" + string(quoted) + ")"
-}
-
 type Spec struct {
 	Name string `json:"name"`
 	// Script は発火時に実行するJavaScript。remind と toolcall を使える。
@@ -37,12 +32,6 @@ type Job struct {
 type Delivery struct {
 	ID, Name, Script string
 }
-
-// legacyJob は、自然言語の指示を保存していた頃のジョブも読めるようにする。
-type legacyJob struct {
-	Job
-	Instruction string `json:"instruction"`
-}
 type Service struct {
 	mu      sync.Mutex
 	path    string
@@ -59,19 +48,14 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 	if err != nil {
 		return nil, err
 	}
-	var jobs []legacyJob
+	var jobs []Job
 	if err = json.Unmarshal(data, &jobs); err != nil {
 		return nil, fmt.Errorf("予約ジョブの読み込み: %w", err)
 	}
 	if len(jobs) > 100 {
 		return nil, fmt.Errorf("予約ジョブが100件を超えています")
 	}
-	for _, legacy := range jobs {
-		job := legacy.Job
-		if job.Script == "" && legacy.Instruction != "" {
-			// 以前の自然言語の指示は、発火時にAIへ渡していた動きを remind で引き継ぐ。
-			job.Script = remindScript(legacy.Instruction)
-		}
+	for _, job := range jobs {
 		if job.ID == "" {
 			return nil, fmt.Errorf("予約ジョブのIDが空です")
 		}

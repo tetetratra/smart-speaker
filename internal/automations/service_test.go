@@ -157,17 +157,3 @@ func TestScriptSyntaxErrorIsRejected(t *testing.T) {
 		t.Fatal("構文エラーのスクリプトを受理しました")
 	}
 }
-func TestLegacyInstructionIsConvertedToRemind(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "jobs.json")
-	legacy := `[{"id":"old","name":"室温","instruction":"室温を \"伝える\"","speak":true,"schedule":{"cron":"0 8 * * *","timezone":"Asia/Tokyo"},"last_status":"scheduled"}]`
-	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
-		t.Fatal(err)
-	}
-	service, err := New(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := service.List()[0].Script, `remind("室温を \"伝える\"")`; got != want {
-		t.Fatalf("script = %s, want %s", got, want)
-	}
-}
