@@ -44,6 +44,8 @@ type Config struct {
 	OpenAIAPIKey       string
 	OpenAIModel        string
 	WebSearchClient    websearch.SearchClient
+	// WebSearchDeliver があれば、web_search は結果を後から会話へ届ける。
+	WebSearchDeliver websearch.Deliver
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -117,14 +119,15 @@ func New(cfg Config) *Registry {
 
 func newWebSearchTool(cfg Config) *websearch.Tool {
 	if cfg.WebSearchClient != nil {
-		return websearch.New(websearch.Config{Client: cfg.WebSearchClient})
+		return websearch.New(websearch.Config{Client: cfg.WebSearchClient, Deliver: cfg.WebSearchDeliver})
 	}
 	if strings.TrimSpace(cfg.OpenAIAPIKey) == "" || strings.TrimSpace(cfg.OpenAIModel) == "" {
 		return nil
 	}
 	return websearch.New(websearch.Config{
-		APIKey: cfg.OpenAIAPIKey,
-		Model:  cfg.OpenAIModel,
+		APIKey:  cfg.OpenAIAPIKey,
+		Model:   cfg.OpenAIModel,
+		Deliver: cfg.WebSearchDeliver,
 	})
 }
 
@@ -141,20 +144,6 @@ func (r *Registry) Handlers() map[string]tools.Handler {
 		handlers[e.handler.Name()] = e.handler
 	}
 	return handlers
-}
-
-// ResponsePolicies はアプリ内で使うツール結果後の応答方針を返す。
-func (r *Registry) ResponsePolicies() map[string]tools.ResponsePolicy {
-	policies := map[string]tools.ResponsePolicy{}
-	if r == nil {
-		return policies
-	}
-	for _, e := range r.entries {
-		if name, ok := e.def["name"].(string); ok {
-			policies[name] = tools.ResponsePolicyFromDefinition(e.def)
-		}
-	}
-	return policies
 }
 
 // DefinitionsForRealtime は全ツールをfunction calling用に返す。

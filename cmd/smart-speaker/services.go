@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
@@ -14,6 +16,8 @@ type runtimeServices struct {
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
 	Scheduled   <-chan types.ScheduledPrompt
+	// Deliver は Scheduled へ1件送る。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
+	Deliver     func(context.Context, types.ScheduledPrompt) error
 	TTS         *tts.Selector
 	ToolHistory *toolhistory.Store
 	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。

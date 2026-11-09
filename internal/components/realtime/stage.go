@@ -13,7 +13,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
-	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
@@ -25,7 +24,6 @@ type Config struct {
 	WakeMode                                                  *wakemode.Store
 	Scheduled                                                 <-chan types.ScheduledPrompt
 	ToolHistory                                               *toolhistory.Store
-	ToolResponsePolicies                                      map[string]tools.ResponsePolicy
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection                                             string
 	Tools                                                     []any

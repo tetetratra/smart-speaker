@@ -311,7 +311,7 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "function_call_output", "call_id": result.ToolCallID, "output": string(result.Output)}})
 	}
 	// 無音ジョブの旧結果を、新しい通常会話へ読み上げとして持ち込まない。
-	if (!c.silent || s.cfg.Generation.IsCurrent(c.generation)) && s.respondAfterTool(result) {
+	if !c.silent || s.cfg.Generation.IsCurrent(c.generation) {
 		s.pendingToolResponses = append(s.pendingToolResponses, toolCompletion{CallID: result.ToolCallID, Name: result.Name, generation: c.generation, silent: c.silent})
 	}
 	s.maybeRespond(ctx)

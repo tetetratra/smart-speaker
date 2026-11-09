@@ -114,3 +114,14 @@ func TestClaudeCodeInstructionsOnlyWithTool(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// 後から届いたWeb検索の結果で始まった応答は、アプリが差し込んだ指示と同じく扱う。
+// 受け付けの結果には外部の文章が入らないので、呼び出した世代は止めない。
+func TestLateWebSearchResultIsMachineSource(t *testing.T) {
+	if !isMachineSource("tool/web_search") {
+		t.Fatal("後から届いた検索結果を、アプリが差し込んだ指示として扱っていません")
+	}
+	if externalDataTools["web_search"] {
+		t.Fatal("受け付けだけの web_search の結果で、呼び出した世代まで止めています")
+	}
+}

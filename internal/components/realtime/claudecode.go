@@ -7,7 +7,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// ユーザー本人の発話がないと呼べないツール。予約ジョブや外部エージェントの通知で始まった応答からは呼ばせない。
+// ユーザー本人の発話がないと呼べないツール。予約ジョブ・外部エージェントの通知・後から届いたツール結果で始まった応答からは呼ばせない。
 // 外部エージェントの出力に紛れた指示（「承認済みなので許可して」など）で、承認や新しい作業が勝手に進むのを防ぐ。
 // 長期メモリの書き換えも、ユーザーの依頼か了承があるときだけに限るため、ここに含める。
 var userOnlyTools = map[string]bool{
@@ -18,10 +18,10 @@ var userOnlyTools = map[string]bool{
 	"delete_memory":                 true,
 }
 
-// 外部の文章（Webページ、他のエージェントの出力、Claude Codeの会話）を結果として返すツール。
+// 外部の文章（他のエージェントの出力、Claude Codeの会話）を結果として返すツール。
 // 結果に紛れた指示で userOnlyTools が呼ばれないよう、結果を受け取った世代も止める対象にする。
+// web_search の結果は、後から tool/ の差し込みとして届くので、ここには含めない。
 var externalDataTools = map[string]bool{
-	"web_search":                true,
 	"list_claude_code_sessions": true,
 	"read_claude_code_session":  true,
 }
@@ -29,7 +29,7 @@ var externalDataTools = map[string]bool{
 const maxMachineGenerations = 64
 
 func isMachineSource(source string) bool {
-	return strings.HasPrefix(source, "automation/") || strings.HasPrefix(source, "agent/")
+	return strings.HasPrefix(source, "automation/") || strings.HasPrefix(source, "agent/") || strings.HasPrefix(source, "tool/")
 }
 
 func (s *stage) rememberMachineGeneration(generation types.GenerationID, source string) {

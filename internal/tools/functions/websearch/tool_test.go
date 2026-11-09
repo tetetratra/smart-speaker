@@ -2,8 +2,12 @@ package websearch
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type fakeSearchClient struct {
@@ -70,5 +74,74 @@ func TestRunRejectsUnsupportedArgument(t *testing.T) {
 	_, err := tool.Run(map[string]any{"query": "OpenAI", "context": "不要"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported argument: context") {
 		t.Fatalf("err = %v, want unsupported argument", err)
+	}
+}
+
+type blockingSearchClient struct {
+	release chan struct{}
+	resp    string
+	err     error
+}
+
+func (b *blockingSearchClient) Search(ctx context.Context, _ string) (string, error) {
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return b.resp, b.err
+}
+
+// 届け先があれば、検索を待たずに受け付けを返し、終わった結果を会話へ届ける。
+func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
+	for _, failure := range []bool{false, true} {
+		client := &blockingSearchClient{release: make(chan struct{}), resp: "晴れ"}
+		heading := "[Web検索の結果]"
+		if failure {
+			client.err = errors.New("検索APIの失敗")
+			heading = "[Web検索の失敗]"
+		}
+		delivered := make(chan types.ScheduledPrompt, 1)
+		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ScheduledPrompt) error {
+			delivered <- prompt
+			return nil
+		}})
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		tool.SetContext(ctx)
+		out, err := tool.Run(map[string]any{"query": "明日の天気"})
+		if err != nil || out["status"] != "started" || out["query"] != "明日の天気" || out["instructions"] == "" {
+			t.Fatal(out, err)
+		}
+		close(client.release)
+		select {
+		case prompt := <-delivered:
+			if prompt.Source != "tool/web_search" || !prompt.Speak || !strings.HasPrefix(prompt.Text, heading) || !strings.Contains(prompt.Text, "明日の天気") {
+				t.Fatal(prompt)
+			}
+		case <-ctx.Done():
+			t.Fatal("結果が届きません")
+		}
+		cancel()
+	}
+}
+
+// アプリの停止で検索が打ち切られたら、何も届けない。
+func TestCanceledSearchDeliversNothing(t *testing.T) {
+	client := &blockingSearchClient{release: make(chan struct{})}
+	delivered := make(chan types.ScheduledPrompt, 1)
+	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ScheduledPrompt) error {
+		delivered <- prompt
+		return nil
+	}})
+	ctx, cancel := context.WithCancel(context.Background())
+	tool.SetContext(ctx)
+	if _, err := tool.Run(map[string]any{"query": "明日の天気"}); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case prompt := <-delivered:
+		t.Fatal("停止後に結果が届きました", prompt)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
