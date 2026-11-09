@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
-	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
@@ -50,9 +49,6 @@ func (r *automationRunner) run(ctx context.Context, delivery automations.Deliver
 
 // toolCall はAIを通さずにツールを実行し、呼び出しと結果を会話履歴へ送る。
 func (r *automationRunner) toolCall(ctx context.Context, delivery automations.Delivery, name string, args map[string]any) (json.RawMessage, error) {
-	if realtime.IsUserOnlyTool(name) {
-		return nil, fmt.Errorf("%s はユーザー本人の了承が必要なため、予約ジョブからは呼べません", name)
-	}
 	handler, ok := r.handlers[name]
 	if !ok {
 		return nil, fmt.Errorf("ツールがありません: %s", name)

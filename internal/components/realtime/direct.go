@@ -22,7 +22,3 @@ func (s *stage) recordDirectToolCall(ctx context.Context, call types.DirectToolC
 		s.contextResults = append(s.contextResults, call.Result)
 	}
 }
-
-// IsUserOnlyTool は、ユーザー本人の了承なしに呼べないツールかを返す。
-// 予約ジョブのスクリプトから直接呼ぶときも同じ制限をかけるために使う。
-func IsUserOnlyTool(name string) bool { return userOnlyTools[name] }

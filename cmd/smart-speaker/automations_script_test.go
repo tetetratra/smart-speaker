@@ -50,12 +50,10 @@ if (r.temperature > 28) { remind("暑いと伝えて"); remind("水分補給も�
 	}
 }
 
-func TestAutomationRunnerRejectsUserOnlyAndUnknownTools(t *testing.T) {
+func TestAutomationRunnerRejectsUnknownTool(t *testing.T) {
 	runner := &automationRunner{direct: make(chan types.DirectToolCall, 1), handlers: map[string]tools.Handler{}}
-	for name, want := range map[string]string{"add_memory": "了承", "nothing": "ツールがありません"} {
-		err := runner.run(context.Background(), automations.Delivery{ID: "job1", Script: `toolcall("` + name + `", {})`})
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%s: err = %v", name, err)
-		}
+	err := runner.run(context.Background(), automations.Delivery{ID: "job1", Script: `toolcall("nothing", {})`})
+	if err == nil || !strings.Contains(err.Error(), "ツールがありません") {
+		t.Fatalf("err = %v", err)
 	}
 }
