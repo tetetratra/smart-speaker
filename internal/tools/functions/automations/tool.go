@@ -54,7 +54,6 @@ func (t *Tool) Definition() map[string]any {
 	props := map[string]any{}
 	required := []string{}
 	description := ""
-	mode := tools.ToolModeWrite
 	switch t.Operation {
 	case "register_job", "update_job":
 		description = "ユーザーが依頼した自然言語の指示を予約ジョブとして永続化します。実行時刻ごとにAIが指示を解釈してツールを実行します。scriptやコードは登録しません。scheduleはafter_seconds（指定秒後）、at（時差付きRFC3339日時）、cron（分・時・日・月・曜日の5項目）の1つを指定します。タイムゾーンの既定はAsia/Tokyo。speakは起こす・知らせる依頼ならtrue、無言でモード変更などの処理ならfalseにします。現在日時から予定を計算し、登録後に次回日時を確認してください。いつ実行するか（「1分後に」「毎朝8時に」など）はscheduleだけで表し、nameとinstructionには含めないでください。日時指定の予約は実行後に自動で削除されます。"
@@ -66,13 +65,12 @@ func (t *Tool) Definition() map[string]any {
 		}
 	case "list_jobs":
 		description = "登録済みの予約ジョブとID・次回日時・音声通知の有無・状態を確認します。"
-		mode = tools.ToolModeRead
 	case "delete_job":
 		description = "ユーザーが削除を依頼した予約ジョブを削除します。"
 		props = map[string]any{"id": map[string]any{"type": "string"}}
 		required = []string{"id"}
 	}
-	return tools.DefinitionWithMode(map[string]any{"type": "function", "name": t.Name(), "description": description, "parameters": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}}, mode)
+	return map[string]any{"type": "function", "name": t.Name(), "description": description, "parameters": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}}
 }
 
 var _ tools.Handler = (*Tool)(nil)

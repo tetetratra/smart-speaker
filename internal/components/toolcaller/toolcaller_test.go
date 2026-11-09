@@ -28,7 +28,7 @@ func (h stubHandler) Run(args map[string]any) (map[string]any, error) {
 }
 
 func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
-	st := NewStage(nil, nil, nil)
+	st := NewStage(nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -80,8 +80,6 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 			name: "set_whiteboard",
 			out:  map[string]any{"updated": true},
 		},
-	}, map[string]string{
-		"set_whiteboard": tools.ToolModeWrite,
 	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,8 +110,6 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 			name: "set_whiteboard",
 			err:  errors.New("failed"),
 		},
-	}, map[string]string{
-		"set_whiteboard": tools.ToolModeWrite,
 	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -154,8 +150,6 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 			name: "web_search",
 			out:  map[string]any{"result": "ok"},
 		},
-	}, map[string]string{
-		"web_search": tools.ToolModeRead,
 	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -189,7 +183,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 
 func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 	handler := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"count": handler}, nil, nil)
+	st := NewStage(map[string]tools.Handler{"count": handler}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -235,7 +229,7 @@ func (h *blockingHandler) Run(map[string]any) (map[string]any, error) {
 func TestHistoryTracksRunningResultAndDuplicateCall(t *testing.T) {
 	history := toolhistory.NewStore(200)
 	handler := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
-	stage := NewStage(map[string]tools.Handler{"blocked": handler}, nil, history)
+	stage := NewStage(map[string]tools.Handler{"blocked": handler}, history)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	stage.Run(ctx)
@@ -277,7 +271,7 @@ func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
 	} {
 		t.Run(req.ToolCallID, func(t *testing.T) {
 			history := toolhistory.NewStore(200)
-			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, nil, history)
+			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, history)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			stage.Run(ctx)
@@ -292,5 +286,43 @@ func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
 				t.Fatal(history.Snapshot())
 			}
 		})
+	}
+}
+
+// 時間のかかるツールの実行中でも、別のツールを実行して結果を先に返す。
+// 実行中の call_id が再び届いても、二重には実行しない。
+func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
+	slow := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
+	fast := &countingHandler{}
+	st := NewStage(map[string]tools.Handler{"blocked": slow, "count": fast}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	st.Run(ctx)
+	defer st.Close()
+	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
+	<-slow.started
+	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
+	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "fast", Name: "count"}}
+	select {
+	case evt := <-st.Downstream:
+		if id := evt.Payload.(types.ConversationCommitRequest).ToolResult.ToolCallID; id != "fast" {
+			t.Fatal(id)
+		}
+	case <-ctx.Done():
+		t.Fatal("実行中のツールに別のツールが待たされました")
+	}
+	close(slow.release)
+	select {
+	case evt := <-st.Downstream:
+		if id := evt.Payload.(types.ConversationCommitRequest).ToolResult.ToolCallID; id != "slow" {
+			t.Fatal(id)
+		}
+	case <-ctx.Done():
+		t.Fatal("時間のかかるツールの結果が届きません")
+	}
+	select {
+	case evt := <-st.Downstream:
+		t.Fatal("実行中に再送された呼び出しの結果が重複しました", evt)
+	case <-time.After(50 * time.Millisecond):
 	}
 }

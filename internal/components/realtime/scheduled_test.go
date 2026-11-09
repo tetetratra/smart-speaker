@@ -62,3 +62,14 @@ func TestScheduledPromptWaitsForConversationAndCoalescesSameJob(t *testing.T) {
 		t.Fatal(s.scheduled)
 	}
 }
+
+// 時間のかかるツールの実行中でも、予約ジョブは時刻どおりに始める。
+func TestScheduledPromptStartsWhileToolIsRunning(t *testing.T) {
+	s := newToolResponseStage()
+	s.calls["slow"] = &call{epoch: 1, generation: 1}
+	s.peers = map[string]bool{"peer": true}
+	s.queueScheduled(types.ScheduledPrompt{ID: "job", Instruction: "室温を知らせて", Speak: true})
+	if !s.startScheduled(context.Background()) || len(s.scheduled) != 0 {
+		t.Fatal(s.scheduled)
+	}
+}

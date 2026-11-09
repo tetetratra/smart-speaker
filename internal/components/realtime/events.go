@@ -274,11 +274,6 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	if repaired {
 		return
 	}
-	for _, c := range s.calls {
-		if c.epoch == s.epoch && c.generation == s.cfg.Generation.Current() && !c.finished {
-			return
-		}
-	}
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
 	// 接続を維持したまま日付が変わっても、復元文脈と指示を保って日時を更新する。

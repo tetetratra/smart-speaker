@@ -178,7 +178,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, toolModes, responsePolicies := buildToolRegistry(cfg, memoryStore, services)
+	toolSchemas, toolHandlers, responsePolicies := buildToolRegistry(cfg, memoryStore, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
@@ -214,13 +214,12 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStage(toolHandlers, toolModes, services.ToolHistory)
+	stages.tool = toolcaller.NewStage(toolHandlers, services.ToolHistory)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)
 		}
 	}
-	generationfilter.AttachToolRequests(stages.tool, generationStore)
 	stages.wakegate = wakegate.NewStage(wakegate.Config{Store: services.WakeMode, STT: &wakegate.HTTPClient{Endpoint: cfg.LocalSTTEndpoint}, EnergyThreshold: cfg.WakeEnergyThreshold})
 	stages.rtcpeer, err = rtcpeer.NewStage(rtcpeer.Config{IceAdvertiseIPs: cfg.RTCIceAdvertiseIPs})
 	if err != nil {
@@ -233,7 +232,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler, map[string]string, map[string]tools.ResponsePolicy) {
+func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler, map[string]tools.ResponsePolicy) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -250,7 +249,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ToolModes(), reg.ResponsePolicies()
+	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ResponsePolicies()
 }
 
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。

@@ -173,23 +173,19 @@ func (t *Tool) Definition() map[string]any {
 	}
 	var description string
 	var properties map[string]any
-	mode := tools.ToolModeRead
 	policy := tools.ResponsePolicy{OnSuccess: true}
 	switch t.Operation {
 	case OpAsk:
 		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。この会話で最初の依頼はsession_idを空にし、2回目以降はユーザーの指示がない限り、返されたsession_idを指定して同じセッションを使い続けます。作業する場所はworkdirに候補の名前で指定します。候補はlist_claude_code_sessionsの結果のworkdirsで分かり、先頭が既定です。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
 		properties = map[string]any{"input": str("Claude Codeへの依頼文。ユーザーの言葉をもとに日本語で書く。英語に訳さない"), "session_id": str("この会話で最初の依頼なら空文字。2回目以降は、ユーザーが新しいセッションを頼まない限り、この会話で使っているセッションID"), "workdir": str("作業する場所の候補の名前。ユーザーが場所を言わなければ空文字（既定の場所）。続きの依頼ではセッションを始めた場所で再開するので空文字")}
-		mode = tools.ToolModeWrite
 		policy.Instructions = "Claude Codeに依頼したことと、終わったら知らせることだけを短く伝えてください。結果を予想して話さないでください。"
 	case OpAnswer:
 		description = "Claude Codeからの承認依頼に答えます。ユーザーの返事を聞いた後でだけ呼び出してください。ユーザーがはっきり許可したときだけallowをtrueにします。"
 		properties = map[string]any{"request_id": str("承認依頼のrequest_id"), "allow": map[string]any{"type": "boolean", "description": "許可するならtrue、拒否するならfalse"}}
-		mode = tools.ToolModeWrite
 		policy.Instructions = "許可または拒否をClaude Codeに伝えたことを一言だけ伝えてください。"
 	case OpCancel:
 		description = "実行中のClaude Codeの作業を止めます。ユーザーが止めるよう頼んだときに使います。task_idが分かればtask_idを、分からなければlist_claude_code_sessionsで実行中のセッションを確かめてsession_idを指定します（使わない方は空文字）。"
 		properties = map[string]any{"task_id": str("止める作業のtask_id。分からなければ空文字"), "session_id": str("止める作業のセッションID。task_idを指定したなら空文字")}
-		mode = tools.ToolModeWrite
 	case OpList:
 		description = "手元のMacにあるClaude Codeのセッションを、新しい順に一覧します。タイトル、作業した場所（workdir）、作成・最終更新日時、最初の依頼、実行中かどうかが分かります。結果のworkdirsは、ask_claude_codeで選べる作業場所の候補です（先頭が既定）。どのセッションの続きを頼むか決めるときにも使います。"
 		properties = map[string]any{"limit": integer("取得する件数（1〜30、通常は10）")}
@@ -211,7 +207,7 @@ func (t *Tool) Definition() map[string]any {
 		"description": description,
 		"parameters":  map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false},
 	}
-	return tools.DefinitionWithResponsePolicy(tools.DefinitionWithMode(def, mode), policy)
+	return tools.DefinitionWithResponsePolicy(def, policy)
 }
 
 type arguments map[string]any

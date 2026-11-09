@@ -86,11 +86,9 @@ func (t *Tool) Definition() map[string]any {
 	contentProp := map[string]any{"type": "string", "description": "メモリの本文。1件に1つの話題を、「ユーザーは」か「ユーザーの」で始まる短い1文で書く。「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。例: ユーザーの長女の誕生日は5月3日、ユーザーの2026-05-03の天気は晴れ"}
 	props := map[string]any{}
 	required := []string{}
-	mode := tools.ToolModeWrite
 	description := ""
 	switch t.Operation {
 	case "list_memories":
-		mode = tools.ToolModeRead
 		description = memoryRole + "保存済みの長期メモリを、ID・本文・更新日時つきで一覧します。メモリの変更・削除の前に、対象のIDを確かめるために使います。"
 	case "add_memory":
 		description = memoryRole + "長期メモリを1件追加します。同じ話題のメモリが既にあるときは、追加せずupdate_memoryで書き換えてください。同じ本文が既にあれば追加せず、既存のメモリを返します（created=false）。" + writePolicy
@@ -105,12 +103,12 @@ func (t *Tool) Definition() map[string]any {
 		props = map[string]any{"id": idProp}
 		required = []string{"id"}
 	}
-	return tools.DefinitionWithMode(map[string]any{
+	return map[string]any{
 		"type":        "function",
 		"name":        t.Name(),
 		"description": description,
 		"parameters":  map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false},
-	}, mode)
+	}
 }
 
 func memoryItems(records []memorystate.Record) []map[string]any {
