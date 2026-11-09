@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	hub2Alias                    = "hub2"
-	hub2GetTemperatureToolName   = "hub2_get_temperature"
-	hub2GetHumidityToolName      = "hub2_get_humidity"
-	hub2GetLightLevelToolName    = "hub2_get_light_level"
+	hub2Alias                  = "hub2"
+	hub2GetTemperatureToolName = "hub2_get_temperature"
+	hub2GetHumidityToolName    = "hub2_get_humidity"
+	hub2GetLightLevelToolName  = "hub2_get_light_level"
 )
 
 var errNotConfigured = errors.New("SwitchBot が設定されていません")
@@ -94,7 +94,7 @@ func (t *hub2MeasurementTool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *hub2MeasurementTool) Definition() map[string]any {
-	return tools.DefinitionWithMode(map[string]any{
+	return map[string]any{
 		"type":        "function",
 		"name":        t.spec.name,
 		"description": t.spec.description,
@@ -103,7 +103,7 @@ func (t *hub2MeasurementTool) Definition() map[string]any {
 			"properties":           map[string]any{},
 			"additionalProperties": false,
 		},
-	}, tools.ToolModeRead)
+	}
 }
 
 var _ tools.Handler = (*hub2MeasurementTool)(nil)

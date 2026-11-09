@@ -7,7 +7,6 @@ import (
 
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
 func newStore(t *testing.T) *memorystate.Store {
@@ -93,27 +92,23 @@ func TestMemoryToolsRejectInvalidRequests(t *testing.T) {
 	}
 }
 
-// 一覧だけが読み取りで、書き込みの3つにはユーザーの依頼か了承を求める説明が付く。
+// 一覧以外の3つには、ユーザーの依頼か了承を求める説明が付く。
 func TestMemoryToolDefinitions(t *testing.T) {
 	for _, operation := range Operations {
 		def := (&Tool{Operation: operation}).Definition()
 		if def["name"] != operation {
 			t.Fatal(def["name"])
 		}
-		mode := tools.ModeFromDefinition(def)
 		description := def["description"].(string)
 		if !strings.Contains(description, memoryRole) {
 			t.Fatal(operation, "メモリの役割の説明がありません")
 		}
 		if operation == "list_memories" {
-			if mode != tools.ToolModeRead {
-				t.Fatal(operation, mode)
-			}
 			continue
 		}
 		// 何を残す価値があるかは、会話終了時の自動抽出と同じ基準を示す。
-		if mode != tools.ToolModeWrite || !strings.Contains(description, "了承") || !strings.Contains(description, memoryhook.RetentionCriteria) {
-			t.Fatal(operation, mode, description)
+		if !strings.Contains(description, "了承") || !strings.Contains(description, memoryhook.RetentionCriteria) {
+			t.Fatal(operation, description)
 		}
 	}
 }

@@ -62,14 +62,14 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 			t.Fatalf("%s should not be registered", name)
 		}
 	}
-	assertToolMode(t, reg, "switchbot_execute_scene", "write")
+	assertRegistered(t, reg, "switchbot_execute_scene")
 	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
-		assertToolMode(t, reg, name, "read")
+		assertRegistered(t, reg, name)
 	}
-	assertToolMode(t, reg, "set_whiteboard", "write")
-	assertToolMode(t, reg, "google_calendar_list", "read")
-	assertToolMode(t, reg, "google_calendar_create", "write")
-	assertToolMode(t, reg, "google_calendar_update", "write")
+	assertRegistered(t, reg, "set_whiteboard")
+	assertRegistered(t, reg, "google_calendar_list")
+	assertRegistered(t, reg, "google_calendar_create")
+	assertRegistered(t, reg, "google_calendar_update")
 }
 
 func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
@@ -134,7 +134,7 @@ func TestRegistryRegistersWebSearchToolWithOpenAIConfig(t *testing.T) {
 	if _, ok := reg.Handlers()["web_search"]; !ok {
 		t.Fatal("web_search handler should be registered")
 	}
-	assertToolMode(t, reg, "web_search", "read")
+	assertRegistered(t, reg, "web_search")
 }
 
 func TestRegistryOmitsWebSearchToolWithoutOpenAIConfig(t *testing.T) {
@@ -189,38 +189,30 @@ func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
 	}
 }
 
-// メモリの保存先があるときだけ、メモリのツールを登録する。一覧だけが読み取り。
+// メモリの保存先があるときだけ、メモリのツールを登録する。
 func TestRegistryMemoryToolsOnlyWithStore(t *testing.T) {
 	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	reg := New(Config{Memory: store})
-	assertToolMode(t, reg, "list_memories", tools.ToolModeRead)
+	assertRegistered(t, reg, "list_memories")
 	for _, name := range []string{"add_memory", "update_memory", "delete_memory"} {
-		assertToolMode(t, reg, name, tools.ToolModeWrite)
+		assertRegistered(t, reg, name)
 	}
 	if _, ok := New(Config{}).Handlers()["add_memory"]; ok {
 		t.Fatal("保存先がないのにメモリのツールが登録されました")
 	}
 }
 
-func assertToolMode(t *testing.T, reg *Registry, name, want string) {
+func assertRegistered(t *testing.T, reg *Registry, name string) {
 	t.Helper()
-	modes := reg.ToolModes()
-	if modes[name] != want {
-		t.Fatalf("ToolModes()[%q] = %q, want %q", name, modes[name], want)
-	}
-	def, ok := definitionByName(reg, name)
-	if !ok {
+	if _, ok := definitionByName(reg, name); !ok {
 		t.Fatalf("%s should be registered", name)
-	}
-	if def["x_tool_mode"] != want {
-		t.Fatalf("DefinitionByName(%q)[x_tool_mode] = %v, want %q", name, def["x_tool_mode"], want)
 	}
 }
 
-// definitionByName は登録済みの tool 定義（x_tool_mode などのメタデータを含む）を名前で探す。
+// definitionByName は登録済みの tool 定義（アプリ内のメタデータを含む）を名前で探す。
 func definitionByName(r *Registry, name string) (map[string]any, bool) {
 	for _, e := range r.entries {
 		if e.def == nil {

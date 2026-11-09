@@ -17,7 +17,7 @@ func (s *stage) queueScheduled(prompt types.ScheduledPrompt) {
 	s.scheduled = append(s.scheduled, prompt)
 }
 func (s *stage) startScheduled(ctx context.Context) bool {
-	if len(s.scheduled) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.pendingText) > 0 || len(s.repairs) > 0 || s.pendingTools() || s.hasPendingOutput() {
+	if len(s.scheduled) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.pendingText) > 0 || len(s.repairs) > 0 || s.hasPendingOutput() {
 		return false
 	}
 	s.dropStaleScheduled(time.Now())

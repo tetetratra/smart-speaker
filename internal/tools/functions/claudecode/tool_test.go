@@ -123,16 +123,13 @@ func TestAnswerAndCancel(t *testing.T) {
 	}
 }
 
-func TestDefinitionsDeclareModesAndPolicies(t *testing.T) {
+func TestDefinitionsDeclarePolicies(t *testing.T) {
 	for _, op := range Operations {
 		def := (&Tool{Operation: op}).Definition()
 		params := def["parameters"].(map[string]any)
 		if def["name"] != op || len(params["required"].([]string)) != len(params["properties"].(map[string]any)) {
 			t.Fatal(def)
 		}
-	}
-	if tools.ModeFromDefinition((&Tool{Operation: OpAnswer}).Definition()) != tools.ToolModeWrite {
-		t.Fatal("承認の返事は書き込み操作です")
 	}
 	if tools.ResponsePolicyFromDefinition((&Tool{Operation: OpList}).Definition()).Instructions == "" {
 		t.Fatal("一覧の伝え方の指示がありません")

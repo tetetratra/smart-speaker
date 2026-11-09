@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
@@ -21,27 +22,26 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools     map[string]tools.Handler
-	toolModes map[string]string
-	node      *graph.Stage
-	results   map[string]types.ToolResultRecord
-	history   *toolhistory.Store
+	tools   map[string]tools.Handler
+	node    *graph.Stage
+	history *toolhistory.Store
+
+	// results は call_id ごとの結果。値が nil なら実行中。
+	mu      sync.Mutex
+	results map[string]*types.ToolResultRecord
 }
 
 // NewStage は tool の実行 stage を作る。history を渡すと、実行の開始と終了をツール呼び出し履歴に記録する。
-func NewStage(handlers map[string]tools.Handler, toolModes map[string]string, history *toolhistory.Store) *graph.Stage {
+// 呼び出しは届いた順を待たずに並行して実行する。
+func NewStage(handlers map[string]tools.Handler, history *toolhistory.Store) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
-	if toolModes == nil {
-		toolModes = map[string]string{}
-	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event),
-		results:    map[string]types.ToolResultRecord{},
+		results:    map[string]*types.ToolResultRecord{},
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
 		tools:      handlers,
-		toolModes:  toolModes,
 		history:    history,
 	}
 	s.node = &graph.Stage{
@@ -84,25 +84,45 @@ func (s *toolCaller) run(parent context.Context) {
 			if !ok {
 				continue
 			}
-			s.dispatchTool(req)
+			s.taskGroup.Add(1)
+			go func() {
+				defer s.taskGroup.Done()
+				s.dispatchTool(req)
+			}()
 		}
 	}()
 }
 
+// dispatchTool は同じ call_id を一度だけ実行する。実行中の再送は無視し、実行済みなら前の結果を送り直す。
 func (s *toolCaller) dispatchTool(req types.ToolRequest) {
+	s.mu.Lock()
 	result, exists := s.results[req.ToolCallID]
+	if !exists {
+		s.results[req.ToolCallID] = nil
+	}
+	s.mu.Unlock()
+	if exists && result == nil {
+		return
+	}
 	if !exists {
 		var entryID string
 		if s.history != nil {
 			entryID = s.history.Begin(req)
 		}
-		result = s.executeTool(req)
+		log.Printf("toolcaller: 開始 name=%s call_id=%s", req.Name, req.ToolCallID)
+		started := time.Now()
+		record := s.executeTool(req)
+		log.Printf("toolcaller: 終了 name=%s call_id=%s elapsed=%s", req.Name, req.ToolCallID, time.Since(started).Round(time.Millisecond))
 		if s.history != nil {
-			s.history.Finish(entryID, result)
+			s.history.Finish(entryID, record)
 		}
+		result = &record
+		s.mu.Lock()
 		s.results[req.ToolCallID] = result
+		s.mu.Unlock()
 	}
-	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: result.GenerationID, Source: result.Name, ToolResult: &result}})
+	sent := *result // 送り直しのたびに別の値を渡し、受け手どうしで共有しない。
+	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
 }
 
 func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResultRecord {

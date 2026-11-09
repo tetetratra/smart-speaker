@@ -129,14 +129,26 @@ func TestToolSuccessPolicyDoesNotSuppressOtherRequests(t *testing.T) {
 	s := newToolResponseStage()
 	s.cfg.ToolResponsePolicies["update"] = tools.ResponsePolicy{OnSuccess: false}
 	s.calls["update"] = &call{epoch: 1, generation: 1}
-	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
+	s.toolResult(context.Background(), toolResultForTest("update", "update", `{"updated":true}`))
 	popToolCommand(t, s, "conversation.item.create")
 	noToolCommand(t, s)
-	s.toolResult(context.Background(), toolResultForTest("update", "update", `{"updated":true}`))
+	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
 	popToolCommand(t, s, "conversation.item.create")
 	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
 	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) || strings.Contains(response["instructions"].(string), `"call_id":"update"`) {
 		t.Fatal("応答不要の成功結果が他の結果の説明を妨げました", response)
+	}
+}
+
+// 同じ応答で出た別の呼び出しが実行中でも、届いた結果から先に応答する。
+func TestToolResultRespondsWhileOtherCallIsRunning(t *testing.T) {
+	s := newToolResponseStage()
+	s.calls["slow"] = &call{epoch: 1, generation: 1}
+	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
+	popToolCommand(t, s, "conversation.item.create")
+	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
+	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) {
+		t.Fatal(response)
 	}
 }
 

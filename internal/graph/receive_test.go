@@ -6,7 +6,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/types"
-	"strings"
 	"testing"
 	"time"
 )
@@ -58,30 +57,4 @@ func TestBlockedAudioDestinationDoesNotBlockControlDelivery(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("終了できない")
 	}
-}
-
-func TestStaleToolRequestProducesExplicitNotExecutedResult(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	store := generation.NewStore()
-	store.Next()
-	store.Next()
-	st := &graph.Stage{Upstream: make(chan types.Event), Downstream: make(chan types.Event)}
-	generationfilter.AttachToolRequests(st, store)
-	go func() {
-		st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "old", GenerationID: 1}}
-	}()
-	done := make(chan struct{})
-	go func() { st.Receive(ctx); close(done) }()
-	select {
-	case e := <-st.Downstream:
-		result := e.Payload.(types.ConversationCommitRequest).ToolResult
-		if result == nil || result.ToolCallID != "old" || !strings.Contains(string(result.Output), `"executed":false`) {
-			t.Fatal(result)
-		}
-	case <-ctx.Done():
-		t.Fatal("未実行の結果が届かない")
-	}
-	cancel()
-	<-done
 }

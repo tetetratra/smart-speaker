@@ -58,7 +58,7 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 }
 
 func (t *Tool) Definition() map[string]any {
-	return tools.DefinitionWithResponsePolicy(tools.DefinitionWithMode(map[string]any{
+	return tools.DefinitionWithResponsePolicy(map[string]any{
 		"type":        "function",
 		"name":        toolName,
 		"description": toolDescription,
@@ -73,7 +73,7 @@ func (t *Tool) Definition() map[string]any {
 			"required":             []string{"content"},
 			"additionalProperties": false,
 		},
-	}, tools.ToolModeWrite), tools.ResponsePolicy{
+	}, tools.ResponsePolicy{
 		OnSuccess:    true,
 		Instructions: "ホワイトボード更新の結果です。成功した場合、表示完了そのものの報告や同じ内容の再更新は不要です。まだ説明していない取得結果があれば、その要点を短く説明してください。既に説明済み、または表示だけの依頼ならwait_for_userで待機してください。失敗時はその旨を短く伝え、同じ更新を自動で繰り返さないでください。",
 	})
