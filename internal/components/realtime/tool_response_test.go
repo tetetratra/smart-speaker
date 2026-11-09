@@ -12,7 +12,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
-	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -20,7 +19,7 @@ func newToolResponseStage() *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{
-		cfg:        Config{Generation: gen, History: conversationhistory.NewStore(), ToolResponsePolicies: map[string]tools.ResponsePolicy{}},
+		cfg:        Config{Generation: gen, History: conversationhistory.NewStore()},
 		node:       &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:  &transport{commands: eventqueue.New[any](nil)},
 		controller: generationcontroller.New(gen), epoch: 1, ready: true,
@@ -96,47 +95,14 @@ func TestToolInstructionsWaitForActiveResponseAndRepairs(t *testing.T) {
 	s := newToolResponseStage()
 	s.active = "ack"
 	s.repairs = map[string]bool{"old-item": true}
-	s.cfg.ToolResponsePolicies["web_search"] = tools.ResponsePolicy{OnSuccess: true, Instructions: "検索専用の指示"}
 	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"晴れ"}`))
 	popToolCommand(t, s, "conversation.item.create")
 	toolServerEvent(s, map[string]any{"type": "response.done", "response": map[string]any{"id": "ack"}})
 	noToolCommand(t, s)
 	toolServerEvent(s, map[string]any{"type": "conversation.item.deleted", "item_id": "old-item"})
 	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if !strings.Contains(response["instructions"].(string), "検索専用の指示") {
-		t.Fatal("履歴補正中にツール別の指示が失われました")
-	}
-}
-
-func TestToolSuccessPolicyDoesNotSuppressOtherRequests(t *testing.T) {
-	for _, failure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "成功", true: "失敗"}[failure], func(t *testing.T) {
-			s := newToolResponseStage()
-			s.cfg.ToolResponsePolicies["update"] = tools.ResponsePolicy{OnSuccess: false}
-			output := `{"updated":true}`
-			if failure {
-				output = `{"error":"更新失敗"}`
-			}
-			s.toolResult(context.Background(), toolResultForTest("search", "update", output))
-			popToolCommand(t, s, "conversation.item.create")
-			if failure {
-				popToolCommand(t, s, "response.create")
-			} else {
-				noToolCommand(t, s)
-			}
-		})
-	}
-	s := newToolResponseStage()
-	s.cfg.ToolResponsePolicies["update"] = tools.ResponsePolicy{OnSuccess: false}
-	s.calls["update"] = &call{epoch: 1, generation: 1}
-	s.toolResult(context.Background(), toolResultForTest("update", "update", `{"updated":true}`))
-	popToolCommand(t, s, "conversation.item.create")
-	noToolCommand(t, s)
-	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
-	popToolCommand(t, s, "conversation.item.create")
-	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) || strings.Contains(response["instructions"].(string), `"call_id":"update"`) {
-		t.Fatal("応答不要の成功結果が他の結果の説明を妨げました", response)
+	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) {
+		t.Fatal("履歴補正中にツール結果の案内が失われました")
 	}
 }
 

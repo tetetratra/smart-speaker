@@ -178,14 +178,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers, responsePolicies := buildToolRegistry(cfg, memoryStore, services)
+	toolSchemas, toolHandlers := buildToolRegistry(cfg, memoryStore, services)
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
 		Scheduled:   services.Scheduled,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolResponsePolicies: responsePolicies,
+		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 		Context:     conversation.ContextBuilder{APIKey: cfg.APIKey, Model: cfg.ResponsesModel},
 		MemoryContext: func(ctx context.Context) (string, error) {
@@ -232,7 +232,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler, map[string]tools.ResponsePolicy) {
+func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
 	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
 	var scenes []switchbot.Scene
 	if switchBotClient != nil {
@@ -249,7 +249,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		OpenAIAPIKey:    cfg.APIKey,
 		OpenAIModel:     cfg.ResponsesModel,
 	})
-	return reg.DefinitionsForRealtime(), reg.Handlers(), reg.ResponsePolicies()
+	return reg.DefinitionsForRealtime(), reg.Handlers()
 }
 
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。

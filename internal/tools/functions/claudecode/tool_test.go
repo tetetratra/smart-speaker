@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
-	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -50,7 +49,7 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
 	tools, _, requests := newTools(t)
 	result, err := tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": ""})
-	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" || result["workdir"] != "work" {
+	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" || result["workdir"] != "work" || !strings.Contains(result["instructions"].(string), "結果を予想して話さない") {
 		t.Fatal(result, err)
 	}
 	result, err = tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": "speaker"})
@@ -123,16 +122,13 @@ func TestAnswerAndCancel(t *testing.T) {
 	}
 }
 
-func TestDefinitionsDeclarePolicies(t *testing.T) {
+func TestDefinitionsDeclareParameters(t *testing.T) {
 	for _, op := range Operations {
 		def := (&Tool{Operation: op}).Definition()
 		params := def["parameters"].(map[string]any)
 		if def["name"] != op || len(params["required"].([]string)) != len(params["properties"].(map[string]any)) {
 			t.Fatal(def)
 		}
-	}
-	if tools.ResponsePolicyFromDefinition((&Tool{Operation: OpList}).Definition()).Instructions == "" {
-		t.Fatal("一覧の伝え方の指示がありません")
 	}
 	if _, err := (&Tool{Operation: OpList}).Run(map[string]any{}); err == nil {
 		t.Fatal("設定がないのに動きました")
