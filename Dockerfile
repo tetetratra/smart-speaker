@@ -32,7 +32,9 @@ FROM base AS build
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+# Go のビルドに要るものだけを取り込み、手元の作業用ファイルをビルドキャッシュに残さない。
+COPY cmd ./cmd
+COPY internal ./internal
 RUN go build -o /app/bin/smart-speaker ./cmd/smart-speaker
 
 FROM debian:bookworm-slim AS runtime

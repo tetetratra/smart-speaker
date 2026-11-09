@@ -58,4 +58,12 @@ trap restore_context EXIT
 
 docker context use "$CONTEXT_NAME"
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+
+# デプロイのたびに増える、使われなくなったイメージと古いビルドキャッシュを消す。
+# 本番の Docker はビルドキャッシュを自動では消さないため、放っておくとディスクを使い切る（#341）。
+# キャッシュは量ではなく期限で消し、apt や go mod download などの層は残して次のビルドを遅くしない。
+# 名前付きのイメージ（退避用のタグなど）は消さない。消せなくてもデプロイは済んでいるので、警告だけにする。
+docker image prune -f || echo "使われなくなったイメージを消せませんでした。" >&2
+docker builder prune -f --filter until=168h || echo "古いビルドキャッシュを消せませんでした。" >&2
+
 docker compose -f "$COMPOSE_FILE" logs -f server

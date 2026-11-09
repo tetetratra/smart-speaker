@@ -1,4 +1,25 @@
-# 秘密情報を含むローカル設定をビルドコンテキストから除外する
+# ビルドコンテキストには、イメージのビルドに要るものだけを送る。
+# 不要なものを送ると、デプロイのたびに本番のビルドキャッシュが膨らみ、ディスクを使い切る（#341）。
+# 除外し忘れても余計なものが入るだけで済むよう、許可リストではなく除外リストにする。
+# （config.yaml は無くてもビルドが通ってしまうため、許可リストで漏らすと気づきにくい）
+
+# 秘密情報を含むローカル設定
 .envrc
-# Mac用のブリッジの依存はイメージに不要
-services/agent-bridge/node_modules
+
+# Claude Code の worktree など（それぞれに node_modules を含み大きい）
+.claude
+
+# 依存とビルド結果は、イメージの中で入れ直す・作り直す
+**/node_modules
+web/dist
+/smart-speaker
+
+# Git の履歴、手元の作業用ファイル・データ
+.git
+tmp
+data
+*.local.txt
+AGENTS.md
+.playwright-mcp
+.ruby-lsp
+**/.DS_Store
