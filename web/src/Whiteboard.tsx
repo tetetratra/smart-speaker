@@ -25,6 +25,7 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
   const [error, setError] = useState('')
   const boardRef = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
+  const refreshTools = useRef<() => void>(() => {})
 
   useEffect(() => {
     const controller = new AbortController()
@@ -46,6 +47,7 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
       }
     }
     const onFocus = () => { void refresh() }
+    refreshTools.current = onFocus
     void refresh()
     const timer = window.setInterval(onFocus, 2000)
     window.addEventListener('focus', onFocus)
@@ -53,8 +55,15 @@ export function Whiteboard({ entries, backendURL }: { entries: BoardEntry[]; bac
       controller.abort()
       window.clearInterval(timer)
       window.removeEventListener('focus', onFocus)
+      refreshTools.current = () => {}
     }
   }, [backendURL])
+
+  // 書き込みは set_whiteboard の呼び出し中に届くので、その時点で履歴を取り直す。
+  // ポーリングを待つと、ツール呼び出しの表示が書き込みより最大2秒遅れて現れるため。
+  useEffect(() => {
+    if (entries.length > 0) refreshTools.current()
+  }, [entries.length])
 
   const events = useMemo(() => {
     const result: BoardEvent[] = entries.map(entry => ({ id: `board-${entry.id}`, timestamp: entry.timestamp, kind: 'board', entry }))

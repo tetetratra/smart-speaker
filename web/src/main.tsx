@@ -867,7 +867,9 @@ function App() {
         case 'whiteboard_update': {
           const content = typeof raw.content === 'string' ? raw.content.trim() : ''
           if (!content) return
-          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content, timestamp: Date.now() }])
+          // ツール履歴と同じサーバーの時計で並べる。古いサーバーで時刻が無いときは受信時刻で代用する。
+          const timestamp = Number.isFinite(raw.timestamp) ? raw.timestamp as number : Date.now()
+          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content, timestamp }])
           break
         }
         default:
