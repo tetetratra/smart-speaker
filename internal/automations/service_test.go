@@ -29,7 +29,7 @@ func TestCronAndTimezone(t *testing.T) {
 		}
 	}
 }
-func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) {
+func TestPersistedOneShotRunsOnlyOnceAndRetainsScript(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	var deliveries []Delivery
 	deliver := func(_ context.Context, d Delivery) error { deliveries = append(deliveries, d); return nil }
@@ -38,7 +38,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 		t.Fatal(err)
 	}
 	now := stamp("2026-11-06T08:00:00+09:00")
-	job, err := service.Create(Spec{Name: "目覚まし", Instruction: "ユーザーを起こして", Schedule: Schedule{AfterSeconds: 600}, Speak: true}, now)
+	job, err := service.Create(Spec{Name: "目覚まし", Script: `remind("ユーザーを起こして")`, Schedule: Schedule{AfterSeconds: 600}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 		t.Fatal(err)
 	}
 	_ = again.RunDue(context.Background(), now.Add(time.Hour))
-	if len(deliveries) != 1 || !deliveries[0].Speak || deliveries[0].Instruction != "ユーザーを起こして" {
+	if len(deliveries) != 1 || deliveries[0].Script != `remind("ユーザーを起こして")` {
 		t.Fatal(deliveries)
 	}
 	if len(again.List()) != 0 {
@@ -69,7 +69,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
 	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(context.Context, Delivery) error { return errors.New("受付できません") })
 	now := stamp("2026-11-06T08:00:00+09:00")
-	if _, err := service.Create(Spec{Name: "室温", Instruction: "室温を伝える", Schedule: Schedule{AfterSeconds: 60}, Speak: true}, now); err != nil {
+	if _, err := service.Create(Spec{Name: "室温", Script: `remind("室温を伝える")`, Schedule: Schedule{AfterSeconds: 60}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.RunDue(context.Background(), now.Add(time.Minute)); err != nil {
@@ -82,14 +82,11 @@ func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
 func TestMissedCronCoalescesAndConcurrentTicksDoNotDuplicate(t *testing.T) {
 	var count atomic.Int32
 	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(_ context.Context, d Delivery) error {
-		if d.Speak {
-			t.Error("無音設定が失われました")
-		}
 		count.Add(1)
 		return nil
 	})
 	now := stamp("2026-11-02T07:00:00+09:00")
-	_, err := service.Create(Spec{Name: "仕事モード", Instruction: "ウェイクアップワードを必要にして", Schedule: Schedule{Cron: "0 8 * * 1-5"}}, now)
+	_, err := service.Create(Spec{Name: "仕事モード", Script: `toolcall("set_wake_mode", {required: true})`, Schedule: Schedule{Cron: "0 8 * * 1-5"}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +113,7 @@ func TestFailedPersistenceDoesNotExecuteAndCRUDPersists(t *testing.T) {
 	var count int
 	service, _ := New(path, func(context.Context, Delivery) error { count++; return errors.New("受付できません") })
 	_ = os.WriteFile(parent, []byte("保存を妨げるファイル"), 0600)
-	spec := Spec{Name: "予約", Instruction: "実行して", Schedule: Schedule{AfterSeconds: 1}}
+	spec := Spec{Name: "予約", Script: `remind("実行して")`, Schedule: Schedule{AfterSeconds: 1}}
 	now := time.Now()
 	if _, err := service.Create(spec, now); err == nil || len(service.List()) != 0 {
 		t.Fatal("保存失敗の予約が残りました")
@@ -127,7 +124,7 @@ func TestFailedPersistenceDoesNotExecuteAndCRUDPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec.Instruction = "変更後"
+	spec.Script = `remind("変更後")`
 	if _, err := service.Update(job.ID, spec, now); err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +148,26 @@ func TestPastAtErrorIncludesCurrentTime(t *testing.T) {
 	want := "過去の日時です（指定: 2026-11-07T11:37:00+09:00、現在: 2026-11-07T11:40:00+09:00）。現在より後の日時を指定してください"
 	if err == nil || err.Error() != want {
 		t.Fatal(err)
+	}
+}
+func TestScriptSyntaxErrorIsRejected(t *testing.T) {
+	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), nil)
+	_, err := service.Create(Spec{Name: "壊れた予約", Script: "remind(", Schedule: Schedule{AfterSeconds: 60}}, time.Now())
+	if err == nil {
+		t.Fatal("構文エラーのスクリプトを受理しました")
+	}
+}
+func TestLegacyInstructionIsConvertedToRemind(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	legacy := `[{"id":"old","name":"室温","instruction":"室温を \"伝える\"","speak":true,"schedule":{"cron":"0 8 * * *","timezone":"Asia/Tokyo"},"last_status":"scheduled"}]`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := service.List()[0].Script, `remind("室温を \"伝える\"")`; got != want {
+		t.Fatalf("script = %s, want %s", got, want)
 	}
 }

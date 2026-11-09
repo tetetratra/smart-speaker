@@ -56,8 +56,8 @@ func TestRunToolCallErrorCanBeCaught(t *testing.T) {
 
 func TestRunErrors(t *testing.T) {
 	for name, src := range map[string]string{
-		"構文エラー":   "remind(",
-		"未捕捉の例外":  `throw new Error("x")`,
+		"構文エラー":    "remind(",
+		"未捕捉の例外":   `throw new Error("x")`,
 		"空のremind": `remind("  ")`,
 	} {
 		if err := Run(context.Background(), src, Funcs{Remind: func(context.Context, string) error { return nil }}, time.Second); err == nil {

@@ -62,14 +62,8 @@ func main() {
 	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	scheduled := make(chan types.ScheduledPrompt, 100)
 	services.Scheduled = scheduled
-	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case scheduled <- types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction, Speak: delivery.Speak}:
-			return nil
-		}
-	})
+	runner := &automationRunner{scheduled: scheduled}
+	services.Automations, err = automations.New(cfg.AutomationStorePath, runner.run)
 	if err != nil {
 		log.Fatal(err)
 	}

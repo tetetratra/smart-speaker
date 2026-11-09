@@ -19,7 +19,7 @@ func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 		mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 		return rec
 	}
-	rec := request("POST", "/api/jobs", `{"name":"仕事","instruction":"モードをONにして","speak":false,"schedule":{"cron":"0 8 * * 1-5","timezone":"Asia/Tokyo"}}`)
+	rec := request("POST", "/api/jobs", `{"name":"仕事","script":"toolcall(\"set_wake_mode\", {required: true})","schedule":{"cron":"0 8 * * 1-5","timezone":"Asia/Tokyo"}}`)
 	if rec.Code != 201 {
 		t.Fatal(rec.Code, rec.Body)
 	}
@@ -36,11 +36,11 @@ func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 	if rec = request("PATCH", "/api/jobs/"+id, `{"enabled":false}`); rec.Code != 405 {
 		t.Fatal("停止・再開は提供しません", rec.Code)
 	}
-	if rec = request("PUT", "/api/jobs/"+id, `{"name":"変更","instruction":"変更後の指示","speak":true,"schedule":{"after_seconds":600}}`); rec.Code != 200 || !service.List()[0].Speak {
+	if rec = request("PUT", "/api/jobs/"+id, `{"name":"変更","script":"remind(\"変更後\")","schedule":{"after_seconds":600}}`); rec.Code != 200 || service.List()[0].Script != `remind("変更後")` {
 		t.Fatal(rec.Code, rec.Body)
 	}
-	if rec = request("POST", "/api/jobs", `{"name":"コードは禁止","script":"bad()","schedule":{"after_seconds":10}}`); rec.Code != 400 {
-		t.Fatal("コードを受理しました", rec.Code)
+	if rec = request("POST", "/api/jobs", `{"name":"構文エラー","script":"remind(","schedule":{"after_seconds":10}}`); rec.Code != 400 {
+		t.Fatal("構文エラーのスクリプトを受理しました", rec.Code)
 	}
 	if rec = request("DELETE", "/api/jobs/"+id, ""); rec.Code != 204 {
 		t.Fatal(rec.Code)

@@ -12,13 +12,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tetetratra/smart-speaker/internal/automations/script"
 )
 
+func remindScript(text string) string {
+	quoted, _ := json.Marshal(text)
+	return "remind(" + string(quoted) + ")"
+}
+
 type Spec struct {
-	Name        string   `json:"name"`
-	Instruction string   `json:"instruction"`
-	Schedule    Schedule `json:"schedule"`
-	Speak       bool     `json:"speak"`
+	Name string `json:"name"`
+	// Script は発火時に実行するJavaScript。remind と toolcall を使える。
+	Script   string   `json:"script"`
+	Schedule Schedule `json:"schedule"`
 }
 type Job struct {
 	ID string `json:"id"`
@@ -29,8 +35,13 @@ type Job struct {
 	LastError  string    `json:"last_error,omitempty"`
 }
 type Delivery struct {
-	ID, Name, Instruction string
-	Speak                 bool
+	ID, Name, Script string
+}
+
+// legacyJob は、自然言語の指示を保存していた頃のジョブも読めるようにする。
+type legacyJob struct {
+	Job
+	Instruction string `json:"instruction"`
 }
 type Service struct {
 	mu      sync.Mutex
@@ -48,14 +59,19 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 	if err != nil {
 		return nil, err
 	}
-	var jobs []Job
+	var jobs []legacyJob
 	if err = json.Unmarshal(data, &jobs); err != nil {
 		return nil, fmt.Errorf("予約ジョブの読み込み: %w", err)
 	}
 	if len(jobs) > 100 {
 		return nil, fmt.Errorf("予約ジョブが100件を超えています")
 	}
-	for _, job := range jobs {
+	for _, legacy := range jobs {
+		job := legacy.Job
+		if job.Script == "" && legacy.Instruction != "" {
+			// 以前の自然言語の指示は、発火時にAIへ渡していた動きを remind で引き継ぐ。
+			job.Script = remindScript(legacy.Instruction)
+		}
 		if job.ID == "" {
 			return nil, fmt.Errorf("予約ジョブのIDが空です")
 		}
@@ -71,9 +87,12 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 }
 func validate(spec Spec, now time.Time, creating bool) (Spec, error) {
 	spec.Name = strings.TrimSpace(spec.Name)
-	spec.Instruction = strings.TrimSpace(spec.Instruction)
-	if spec.Name == "" || len(spec.Name) > 240 || spec.Instruction == "" || len(spec.Instruction) > 32768 {
-		return spec, fmt.Errorf("名前は1〜240バイト、指示は1〜32768バイトで指定してください")
+	spec.Script = strings.TrimSpace(spec.Script)
+	if spec.Name == "" || len(spec.Name) > 240 || spec.Script == "" || len(spec.Script) > 32768 {
+		return spec, fmt.Errorf("名前は1〜240バイト、スクリプトは1〜32768バイトで指定してください")
+	}
+	if err := script.Compile(spec.Script); err != nil {
+		return spec, fmt.Errorf("スクリプトの構文エラー: %w", err)
 	}
 	if spec.Schedule.Timezone == "" {
 		spec.Schedule.Timezone = "Asia/Tokyo"
@@ -237,10 +256,10 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	for _, job := range due {
 		var err error
 		if s.deliver == nil {
-			err = fmt.Errorf("AIへの送信経路がありません")
+			err = fmt.Errorf("スクリプトの実行経路がありません")
 		} else {
-			deliveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction, Speak: job.Speak})
+			deliveryCtx, cancel := context.WithTimeout(ctx, script.DefaultTimeout)
+			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Script: job.Script})
 			cancel()
 		}
 		if err != nil && job.Schedule.Cron == "" {

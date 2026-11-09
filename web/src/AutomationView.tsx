@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
-type JobSpec = { name: string; instruction: string; schedule: { cron?: string; at?: string; after_seconds?: number; timezone?: string }; speak: boolean }
+type JobSpec = { name: string; script: string; schedule: { cron?: string; at?: string; after_seconds?: number; timezone?: string } }
 type Job = JobSpec & { id: string; next_run_at?: string; last_run_at?: string; last_status: string; last_error?: string }
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
@@ -37,7 +37,8 @@ const automationStyle = `
   .job-title { display:flex; align-items:center; gap:6px; min-width:0; }
   .job-name { font-size:14px; font-weight:700; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .job-meta { font-size:12px; color:var(--live-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .job-instruction { font-size:12px; color:var(--live-muted); margin:4px 0 0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+  .job-script { font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--live-muted); margin:4px 0 0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow-wrap:anywhere; white-space:pre-wrap; }
+  .job-script-input { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
   .job-badge { flex:0 0 auto; font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px; background:var(--live-panel-soft); border:1px solid var(--live-line); color:var(--live-muted); }
   .job-badge.danger { background:var(--ui-danger-bg); border-color:var(--ui-danger-line); color:var(--ui-danger-text); }
   .job-actions { flex:0 0 auto; display:flex; gap:6px; }
@@ -51,8 +52,6 @@ const automationStyle = `
   .job-editor { display:grid; gap:10px; }
   .job-editor label { display:grid; gap:4px; font-size:12px; color:var(--live-muted); }
   .job-editor input, .job-editor textarea, .job-editor select { width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--live-line-strong); border-radius:6px; background:var(--live-panel-soft); color:var(--live-text); font:inherit; font-size:14px; }
-  .job-editor .job-check { display:flex; align-items:center; gap:8px; color:var(--live-text); }
-  .job-editor .job-check input { width:auto; }
 `
 
 export function AutomationView({ visible, backendURL, goApp }: { visible: boolean; backendURL: URL; goApp: () => void }) {
@@ -100,19 +99,18 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
         <h1>予約</h1>
         <button className="job-btn plain" onClick={goApp}>app画面</button>
         <button className="job-btn plain" onClick={() => setRevision(value => value + 1)}>更新</button>
-        <button className="job-btn primary" onClick={() => setEditor({ spec: { name: '', instruction: '', schedule: { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' }, speak: false } })}>追加</button>
+        <button className="job-btn primary" onClick={() => setEditor({ spec: { name: '', script: '', schedule: { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' } } })}>追加</button>
       </div>
-      <p className="jobs-hint">AIに「10分後に起こして」「平日8時に処理して。音声通知は不要」などと依頼して登録できます。日時指定の予約は実行後に削除されます。</p>
+      <p className="jobs-hint">AIに「10分後に起こして」「平日8時にライトをつけて」などと依頼して登録できます。スクリプトでは {'remind("伝えたいこと")'} でAIに話しかけ、{'toolcall("ツール名", { 引数 })'} でAIを通さずにツールを呼べます。日時指定の予約は実行後に削除されます。</p>
       {error && <p role="alert" className="job-error">{error}</p>}
       {editor && <form className="job-card job-editor" onSubmit={event => { event.preventDefault(); void mutate(editor.id ? 'PUT' : 'POST', editor.id, editor.spec) }}>
         <label>名前<input required value={editor.spec.name} onChange={event => patchSpec({ name: event.currentTarget.value })} /></label>
-        <label>実行する指示<textarea required rows={3} value={editor.spec.instruction} onChange={event => patchSpec({ instruction: event.currentTarget.value })} /></label>
+        <label>スクリプト<textarea className="job-script-input" required rows={5} spellCheck={false} value={editor.spec.script} onChange={event => patchSpec({ script: event.currentTarget.value })} /></label>
         <label>予約の種類<select value={editor.spec.schedule.cron !== undefined ? 'cron' : 'at'} onChange={event => patchSpec({ schedule: event.currentTarget.value === 'cron' ? { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' } : { at: '' } })}><option value="cron">繰り返し（cron）</option><option value="at">日時指定（1回）</option></select></label>
         {editor.spec.schedule.cron !== undefined ? <>
           <label>cron（分 時 日 月 曜日）<input required value={editor.spec.schedule.cron} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, cron: event.currentTarget.value } })} /></label>
           <label>タイムゾーン<input required value={editor.spec.schedule.timezone ?? 'Asia/Tokyo'} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, timezone: event.currentTarget.value } })} /></label>
         </> : <label>日時（例: 2026-11-10T08:00:00+09:00）<input required value={editor.spec.schedule.at ?? ''} onChange={event => patchSpec({ schedule: { at: event.currentTarget.value } })} /></label>}
-        <label className="job-check"><input type="checkbox" checked={editor.spec.speak} onChange={event => patchSpec({ speak: event.currentTarget.checked })} />音声で知らせる</label>
         <div className="job-actions" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="job-btn plain" disabled={pending} onClick={() => setEditor(undefined)}>キャンセル</button>
           <button className="job-btn primary" disabled={pending}>保存</button>
@@ -125,7 +123,6 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
             <div className="job-main">
               <div className="job-title">
                 <h2 className="job-name">{job.name}</h2>
-                {job.speak && <span className="job-badge">音声</span>}
                 {job.last_status === 'failed' && <span className="job-badge danger">送信失敗</span>}
               </div>
               <span className="job-meta">
@@ -134,11 +131,11 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
               </span>
             </div>
             <div className="job-actions">
-              <button className="job-btn edit" disabled={pending} onClick={() => setEditor({ id: job.id, spec: { name: job.name, instruction: job.instruction, schedule: { ...job.schedule }, speak: job.speak } })}>編集</button>
+              <button className="job-btn edit" disabled={pending} onClick={() => setEditor({ id: job.id, spec: { name: job.name, script: job.script, schedule: { ...job.schedule } } })}>編集</button>
               <button className="job-btn danger" disabled={pending} onClick={() => remove(job)}>削除</button>
             </div>
           </div>
-          <p className="job-instruction" title={job.instruction}>{job.instruction}</p>
+          <p className="job-script" title={job.script}>{job.script}</p>
           {job.last_error && <p role="alert" className="job-error">{job.last_error}</p>}
         </li>)}
       </ul>
