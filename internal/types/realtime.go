@@ -99,7 +99,16 @@ type WakeTranscription struct {
 	Error string
 }
 
-// ScheduledPrompt は登録済みの自然言語ジョブや外部エージェントの通知を会話処理へ渡す。
+// DirectToolCall は、予約ジョブのスクリプトがAIを通さずに呼んだツールの呼び出しと結果。
+// 会話処理は履歴に残すだけで、応答は作らない。
+type DirectToolCall struct {
+	// Source は会話履歴に残す出どころ（automation/<ジョブID>）。
+	Source  string
+	Request ToolRequest
+	Result  ToolResultRecord
+}
+
+// ScheduledPrompt は登録済みの予約ジョブや外部エージェントの通知を会話処理へ渡す。
 type ScheduledPrompt struct {
 	ID, Name, Instruction string
 	Speak                 bool

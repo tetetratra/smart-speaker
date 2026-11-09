@@ -62,8 +62,10 @@ func main() {
 	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	scheduled := make(chan types.ScheduledPrompt, 100)
 	services.Scheduled = scheduled
-	runner := &automationRunner{scheduled: scheduled}
-	services.Automations, err = automations.New(cfg.AutomationStorePath, runner.run)
+	direct := make(chan types.DirectToolCall, 100)
+	services.DirectToolCalls = direct
+	services.AutomationRunner = &automationRunner{scheduled: scheduled, direct: direct, history: services.ToolHistory}
+	services.Automations, err = automations.New(cfg.AutomationStorePath, services.AutomationRunner.run)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -173,11 +175,15 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	}
 
 	toolSchemas, toolHandlers, toolModes, responsePolicies := buildToolRegistry(cfg, memoryStore, services)
+	if services.AutomationRunner != nil {
+		services.AutomationRunner.handlers = toolHandlers
+	}
 	stages.realtime, err = realtime.NewStage(realtime.Config{
-		ToolHistory: services.ToolHistory,
-		WakeMode:    services.WakeMode,
-		Scheduled:   services.Scheduled,
-		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
+		ToolHistory:     services.ToolHistory,
+		WakeMode:        services.WakeMode,
+		Scheduled:       services.Scheduled,
+		DirectToolCalls: services.DirectToolCalls,
+		APIKey:          cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas, ToolResponsePolicies: responsePolicies,
 		IdleTimeout: cfg.ConversationIdleTimeout,

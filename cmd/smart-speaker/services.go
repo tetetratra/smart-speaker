@@ -14,8 +14,12 @@ type runtimeServices struct {
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
 	Scheduled   <-chan types.ScheduledPrompt
-	TTS         *tts.Selector
-	ToolHistory *toolhistory.Store
+	// DirectToolCalls は予約ジョブがAIを通さずに呼んだツールを会話履歴へ送る。
+	DirectToolCalls <-chan types.DirectToolCall
+	// AutomationRunner は予約ジョブのスクリプトを実行する。
+	AutomationRunner *automationRunner
+	TTS              *tts.Selector
+	ToolHistory      *toolhistory.Store
 	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。
 	ClaudeCode *agentbridge.Service
 }

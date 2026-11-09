@@ -24,6 +24,7 @@ import (
 type Config struct {
 	WakeMode                                                  *wakemode.Store
 	Scheduled                                                 <-chan types.ScheduledPrompt
+	DirectToolCalls                                           <-chan types.DirectToolCall
 	ToolHistory                                               *toolhistory.Store
 	ToolResponsePolicies                                      map[string]tools.ResponsePolicy
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
@@ -126,6 +127,7 @@ func (s *stage) status(ctx context.Context, status, message string) {
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeStatus, Payload: types.RealtimeStatus{Status: status, Message: message}})
 }
 func (s *stage) run(ctx context.Context) {
+	direct := s.cfg.DirectToolCalls
 	go func() {
 		for {
 			select {
@@ -136,6 +138,13 @@ func (s *stage) run(ctx context.Context) {
 					return
 				}
 				s.queue.Push(incoming{event: prompt})
+			case call, ok := <-direct:
+				if !ok {
+					// 閉じたチャネルを読み続けないよう、以後は選ばれないnilにする。
+					direct = nil
+					continue
+				}
+				s.queue.Push(incoming{event: call})
 			}
 		}
 	}()
@@ -178,6 +187,8 @@ func (s *stage) run(ctx context.Context) {
 			case types.ScheduledPrompt:
 				s.queueScheduled(e)
 				s.startScheduled(ctx)
+			case types.DirectToolCall:
+				s.recordDirectToolCall(ctx, e)
 			case time.Time:
 				s.tick(ctx, e)
 			}
