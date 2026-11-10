@@ -16,7 +16,6 @@ const (
 	EventSpeechEnd
 	EventRealtimeOutput
 	EventToolRequest
-	EventWhiteboardUpdate
 	EventRTCSignal
 	EventConversationCommitRequest
 	EventSessionReset
@@ -59,8 +58,6 @@ func (k EventKind) String() string {
 		return "EventRealtimeOutput"
 	case EventToolRequest:
 		return "EventToolRequest"
-	case EventWhiteboardUpdate:
-		return "EventWhiteboardUpdate"
 	case EventRTCSignal:
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:

@@ -313,7 +313,6 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus, types.EventSessionReset)
 	connectKinds(g, rt, tool, types.EventToolRequest)
 	connectKinds(g, tool, rt, types.EventConversationCommitRequest)
-	connectKinds(g, tool, chat, types.EventWhiteboardUpdate)
 }
 
 func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {

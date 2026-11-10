@@ -37,7 +37,7 @@ observe:
 		case command := <-r.commands:
 			t.Fatalf("待機後に不要なAPI要求が出ました: %v", command)
 		case event := <-r.events:
-			if event.Kind == types.EventToolRequest || event.Kind == types.EventResponseText || event.Kind == types.EventWhiteboardUpdate {
+			if event.Kind == types.EventToolRequest || event.Kind == types.EventResponseText {
 				t.Fatalf("待機がツール実行・発話・画面更新を起動しました: %v", event)
 			}
 		case <-timer.C:

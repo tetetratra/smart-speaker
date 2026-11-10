@@ -3,10 +3,8 @@ package whiteboard
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const toolName = "set_whiteboard"
@@ -21,9 +19,7 @@ const (
 	contentDescription = `ホワイトボードに追記する文章。7行程度を目安にし、URLやリンク付きテキストは含めないでください。`
 )
 
-type Tool struct {
-	emit func(types.Event)
-}
+type Tool struct{}
 
 func New() *Tool {
 	return &Tool{}
@@ -31,25 +27,12 @@ func New() *Tool {
 
 func (t *Tool) Name() string { return toolName }
 
-func (t *Tool) SetEventEmitter(emit func(types.Event)) {
-	t.emit = emit
-}
-
 func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 	content := strings.TrimSpace(asString(args["content"]))
 	content = strings.ReplaceAll(content, `\n`, "\n")
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil, fmt.Errorf("content is required")
-	}
-	if t.emit != nil {
-		t.emit(types.Event{
-			Kind: types.EventWhiteboardUpdate,
-			Payload: types.WhiteboardUpdate{
-				Content:   content,
-				UpdatedAt: time.Now(),
-			},
-		})
 	}
 	return map[string]any{
 		"content":      content,
@@ -85,7 +68,6 @@ func asString(v any) string {
 }
 
 var _ tools.Handler = (*Tool)(nil)
-var _ tools.EventEmitterAware = (*Tool)(nil)
 var _ tools.DefinitionProvider = (*Tool)(nil)
 
 // resultInstructions は更新結果を受けたAIへの指示。

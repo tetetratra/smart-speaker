@@ -119,21 +119,3 @@ func TestMessageForEventWakeTranscription(t *testing.T) {
 		t.Fatalf("msg = %v, want %v", msg, want)
 	}
 }
-
-func TestMessageForWhiteboardUpdateIncludesTimestamp(t *testing.T) {
-	at := time.UnixMilli(1700000000123)
-	msg, _, ok := messageForEvent(types.Event{Kind: types.EventWhiteboardUpdate, Payload: types.WhiteboardUpdate{Content: "予定", UpdatedAt: at}})
-	if !ok {
-		t.Fatal("messageForEvent returned ok=false")
-	}
-	if got := msg["timestamp"]; got != int64(1700000000123) {
-		t.Fatalf("timestamp = %v, want 1700000000123", got)
-	}
-	msg, _, ok = messageForEvent(types.Event{Kind: types.EventWhiteboardUpdate, Payload: types.WhiteboardUpdate{Content: "予定"}})
-	if !ok {
-		t.Fatal("messageForEvent returned ok=false")
-	}
-	if _, exists := msg["timestamp"]; exists {
-		t.Fatal("書き込み時刻が不明な通知に timestamp を含めません")
-	}
-}

@@ -61,9 +61,6 @@ func (s *toolCaller) run(parent context.Context) {
 		if ctxTool, ok := tool.(tools.ContextAware); ok {
 			ctxTool.SetContext(ctx)
 		}
-		if emitterTool, ok := tool.(tools.EventEmitterAware); ok {
-			emitterTool.SetEventEmitter(s.emit)
-		}
 	}
 	s.closerWaitGroup.Add(1)
 	go func() {
