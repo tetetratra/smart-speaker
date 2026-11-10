@@ -216,19 +216,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
-	case types.EventWhiteboardUpdate:
-		update, ok := evt.Payload.(types.WhiteboardUpdate)
-		if !ok {
-			return nil, "", false
-		}
-		msg = map[string]any{
-			"type":    "whiteboard_update",
-			"content": update.Content,
-		}
-		if !update.UpdatedAt.IsZero() {
-			// ツール履歴の started_at と同じサーバーの時計で並べられるよう、書き込み時刻をミリ秒で送る。
-			msg["timestamp"] = update.UpdatedAt.UnixMilli()
-		}
 	case types.EventWakeTranscription:
 		tr, ok := evt.Payload.(types.WakeTranscription)
 		if !ok {

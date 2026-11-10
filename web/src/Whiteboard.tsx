@@ -1,30 +1,8 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import type { PlaybackSpeech } from './audio'
 import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
-
-type BoardEntry = { id: number; content: string; timestamp: number }
-type ToolEntry = {
-  kind: 'tool'
-  id: string
-  call_id: string
-  name: string
-  arguments: string
-  output: string
-  status: 'running' | 'succeeded' | 'failed'
-  started_at: string
-  finished_at?: string
-}
-type InboundEntry = {
-  kind: 'inbound'
-  id: string
-  source: string
-  text: string
-  started_at: string
-}
-export type HistoryEntry = ToolEntry | InboundEntry
-type BoardEvent =
-  | { id: string; timestamp: number; kind: 'board'; entry: BoardEntry }
-  | { id: string; timestamp: number; kind: 'history'; entry: HistoryEntry }
+import { whiteboardEvents, type HistoryEntry } from './whiteboardHistory'
+export type { HistoryEntry } from './whiteboardHistory'
 
 function prettyJSON(value: string) {
   if (!value) return '（なし）'
@@ -32,13 +10,13 @@ function prettyJSON(value: string) {
 }
 
 // speech は今再生中の読み上げ区間。書き込みのスクロールの速さを読み上げに合わせるのに使う。
-export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; tools: HistoryEntry[]; speech?: PlaybackSpeech }) {
+export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: PlaybackSpeech }) {
   const boardRef = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
   const contentRef = useRef<HTMLDivElement>(null)
   const scroller = useRef<WhiteboardAutoScroll>()
   const speechTiming = useRef<SpeechTiming>()
-  const boardCount = useRef<number>()
+  const boardIDs = useRef<Set<string>>()
 
   useEffect(() => {
     const board = boardRef.current
@@ -65,27 +43,21 @@ export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; 
     if (current?.isActive()) current.run(whiteboardScrollSpeed(current.distance(), timing, timing.startedAt))
   }, [speech])
 
-  const events = useMemo(() => {
-    const result: BoardEvent[] = entries.map(entry => ({ id: `board-${entry.id}`, timestamp: entry.timestamp, kind: 'board', entry }))
-    // 呼び出しと結果はひとつの表示にまとめ、呼び出し時刻の位置に置く
-    for (const entry of tools) {
-      result.push({ id: `tool-${entry.id}`, timestamp: Date.parse(entry.started_at), kind: 'history', entry })
-    }
-    return result.sort((a, b) => a.timestamp - b.timestamp)
-  }, [entries, tools])
+  const events = useMemo(() => whiteboardEvents(tools), [tools])
 
   useEffect(() => {
     const board = boardRef.current
     const current = scroller.current
-    const previous = boardCount.current
-    boardCount.current = entries.length
+    const previous = boardIDs.current
+    const currentIDs = new Set(events.filter(event => event.kind === 'board').map(event => event.id))
+    boardIDs.current = currentIDs
     if (!board || !current || !follow.current) return
     if (previous === undefined) {
       // 最初の表示では、既にある内容の末尾へそのまま移る。
       board.scrollTop = board.scrollHeight
       return
     }
-    if (entries.length > previous) {
+    if ([...currentIDs].some(id => !previous.has(id))) {
       // 書き込みは今の読み上げに合わせた速さで動かす。
       current.run(whiteboardScrollSpeed(current.distance(), speechTiming.current, Date.now()))
     } else if (!current.isActive()) {
@@ -120,7 +92,7 @@ export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; 
       <div className="live-board-content" ref={contentRef}>
         {events.map(event => {
           if (event.kind === 'board') {
-            return <div key={event.id} className="live-board-event live-board-entry">{event.entry.content}</div>
+            return <div key={event.id} className="live-board-event live-board-entry">{event.content}</div>
           }
           const entry = event.entry
           // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する

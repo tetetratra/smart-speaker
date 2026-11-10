@@ -11,7 +11,6 @@ import { startBubbleAutoScroll } from './bubbleScroll'
 type ChatMessage =
   | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
-type BoardEntry = { id: number; content: string; timestamp: number }
 type ServerEventLog = { id: number; line: string }
 type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
 type MemoryItem = {
@@ -624,7 +623,6 @@ type LiveViewProps = {
   assistantSpeech?: PlaybackSpeech
   // 今再生中の読み上げ区間。ホワイトボードのスクロールの速さを読み上げに合わせるのに使う。
   playbackSpeech?: PlaybackSpeech
-  boardEntries: BoardEntry[]
   toolEntries: HistoryEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
@@ -648,7 +646,6 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
-  const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
   const [toolEntries, setToolEntries] = useState<HistoryEntry[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
@@ -870,14 +867,6 @@ function App() {
         }
         case 'tool_history': {
           if (Array.isArray(raw.entries)) setToolEntries(raw.entries)
-          break
-        }
-        case 'whiteboard_update': {
-          const content = typeof raw.content === 'string' ? raw.content.trim() : ''
-          if (!content) return
-          // ツール履歴と同じサーバーの時計で並べる。古いサーバーで時刻が無いときは受信時刻で代用する。
-          const timestamp = Number.isFinite(raw.timestamp) ? raw.timestamp as number : Date.now()
-          setBoardEntries((prev) => [...prev, { id: nextMessageId(), content, timestamp }])
           break
         }
         default:
@@ -1298,7 +1287,6 @@ function App() {
           isConversationBubbleHidden={!bubble.visible}
           assistantSpeech={bubble.assistant ? playbackSpeech : undefined}
           playbackSpeech={playbackSpeech}
-          boardEntries={boardEntries}
           toolEntries={toolEntries}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
@@ -1913,7 +1901,6 @@ function LiveView(props: LiveViewProps) {
     isConversationBubbleHidden,
     assistantSpeech,
     playbackSpeech,
-    boardEntries,
     toolEntries,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
@@ -1946,7 +1933,7 @@ function LiveView(props: LiveViewProps) {
       <div className="live-frame">
         <div className="live-main">
           <div className="live-left">
-            <Whiteboard entries={boardEntries} tools={toolEntries} speech={playbackSpeech} />
+            <Whiteboard tools={toolEntries} speech={playbackSpeech} />
             <div className="live-bubble-slot">
               {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>

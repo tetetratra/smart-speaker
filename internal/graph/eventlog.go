@@ -26,7 +26,6 @@ func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
 		types.EventSpeechEnd:                 formatSpeechEventDetail,
 		types.EventRealtimeOutput:            formatOutputLineDetail,
 		types.EventToolRequest:               formatToolRequestDetail,
-		types.EventWhiteboardUpdate:          formatWhiteboardUpdateDetail,
 		types.EventRTCSignal:                 formatRTCSignalDetail,
 		types.EventConversationCommitRequest: formatCommitRequestDetail,
 		types.EventLLMRequest:                formatLLMRequestDetail,
@@ -128,15 +127,6 @@ func formatSpeechEventDetail(evt types.Event) string {
 		parts = append(parts, fmt.Sprintf("source=%s", speech.Source))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func formatWhiteboardUpdateDetail(evt types.Event) string {
-	update, ok := evt.Payload.(types.WhiteboardUpdate)
-	if !ok {
-		return ""
-	}
-	text := strings.TrimSpace(update.Content)
-	return fmt.Sprintf("content=%s, chars=%d", quoteText(text), utf8.RuneCountInString(text))
 }
 
 func formatCommitRequestDetail(evt types.Event) string {
