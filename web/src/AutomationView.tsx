@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
-type JobSpec = { name: string; instruction: string; schedule: { cron?: string; at?: string; after_seconds?: number; timezone?: string }; speak: boolean }
+type JobSpec = { name: string; instruction: string; schedule: { cron?: string; at?: string; after_seconds?: number; timezone?: string } }
 type Job = JobSpec & { id: string; next_run_at?: string; last_run_at?: string; last_status: string; last_error?: string }
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
@@ -51,8 +51,6 @@ const automationStyle = `
   .job-editor { display:grid; gap:10px; }
   .job-editor label { display:grid; gap:4px; font-size:12px; color:var(--live-muted); }
   .job-editor input, .job-editor textarea, .job-editor select { width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--live-line-strong); border-radius:6px; background:var(--live-panel-soft); color:var(--live-text); font:inherit; font-size:14px; }
-  .job-editor .job-check { display:flex; align-items:center; gap:8px; color:var(--live-text); }
-  .job-editor .job-check input { width:auto; }
 `
 
 export function AutomationView({ visible, backendURL, goApp }: { visible: boolean; backendURL: URL; goApp: () => void }) {
@@ -100,7 +98,7 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
         <h1>予約</h1>
         <button className="job-btn plain" onClick={goApp}>app画面</button>
         <button className="job-btn plain" onClick={() => setRevision(value => value + 1)}>更新</button>
-        <button className="job-btn primary" onClick={() => setEditor({ spec: { name: '', instruction: '', schedule: { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' }, speak: false } })}>追加</button>
+        <button className="job-btn primary" onClick={() => setEditor({ spec: { name: '', instruction: '', schedule: { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' } } })}>追加</button>
       </div>
       <p className="jobs-hint">AIに「10分後に起こして」「平日8時に処理して。音声通知は不要」などと依頼して登録できます。日時指定の予約は実行後に削除されます。</p>
       {error && <p role="alert" className="job-error">{error}</p>}
@@ -112,7 +110,6 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
           <label>cron（分 時 日 月 曜日）<input required value={editor.spec.schedule.cron} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, cron: event.currentTarget.value } })} /></label>
           <label>タイムゾーン<input required value={editor.spec.schedule.timezone ?? 'Asia/Tokyo'} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, timezone: event.currentTarget.value } })} /></label>
         </> : <label>日時（例: 2026-11-10T08:00:00+09:00）<input required value={editor.spec.schedule.at ?? ''} onChange={event => patchSpec({ schedule: { at: event.currentTarget.value } })} /></label>}
-        <label className="job-check"><input type="checkbox" checked={editor.spec.speak} onChange={event => patchSpec({ speak: event.currentTarget.checked })} />音声で知らせる</label>
         <div className="job-actions" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="job-btn plain" disabled={pending} onClick={() => setEditor(undefined)}>キャンセル</button>
           <button className="job-btn primary" disabled={pending}>保存</button>
@@ -125,7 +122,6 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
             <div className="job-main">
               <div className="job-title">
                 <h2 className="job-name">{job.name}</h2>
-                {job.speak && <span className="job-badge">音声</span>}
                 {job.last_status === 'failed' && <span className="job-badge danger">送信失敗</span>}
               </div>
               <span className="job-meta">
@@ -134,7 +130,7 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
               </span>
             </div>
             <div className="job-actions">
-              <button className="job-btn edit" disabled={pending} onClick={() => setEditor({ id: job.id, spec: { name: job.name, instruction: job.instruction, schedule: { ...job.schedule }, speak: job.speak } })}>編集</button>
+              <button className="job-btn edit" disabled={pending} onClick={() => setEditor({ id: job.id, spec: { name: job.name, instruction: job.instruction, schedule: { ...job.schedule } } })}>編集</button>
               <button className="job-btn danger" disabled={pending} onClick={() => remove(job)}>削除</button>
             </div>
           </div>

@@ -53,7 +53,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.markSeen(event.EventID) {
 		return nil
 	}
-	prompt := types.ScheduledPrompt{ID: "agent/" + event.EventID, Source: "agent/claude-code/" + event.Type, Name: "Claude Code", Speak: true}
+	prompt := types.ScheduledPrompt{ID: "agent/" + event.EventID, Source: "agent/claude-code/" + event.Type, Name: "Claude Code"}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()
@@ -66,11 +66,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 			// 作業が終わった後に届いた再送。もう答えられないので尋ねない。
 			return nil
 		}
-		requestID := event.RequestID
 		prompt.Text = permissionText(event)
-		prompt.ExpiresAt = event.ExpiresAt
-		// 読み上げる前に答えが出たり作業が終わったりしたら、もう尋ねない。
-		prompt.Valid = func() bool { return s.isPending(requestID) }
 	case EventCompleted, EventFailed:
 		s.forgetTask(event.TaskID)
 		prompt.Text = resultText(event)
@@ -98,17 +94,6 @@ func (s *Service) Answer(ctx context.Context, requestID string, allow bool) erro
 		s.forget(requestID)
 	}
 	return err
-}
-
-func (s *Service) isPending(requestID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	pending, ok := s.pending[requestID]
-	if ok && !s.now().Before(pending.expiresAt) {
-		delete(s.pending, requestID)
-		return false
-	}
-	return ok
 }
 
 func (s *Service) forget(requestID string) {

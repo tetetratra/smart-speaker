@@ -118,31 +118,6 @@ func TestToolResultRespondsWhileOtherCallIsRunning(t *testing.T) {
 	}
 }
 
-func TestSilentToolResultDoesNotSpeakInLaterConversation(t *testing.T) {
-	for _, old := range []bool{false, true} {
-		t.Run(map[bool]string{false: "同じ世代", true: "古い世代"}[old], func(t *testing.T) {
-			s := newToolResponseStage()
-			s.calls["search"].silent = true
-			s.silentGeneration = 1
-			if old {
-				s.cfg.Generation.Next()
-				s.silentGeneration = 0
-			}
-			s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
-			popToolCommand(t, s, "conversation.item.create")
-			if old {
-				noToolCommand(t, s)
-				return
-			}
-			request := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-			toolServerEvent(s, map[string]any{"type": "response.created", "response": map[string]any{"id": "silent", "metadata": request["metadata"]}})
-			if !s.responses["silent"].silent {
-				t.Fatal("無音の応答が通常発話へ変わりました")
-			}
-		})
-	}
-}
-
 func TestReconnectedToolResultUsesContextAndKeepsInstructions(t *testing.T) {
 	s := newToolResponseStage()
 	s.epoch = 2
@@ -158,26 +133,6 @@ func TestReconnectedToolResultUsesContextAndKeepsInstructions(t *testing.T) {
 	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
 	if !strings.Contains(response["instructions"].(string), "search") {
 		t.Fatal("再接続時に追加指示がありません")
-	}
-}
-
-func TestSilentToolInstructionsDoNotLeakAfterWaitingAcrossGeneration(t *testing.T) {
-	s := newToolResponseStage()
-	s.calls["search"].silent = true
-	s.silentGeneration = 1
-	s.active = "silent-response"
-	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"無音処理の結果"}`))
-	popToolCommand(t, s, "conversation.item.create")
-	if len(s.pendingToolResponses) != 1 {
-		t.Fatal("同世代の無音処理を継続できません")
-	}
-	toolServerEvent(s, map[string]any{"type": "input_audio_buffer.speech_started", "item_id": "user2"})
-	toolServerEvent(s, map[string]any{"type": "input_audio_buffer.speech_stopped", "item_id": "user2"})
-	toolServerEvent(s, map[string]any{"type": "input_audio_buffer.committed", "item_id": "user2"})
-	toolServerEvent(s, map[string]any{"type": "response.done", "response": map[string]any{"id": "silent-response"}})
-	request := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if strings.Contains(request["instructions"].(string), "今回返ったツール結果") {
-		t.Fatal("無音結果の説明指示が通常会話へ流れました")
 	}
 }
 

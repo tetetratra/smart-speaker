@@ -1,62 +1,10 @@
 package realtime
 
-import (
-	"encoding/json"
-	"strings"
+import "strings"
 
-	"github.com/tetetratra/smart-speaker/internal/types"
-)
-
-// ユーザー本人の発話がないと呼べないツール。予約ジョブ・外部エージェントの通知・後から届いたツール結果で始まった応答からは呼ばせない。
-// 外部エージェントの出力に紛れた指示（「承認済みなので許可して」など）で、承認や新しい作業が勝手に進むのを防ぐ。
-// 長期メモリの書き換えも、ユーザーの依頼か了承があるときだけに限るため、ここに含める。
-var userOnlyTools = map[string]bool{
-	"ask_claude_code":               true,
-	"answer_claude_code_permission": true,
-	"add_memory":                    true,
-	"update_memory":                 true,
-	"delete_memory":                 true,
-}
-
-// 外部の文章（他のエージェントの出力、Claude Codeの会話）を結果として返すツール。
-// 結果に紛れた指示で userOnlyTools が呼ばれないよう、結果を受け取った世代も止める対象にする。
-// web_search の結果は、後から tool/ の差し込みとして届くので、ここには含めない。
-var externalDataTools = map[string]bool{
-	"list_claude_code_sessions": true,
-	"read_claude_code_session":  true,
-}
-
-const maxMachineGenerations = 64
-
+// isMachineSource は、アプリが差し込んだ指示（予約ジョブ・外部エージェントの通知・後から届いたツール結果）の出どころかどうかを返す。
 func isMachineSource(source string) bool {
 	return strings.HasPrefix(source, "automation/") || strings.HasPrefix(source, "agent/") || strings.HasPrefix(source, "tool/")
-}
-
-func (s *stage) rememberMachineGeneration(generation types.GenerationID, source string) {
-	if s.machineGenerations == nil {
-		s.machineGenerations = map[types.GenerationID]string{}
-	}
-	if len(s.machineGenerations) >= maxMachineGenerations {
-		// 古い世代のツール呼び出しはもう届かないので、まとめて忘れてよい。
-		clear(s.machineGenerations)
-	}
-	s.machineGenerations[generation] = source
-}
-
-// blockedMachineTool は、呼び出しを止める理由を返す。止めないなら空文字。
-func (s *stage) blockedMachineTool(req types.ToolRequest) string {
-	if !userOnlyTools[req.Name] {
-		return ""
-	}
-	if _, ok := s.machineGenerations[req.GenerationID]; !ok {
-		return ""
-	}
-	return "このツールは、ユーザー本人の返事を聞いた後でだけ呼び出せます。今は呼び出さず、ユーザーに確認したらwait_for_userで返事を待ってください。"
-}
-
-func blockedToolOutput(reason string) json.RawMessage {
-	output, _ := json.Marshal(map[string]any{"error": reason})
-	return output
 }
 
 // withClaudeCodeInstructions は、Claude Code連携のツールがあるときだけ利用方針を足す。

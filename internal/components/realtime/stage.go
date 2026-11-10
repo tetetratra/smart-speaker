@@ -36,17 +36,14 @@ type Config struct {
 }
 
 type response struct {
-	silent     bool
 	generation types.GenerationID
 	items      map[string]bool
 }
 type assistantItem struct {
-	silent          bool
 	generation      types.GenerationID
 	generated, sent string
 }
 type call struct {
-	silent     bool
 	epoch      uint64
 	generation types.GenerationID
 	finished   bool
@@ -56,7 +53,6 @@ type stage struct {
 	wakeOnlyReply                             bool
 	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
-	silentGeneration                          types.GenerationID
 	pendingToolResponses                      []toolCompletion
 	awaitingInputCommit                       string
 	itemOrder                                 []string
@@ -81,9 +77,6 @@ type stage struct {
 	repairs                                   map[string]bool
 	calls                                     map[string]*call
 	userGenerations                           map[string]types.GenerationID
-
-	// machineGenerations はアプリが差し込んだ指示（予約ジョブ・外部エージェントの通知）で始まった世代と、その出どころ。
-	machineGenerations map[types.GenerationID]string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
@@ -323,10 +316,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		change, _ := s.controller.Start(id)
 		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
 		s.lastActivity = time.Now()
-		s.silentGeneration = 0
-		if p.Silent {
-			s.silentGeneration = change.GenerationID
-		}
 		role, source := types.RoleUser, "text"
 		if strings.HasPrefix(p.RequestID, "local-wake/") {
 			source = "local-stt"
@@ -334,7 +323,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if isMachineSource(p.Source) {
 			role = "system"
 			source = p.Source
-			s.rememberMachineGeneration(change.GenerationID, p.Source)
 		}
 		s.record(ctx, id, role, p.Text, change.GenerationID, source)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})

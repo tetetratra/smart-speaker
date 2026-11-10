@@ -38,7 +38,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 		t.Fatal(err)
 	}
 	now := stamp("2026-11-06T08:00:00+09:00")
-	job, err := service.Create(Spec{Name: "目覚まし", Instruction: "ユーザーを起こして", Schedule: Schedule{AfterSeconds: 600}, Speak: true}, now)
+	job, err := service.Create(Spec{Name: "目覚まし", Instruction: "ユーザーを起こして", Schedule: Schedule{AfterSeconds: 600}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 		t.Fatal(err)
 	}
 	_ = again.RunDue(context.Background(), now.Add(time.Hour))
-	if len(deliveries) != 1 || !deliveries[0].Speak || deliveries[0].Instruction != "ユーザーを起こして" {
+	if len(deliveries) != 1 || deliveries[0].Instruction != "ユーザーを起こして" {
 		t.Fatal(deliveries)
 	}
 	if len(again.List()) != 0 {
@@ -69,7 +69,7 @@ func TestPersistedOneShotRunsOnlyOnceAndRetainsNaturalInstruction(t *testing.T) 
 func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
 	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(context.Context, Delivery) error { return errors.New("受付できません") })
 	now := stamp("2026-11-06T08:00:00+09:00")
-	if _, err := service.Create(Spec{Name: "室温", Instruction: "室温を伝える", Schedule: Schedule{AfterSeconds: 60}, Speak: true}, now); err != nil {
+	if _, err := service.Create(Spec{Name: "室温", Instruction: "室温を伝える", Schedule: Schedule{AfterSeconds: 60}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.RunDue(context.Background(), now.Add(time.Minute)); err != nil {
@@ -81,10 +81,7 @@ func TestFailedOneShotIsAlsoDeleted(t *testing.T) {
 }
 func TestMissedCronCoalescesAndConcurrentTicksDoNotDuplicate(t *testing.T) {
 	var count atomic.Int32
-	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(_ context.Context, d Delivery) error {
-		if d.Speak {
-			t.Error("無音設定が失われました")
-		}
+	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), func(context.Context, Delivery) error {
 		count.Add(1)
 		return nil
 	})

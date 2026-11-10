@@ -13,7 +13,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
-// Operations は登録するツール名。書き込みの3つは、ユーザー本人の発話がないと呼べない（realtimeの userOnlyTools）。
+// Operations は登録するツール名。
 var Operations = []string{"list_memories", "add_memory", "update_memory", "delete_memory"}
 
 // memoryRole は、長期メモリが何のためのものかの説明。全ツールの説明の冒頭に添える。
