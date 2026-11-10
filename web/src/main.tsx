@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
-import { Whiteboard } from './Whiteboard'
+import { Whiteboard, type ToolEntry } from './Whiteboard'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
@@ -625,6 +625,7 @@ type LiveViewProps = {
   // 今再生中の読み上げ区間。ホワイトボードのスクロールの速さを読み上げに合わせるのに使う。
   playbackSpeech?: PlaybackSpeech
   boardEntries: BoardEntry[]
+  toolEntries: ToolEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
@@ -648,6 +649,7 @@ function App() {
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
+  const [toolEntries, setToolEntries] = useState<ToolEntry[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
@@ -864,6 +866,10 @@ function App() {
         }
         case 'session_reset': {
           resetConversationBubble()
+          break
+        }
+        case 'tool_history': {
+          if (Array.isArray(raw.entries)) setToolEntries(raw.entries)
           break
         }
         case 'whiteboard_update': {
@@ -1293,6 +1299,7 @@ function App() {
           assistantSpeech={bubble.assistant ? playbackSpeech : undefined}
           playbackSpeech={playbackSpeech}
           boardEntries={boardEntries}
+          toolEntries={toolEntries}
           playbackVolumeLevel={playbackVolumeLevel}
           onPlaybackVolumeChange={setPlaybackVolumeLevel}
           connect={connect}
@@ -1907,6 +1914,7 @@ function LiveView(props: LiveViewProps) {
     assistantSpeech,
     playbackSpeech,
     boardEntries,
+    toolEntries,
     playbackVolumeLevel,
     onPlaybackVolumeChange,
     connect,
@@ -1938,7 +1946,7 @@ function LiveView(props: LiveViewProps) {
       <div className="live-frame">
         <div className="live-main">
           <div className="live-left">
-            <Whiteboard entries={boardEntries} backendURL={backendURL} speech={playbackSpeech} />
+            <Whiteboard entries={boardEntries} tools={toolEntries} speech={playbackSpeech} />
             <div className="live-bubble-slot">
               {(lastUserMessage || lastAssistantMessage) && !isConversationBubbleHidden && (
                 <div className={`live-bubble${isAiSpeaking ? ' live-bubble-ai-speaking' : ''}`}>

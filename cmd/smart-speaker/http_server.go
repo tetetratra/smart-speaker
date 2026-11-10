@@ -21,7 +21,6 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	registerLocationAPI(mux, &userlocation.Store{})
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
-	registerToolHistoryAPI(mux, services.ToolHistory)
 	registerAutomationsAPI(mux, services.Automations)
 	registerAgentEventsAPI(mux, services.ClaudeCode, cfg.AgentBridge.Token)
 	registerWebUI(mux, cfg.WebDistDir)
@@ -30,7 +29,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	chat := wschat.NewStage(mux, wschat.Config{})
+	chat := wschat.NewStage(mux, wschat.Config{ToolHistory: services.ToolHistory})
 	return server, chat, nil
 }
 

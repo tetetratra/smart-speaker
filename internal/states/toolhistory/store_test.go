@@ -25,3 +25,33 @@ func TestRetentionAndSnapshots(t *testing.T) {
 		t.Fatal("別の実行へ履歴を引き継ぎました")
 	}
 }
+
+func TestSubscriptionKeepsLatestStateWithoutBlockingWriters(t *testing.T) {
+	s := NewStore(2)
+	changed, unsubscribe := s.Subscribe()
+	other, stopOther := s.Subscribe()
+	defer stopOther()
+	<-changed
+	<-other
+	id := s.Begin(types.ToolRequest{Name: "検索"})
+	<-changed
+	if s.Snapshot()[0].Status != "running" {
+		t.Fatal("開始状態が記録されていません")
+	}
+	// 遅い購読者がいても、終了の記録を止めない。
+	s.Finish(id, types.ToolResultRecord{Output: json.RawMessage(`{"result":"全文"}`)})
+	<-changed
+	<-other
+	if s.Snapshot()[0].Status != "succeeded" {
+		t.Fatal("最新の終了状態を取得できません")
+	}
+	unsubscribe()
+	unsubscribe()
+	s.Begin(types.ToolRequest{Name: "次の検索"})
+	select {
+	case <-changed:
+		t.Fatal("購読解除後に通知されました")
+	default:
+	}
+	<-other
+}
