@@ -13,8 +13,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// Deliver は通知をRealtimeの会話へ差し込む。main.go で ScheduledPrompt のチャネルにつなぐ。
-type Deliver func(ctx context.Context, prompt types.ScheduledPrompt) error
+// Deliver は通知をRealtimeの会話へ差し込む。main.go で InboundMessage のチャネルにつなぐ。
+type Deliver func(ctx context.Context, prompt types.InboundMessage) error
 
 type pendingPermission struct {
 	taskID    string
@@ -53,7 +53,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.markSeen(event.EventID) {
 		return nil
 	}
-	prompt := types.ScheduledPrompt{ID: "agent/" + event.EventID, Source: "agent/claude-code/" + event.Type, Name: "Claude Code"}
+	prompt := types.InboundMessage{Source: "agent/claude-code/" + event.Type}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()

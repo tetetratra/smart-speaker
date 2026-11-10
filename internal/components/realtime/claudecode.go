@@ -1,12 +1,5 @@
 package realtime
 
-import "strings"
-
-// isMachineSource は、アプリが差し込んだ指示（予約ジョブ・外部エージェントの通知・後から届いたツール結果）の出どころかどうかを返す。
-func isMachineSource(source string) bool {
-	return strings.HasPrefix(source, "automation/") || strings.HasPrefix(source, "agent/") || strings.HasPrefix(source, "tool/")
-}
-
 // withClaudeCodeInstructions は、Claude Code連携のツールがあるときだけ利用方針を足す。
 func withClaudeCodeInstructions(instructions string, definitions []any) string {
 	for _, definition := range definitions {

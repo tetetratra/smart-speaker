@@ -22,7 +22,7 @@ import (
 
 type Config struct {
 	WakeMode                                                  *wakemode.Store
-	Scheduled                                                 <-chan types.ScheduledPrompt
+	Inbound                                                   <-chan types.InboundMessage
 	ToolHistory                                               *toolhistory.Store
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection                                             string
@@ -52,7 +52,7 @@ type stage struct {
 	wakeModeRequired, wakeGated               bool
 	wakeOnlyReply                             bool
 	pendingWake                               []types.LocalWakeUtterance
-	scheduled                                 []types.ScheduledPrompt
+	inbound                                   []types.InboundMessage
 	pendingToolResponses                      []toolCompletion
 	awaitingInputCommit                       string
 	itemOrder                                 []string
@@ -122,7 +122,7 @@ func (s *stage) run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case prompt, ok := <-s.cfg.Scheduled:
+			case prompt, ok := <-s.cfg.Inbound:
 				if !ok {
 					return
 				}
@@ -166,9 +166,9 @@ func (s *stage) run(ctx context.Context) {
 			switch e := in.event.(type) {
 			case types.Event:
 				s.handle(ctx, e)
-			case types.ScheduledPrompt:
-				s.queueScheduled(e)
-				s.startScheduled(ctx)
+			case types.InboundMessage:
+				s.queueInbound(e)
+				s.startInbound(ctx)
 			case time.Time:
 				s.tick(ctx, e)
 			}
@@ -320,12 +320,16 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if strings.HasPrefix(p.RequestID, "local-wake/") {
 			source = "local-stt"
 		}
-		if isMachineSource(p.Source) {
+		if p.Inbound {
 			role = "system"
 			source = p.Source
 		}
 		s.record(ctx, id, role, p.Text, change.GenerationID, source)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})
+		// 送信キューへ渡した時点を記録する。接続待ちの pendingText では記録しない。
+		if p.Inbound && s.cfg.ToolHistory != nil {
+			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{Source: p.Source, Text: p.Text}, change.GenerationID)
+		}
 		s.wantResponse = true
 		s.maybeRespond(ctx)
 	}
@@ -336,7 +340,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	}
 	s.refreshWakeConversation()
 	s.maybeRespond(ctx)
-	if s.startScheduled(ctx) {
+	if s.startInbound(ctx) {
 		return
 	}
 	if s.speaking || s.active != "" || s.wantResponse || len(s.repairs) > 0 || s.pendingTools() || s.hasPendingOutput() {

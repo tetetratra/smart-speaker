@@ -3,7 +3,8 @@ import type { PlaybackSpeech } from './audio'
 import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
 
 type BoardEntry = { id: number; content: string; timestamp: number }
-export type ToolEntry = {
+type ToolEntry = {
+  kind: 'tool'
   id: string
   call_id: string
   name: string
@@ -13,9 +14,17 @@ export type ToolEntry = {
   started_at: string
   finished_at?: string
 }
+type InboundEntry = {
+  kind: 'inbound'
+  id: string
+  source: string
+  text: string
+  started_at: string
+}
+export type HistoryEntry = ToolEntry | InboundEntry
 type BoardEvent =
   | { id: string; timestamp: number; kind: 'board'; entry: BoardEntry }
-  | { id: string; timestamp: number; kind: 'tool'; entry: ToolEntry }
+  | { id: string; timestamp: number; kind: 'history'; entry: HistoryEntry }
 
 function prettyJSON(value: string) {
   if (!value) return '（なし）'
@@ -23,7 +32,7 @@ function prettyJSON(value: string) {
 }
 
 // speech は今再生中の読み上げ区間。書き込みのスクロールの速さを読み上げに合わせるのに使う。
-export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; tools: ToolEntry[]; speech?: PlaybackSpeech }) {
+export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; tools: HistoryEntry[]; speech?: PlaybackSpeech }) {
   const boardRef = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -60,7 +69,7 @@ export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; 
     const result: BoardEvent[] = entries.map(entry => ({ id: `board-${entry.id}`, timestamp: entry.timestamp, kind: 'board', entry }))
     // 呼び出しと結果はひとつの表示にまとめ、呼び出し時刻の位置に置く
     for (const entry of tools) {
-      result.push({ id: `tool-${entry.id}`, timestamp: Date.parse(entry.started_at), kind: 'tool', entry })
+      result.push({ id: `tool-${entry.id}`, timestamp: Date.parse(entry.started_at), kind: 'history', entry })
     }
     return result.sort((a, b) => a.timestamp - b.timestamp)
   }, [entries, tools])
@@ -100,6 +109,7 @@ export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; 
         .live-tool-entry > summary::marker { content: ''; }
         .live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }
         .live-tool-entry > summary.failed { background: var(--ui-danger-bg); border-color: var(--ui-danger-line); color: var(--ui-danger-text); }
+        .live-tool-entry > summary.inbound { background: #fff0df; border-color: #e6bd93; color: #75451f; }
         .live-tool-entry .live-tool-toast-tool { overflow-wrap: anywhere; white-space: normal; }
         .live-tool-entry-status { flex-shrink: 0; font-size: 10px; }
         .live-tool-entry-body { font-size: 12px; padding: 8px; border: 1px solid var(--live-line); border-radius: 8px; margin-top: 4px; overflow-wrap: anywhere; }
@@ -114,21 +124,27 @@ export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; 
           }
           const entry = event.entry
           // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する
-          const state = entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
+          const state = entry.kind === 'inbound' ? 'inbound' : entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
           return (
             <details key={event.id} className="live-board-event live-tool-entry" onToggle={event => {
               if (event.currentTarget.open) follow.current = false
             }}>
               <summary className={`live-tool-toast ${state}`}>
-                <span className="live-tool-toast-tool">{entry.name}</span>
+                <span className="live-tool-toast-tool">{entry.kind === 'inbound' ? entry.source : entry.name}</span>
                 <span className="live-tool-entry-status">▾</span>
               </summary>
               <div className="live-tool-entry-body">
-                <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.status === 'failed' && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
-                <h3>引数</h3>
-                <pre>{prettyJSON(entry.arguments)}</pre>
-                <h3>レスポンス</h3>
-                <pre>{entry.status === 'running' ? '結果を待っています…' : prettyJSON(entry.output)}</pre>
+                {entry.kind === 'inbound' ? <>
+                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}<br />出どころ: {entry.source}</p>
+                  <h3>モデルに渡した本文</h3>
+                  <pre>{entry.text}</pre>
+                </> : <>
+                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.status === 'failed' && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
+                  <h3>引数</h3>
+                  <pre>{prettyJSON(entry.arguments)}</pre>
+                  <h3>レスポンス</h3>
+                  <pre>{entry.status === 'running' ? '結果を待っています…' : prettyJSON(entry.output)}</pre>
+                </>}
               </div>
             </details>
           )

@@ -38,7 +38,7 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 		}
 	}))
 	t.Cleanup(server.Close)
-	service := agentbridge.NewService(agentbridge.NewClient(server.URL, "token"), func(context.Context, types.ScheduledPrompt) error { return nil })
+	service := agentbridge.NewService(agentbridge.NewClient(server.URL, "token"), func(context.Context, types.InboundMessage) error { return nil })
 	byName := map[string]*Tool{}
 	for _, op := range Operations {
 		byName[op] = &Tool{Service: service, Operation: op}

@@ -101,8 +101,8 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 			client.err = errors.New("検索APIの失敗")
 			heading = "[Web検索の失敗]"
 		}
-		delivered := make(chan types.ScheduledPrompt, 1)
-		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ScheduledPrompt) error {
+		delivered := make(chan types.InboundMessage, 1)
+		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.InboundMessage) error {
 			delivered <- prompt
 			return nil
 		}})
@@ -128,8 +128,8 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 // アプリの停止で検索が打ち切られたら、何も届けない。
 func TestCanceledSearchDeliversNothing(t *testing.T) {
 	client := &blockingSearchClient{release: make(chan struct{})}
-	delivered := make(chan types.ScheduledPrompt, 1)
-	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ScheduledPrompt) error {
+	delivered := make(chan types.InboundMessage, 1)
+	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.InboundMessage) error {
 		delivered <- prompt
 		return nil
 	}})
