@@ -10,6 +10,9 @@ import (
 )
 
 type Entry struct {
+	Kind         string             `json:"kind"`
+	Source       string             `json:"source,omitempty"`
+	Text         string             `json:"text,omitempty"`
 	ID           string             `json:"id"`
 	CallID       string             `json:"call_id"`
 	Name         string             `json:"name"`
@@ -21,7 +24,7 @@ type Entry struct {
 	FinishedAt   time.Time          `json:"finished_at,omitzero"`
 }
 
-// Store は最新の呼び出しを保持する。画面の再読み込みでは消去しない。
+// Store は最新のツール呼び出しと差し込みを保持する。画面の再読み込みでは消去しない。
 type Store struct {
 	mu       sync.RWMutex
 	limit    int
@@ -40,12 +43,23 @@ func (s *Store) Begin(req types.ToolRequest) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := uuid.NewString()
-	s.entries = append(s.entries, Entry{ID: id, CallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Arguments: string(req.Arguments), Status: "running", StartedAt: time.Now()})
+	s.appendLocked(Entry{Kind: "tool", ID: id, CallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Arguments: string(req.Arguments), Status: "running", StartedAt: time.Now()})
+	return id
+}
+
+// RecordInbound は送信キューへ渡した差し込みを、ツールと同じ履歴に残す。
+func (s *Store) RecordInbound(message types.InboundMessage, gen types.GenerationID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.appendLocked(Entry{Kind: "inbound", ID: uuid.NewString(), Source: message.Source, Text: message.Text, GenerationID: gen, StartedAt: time.Now()})
+}
+
+func (s *Store) appendLocked(entry Entry) {
+	s.entries = append(s.entries, entry)
 	if len(s.entries) > s.limit {
 		s.entries = append([]Entry(nil), s.entries[len(s.entries)-s.limit:]...)
 	}
 	s.notifyLocked()
-	return id
 }
 
 func (s *Store) Finish(id string, result types.ToolResultRecord) {

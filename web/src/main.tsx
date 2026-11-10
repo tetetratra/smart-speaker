@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
-import { Whiteboard, type ToolEntry } from './Whiteboard'
+import { Whiteboard, type HistoryEntry } from './Whiteboard'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
@@ -625,7 +625,7 @@ type LiveViewProps = {
   // 今再生中の読み上げ区間。ホワイトボードのスクロールの速さを読み上げに合わせるのに使う。
   playbackSpeech?: PlaybackSpeech
   boardEntries: BoardEntry[]
-  toolEntries: ToolEntry[]
+  toolEntries: HistoryEntry[]
   playbackVolumeLevel: PlaybackVolumeLevel
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   connect: () => Promise<void>
@@ -649,7 +649,7 @@ function App() {
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
   const [boardEntries, setBoardEntries] = useState<BoardEntry[]>([])
-  const [toolEntries, setToolEntries] = useState<ToolEntry[]>([])
+  const [toolEntries, setToolEntries] = useState<HistoryEntry[]>([])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)

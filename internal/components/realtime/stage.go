@@ -326,6 +326,10 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.record(ctx, id, role, p.Text, change.GenerationID, source)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})
+		// 送信キューへ渡した時点を記録する。接続待ちの pendingText では記録しない。
+		if p.Inbound && s.cfg.ToolHistory != nil {
+			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{Source: p.Source, Text: p.Text}, change.GenerationID)
+		}
 		s.wantResponse = true
 		s.maybeRespond(ctx)
 	}

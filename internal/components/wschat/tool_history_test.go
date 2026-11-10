@@ -76,4 +76,15 @@ func TestToolHistoryPushAndReconnect(t *testing.T) {
 	if len(entries) != 1 || entries[0].Arguments != string(args) || entries[0].Output != string(output) || entries[0].Status != "succeeded" {
 		t.Fatal("再接続時に最新の一覧を復元できません")
 	}
+	message := types.InboundMessage{Source: "tool/web_search", Text: long + "\n末尾"}
+	store.RecordInbound(message, 1)
+	entries = read(second)
+	if len(entries) != 2 || entries[0].Kind != "inbound" || entries[0].Source != message.Source || entries[0].Text != message.Text || entries[1].Kind != "tool" {
+		t.Fatal("差し込みがツールと同じ一覧に届きません", entries)
+	}
+	entries = read(connect())
+	if len(entries) != 2 || entries[0].Text != message.Text || entries[1].Output != string(output) {
+		t.Fatal("再接続で差し込みかツールの全文が欠落しました")
+	}
+
 }
