@@ -60,19 +60,19 @@ func main() {
 		log.Fatal(err)
 	}
 	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
-	scheduled := make(chan types.ScheduledPrompt, 100)
-	services.Scheduled = scheduled
+	inbound := make(chan types.InboundMessage, 100)
+	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、realtime が会話の空いたときに処理する経路へ送る。
-	services.Deliver = func(ctx context.Context, prompt types.ScheduledPrompt) error {
+	services.Deliver = func(ctx context.Context, prompt types.InboundMessage) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case scheduled <- prompt:
+		case inbound <- prompt:
 			return nil
 		}
 	}
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
-		return services.Deliver(ctx, types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction})
+		return services.Deliver(ctx, delivery.InboundMessage())
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -186,7 +186,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
-		Scheduled:   services.Scheduled,
+		Inbound:     services.Inbound,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas,
@@ -258,7 +258,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 }
 
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
-func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver func(context.Context, types.ScheduledPrompt) error) *agentbridge.Service {
+func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver func(context.Context, types.InboundMessage) error) *agentbridge.Service {
 	if cfg.URL == "" || cfg.Token == "" {
 		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
 		return nil

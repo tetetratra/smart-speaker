@@ -99,11 +99,8 @@ type WakeTranscription struct {
 	Error string
 }
 
-// ScheduledPrompt は登録済みの自然言語ジョブや外部エージェントの通知を会話処理へ渡す。
-type ScheduledPrompt struct {
-	ID, Name, Instruction string
-	// Text は組み立て済みの指示文。空なら予約ジョブ用の文言を組み立てる。
-	Text string
-	// Source は会話履歴に残す出どころ。空なら automation/<ID> にする。
+// InboundMessage は会話の外からモデルへ届ける、送り元で組み立て済みの文章。
+type InboundMessage struct {
 	Source string
+	Text   string
 }

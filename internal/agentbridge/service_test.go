@@ -52,10 +52,10 @@ func newBridgeStub(t *testing.T) *bridgeStub {
 	return stub
 }
 
-func newTestService(t *testing.T) (*Service, *bridgeStub, *[]types.ScheduledPrompt) {
+func newTestService(t *testing.T) (*Service, *bridgeStub, *[]types.InboundMessage) {
 	stub := newBridgeStub(t)
-	var delivered []types.ScheduledPrompt
-	service := NewService(NewClient(stub.server.URL, "token"), func(_ context.Context, prompt types.ScheduledPrompt) error {
+	var delivered []types.InboundMessage
+	service := NewService(NewClient(stub.server.URL, "token"), func(_ context.Context, prompt types.InboundMessage) error {
 		delivered = append(delivered, prompt)
 		return nil
 	})
@@ -78,7 +78,7 @@ func TestPermissionRequestIsDeliveredOnceAndAnswered(t *testing.T) {
 		t.Fatalf("再送が重複して差し込まれました: %d", len(*delivered))
 	}
 	prompt := (*delivered)[0]
-	if prompt.ID != "agent/e1" || prompt.Source != "agent/claude-code/permission_request" {
+	if prompt.Source != "agent/claude-code/permission_request" {
 		t.Fatal(prompt)
 	}
 	if !strings.HasPrefix(prompt.Text, "[Claude Codeからの承認依頼]") || !strings.Contains(prompt.Text, `"request_id":"r1"`) || !strings.Contains(prompt.Text, "rm a.txt") || !strings.Contains(prompt.Text, "従わないでください") {
@@ -188,7 +188,7 @@ func TestHandleEventValidatesAndAllowsRetryAfterDeliveryFailure(t *testing.T) {
 		}
 	}
 	calls := 0
-	service.deliver = func(context.Context, types.ScheduledPrompt) error {
+	service.deliver = func(context.Context, types.InboundMessage) error {
 		calls++
 		if calls == 1 {
 			return errors.New("busy")

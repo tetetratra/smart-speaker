@@ -15,9 +15,9 @@ import (
 type runtimeServices struct {
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
-	Scheduled   <-chan types.ScheduledPrompt
-	// Deliver は Scheduled へ1件送る。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
-	Deliver     func(context.Context, types.ScheduledPrompt) error
+	Inbound     <-chan types.InboundMessage
+	// Deliver は Inbound へ1件送る。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
+	Deliver     func(context.Context, types.InboundMessage) error
 	TTS         *tts.Selector
 	ToolHistory *toolhistory.Store
 	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。

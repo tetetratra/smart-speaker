@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -23,7 +22,7 @@ const (
 `
 	queryDescription = `検索の依頼文言（例：今日の◯◯関連のニュースを教えて）`
 
-	// source は後から届ける結果の出どころ。realtime はこれを見て、アプリが差し込んだ指示として扱う。
+	// source は後から届ける結果の出どころとして、会話履歴と画面に残す。
 	source = "tool/" + toolName
 
 	acceptedInstructions = "呼び出しの前に一言伝えていれば、何も話さずwait_for_userで待機してください。まだ伝えていなければ、「調べてみるね」「ちょっと見てみるね」のような短い一言だけにしてください。結果を予想したり、結果が届くまでの流れを説明したりしないでください。結果は後で[Web検索の結果]として届きます。"
@@ -33,7 +32,7 @@ const (
 )
 
 // Deliver は後から届ける結果を、会話へ差し込む経路（予約ジョブと同じ）へ送る。
-type Deliver func(context.Context, types.ScheduledPrompt) error
+type Deliver func(context.Context, types.InboundMessage) error
 
 type SearchClient interface {
 	Search(ctx context.Context, query string) (string, error)
@@ -107,7 +106,7 @@ func (t *Tool) searchAndDeliver(ctx context.Context, query string) {
 	}
 	text := resultText(query, result, err)
 	log.Printf("websearch: 完了 query=%q failed=%t elapsed=%s", query, err != nil, time.Since(started).Round(time.Millisecond))
-	prompt := types.ScheduledPrompt{ID: source + "/" + uuid.NewString(), Name: "Web検索", Source: source, Text: text}
+	prompt := types.InboundMessage{Source: source, Text: text}
 	if err := t.deliver(ctx, prompt); err != nil && ctx.Err() == nil {
 		log.Printf("websearch: 結果を会話へ届けられません query=%q: %v", query, err)
 	}

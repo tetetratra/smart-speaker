@@ -12,8 +12,8 @@ import (
 )
 
 func TestAgentEventsAPI(t *testing.T) {
-	var delivered []types.ScheduledPrompt
-	service := agentbridge.NewService(agentbridge.NewClient("http://bridge.invalid", "token"), func(_ context.Context, p types.ScheduledPrompt) error {
+	var delivered []types.InboundMessage
+	service := agentbridge.NewService(agentbridge.NewClient("http://bridge.invalid", "token"), func(_ context.Context, p types.InboundMessage) error {
 		delivered = append(delivered, p)
 		return nil
 	})
