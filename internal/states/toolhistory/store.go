@@ -23,9 +23,10 @@ type Entry struct {
 
 // Store は最新の呼び出しを保持する。画面の再読み込みでは消去しない。
 type Store struct {
-	mu      sync.RWMutex
-	limit   int
-	entries []Entry
+	mu       sync.RWMutex
+	limit    int
+	entries  []Entry
+	watchers map[chan struct{}]struct{}
 }
 
 func NewStore(limit int) *Store {
@@ -43,6 +44,7 @@ func (s *Store) Begin(req types.ToolRequest) string {
 	if len(s.entries) > s.limit {
 		s.entries = append([]Entry(nil), s.entries[len(s.entries)-s.limit:]...)
 	}
+	s.notifyLocked()
 	return id
 }
 
@@ -61,6 +63,7 @@ func (s *Store) Finish(id string, result types.ToolResultRecord) {
 			entry.Status = "failed"
 		}
 		entry.FinishedAt = time.Now()
+		s.notifyLocked()
 		return
 	}
 }
@@ -75,4 +78,28 @@ func (s *Store) Snapshot() []Entry {
 	return entries
 }
 
-func (s *Store) Limit() int { return s.limit }
+// Subscribe は接続時と履歴更新時に通知する。通知が溜まった場合はまとめ、最新の Snapshot を送れるようにする。
+func (s *Store) Subscribe() (<-chan struct{}, func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.watchers == nil {
+		s.watchers = make(map[chan struct{}]struct{})
+	}
+	changed := make(chan struct{}, 1)
+	s.watchers[changed] = struct{}{}
+	changed <- struct{}{}
+	return changed, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.watchers, changed)
+	}
+}
+
+func (s *Store) notifyLocked() {
+	for changed := range s.watchers {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
+}

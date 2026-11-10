@@ -14,10 +14,12 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
+	ToolHistory *toolhistory.Store
 }
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
@@ -29,6 +31,7 @@ func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
 		holder:     holder,
+		history:    cfg.ToolHistory,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
 	c.node = &graph.Stage{
@@ -99,6 +102,7 @@ func (h *connHolder) clearAll() {
 }
 
 type chatWS struct {
+	history    *toolhistory.Store
 	node       *graph.Stage
 	upstream   chan types.Event
 	downstream chan types.Event
@@ -301,6 +305,32 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		if c.holder != nil {
 			c.holder.remove(connID)
 		}
+	}()
+	// 初回・再接続・更新のすべてを同じ経路で送り、HTTP での取り直しを不要にする。
+	ctx, cancel := context.WithCancel(r.Context())
+	var historyWG sync.WaitGroup
+	if c.history != nil {
+		changed, unsubscribe := c.history.Subscribe()
+		defer unsubscribe()
+		historyWG.Add(1)
+		go func() {
+			defer historyWG.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-changed:
+					msg := map[string]any{"type": "tool_history", "entries": c.history.Snapshot()}
+					if !c.writeMessage(ctx, msg, connID) {
+						return
+					}
+				}
+			}
+		}()
+	}
+	defer func() {
+		cancel()
+		historyWG.Wait()
 	}()
 	for {
 		_, data, err := conn.Read(r.Context())

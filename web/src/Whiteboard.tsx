@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import type { PlaybackSpeech } from './audio'
 import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
 
 type BoardEntry = { id: number; content: string; timestamp: number }
-type ToolEntry = {
+export type ToolEntry = {
   id: string
   call_id: string
   name: string
@@ -23,12 +23,9 @@ function prettyJSON(value: string) {
 }
 
 // speech は今再生中の読み上げ区間。書き込みのスクロールの速さを読み上げに合わせるのに使う。
-export function Whiteboard({ entries, backendURL, speech }: { entries: BoardEntry[]; backendURL: URL; speech?: PlaybackSpeech }) {
-  const [tools, setTools] = useState<ToolEntry[]>([])
-  const [error, setError] = useState('')
+export function Whiteboard({ entries, tools, speech }: { entries: BoardEntry[]; tools: ToolEntry[]; speech?: PlaybackSpeech }) {
   const boardRef = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
-  const refreshTools = useRef<() => void>(() => {})
   const contentRef = useRef<HTMLDivElement>(null)
   const scroller = useRef<WhiteboardAutoScroll>()
   const speechTiming = useRef<SpeechTiming>()
@@ -58,44 +55,6 @@ export function Whiteboard({ entries, backendURL, speech }: { entries: BoardEntr
     const current = scroller.current
     if (current?.isActive()) current.run(whiteboardScrollSpeed(current.distance(), timing, timing.startedAt))
   }, [speech])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let pending = false
-    const refresh = async () => {
-      if (pending) return
-      pending = true
-      try {
-        const response = await fetch(new URL('/api/tool-history', backendURL), { signal: controller.signal, cache: 'no-store' })
-        if (!response.ok) throw new Error(`ツール履歴を取得できませんでした (${response.status})`)
-        const data = await response.json() as { entries: ToolEntry[] }
-        if (controller.signal.aborted) return
-        setTools(previous => JSON.stringify(previous) === JSON.stringify(data.entries) ? previous : data.entries)
-        setError('')
-      } catch (err) {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'ツール履歴を取得できませんでした')
-      } finally {
-        pending = false
-      }
-    }
-    const onFocus = () => { void refresh() }
-    refreshTools.current = onFocus
-    void refresh()
-    const timer = window.setInterval(onFocus, 2000)
-    window.addEventListener('focus', onFocus)
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-      refreshTools.current = () => {}
-    }
-  }, [backendURL])
-
-  // 書き込みは set_whiteboard の呼び出し中に届くので、その時点で履歴を取り直す。
-  // ポーリングを待つと、ツール呼び出しの表示が書き込みより最大2秒遅れて現れるため。
-  useEffect(() => {
-    if (entries.length > 0) refreshTools.current()
-  }, [entries.length])
 
   const events = useMemo(() => {
     const result: BoardEvent[] = entries.map(entry => ({ id: `board-${entry.id}`, timestamp: entry.timestamp, kind: 'board', entry }))
@@ -149,7 +108,6 @@ export function Whiteboard({ entries, backendURL, speech }: { entries: BoardEntr
         .live-tool-entry-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
       `}</style>
       <div className="live-board-content" ref={contentRef}>
-        {error && <div role="alert">{error}</div>}
         {events.map(event => {
           if (event.kind === 'board') {
             return <div key={event.id} className="live-board-event live-board-entry">{event.entry.content}</div>
