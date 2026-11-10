@@ -53,7 +53,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.markSeen(event.EventID) {
 		return nil
 	}
-	prompt := types.ScheduledPrompt{ID: "agent/" + event.EventID, Source: "agent/claude-code/" + event.Type, Name: "Claude Code", Speak: true}
+	prompt := types.ScheduledPrompt{ID: "agent/" + event.EventID, Source: "agent/claude-code/" + event.Type, Name: "Claude Code"}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()

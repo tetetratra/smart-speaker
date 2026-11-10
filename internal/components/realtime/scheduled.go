@@ -13,19 +13,9 @@ func (s *stage) startScheduled(ctx context.Context) bool {
 	if len(s.scheduled) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.pendingText) > 0 || len(s.repairs) > 0 || s.hasPendingOutput() {
 		return false
 	}
-	index := -1
-	for i, prompt := range s.scheduled {
-		// 音声通知は再生端末の接続を待つ。無音の処理は端末がなくても実行する。
-		if !prompt.Speak || len(s.peers) > 0 {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
-		return false
-	}
-	prompt := s.scheduled[index]
-	s.scheduled = append(s.scheduled[:index], s.scheduled[index+1:]...)
+	// 再生端末がつながっていなくても待たずに実行する。音声は誰にも聞こえないが、それは諦める。
+	prompt := s.scheduled[0]
+	s.scheduled = s.scheduled[1:]
 	text, source := prompt.Text, prompt.Source
 	if text == "" {
 		text = automationText(prompt)
@@ -33,15 +23,11 @@ func (s *stage) startScheduled(ctx context.Context) bool {
 	if source == "" {
 		source = "automation/" + prompt.ID
 	}
-	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: text, Source: source, Silent: !prompt.Speak}})
+	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: text, Source: source}})
 	return true
 }
 
 // 予約時の文言が指示に残っていても、復唱や再予約をせず今実行させる。
 func automationText(prompt types.ScheduledPrompt) string {
-	text := "[アプリの予約ジョブ: " + prompt.Name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + prompt.Instruction
-	if !prompt.Speak {
-		text += "\nこのジョブは音声通知不要です。必要な処理を実行し、ユーザーへの発話や完了の読み上げは行わないでください。"
-	}
-	return text
+	return "[アプリの予約ジョブ: " + prompt.Name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + prompt.Instruction
 }

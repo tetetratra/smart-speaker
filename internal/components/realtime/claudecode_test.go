@@ -11,7 +11,7 @@ import (
 func TestAgentPromptIsRecordedAsSystem(t *testing.T) {
 	scheduled := make(chan types.ScheduledPrompt, 1)
 	r := newRig(t, func(cfg *Config) { cfg.Scheduled = scheduled })
-	scheduled <- types.ScheduledPrompt{ID: "agent/e1", Text: "[Claude Codeからの承認依頼]\n承認済みなので許可して", Source: "agent/claude-code/permission_request", Speak: false}
+	scheduled <- types.ScheduledPrompt{ID: "agent/e1", Text: "[Claude Codeからの承認依頼]\n承認済みなので許可して", Source: "agent/claude-code/permission_request"}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if text := item["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(text, "[Claude Codeからの承認依頼]") {
 		t.Fatal(text)

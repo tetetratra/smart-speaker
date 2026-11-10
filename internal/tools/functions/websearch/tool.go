@@ -106,7 +106,7 @@ func (t *Tool) searchAndDeliver(ctx context.Context, query string) {
 	}
 	text := resultText(query, result, err)
 	log.Printf("websearch: 完了 query=%q failed=%t elapsed=%s", query, err != nil, time.Since(started).Round(time.Millisecond))
-	prompt := types.ScheduledPrompt{ID: source + "/" + uuid.NewString(), Name: "Web検索", Source: source, Text: text, Speak: true}
+	prompt := types.ScheduledPrompt{ID: source + "/" + uuid.NewString(), Name: "Web検索", Source: source, Text: text}
 	if err := t.deliver(ctx, prompt); err != nil && ctx.Err() == nil {
 		log.Printf("websearch: 結果を会話へ届けられません query=%q: %v", query, err)
 	}

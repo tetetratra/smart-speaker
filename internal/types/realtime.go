@@ -102,7 +102,6 @@ type WakeTranscription struct {
 // ScheduledPrompt は登録済みの自然言語ジョブや外部エージェントの通知を会話処理へ渡す。
 type ScheduledPrompt struct {
 	ID, Name, Instruction string
-	Speak                 bool
 	// Text は組み立て済みの指示文。空なら予約ジョブ用の文言を組み立てる。
 	Text string
 	// Source は会話履歴に残す出どころ。空なら automation/<ID> にする。

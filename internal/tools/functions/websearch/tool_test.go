@@ -115,7 +115,7 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 		close(client.release)
 		select {
 		case prompt := <-delivered:
-			if prompt.Source != "tool/web_search" || !prompt.Speak || !strings.HasPrefix(prompt.Text, heading) || !strings.Contains(prompt.Text, "明日の天気") {
+			if prompt.Source != "tool/web_search" || !strings.HasPrefix(prompt.Text, heading) || !strings.Contains(prompt.Text, "明日の天気") {
 				t.Fatal(prompt)
 			}
 		case <-ctx.Done():

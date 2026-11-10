@@ -36,17 +36,14 @@ type Config struct {
 }
 
 type response struct {
-	silent     bool
 	generation types.GenerationID
 	items      map[string]bool
 }
 type assistantItem struct {
-	silent          bool
 	generation      types.GenerationID
 	generated, sent string
 }
 type call struct {
-	silent     bool
 	epoch      uint64
 	generation types.GenerationID
 	finished   bool
@@ -56,7 +53,6 @@ type stage struct {
 	wakeOnlyReply                             bool
 	pendingWake                               []types.LocalWakeUtterance
 	scheduled                                 []types.ScheduledPrompt
-	silentGeneration                          types.GenerationID
 	pendingToolResponses                      []toolCompletion
 	awaitingInputCommit                       string
 	itemOrder                                 []string
@@ -320,10 +316,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		change, _ := s.controller.Start(id)
 		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
 		s.lastActivity = time.Now()
-		s.silentGeneration = 0
-		if p.Silent {
-			s.silentGeneration = change.GenerationID
-		}
 		role, source := types.RoleUser, "text"
 		if strings.HasPrefix(p.RequestID, "local-wake/") {
 			source = "local-stt"

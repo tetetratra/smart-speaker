@@ -72,7 +72,7 @@ func main() {
 		}
 	}
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
-		return services.Deliver(ctx, types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction, Speak: delivery.Speak})
+		return services.Deliver(ctx, types.ScheduledPrompt{ID: delivery.ID, Name: delivery.Name, Instruction: delivery.Instruction})
 	})
 	if err != nil {
 		log.Fatal(err)

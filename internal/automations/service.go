@@ -18,7 +18,6 @@ type Spec struct {
 	Name        string   `json:"name"`
 	Instruction string   `json:"instruction"`
 	Schedule    Schedule `json:"schedule"`
-	Speak       bool     `json:"speak"`
 }
 type Job struct {
 	ID string `json:"id"`
@@ -30,7 +29,6 @@ type Job struct {
 }
 type Delivery struct {
 	ID, Name, Instruction string
-	Speak                 bool
 }
 type Service struct {
 	mu      sync.Mutex
@@ -240,7 +238,7 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 			err = fmt.Errorf("AIへの送信経路がありません")
 		} else {
 			deliveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction, Speak: job.Speak})
+			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction})
 			cancel()
 		}
 		if err != nil && job.Schedule.Cron == "" {
