@@ -2,25 +2,17 @@ package realtime
 
 import (
 	"context"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func (s *stage) queueScheduled(prompt types.ScheduledPrompt) {
-	for i, old := range s.scheduled {
-		if old.ID == prompt.ID {
-			s.scheduled[i] = prompt
-			return
-		}
-	}
 	s.scheduled = append(s.scheduled, prompt)
 }
 func (s *stage) startScheduled(ctx context.Context) bool {
 	if len(s.scheduled) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.pendingText) > 0 || len(s.repairs) > 0 || s.hasPendingOutput() {
 		return false
 	}
-	s.dropStaleScheduled(time.Now())
 	index := -1
 	for i, prompt := range s.scheduled {
 		// 音声通知は再生端末の接続を待つ。無音の処理は端末がなくても実行する。
@@ -43,21 +35,6 @@ func (s *stage) startScheduled(ctx context.Context) bool {
 	}
 	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: text, Source: source, Silent: !prompt.Speak}})
 	return true
-}
-
-// dropStaleScheduled は期限切れや、既に意味がなくなった通知を捨てる。
-func (s *stage) dropStaleScheduled(now time.Time) {
-	kept := s.scheduled[:0]
-	for _, prompt := range s.scheduled {
-		if !prompt.ExpiresAt.IsZero() && !now.Before(prompt.ExpiresAt) {
-			continue
-		}
-		if prompt.Valid != nil && !prompt.Valid() {
-			continue
-		}
-		kept = append(kept, prompt)
-	}
-	s.scheduled = kept
 }
 
 // 予約時の文言が指示に残っていても、復唱や再予約をせず今実行させる。

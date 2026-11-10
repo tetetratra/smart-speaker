@@ -3,7 +3,6 @@ package realtime
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -26,19 +25,6 @@ func TestAgentPromptIsRecordedAsSystem(t *testing.T) {
 	}
 	if !found {
 		t.Fatal(records)
-	}
-}
-
-func TestStaleScheduledPromptsAreDropped(t *testing.T) {
-	now := time.Now()
-	s := &stage{}
-	valid := false
-	s.queueScheduled(types.ScheduledPrompt{ID: "expired", ExpiresAt: now.Add(-time.Second)})
-	s.queueScheduled(types.ScheduledPrompt{ID: "answered", Valid: func() bool { return valid }})
-	s.queueScheduled(types.ScheduledPrompt{ID: "alive", ExpiresAt: now.Add(time.Minute)})
-	s.dropStaleScheduled(now)
-	if len(s.scheduled) != 1 || s.scheduled[0].ID != "alive" {
-		t.Fatal(s.scheduled)
 	}
 }
 

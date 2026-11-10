@@ -107,8 +107,4 @@ type ScheduledPrompt struct {
 	Text string
 	// Source は会話履歴に残す出どころ。空なら automation/<ID> にする。
 	Source string
-	// ExpiresAt を過ぎたものは実行せずに捨てる。ゼロ値なら期限なし。
-	ExpiresAt time.Time
-	// Valid が false を返したものは実行せずに捨てる（承認依頼が既に片付いた場合など）。
-	Valid func() bool
 }

@@ -54,11 +54,10 @@ func TestQuietScheduledJobDoesNotEmitSpeechAndNormalSpeechStillWorks(t *testing.
 		t.Fatal(e)
 	}
 }
-func TestScheduledPromptWaitsForConversationAndCoalescesSameJob(t *testing.T) {
+func TestScheduledPromptWaitsForConversation(t *testing.T) {
 	s := &stage{speaking: true}
-	s.queueScheduled(types.ScheduledPrompt{ID: "same", Instruction: "前の時刻"})
-	s.queueScheduled(types.ScheduledPrompt{ID: "same", Instruction: "最新の時刻"})
-	if s.startScheduled(context.Background()) || len(s.scheduled) != 1 || s.scheduled[0].Instruction != "最新の時刻" {
+	s.queueScheduled(types.ScheduledPrompt{ID: "job", Instruction: "室温を知らせて"})
+	if s.startScheduled(context.Background()) || len(s.scheduled) != 1 {
 		t.Fatal(s.scheduled)
 	}
 }
