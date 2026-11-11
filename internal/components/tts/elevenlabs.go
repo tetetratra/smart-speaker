@@ -60,9 +60,10 @@ func (s *elevenLabsSynthesizer) SynthesizeSpeech(ctx context.Context, text strin
 		s.cfg.Voice,
 	)
 	payload := map[string]any{
-		"text":          text,
-		"model_id":      s.cfg.Model,
-		"language_code": "ja",
+		"text":                     text,
+		"model_id":                 s.cfg.Model,
+		"language_code":            "ja",
+		"apply_text_normalization": "on",
 	}
 	if vs := s.buildVoiceSettings(); vs != nil {
 		payload["voice_settings"] = vs
