@@ -103,9 +103,10 @@ func sessionUpdate(cfg Config, instructions string) map[string]any {
 	return map[string]any{"type": "session.update", "session": map[string]any{
 		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions, "tools": cfg.Tools, "tool_choice": "auto",
 		"audio": map[string]any{"input": map[string]any{
-			"format":         map[string]any{"type": "audio/pcm", "rate": 24000},
-			"transcription":  map[string]any{"model": cfg.TranscriptionModel, "language": "ja"},
-			"turn_detection": turnDetection,
+			"format":          map[string]any{"type": "audio/pcm", "rate": 24000},
+			"noise_reduction": map[string]any{"type": "far_field"},
+			"transcription":   map[string]any{"model": cfg.TranscriptionModel, "language": "ja"},
+			"turn_detection":  turnDetection,
 		}},
 	}}
 }
