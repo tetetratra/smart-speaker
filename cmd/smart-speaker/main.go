@@ -15,6 +15,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
+	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
@@ -23,11 +24,9 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
-	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
@@ -64,7 +63,7 @@ func main() {
 	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
-	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、realtime が会話の空いたときに処理する経路へ送る。
+	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
 	services.Deliver = func(ctx context.Context, prompt types.InboundMessage) error {
 		select {
 		case <-ctx.Done():
@@ -139,11 +138,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, segment, tts, frame, pace, tool, wakegate, output *graph.Stage
+	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -161,7 +160,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		chatStage.Name = "wschat"
 	}
 	generationStore := generation.NewStore()
-	historyStore := conversationhistory.NewStore()
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
 	}
@@ -193,12 +191,15 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
-		Inbound:     services.Inbound,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  cfg.SystemPrompt, Generation: generationStore, History: historyStore, Tools: toolSchemas,
+		Instructions:  cfg.SystemPrompt, Generation: generationStore, Tools: toolSchemas,
 		IdleTimeout: cfg.ConversationIdleTimeout,
-		Context:     conversation.ContextBuilder{APIKey: cfg.APIKey, Model: cfg.ResponsesModel},
+	})
+	if err != nil {
+		return appStages{}, err
+	}
+	stages.manager = conversationmanager.NewStage(conversationmanager.Config{Inbound: services.Inbound, ToolHistory: services.ToolHistory,
 		MemoryContext: func(ctx context.Context) (string, error) {
 			messages, err := memoryContextProvider.BuildContext(ctx, nil)
 			var parts []string
@@ -209,9 +210,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		},
 		OnConversationEnd: memoryCreatorHook.ExecRecords,
 	})
-	if err != nil {
-		return appStages{}, err
-	}
 	ttsCfg := ttsConfig(cfg)
 	ttsCfg.Selector = services.TTS
 	stages.tts, err = tts.NewStage(ttsCfg)
@@ -300,6 +298,9 @@ func wireGraph(g *graph.Graph, s appStages) {
 		return g.AddNode(st)
 	}
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
+	manager := add(s.manager)
+	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationSnapshotRequest, types.EventConversationEnded, types.EventConversationRecordsUsed)
+	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationSnapshot)
 	output := add(s.output)
 	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
 	connectKinds(g, chat, output, types.EventRTCSignal)

@@ -46,7 +46,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := make(chan types.InboundMessage, 1)
-	r := newRig(t, func(c *Config) { c.WakeMode = store; c.Inbound = inbound })
+	r := newRigWithInbound(t, inbound, func(c *Config) { c.WakeMode = store })
 	inbound <- types.InboundMessage{Source: "automation", Text: "呼びかけ必須モードを解除して。読み上げ不要"}
 	request := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})
@@ -155,5 +155,48 @@ func TestConversationAfterWakeUsesAudioUntilItEnds(t *testing.T) {
 		case <-timer.C:
 			return
 		}
+	}
+}
+
+func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
+	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode, err := store.SetRequired(true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newToolResponseStage()
+	s.cfg.WakeMode = store
+	s.peers = map[string]bool{"test": true}
+	old := s.cfg.Generation.Current()
+	s.active = "old-response"
+	s.pendingOutput = map[string]bool{"old-item": true}
+	s.items = map[string]*assistantItem{"old-item": {generation: old}}
+	s.localWake(context.Background(), types.LocalWakeUtterance{PeerID: "test", Revision: mode.Revision, Text: "スピーカー、止めて"})
+	popToolCommand(t, s, "response.cancel")
+	if s.cfg.Generation.Current() <= old || s.hasPendingOutput() {
+		t.Fatal("キャンセル完了前に旧音声が失効しませんでした")
+	}
+	var request types.Event
+	for len(s.node.Downstream) > 0 {
+		e := <-s.node.Downstream
+		if e.Kind == types.EventConversationResponseRequest {
+			request = e
+		}
+	}
+	if request.Kind != types.EventConversationResponseRequest {
+		t.Fatal("応答依頼なし")
+	}
+	input := request.Payload.(types.ConversationInput)
+	if input.Record.GenerationID != s.cfg.Generation.Current() {
+		t.Fatal(input)
+	}
+	generation := s.cfg.Generation.Current()
+	s.active = ""
+	s.handle(context.Background(), request)
+	if s.cfg.Generation.Current() != generation {
+		t.Fatal("会話管理から戻った入力が世代を二重更新しました")
 	}
 }
