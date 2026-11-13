@@ -33,6 +33,7 @@ type Service struct {
 	deliver Deliver
 	now     func() time.Time
 
+	eventMu sync.Mutex
 	mu      sync.Mutex
 	pending map[string]pendingPermission
 	// finished は完了・失敗を受け取った作業。遅れて届いた承認依頼を尋ねないために使う。
@@ -48,12 +49,18 @@ func NewService(client *Client, deliver Deliver) *Service {
 // HandleEvent はブリッジからの通知を1件処理する。同じ event_id の再送は何もせず成功にする。
 func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if err := validate(event); err != nil {
+		return &ValidationError{Err: err}
+	}
+	// 同じイベントの先行受付が失敗する前に、再送へ成功を返さない。
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if s.markSeen(event.EventID) {
+	if s.seen[event.EventID] {
 		return nil
 	}
-	prompt := types.InboundMessage{Source: "agent/claude-code/" + event.Type}
+	prompt := types.InboundMessage{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Context: append(json.RawMessage(nil), event.Context...)}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()
@@ -62,8 +69,9 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 			s.pending[event.RequestID] = pendingPermission{taskID: event.TaskID, expiresAt: event.ExpiresAt}
 		}
 		s.mu.Unlock()
-		if done {
-			// 作業が終わった後に届いた再送。もう答えられないので尋ねない。
+		if done && !types.HistoryOnly(event.Context) {
+			// 通常通知では終了済みの依頼を尋ねない。履歴専用なら遅着も記録する。
+			s.rememberEvent(event.EventID)
 			return nil
 		}
 		prompt.Text = permissionText(event)
@@ -71,10 +79,14 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 		s.forgetTask(event.TaskID)
 		prompt.Text = resultText(event)
 	}
+	if types.HistoryOnly(event.Context) {
+		prompt.Role = types.RoleToolResult
+		prompt.Text = "[過去のClaude Codeの通知]\n" + dataNotice + "\n" + encode(event)
+	}
 	if err := s.deliver(ctx, prompt); err != nil {
-		s.unmarkSeen(event.EventID)
 		return err
 	}
+	s.rememberEvent(event.EventID)
 	return nil
 }
 
@@ -119,29 +131,20 @@ func (s *Service) forgetTask(taskID string) {
 	s.finished[taskID] = now
 }
 
-// markSeen は既に受け取った event_id なら true を返す。
-func (s *Service) markSeen(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.seen[id] {
-		return true
-	}
+// rememberEvent は受付成功後だけ呼ぶ。eventMuで同時受付を直列化している。
+func (s *Service) rememberEvent(id string) {
 	s.seen[id] = true
 	s.order = append(s.order, id)
 	if len(s.order) > maxSeenEvents {
 		delete(s.seen, s.order[0])
 		s.order = s.order[1:]
 	}
-	return false
-}
-
-func (s *Service) unmarkSeen(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.seen, id)
 }
 
 func validate(event Event) error {
+	if err := types.ValidateDeliveryContext(event.Context); err != nil {
+		return err
+	}
 	if event.EventID == "" || event.TaskID == "" || event.SessionID == "" {
 		return errors.New("event_id、task_id、session_idを指定してください")
 	}
@@ -228,3 +231,9 @@ func clip(text string, max int) string {
 	}
 	return string([]rune(text)[:max]) + "…"
 }
+
+// ValidationError は再送しても直らない通知形式の誤り。
+type ValidationError struct{ Err error }
+
+func (e *ValidationError) Error() string { return e.Err.Error() }
+func (e *ValidationError) Unwrap() error { return e.Err }

@@ -1,13 +1,14 @@
 package whiteboard
 
 import (
+	"context"
 	"testing"
 )
 
 func TestToolRunReturnsContent(t *testing.T) {
 	tool := New()
 
-	out, err := tool.Run(map[string]any{
+	out, err := tool.Run(context.Background(), map[string]any{
 		"content": `  - 10:00 会議\n- 13:00 歯医者  `,
 	})
 	if err != nil {
@@ -25,7 +26,7 @@ func TestToolRunReturnsContent(t *testing.T) {
 func TestToolRunRequiresContent(t *testing.T) {
 	tool := New()
 
-	if _, err := tool.Run(map[string]any{"content": "   "}); err == nil {
+	if _, err := tool.Run(context.Background(), map[string]any{"content": "   "}); err == nil {
 		t.Fatal("Run() error = nil, want error")
 	}
 }

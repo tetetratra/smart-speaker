@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,5 +57,27 @@ func TestAgentEventsAPI(t *testing.T) {
 	disabled.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/agent-events", strings.NewReader(body)))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatal(rec.Code)
+	}
+}
+
+func TestAgentEventsIngressFailureIsRetryable(t *testing.T) {
+	calls := 0
+	service := agentbridge.NewService(nil, func(context.Context, types.InboundMessage) error {
+		calls++
+		if calls == 1 {
+			return errors.New("一時的な受付失敗")
+		}
+		return nil
+	})
+	mux := http.NewServeMux()
+	registerAgentEventsAPI(mux, service, "token")
+	for _, want := range []int{http.StatusServiceUnavailable, http.StatusAccepted} {
+		req := httptest.NewRequest(http.MethodPost, "/api/agent-events", strings.NewReader(`{"type":"completed","event_id":"e","task_id":"t","session_id":"s"}`))
+		req.Header.Set("Authorization", "Bearer token")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatal(rec.Code, rec.Body.String())
+		}
 	}
 }

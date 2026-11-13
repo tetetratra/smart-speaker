@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	EventResponseText EventKind = 100 + iota
@@ -101,6 +104,9 @@ type WakeTranscription struct {
 
 // InboundMessage は会話の外からモデルへ届ける、送り元で組み立て済みの文章。
 type InboundMessage struct {
-	Source string
-	Text   string
+	ID      string
+	Role    string
+	Context json.RawMessage
+	Source  string
+	Text    string
 }

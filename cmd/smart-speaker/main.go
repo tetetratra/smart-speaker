@@ -12,6 +12,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/automations"
+	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
@@ -32,6 +33,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -59,7 +61,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services := runtimeServices{TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、realtime が会話の空いたときに処理する経路へ送る。
@@ -72,7 +74,7 @@ func main() {
 		}
 	}
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
-		return services.Deliver(ctx, delivery.InboundMessage())
+		return services.Runner.Run(ctx, delivery.ID, delivery.Name, delivery.Script)
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -82,6 +84,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	services.ToolSchemas, services.ToolHandlers = buildToolRegistry(cfg, memoryStore, services)
+	services.Runner = script.New(execution.New(services.ToolHandlers, services.ToolHistory).Execute, services.Deliver)
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
@@ -182,7 +186,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers := buildToolRegistry(cfg, memoryStore, services)
+	toolSchemas, toolHandlers := services.ToolSchemas, services.ToolHandlers
+	if toolHandlers == nil {
+		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
+	}
 	stages.realtime, err = realtime.NewStage(realtime.Config{
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
@@ -243,7 +250,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		scenes = loadSwitchBotScenes(switchBotClient)
 	}
 
-	reg := registry.New(registry.Config{
+	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
 		Automations:      services.Automations,
 		Memory:           memoryStore,

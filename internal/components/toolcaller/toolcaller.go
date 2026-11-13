@@ -2,7 +2,6 @@ package toolcaller
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -22,9 +22,8 @@ type toolCaller struct {
 	closerWaitGroup sync.WaitGroup
 	taskGroup       sync.WaitGroup
 
-	tools   map[string]tools.Handler
-	node    *graph.Stage
-	history *toolhistory.Store
+	executor *execution.Executor
+	node     *graph.Stage
 
 	// results は call_id ごとの結果。値が nil なら実行中。
 	mu      sync.Mutex
@@ -41,8 +40,7 @@ func NewStage(handlers map[string]tools.Handler, history *toolhistory.Store) *gr
 		upstream:   make(chan types.Event),
 		results:    map[string]*types.ToolResultRecord{},
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		tools:      handlers,
-		history:    history,
+		executor:   execution.New(handlers, history),
 	}
 	s.node = &graph.Stage{
 		Upstream:   s.upstream,
@@ -57,11 +55,6 @@ func (s *toolCaller) run(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.ctx = ctx
 	s.cancel = cancel
-	for _, tool := range s.tools {
-		if ctxTool, ok := tool.(tools.ContextAware); ok {
-			ctxTool.SetContext(ctx)
-		}
-	}
 	s.closerWaitGroup.Add(1)
 	go func() {
 		defer s.closerWaitGroup.Done()
@@ -102,17 +95,10 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 		return
 	}
 	if !exists {
-		var entryID string
-		if s.history != nil {
-			entryID = s.history.Begin(req)
-		}
 		log.Printf("toolcaller: 開始 name=%s call_id=%s", req.Name, req.ToolCallID)
 		started := time.Now()
-		record := s.executeTool(req)
+		record := s.executor.Execute(s.ctx, req)
 		log.Printf("toolcaller: 終了 name=%s call_id=%s elapsed=%s", req.Name, req.ToolCallID, time.Since(started).Round(time.Millisecond))
-		if s.history != nil {
-			s.history.Finish(entryID, record)
-		}
 		result = &record
 		s.mu.Lock()
 		s.results[req.ToolCallID] = result
@@ -120,40 +106,6 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 	}
 	sent := *result // 送り直しのたびに別の値を渡し、受け手どうしで共有しない。
 	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
-}
-
-func (s *toolCaller) executeTool(req types.ToolRequest) types.ToolResultRecord {
-	args := map[string]any{}
-	if len(req.Arguments) > 0 {
-		if err := json.Unmarshal(req.Arguments, &args); err != nil {
-			return types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: json.RawMessage(`{"error":"invalid tool arguments"}`)}
-		}
-	}
-	tool, ok := s.tools[req.Name]
-	var result map[string]any
-	if !ok {
-		result = map[string]any{
-			"error": "unknown function: " + req.Name,
-		}
-	} else {
-		out, err := tool.Run(args)
-		if err != nil {
-			result = map[string]any{"error": err.Error()}
-		} else {
-			result = out
-		}
-	}
-	output, err := json.Marshal(result)
-	if err != nil {
-		log.Printf("toolcaller: result marshal error: %v", err)
-		output = []byte(`{"error":"result encoding failed"}`)
-	}
-	return types.ToolResultRecord{
-		ToolCallID:   req.ToolCallID,
-		Name:         req.Name,
-		Output:       output,
-		GenerationID: req.GenerationID,
-	}
 }
 
 func (s *toolCaller) close() error {

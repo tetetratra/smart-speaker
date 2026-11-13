@@ -2,11 +2,13 @@ package websearch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -46,7 +48,7 @@ func TestDefinitionAcceptsOnlyQuery(t *testing.T) {
 func TestRunReturnsResultOnly(t *testing.T) {
 	client := &fakeSearchClient{resp: "検索結果です"}
 	tool := New(Config{Client: client})
-	out, err := tool.Run(map[string]any{"query": "  OpenAI web search  "})
+	out, err := tool.Run(context.Background(), map[string]any{"query": "  OpenAI web search  "})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -63,7 +65,7 @@ func TestRunReturnsResultOnly(t *testing.T) {
 
 func TestRunRejectsEmptyQuery(t *testing.T) {
 	tool := New(Config{Client: &fakeSearchClient{}})
-	_, err := tool.Run(map[string]any{"query": "   "})
+	_, err := tool.Run(context.Background(), map[string]any{"query": "   "})
 	if err == nil || !strings.Contains(err.Error(), "query is required") {
 		t.Fatalf("err = %v, want query is required", err)
 	}
@@ -71,7 +73,7 @@ func TestRunRejectsEmptyQuery(t *testing.T) {
 
 func TestRunRejectsUnsupportedArgument(t *testing.T) {
 	tool := New(Config{Client: &fakeSearchClient{}})
-	_, err := tool.Run(map[string]any{"query": "OpenAI", "context": "不要"})
+	_, err := tool.Run(context.Background(), map[string]any{"query": "OpenAI", "context": "不要"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported argument: context") {
 		t.Fatalf("err = %v, want unsupported argument", err)
 	}
@@ -107,8 +109,8 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 			return nil
 		}})
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		tool.SetContext(ctx)
-		out, err := tool.Run(map[string]any{"query": "明日の天気"})
+		tool.appContext = ctx
+		out, err := tool.Run(context.Background(), map[string]any{"query": "明日の天気"})
 		if err != nil || out["status"] != "started" || out["query"] != "明日の天気" || out["instructions"] == "" {
 			t.Fatal(out, err)
 		}
@@ -134,8 +136,8 @@ func TestCanceledSearchDeliversNothing(t *testing.T) {
 		return nil
 	}})
 	ctx, cancel := context.WithCancel(context.Background())
-	tool.SetContext(ctx)
-	if _, err := tool.Run(map[string]any{"query": "明日の天気"}); err != nil {
+	tool.appContext = ctx
+	if _, err := tool.Run(context.Background(), map[string]any{"query": "明日の天気"}); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
@@ -143,5 +145,29 @@ func TestCanceledSearchDeliversNothing(t *testing.T) {
 	case prompt := <-delivered:
 		t.Fatal("停止後に結果が届きました", prompt)
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestHistoryOnlySearchSurvivesCallerCancellation(t *testing.T) {
+	raw := json.RawMessage(`{"delivery":"history_only","automation_id":"job-1","future":[1,true]}`)
+	appCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	caller, cancel := context.WithCancel(context.Background())
+	client := &blockingSearchClient{release: make(chan struct{}), resp: "後から届く結果"}
+	delivered := make(chan types.InboundMessage, 1)
+	tool := New(Config{Client: client, AppContext: appCtx, Deliver: func(_ context.Context, p types.InboundMessage) error { delivered <- p; return nil }})
+	result, err := tool.Run(execution.WithDeliveryContext(caller, raw), map[string]any{"query": "調べもの"})
+	if err != nil || result["status"] != "started" || result["instructions"] != nil {
+		t.Fatal(result, err)
+	}
+	cancel()
+	close(client.release)
+	select {
+	case prompt := <-delivered:
+		if prompt.ID == "" || string(prompt.Context) != string(raw) || !strings.Contains(prompt.Text, "後から届く結果") || strings.Contains(prompt.Text, resultInstructions) {
+			t.Fatal(prompt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("呼び出し元の終了で非同期結果が失われました")
 	}
 }

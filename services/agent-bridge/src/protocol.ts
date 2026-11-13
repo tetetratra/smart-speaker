@@ -1,6 +1,7 @@
 // smart-speaker とやり取りするJSONの形。Go側は internal/agentbridge/types.go に同じ形を定義している。
 
 export type PermissionRequestEvent = {
+  context?: Record<string, unknown>;
   type: "permission_request";
   event_id: string;
   task_id: string;
@@ -15,6 +16,7 @@ export type PermissionRequestEvent = {
 };
 
 export type CompletedEvent = {
+  context?: Record<string, unknown>;
   type: "completed";
   event_id: string;
   task_id: string;
@@ -29,6 +31,7 @@ export type CompletedEvent = {
 };
 
 export type FailedEvent = {
+  context?: Record<string, unknown>;
   type: "failed";
   event_id: string;
   task_id: string;

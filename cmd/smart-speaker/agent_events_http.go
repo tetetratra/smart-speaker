@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -43,7 +44,12 @@ func registerAgentEventsAPI(mux *http.ServeMux, service *agentbridge.Service, to
 				return
 			}
 			log.Printf("agent-events: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			status := http.StatusServiceUnavailable
+			var validation *agentbridge.ValidationError
+			if errors.As(err, &validation) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		w.WriteHeader(http.StatusAccepted)

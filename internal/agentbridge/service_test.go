@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -237,4 +238,174 @@ func hasPending(service *Service, requestID string) bool {
 	defer service.mu.Unlock()
 	_, ok := service.pending[requestID]
 	return ok
+}
+
+func TestHistoryOnlyContextIsPreservedForAllBridgeEvents(t *testing.T) {
+	raw := json.RawMessage(`{"delivery":"history_only","future":{"items":[1,true]}}`)
+	for _, kind := range []string{EventPermissionRequest, EventCompleted, EventFailed} {
+		t.Run(kind, func(t *testing.T) {
+			service, _, delivered := newTestService(t)
+			event := permissionEvent("event", "permission", time.Now().Add(time.Minute))
+			event.Type = kind
+			event.Context = raw
+			event.Summary = "結果"
+			event.Error = "失敗"
+			for range 2 {
+				if err := service.HandleEvent(context.Background(), event); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(*delivered) != 1 {
+				t.Fatal(*delivered)
+			}
+			prompt := (*delivered)[0]
+			if prompt.ID != "bridge/event" || string(prompt.Context) != string(raw) || prompt.Role != types.RoleToolResult || !strings.Contains(prompt.Text, "過去のClaude Code") {
+				t.Fatal(prompt)
+			}
+			if strings.Contains(prompt.Text, "ユーザーに尋ね") || strings.Contains(prompt.Text, "短く伝えてください") {
+				t.Fatal(prompt.Text)
+			}
+		})
+	}
+}
+
+func TestBridgeContextRejectsUnknownDelivery(t *testing.T) {
+	service, _, delivered := newTestService(t)
+	event := Event{Type: EventCompleted, EventID: "e", TaskID: "t", SessionID: "s", Context: json.RawMessage(`{"delivery":"invalid"}`)}
+	var validation *ValidationError
+	if err := service.HandleEvent(context.Background(), event); !errors.As(err, &validation) {
+		t.Fatal(err)
+	}
+	if len(*delivered) != 0 {
+		t.Fatal(*delivered)
+	}
+}
+
+func TestConcurrentRetryWaitsForFailedIngress(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	calls := 0
+	service := NewService(nil, func(context.Context, types.InboundMessage) error {
+		calls++
+		if calls == 1 {
+			close(entered)
+			<-release
+			return errors.New("一時受付失敗")
+		}
+		return nil
+	})
+	event := Event{Type: EventCompleted, EventID: "e", TaskID: "t", SessionID: "s"}
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go func() { first <- service.HandleEvent(context.Background(), event) }()
+	<-entered
+	go func() { second <- service.HandleEvent(context.Background(), event) }()
+	select {
+	case err := <-second:
+		t.Fatal("先行受付失敗前に再送へ応答しました", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err := <-first; err == nil {
+		t.Fatal("受付失敗が消えました")
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatal(calls)
+	}
+}
+
+func TestStartTaskPassesOpaqueContext(t *testing.T) {
+	stub := newBridgeStub(t)
+	raw := json.RawMessage(`{"delivery":"history_only","future":{"items":[1,true]}}`)
+	if _, err := NewClient(stub.server.URL, "token").StartTask(context.Background(), "依頼", "", "", raw); err != nil {
+		t.Fatal(err)
+	}
+	value := stub.bodies[0]["context"].(map[string]any)
+	if value["delivery"] != "history_only" || value["future"] == nil {
+		t.Fatal(value)
+	}
+}
+
+func TestLateHistoryOnlyPermissionIsRecordedAfterCompletion(t *testing.T) {
+	service, _, delivered := newTestService(t)
+	completed := Event{Type: EventCompleted, EventID: "completed", TaskID: "t1", SessionID: "s1"}
+	if err := service.HandleEvent(context.Background(), completed); err != nil {
+		t.Fatal(err)
+	}
+	permission := permissionEvent("late", "request", time.Now().Add(time.Minute))
+	permission.Context = json.RawMessage(`{"delivery":"history_only"}`)
+	if err := service.HandleEvent(context.Background(), permission); err != nil {
+		t.Fatal(err)
+	}
+	if len(*delivered) != 2 || !strings.Contains((*delivered)[1].Text, "permission_request") {
+		t.Fatal(*delivered)
+	}
+	if len(service.pending) != 0 {
+		t.Fatal("終了済みの承認依頼を再登録しました")
+	}
+}
+
+func TestFailedThenAcceptedEventKeepsDeduplicationWindow(t *testing.T) {
+	calls := 0
+	service := NewService(nil, func(context.Context, types.InboundMessage) error {
+		calls++
+		if calls == 1 {
+			return errors.New("一時失敗")
+		}
+		return nil
+	})
+	event := Event{Type: EventCompleted, EventID: "retry", TaskID: "t", SessionID: "s"}
+	if err := service.HandleEvent(context.Background(), event); err == nil {
+		t.Fatal("失敗しませんでした")
+	}
+	if err := service.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxSeenEvents-1; i++ {
+		other := event
+		other.EventID = fmt.Sprint(i)
+		if err := service.HandleEvent(context.Background(), other); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := calls
+	if err := service.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if calls != before {
+		t.Fatal("再送成功後のイベントを二重配信しました")
+	}
+}
+
+func TestFailedIntakeDoesNotEvictAcceptedEvent(t *testing.T) {
+	calls := 0
+	service := NewService(nil, func(_ context.Context, m types.InboundMessage) error {
+		calls++
+		if m.ID == "bridge/failure" {
+			return errors.New("一時失敗")
+		}
+		return nil
+	})
+	event := Event{Type: EventCompleted, TaskID: "t", SessionID: "s"}
+	for i := 0; i < maxSeenEvents; i++ {
+		event.EventID = fmt.Sprint(i)
+		if err := service.HandleEvent(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	event.EventID = "failure"
+	if err := service.HandleEvent(context.Background(), event); err == nil {
+		t.Fatal("失敗しませんでした")
+	}
+	before := calls
+	event.EventID = "0"
+	if err := service.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if calls != before {
+		t.Fatal("失敗した受付が成功済みIDを追い出しました")
+	}
 }

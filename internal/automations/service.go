@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tetetratra/smart-speaker/internal/automations/script"
 )
 
 type Spec struct {
-	Name        string   `json:"name"`
-	Instruction string   `json:"instruction"`
-	Schedule    Schedule `json:"schedule"`
+	Name     string   `json:"name"`
+	Script   string   `json:"script"`
+	Schedule Schedule `json:"schedule"`
 }
 type Job struct {
 	ID string `json:"id"`
@@ -28,7 +29,7 @@ type Job struct {
 	LastError  string    `json:"last_error,omitempty"`
 }
 type Delivery struct {
-	ID, Name, Instruction string
+	ID, Name, Script string
 }
 type Service struct {
 	mu      sync.Mutex
@@ -69,9 +70,12 @@ func New(path string, deliver func(context.Context, Delivery) error) (*Service, 
 }
 func validate(spec Spec, now time.Time, creating bool) (Spec, error) {
 	spec.Name = strings.TrimSpace(spec.Name)
-	spec.Instruction = strings.TrimSpace(spec.Instruction)
-	if spec.Name == "" || len(spec.Name) > 240 || spec.Instruction == "" || len(spec.Instruction) > 32768 {
-		return spec, fmt.Errorf("名前は1〜240バイト、指示は1〜32768バイトで指定してください")
+	spec.Script = strings.TrimSpace(spec.Script)
+	if spec.Name == "" || len(spec.Name) > 240 || spec.Script == "" || len(spec.Script) > 32768 {
+		return spec, fmt.Errorf("名前は1〜240バイト、スクリプトは1〜32768バイトで指定してください")
+	}
+	if _, err := script.Compile(spec.Script); err != nil {
+		return spec, fmt.Errorf("スクリプトの構文: %w", err)
 	}
 	if spec.Schedule.Timezone == "" {
 		spec.Schedule.Timezone = "Asia/Tokyo"
@@ -235,20 +239,18 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	for _, job := range due {
 		var err error
 		if s.deliver == nil {
-			err = fmt.Errorf("AIへの送信経路がありません")
+			err = fmt.Errorf("スクリプトの実行経路がありません")
 		} else {
-			deliveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = s.deliver(deliveryCtx, Delivery{ID: job.ID, Name: job.Name, Instruction: job.Instruction})
-			cancel()
+			err = s.deliver(ctx, Delivery{ID: job.ID, Name: job.Name, Script: job.Script})
 		}
 		if err != nil && job.Schedule.Cron == "" {
-			// 削除済みの一度きりの予約は画面に失敗を残せないため、ログへ出す。
-			fmt.Fprintf(os.Stderr, "予約ジョブの送信失敗 id=%s name=%s: %v\n", job.ID, job.Name, err)
+			// 削除済みの一度きりの予約は一覧に残らないため、実行履歴に加えてログにも出す。
+			fmt.Fprintf(os.Stderr, "予約ジョブの実行失敗 id=%s name=%s: %v\n", job.ID, job.Name, err)
 		}
 		s.mu.Lock()
 		current, ok := s.jobs[job.ID]
 		if ok && current.LastRunAt.Equal(now) {
-			current.LastStatus = "submitted"
+			current.LastStatus = "succeeded"
 			if err != nil {
 				current.LastStatus = "failed"
 				current.LastError = err.Error()

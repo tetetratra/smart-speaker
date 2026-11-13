@@ -48,15 +48,15 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 
 func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
 	tools, _, requests := newTools(t)
-	result, err := tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": ""})
+	result, err := tools[OpAsk].Run(context.Background(), map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": ""})
 	if err != nil || result["status"] != "started" || result["task_id"] != "t1" || result["session_id"] != "s1" || result["workdir"] != "work" || !strings.Contains(result["instructions"].(string), "結果を予想して話さない") {
 		t.Fatal(result, err)
 	}
-	result, err = tools[OpAsk].Run(map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": "speaker"})
+	result, err = tools[OpAsk].Run(context.Background(), map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": "speaker"})
 	if err != nil || result["workdir"] != "speaker" {
 		t.Fatal(result, err)
 	}
-	if _, err := tools[OpAsk].Run(map[string]any{"input": " ", "session_id": ""}); err == nil {
+	if _, err := tools[OpAsk].Run(context.Background(), map[string]any{"input": " ", "session_id": ""}); err == nil {
 		t.Fatal("空の依頼を受け付けました")
 	}
 	if (*requests)[0] != "POST /tasks" {
@@ -67,7 +67,7 @@ func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
 func TestListAndReadFormatForVoice(t *testing.T) {
 	time.Local = time.FixedZone("JST", 9*60*60)
 	tools, _, requests := newTools(t)
-	list, err := tools[OpList].Run(map[string]any{"limit": float64(3)})
+	list, err := tools[OpList].Run(context.Background(), map[string]any{"limit": float64(3)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,14 +78,14 @@ func TestListAndReadFormatForVoice(t *testing.T) {
 	if session["title"] != "PDFの要約" || session["last_modified"] != "2026-11-07 18:30" || session["created_at"] != "2026-11-07 17:00" || list["count"] != 1 {
 		t.Fatal(list)
 	}
-	read, err := tools[OpRead].Run(map[string]any{"session_id": "s1", "limit": float64(2), "offset": float64(0)})
+	read, err := tools[OpRead].Run(context.Background(), map[string]any{"session_id": "s1", "limit": float64(2), "offset": float64(0)})
 	if err != nil || read["workdir"] != "speaker" || read["has_older"] != true || read["messages"].([]map[string]any)[0]["at"] != "2026-11-07 18:30" {
 		t.Fatal(read, err)
 	}
-	if _, err := tools[OpList].Run(map[string]any{"limit": float64(100)}); err == nil {
+	if _, err := tools[OpList].Run(context.Background(), map[string]any{"limit": float64(100)}); err == nil {
 		t.Fatal("範囲外の件数を受け付けました")
 	}
-	if _, err := tools[OpRead].Run(map[string]any{"session_id": "s1", "limit": 1.5}); err == nil {
+	if _, err := tools[OpRead].Run(context.Background(), map[string]any{"session_id": "s1", "limit": 1.5}); err == nil {
 		t.Fatal("小数を受け付けました")
 	}
 	want := []string{"GET /sessions?limit=3", "GET /sessions/s1/messages?limit=2&offset=0"}
@@ -100,20 +100,20 @@ func TestAnswerAndCancel(t *testing.T) {
 	if err := service.HandleEvent(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tools[OpAnswer].Run(map[string]any{"request_id": "r1", "allow": "yes"}); err == nil {
+	if _, err := tools[OpAnswer].Run(context.Background(), map[string]any{"request_id": "r1", "allow": "yes"}); err == nil {
 		t.Fatal("文字列のallowを受け付けました")
 	}
-	result, err := tools[OpAnswer].Run(map[string]any{"request_id": "r1", "allow": true})
+	result, err := tools[OpAnswer].Run(context.Background(), map[string]any{"request_id": "r1", "allow": true})
 	if err != nil || result["status"] != "answered" {
 		t.Fatal(result, err)
 	}
-	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "t1", "session_id": ""}); err != nil {
+	if _, err := tools[OpCancel].Run(context.Background(), map[string]any{"task_id": "t1", "session_id": ""}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "", "session_id": "s1"}); err != nil {
+	if _, err := tools[OpCancel].Run(context.Background(), map[string]any{"task_id": "", "session_id": "s1"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tools[OpCancel].Run(map[string]any{"task_id": "", "session_id": ""}); err == nil {
+	if _, err := tools[OpCancel].Run(context.Background(), map[string]any{"task_id": "", "session_id": ""}); err == nil {
 		t.Fatal("止める対象がないのに受け付けました")
 	}
 	want := []string{"POST /permissions/r1", "POST /tasks/t1/cancel", "POST /sessions/s1/cancel"}
@@ -130,7 +130,7 @@ func TestDefinitionsDeclareParameters(t *testing.T) {
 			t.Fatal(def)
 		}
 	}
-	if _, err := (&Tool{Operation: OpList}).Run(map[string]any{}); err == nil {
+	if _, err := (&Tool{Operation: OpList}).Run(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("設定がないのに動きました")
 	}
 }

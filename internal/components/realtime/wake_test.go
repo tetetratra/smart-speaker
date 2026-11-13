@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
@@ -55,7 +56,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	if err = json.Unmarshal(req.Arguments, &args); err != nil {
 		t.Fatal(err)
 	}
-	result, err := (&waketool.Tool{Store: store}).Run(args)
+	result, err := (&waketool.Tool{Store: store}).Run(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
 	}

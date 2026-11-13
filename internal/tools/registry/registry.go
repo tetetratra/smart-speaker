@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -31,6 +32,7 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
+	AppContext         context.Context
 	WakeMode           *wakemode.Store
 	Automations        *automations.Service
 	Memory             *memorystate.Store
@@ -119,15 +121,16 @@ func New(cfg Config) *Registry {
 
 func newWebSearchTool(cfg Config) *websearch.Tool {
 	if cfg.WebSearchClient != nil {
-		return websearch.New(websearch.Config{Client: cfg.WebSearchClient, Deliver: cfg.WebSearchDeliver})
+		return websearch.New(websearch.Config{Client: cfg.WebSearchClient, Deliver: cfg.WebSearchDeliver, AppContext: cfg.AppContext})
 	}
 	if strings.TrimSpace(cfg.OpenAIAPIKey) == "" || strings.TrimSpace(cfg.OpenAIModel) == "" {
 		return nil
 	}
 	return websearch.New(websearch.Config{
-		APIKey:  cfg.OpenAIAPIKey,
-		Model:   cfg.OpenAIModel,
-		Deliver: cfg.WebSearchDeliver,
+		AppContext: cfg.AppContext,
+		APIKey:     cfg.OpenAIAPIKey,
+		Model:      cfg.OpenAIModel,
+		Deliver:    cfg.WebSearchDeliver,
 	})
 }
 

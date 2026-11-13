@@ -12,6 +12,7 @@ type Pending = {
 };
 
 export type PermissionAsk = {
+  context?: Record<string, unknown>;
   taskId: string;
   sessionId: string;
   tool: string;
@@ -55,6 +56,7 @@ export class PermissionBroker {
       void this.#notify(
         {
           type: "permission_request",
+          ...(ask.context === undefined ? {} : { context: ask.context }),
           task_id: ask.taskId,
           session_id: ask.sessionId,
           request_id: requestId,

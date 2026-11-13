@@ -54,8 +54,8 @@ func TestSceneToolRun(t *testing.T) {
 	defer server.Close()
 
 	tool := NewScene(newTestClient(server), []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}})
-	tool.SetContext(context.Background())
-	out, err := tool.Run(map[string]any{"scene_name": "換気扇をつける"})
+
+	out, err := tool.Run(context.Background(), map[string]any{"scene_name": "換気扇をつける"})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSceneToolRunRejectsUnknownScene(t *testing.T) {
 	defer server.Close()
 
 	tool := NewScene(newTestClient(server), []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}})
-	_, err := tool.Run(map[string]any{"scene_name": "未登録"})
+	_, err := tool.Run(context.Background(), map[string]any{"scene_name": "未登録"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -91,14 +91,14 @@ func TestSceneToolCanCorrectNameAfterValidationWithoutExecutingWrongScene(t *tes
 	}))
 	defer server.Close()
 	tool := NewScene(newTestClient(server), []Scene{{SceneID: "aircon-off", SceneName: "【エアコン】オフ"}})
-	_, err := tool.Run(map[string]any{"scene_name": "エアコン"})
+	_, err := tool.Run(context.Background(), map[string]any{"scene_name": "エアコン"})
 	if err == nil || !strings.Contains(err.Error(), "外部操作は実行していません") || !strings.Contains(err.Error(), "【エアコン】オフ") {
 		t.Fatalf("引数エラーに未実行と修正候補がありません: %v", err)
 	}
 	if len(paths) != 0 {
 		t.Fatalf("誤ったシーン名で外部操作が実行されました: %v", paths)
 	}
-	if _, err := tool.Run(map[string]any{"scene_name": "【エアコン】オフ"}); err != nil {
+	if _, err := tool.Run(context.Background(), map[string]any{"scene_name": "【エアコン】オフ"}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(paths, []string{"/v1.1/scenes/aircon-off/execute"}) {
@@ -108,7 +108,7 @@ func TestSceneToolCanCorrectNameAfterValidationWithoutExecutingWrongScene(t *tes
 
 func TestSceneToolRunRequiresSceneName(t *testing.T) {
 	tool := NewScene(&Client{}, []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}})
-	if _, err := tool.Run(map[string]any{}); err == nil {
+	if _, err := tool.Run(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }

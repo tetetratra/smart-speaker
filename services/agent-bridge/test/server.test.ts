@@ -9,7 +9,7 @@ const calls: unknown[][] = [];
 const server = createBridgeServer({
   token: TOKEN,
   tasks: {
-    start: async (input: string, sessionId?: string, workdir?: string) => (calls.push(["start", input, sessionId, workdir]), { task_id: "t1", session_id: "s1", workdir: "work" }),
+    start: async (input: string, sessionId?: string, workdir?: string, context?: Record<string, unknown>) => (calls.push(["start", input, sessionId, workdir, ...(context === undefined ? [] : [context])]), { task_id: "t1", session_id: "s1", workdir: "work" }),
     cancel: (id: string) => {
       if (id !== "t1") throw new HttpError(404, "作業が見つかりません");
       calls.push(["cancel", id]);
@@ -77,4 +77,32 @@ test("一覧と会話の取得", async () => {
     ["list", 20],
     ["messages", "abc", 3, 4],
   ]);
+});
+
+test("contextの未知キーと入れ子を解釈せずに作業へ渡す", async () => {
+  const context = { delivery: "bridgeには未知の値", future: { values: [1, null, { text: "日本語" }] } };
+  const response = await call("/tasks", { method: "POST", body: JSON.stringify({ input: "実行", context }) });
+  assert.equal(response.status, 202);
+  assert.deepEqual(calls.splice(0), [["start", "実行", undefined, undefined, context]]);
+});
+
+test("contextはオブジェクトのみ受け付け、null、配列、プリミティブを拒否する", async () => {
+  for (const context of [null, [], [1], "文字列", 1, true]) {
+    const response = await call("/tasks", { method: "POST", body: JSON.stringify({ input: "実行", context }) });
+    assert.equal(response.status, 400);
+  }
+  assert.deepEqual(calls.splice(0), []);
+  assert.equal((await call("/tasks", { method: "POST", body: JSON.stringify({ input: "実行", context: {} }) })).status, 202);
+  assert.deepEqual(calls.splice(0), [["start", "実行", undefined, undefined, {}]]);
+});
+
+test("contextの上限はUTF-8のJSONで16KiBとする", async () => {
+  const overhead = Buffer.byteLength(JSON.stringify({ value: "" }), "utf8");
+  const context = { value: "x".repeat(16 * 1024 - overhead) };
+  assert.equal((await call("/tasks", { method: "POST", body: JSON.stringify({ input: "実行", context }) })).status, 202);
+  assert.deepEqual(calls.splice(0), [["start", "実行", undefined, undefined, context]]);
+  for (const value of [context.value + "x", "あ".repeat(6000)]) {
+    assert.equal((await call("/tasks", { method: "POST", body: JSON.stringify({ input: "実行", context: { value } }) })).status, 400);
+  }
+  assert.deepEqual(calls.splice(0), []);
 });
