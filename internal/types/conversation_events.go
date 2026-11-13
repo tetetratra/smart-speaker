@@ -18,8 +18,12 @@ type ConversationInput struct {
 	External bool
 }
 
-// ConversationHistorySync は先行する記録の保存完了だけを通知する。履歴本体は運ばない。
-type ConversationHistorySync struct{ Done chan struct{} }
+// ConversationHistorySync は先行入力の配送と直接読み出しの順序を揃える。
+// 履歴本体は運ばず、読了時にDoneを閉じて後続の保存を再開する。
+type ConversationHistorySync struct {
+	Epoch uint64
+	Done  chan struct{}
+}
 
 // ConversationRecordsUsed は応答開始時点で参照した外部記録を通知する。
 type ConversationRecordsUsed struct{ IDs []string }

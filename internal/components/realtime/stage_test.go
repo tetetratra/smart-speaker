@@ -23,14 +23,15 @@ import (
 )
 
 type rig struct {
-	connections chan *websocket.Conn
-	t           *testing.T
-	ctx         context.Context
-	node        *graph.Stage
-	conn        *websocket.Conn
-	commands    chan map[string]any
-	events      chan types.Event
-	history     *conversationhistory.Store
+	managerQueue *eventqueue.Queue[types.Event]
+	connections  chan *websocket.Conn
+	t            *testing.T
+	ctx          context.Context
+	node         *graph.Stage
+	conn         *websocket.Conn
+	commands     chan map[string]any
+	events       chan types.Event
+	history      *conversationhistory.Store
 }
 
 func newRig(t *testing.T, options ...func(*Config)) *rig {
@@ -84,6 +85,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 	r.node = node
 	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound, History: r.history})
 	managerQueue := eventqueue.New[types.Event](nil)
+	r.managerQueue = managerQueue
 	go manager.Run(ctx)
 	go func() {
 		for {
@@ -128,14 +130,6 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				switch e.Kind {
 				case types.EventConversationRecord:
 					managerQueue.Push(e)
-					// テストで記録を観測するときは、ミラーではなく実ストアへの保存を待つ。
-					done := make(chan struct{})
-					managerQueue.Push(types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
-					select {
-					case <-done:
-					case <-ctx.Done():
-						return
-					}
 				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
@@ -264,7 +258,7 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 			break
 		}
 	}
-	records := r.history.Snapshot()
+	records := r.records()
 	if records[0].Text != "おはよう" || records[1].Role != types.RoleAgent {
 		t.Fatal(records)
 	}
@@ -322,7 +316,7 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 			break
 		}
 	}
-	records := r.history.Snapshot()
+	records := r.records()
 	found := false
 	for _, rec := range records {
 		if rec.Role == types.RoleToolResult {
@@ -564,30 +558,16 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	}
 }
 
-func TestConnectReadsSharedHistoryAfterPendingWrites(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func TestStaleHistorySyncReleasesWriter(t *testing.T) {
 	s := newToolResponseStage()
-	s.transport = nil
-	s.ready = false
-	s.queue = eventqueue.New[incoming](nil)
-	s.connect(ctx)
-	var sync types.ConversationHistorySync
-	for len(s.node.Downstream) > 0 {
-		e := <-s.node.Downstream
-		if e.Kind == types.EventConversationHistorySync {
-			sync = e.Payload.(types.ConversationHistorySync)
-		}
+	done := make(chan struct{})
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
+	select {
+	case <-done:
+	default:
+		t.Fatal("旧接続の同期で会話管理が止まる")
 	}
-	if sync.Done == nil {
-		t.Fatal("保存完了待ちがない")
-	}
-	s.cfg.History.Upsert(types.ConversationRecord{ID: "last", Text: "切断直前の発言"})
-	close(sync.Done)
-	in, ok := s.queue.Pop(ctx)
-	if !ok || !in.restore || len(in.history) != 1 || in.history[0].Text != "切断直前の発言" {
-		t.Fatal(in)
-	}
+	noToolCommand(t, s)
 }
 
 func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
@@ -604,4 +584,16 @@ func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
 	if !strings.Contains(text, "好きな季節は秋") {
 		t.Fatal(text)
 	}
+}
+
+// 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
+func (r *rig) records() []types.ConversationRecord {
+	done := make(chan struct{})
+	r.managerQueue.Push(types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
+	select {
+	case <-done:
+	case <-r.ctx.Done():
+		r.t.Fatal("履歴の保存を待てない")
+	}
+	return r.history.Snapshot()
 }

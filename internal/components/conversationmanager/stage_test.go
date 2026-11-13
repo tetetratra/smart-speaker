@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
@@ -65,24 +66,44 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	}
 }
 
-func TestHistorySyncFollowsSavedRecords(t *testing.T) {
+func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
 	s := testStage()
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationRecord, Payload: types.ConversationRecord{ID: "record", Text: "記録"}})
-	done := make(chan struct{})
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
-	select {
-	case <-done:
-	default:
-		t.Fatal("保存完了が通知されませんでした")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	s.handle(ctx, InputEvent(types.InboundMessage{ID: "request", Text: "通常入力として渡す依頼"}))
+	done, returned := make(chan struct{}), make(chan struct{})
+	go func() {
+		s.handle(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: 1, Done: done}})
+		close(returned)
+	}()
+	// 保存済みの応答依頼が、読み出しマーカーより先に配送される。
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationResponseRequest {
+		t.Fatal(e)
 	}
-	if records := s.history.Snapshot(); len(records) != 1 || records[0].Text != "記録" {
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationHistorySync {
+		t.Fatal(e)
+	}
+	select {
+	case <-returned:
+		t.Fatal("読み出し前に後続処理を再開した")
+	default:
+	}
+	if records := s.history.Snapshot(); len(records) != 1 || records[0].ID != "request" {
 		t.Fatal(records)
 	}
+	close(done)
 	select {
-	case e := <-s.node.Downstream:
-		t.Fatal("履歴本体をイベントで返しました", e)
-	default:
+	case <-returned:
+	case <-ctx.Done():
+		t.Fatal("読み出し後に再開しない")
 	}
+}
+
+func TestHistorySyncCanBeCancelled(t *testing.T) {
+	s := testStage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.handle(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: make(chan struct{})}})
 }
 
 func TestConversationEndKeepsUnusedRecordsAndPassesFixedSnapshot(t *testing.T) {

@@ -16,7 +16,7 @@ func TestAgentPromptIsRecordedAsSystem(t *testing.T) {
 	if text := item["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(text, "[Claude Codeからの承認依頼]") {
 		t.Fatal(text)
 	}
-	records := r.history.Snapshot()
+	records := r.records()
 	found := false
 	for _, record := range records {
 		if record.Role == types.RoleSystem && record.Source == "agent/claude-code/permission_request" {

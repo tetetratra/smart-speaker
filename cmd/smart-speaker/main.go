@@ -289,7 +289,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
 	manager := add(s.manager)
 	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed)
-	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest)
+	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync)
 	output := add(s.output)
 	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
 	connectKinds(g, chat, output, types.EventRTCSignal)

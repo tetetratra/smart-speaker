@@ -124,7 +124,11 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		e.Payload = input
 		s.emit(ctx, e)
 	case types.EventConversationHistorySync:
-		close(e.Payload.(types.ConversationHistorySync).Done)
+		s.emit(ctx, e)
+		select {
+		case <-e.Payload.(types.ConversationHistorySync).Done:
+		case <-ctx.Done():
+		}
 	case types.EventConversationRecordsUsed:
 		for _, id := range e.Payload.(types.ConversationRecordsUsed).IDs {
 			delete(s.unused, id)
