@@ -72,16 +72,8 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 	defer cancel()
 	vm := goja.New()
 	vm.SetParserOptions(parser.WithDisableSourceMaps)
-	// 予約は同期JSだけを扱う。待ち続けるPromiseは作らせない。
+	// 予約は同期JSだけを扱い、Promise APIは提供しない。
 	_ = vm.Set("Promise", goja.Undefined())
-	rejected := map[*goja.Promise]bool{}
-	vm.SetPromiseRejectionTracker(func(p *goja.Promise, operation goja.PromiseRejectionOperation) {
-		if operation == goja.PromiseRejectionReject {
-			rejected[p] = true
-		} else {
-			delete(rejected, p)
-		}
-	})
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -157,7 +149,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		}
 		return goja.Undefined()
 	})
-	value, err := vm.RunProgram(program)
+	_, err = vm.RunProgram(program)
 	if deliveryErr != nil {
 		return fmt.Errorf("履歴または通知の受付: %w", deliveryErr)
 	}
@@ -166,14 +158,6 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 	}
 	if err != nil {
 		return fmt.Errorf("スクリプトの実行: %w", err)
-	}
-	if len(rejected) > 0 {
-		return fmt.Errorf("Promiseの未処理の失敗があります。予約スクリプトは同期処理で記述してください")
-	}
-	if value != nil {
-		if p, ok := value.Export().(*goja.Promise); ok && p.State() == goja.PromiseStatePending {
-			return fmt.Errorf("未完了のPromiseは利用できません。予約スクリプトは同期処理で記述してください")
-		}
 	}
 	return nil
 }

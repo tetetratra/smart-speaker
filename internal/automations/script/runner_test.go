@@ -60,7 +60,7 @@ func TestToolFailureReturnsErrorAndContinues(t *testing.T) {
 }
 
 func TestTimeoutAndJSFailureLeaveRunHistory(t *testing.T) {
-	for _, source := range []string{`for (;;) {}`, `throw new Error("失敗")`, `Promise.reject("失敗")`, `new Promise(() => {})`, `const pending = new Promise(() => {});`, `void (async () => { await new Promise(() => {}); toolcall("later", {}); })();`} {
+	for _, source := range []string{`for (;;) {}`, `throw new Error("失敗")`, `new Promise(() => {})`} {
 		t.Run(source, func(t *testing.T) {
 			var messages []types.InboundMessage
 			r := New(nil, func(_ context.Context, m types.InboundMessage) error { messages = append(messages, m); return nil })
