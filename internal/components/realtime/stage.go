@@ -370,13 +370,10 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 		return
 	}
 
+	// 無操作が続いても会話の文脈は保ったまま、古い履歴のメモリ化だけを会話管理へ頼む。
 	if s.cfg.IdleTimeout > 0 && !s.lastActivity.IsZero() && now.Sub(s.lastActivity) >= s.cfg.IdleTimeout {
-		s.emit(ctx, types.Event{Kind: types.EventConversationEnded})
+		s.emit(ctx, types.Event{Kind: types.EventConversationIdle})
 		s.lastActivity = time.Time{}
-		s.emit(ctx, types.Event{Kind: types.EventSessionReset, Payload: types.SessionResetEvent{RequestedAt: now}})
-		if s.transport != nil || s.connecting {
-			s.rotate(ctx)
-		}
 		return
 	}
 	if s.transport == nil {

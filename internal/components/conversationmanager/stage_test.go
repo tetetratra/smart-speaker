@@ -3,6 +3,7 @@ package conversationmanager
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,12 +14,17 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func testStage() *stage {
-	return &stage{node: &graph.Stage{Downstream: make(chan types.Event, 20)}, history: conversationhistory.NewStore(), seen: map[string]bool{}, unused: map[string]bool{}}
+func testStage(t *testing.T) *stage {
+	t.Helper()
+	history, err := conversationhistory.NewStore(filepath.Join(t.TempDir(), "conversation_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &stage{node: &graph.Stage{Downstream: make(chan types.Event, 20)}, history: history, seen: map[string]bool{}, unused: map[string]bool{}}
 }
 
 func TestRecordsOnlyUpdateHistory(t *testing.T) {
-	s := testStage()
+	s := testStage(t)
 	for _, text := range []string{"仮の文字起こし", "確定した文字起こし"} {
 		s.handle(context.Background(), types.Event{Kind: types.EventConversationRecord, Payload: types.ConversationRecord{ID: "speech", Text: text}})
 	}
@@ -35,7 +41,7 @@ func TestRecordsOnlyUpdateHistory(t *testing.T) {
 
 func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	for _, quiet := range []bool{false, true} {
-		s := testStage()
+		s := testStage(t)
 		s.cfg.ToolHistory = toolhistory.NewStore(10)
 		raw := json.RawMessage(`{"automation_id":"job"}`)
 		want := types.EventConversationResponseRequest
@@ -67,7 +73,7 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 }
 
 func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
-	s := testStage()
+	s := testStage(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	s.handle(ctx, InputEvent(types.InboundMessage{ID: "request", Text: "通常入力として渡す依頼"}))
@@ -100,35 +106,33 @@ func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
 }
 
 func TestHistorySyncCanBeCancelled(t *testing.T) {
-	s := testStage()
+	s := testStage(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	s.handle(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: make(chan struct{})}})
 }
 
-func TestConversationEndKeepsUnusedRecordsAndPassesFixedSnapshot(t *testing.T) {
-	s := testStage()
-	snapshots := make(chan []types.ConversationRecord, 1)
-	s.cfg.OnConversationEnd = func(_ context.Context, keep map[string]bool) { snapshots <- s.history.DrainExcept(keep) }
+func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {
+	s := testStage(t)
+	var keep map[string]bool
+	s.cfg.OnIdle = func(_ context.Context, unused map[string]bool) { keep = unused }
 	for _, id := range []string{"used", "unused"} {
 		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: id, Text: id}))
 		<-s.node.Downstream
 	}
 	s.handle(context.Background(), types.Event{Kind: types.EventConversationRecordsUsed, Payload: types.ConversationRecordsUsed{IDs: []string{"used"}}})
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationEnded})
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationRecord, Payload: types.ConversationRecord{ID: "new", Text: "新しい会話"}})
-	records := <-snapshots
-	if len(records) != 1 || records[0].ID != "used" {
-		t.Fatal(records)
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationIdle})
+	if len(keep) != 1 || !keep["unused"] {
+		t.Fatal(keep)
 	}
-	remaining := s.history.Snapshot()
-	if len(remaining) != 2 || remaining[0].ID != "unused" || remaining[1].ID != "new" {
-		t.Fatal(remaining)
+	// 無操作の通知だけでは履歴を消さない。
+	if records := s.history.Snapshot(); len(records) != 2 {
+		t.Fatal(records)
 	}
 }
 
 func TestAutomationToolCallsAreNotDisplayedTwice(t *testing.T) {
-	s := testStage()
+	s := testStage(t)
 	s.cfg.ToolHistory = toolhistory.NewStore(10)
 	for _, role := range []string{types.RoleToolCall, types.RoleToolResult, types.RoleSystem} {
 		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: role, Role: role, Source: "automation", Title: "室温", Context: json.RawMessage(`{"delivery":"history_only"}`)}))

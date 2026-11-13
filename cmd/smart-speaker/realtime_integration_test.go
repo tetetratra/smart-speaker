@@ -27,8 +27,8 @@ func TestRealtimeConversationLocal(t *testing.T) {
 	backend, handler := localverify.New(ctx)
 	fake := httptest.NewServer(handler)
 	defer fake.Close()
-	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local"}}
-	memory, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
+	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local", StorePath: filepath.Join(t.TempDir(), "memory.json")}}
+	memory, err := memorystate.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		t.Fatal(err)
 	}

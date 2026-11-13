@@ -237,15 +237,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 		if tr.Error != "" {
 			msg["error"] = tr.Error
 		}
-	case types.EventSessionReset:
-		reset, ok := evt.Payload.(types.SessionResetEvent)
-		if !ok {
-			return nil, "", false
-		}
-		msg = map[string]any{
-			"type":         "session_reset",
-			"requested_at": reset.RequestedAt.Format(time.RFC3339Nano),
-		}
 	default:
 		return nil, "", false
 	}

@@ -14,7 +14,7 @@ func testInput(id, text string) types.ConversationInput {
 }
 
 func TestContextAdditionDoesNotStartOrInterruptResponse(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.active = "existing-response"
 	before := s.cfg.Generation.Current()
 	s.addContext(testInput("one", "実行済み"))
@@ -35,7 +35,7 @@ func TestContextAdditionDoesNotStartOrInterruptResponse(t *testing.T) {
 }
 
 func TestExternalRecordsAreUsedOnlyByAcknowledgedResponse(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.addContext(testInput("before", "ライトをONにした"))
 	popToolCommand(t, s, "conversation.item.create")
 	s.wantResponse = true
@@ -50,7 +50,7 @@ func TestExternalRecordsAreUsedOnlyByAcknowledgedResponse(t *testing.T) {
 }
 
 func TestContextAdditionPrecedesResponseRequest(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.addContext(testInput("result", "処理結果"))
 	s.queueInbound(testInput("remind", "結果を伝えて"))
 	s.startInbound(context.Background())

@@ -18,11 +18,6 @@ type SpeechEvent struct {
 	CapturedAt time.Time
 }
 
-// SessionResetEvent は会話セッションのリセット発火を表します。
-type SessionResetEvent struct {
-	RequestedAt time.Time
-}
-
 // AgentTimelineEnd は speechsegment が1つの応答の読み上げ単位をすべて発行し終えたことを表します。
 type AgentTimelineEnd struct {
 	ItemID       string

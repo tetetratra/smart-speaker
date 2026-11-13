@@ -4,6 +4,7 @@ package conversationmanager
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,10 +17,11 @@ import (
 )
 
 type Config struct {
-	Inbound           <-chan types.InboundMessage
-	ToolHistory       *toolhistory.Store
-	History           *conversationhistory.Store
-	OnConversationEnd func(context.Context, map[string]bool)
+	Inbound     <-chan types.InboundMessage
+	ToolHistory *toolhistory.Store
+	History     *conversationhistory.Store
+	// OnIdle は無操作が続いたときに呼ぶ。まだ応答に使っていない外部記録のIDを渡す。
+	OnIdle func(context.Context, map[string]bool)
 }
 
 type stage struct {
@@ -103,7 +105,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e.Kind {
 	case types.EventConversationRecord:
 		record := e.Payload.(types.ConversationRecord)
-		s.history.Upsert(record)
+		s.save(record)
 	case types.EventConversationContextAddition, types.EventConversationResponseRequest:
 		input := e.Payload.(types.ConversationInput)
 		if input.Record.ID == "" {
@@ -116,7 +118,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if input.Record.CreatedAt.IsZero() {
 			input.Record.CreatedAt = time.Now()
 		}
-		s.history.Upsert(input.Record)
+		s.save(input.Record)
 		s.unused[input.Record.ID] = true
 		if input.External && s.cfg.ToolHistory != nil && (input.Record.Source != script.Source || input.Record.Role == types.RoleSystem) {
 			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{ID: input.Record.ID, Source: input.Record.Source, Title: input.Title, Text: input.Record.Text}, input.Record.GenerationID)
@@ -133,9 +135,16 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		for _, id := range e.Payload.(types.ConversationRecordsUsed).IDs {
 			delete(s.unused, id)
 		}
-	case types.EventConversationEnded:
-		if s.cfg.OnConversationEnd != nil {
-			s.cfg.OnConversationEnd(ctx, s.unused)
+	case types.EventConversationIdle:
+		if s.cfg.OnIdle != nil {
+			s.cfg.OnIdle(ctx, s.unused)
 		}
+	}
+}
+
+// 保存に失敗しても会話は続けられるので、記録はメモリ上に残してログだけ出す。
+func (s *stage) save(record types.ConversationRecord) {
+	if err := s.history.Upsert(record); err != nil {
+		log.Printf("会話管理: 会話履歴の保存: %v", err)
 	}
 }

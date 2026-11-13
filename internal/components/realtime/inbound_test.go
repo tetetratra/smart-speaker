@@ -15,7 +15,7 @@ func TestInboundMessageWaitsForConversation(t *testing.T) {
 
 // 時間のかかるツールの実行中でも、予約ジョブは時刻どおりに始める。再生端末がつながっていなくても待たない。
 func TestInboundMessageStartsWhileToolIsRunning(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.calls["slow"] = &call{epoch: 1, generation: 1}
 	s.queueInbound(testInput("input", "室温を知らせて"))
 	if !s.startInbound(context.Background()) || len(s.inbound) != 0 {
@@ -37,7 +37,7 @@ func TestInboundWaitsForEachBusyState(t *testing.T) {
 	}
 	for name, busy := range cases {
 		t.Run(name, func(t *testing.T) {
-			s := newToolResponseStage()
+			s := newToolResponseStage(t)
 			busy(s)
 			s.queueInbound(testInput("input", "結果"))
 			if s.startInbound(context.Background()) || len(s.inbound) != 1 {
@@ -48,7 +48,7 @@ func TestInboundWaitsForEachBusyState(t *testing.T) {
 }
 
 func TestInboundKeepsFIFO(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	for _, text := range []string{"最初", "次"} {
 		s.queueInbound(testInput(text, text))
 	}

@@ -1,13 +1,24 @@
 package conversationhistory
 
 import (
+	"path/filepath"
 	"testing"
 
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func TestStoreUpsertSnapshotAndDrain(t *testing.T) {
-	store := NewStore()
+func newTestStore(t *testing.T) (*Store, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "conversation_history.json")
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, path
+}
+
+func TestStoreUpsertAndSnapshot(t *testing.T) {
+	store, _ := newTestStore(t)
 	store.Upsert(types.ConversationRecord{ID: "1", Role: types.RoleUser, Text: "こんにちは", Metadata: map[string]any{"k": "v"}})
 	store.Upsert(types.ConversationRecord{ID: "2", Role: types.RoleAgent, Text: "はい"})
 
@@ -30,11 +41,24 @@ func TestStoreUpsertSnapshotAndDrain(t *testing.T) {
 	if got := store.Snapshot(); len(got) != 2 || got[0].Text != "こんにちは！" {
 		t.Fatalf("Upsert did not replace the record in place: %#v", got)
 	}
+}
 
-	if drained := store.Drain(); len(drained) != 2 {
-		t.Fatalf("Drain len = %d, want 2", len(drained))
+func TestStoreKeepsRecordsAcrossRestartAndRemovesOnlyGivenIDs(t *testing.T) {
+	store, path := newTestStore(t)
+	for _, id := range []string{"1", "2", "3"} {
+		if err := store.Upsert(types.ConversationRecord{ID: id, Text: "発言" + id}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if got := len(store.Snapshot()); got != 0 {
-		t.Fatalf("Snapshot len after Drain = %d, want 0", got)
+	if err := store.Remove([]string{"1", "3"}); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Snapshot(); len(got) != 1 || got[0].ID != "2" || got[0].Text != "発言2" {
+		t.Fatalf("reloaded = %#v", got)
 	}
 }

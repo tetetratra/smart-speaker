@@ -18,7 +18,6 @@ const (
 	EventToolRequest
 	EventRTCSignal
 	EventConversationCommitRequest
-	EventSessionReset
 	EventLLMRequest
 	EventTimelineItem
 	EventPlayableSpeech
@@ -43,8 +42,8 @@ func (k EventKind) String() string {
 		return "EventConversationResponseRequest"
 	case EventConversationHistorySync:
 		return "EventConversationHistorySync"
-	case EventConversationEnded:
-		return "EventConversationEnded"
+	case EventConversationIdle:
+		return "EventConversationIdle"
 	case EventConversationRecordsUsed:
 		return "EventConversationRecordsUsed"
 	case EventLocalWakeUtterance:
@@ -74,8 +73,6 @@ func (k EventKind) String() string {
 		return "EventRTCSignal"
 	case EventConversationCommitRequest:
 		return "EventConversationCommitRequest"
-	case EventSessionReset:
-		return "EventSessionReset"
 	case EventLLMRequest:
 		return "EventLLMRequest"
 	case EventTimelineItem:

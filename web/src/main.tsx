@@ -861,10 +861,6 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
-        case 'session_reset': {
-          resetConversationBubble()
-          break
-        }
         case 'tool_history': {
           if (Array.isArray(raw.entries)) setToolEntries(raw.entries)
           break
@@ -873,7 +869,7 @@ function App() {
           break
       }
     },
-    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId, resetConversationBubble],
+    [appendMessage, appendServerEventLog, handleRTCSignal, nextMessageId],
   )
 
   const stopRTC = useCallback(() => {
