@@ -41,10 +41,8 @@ func (k EventKind) String() string {
 		return "EventConversationContextAddition"
 	case EventConversationResponseRequest:
 		return "EventConversationResponseRequest"
-	case EventConversationSnapshotRequest:
-		return "EventConversationSnapshotRequest"
-	case EventConversationSnapshot:
-		return "EventConversationSnapshot"
+	case EventConversationHistorySync:
+		return "EventConversationHistorySync"
 	case EventConversationEnded:
 		return "EventConversationEnded"
 	case EventConversationRecordsUsed:

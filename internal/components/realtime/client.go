@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
+	"github.com/tetetratra/smart-speaker/internal/types"
 	"net/http"
 	"net/url"
 	"nhooyr.io/websocket"
@@ -19,6 +20,10 @@ type transport struct {
 	epoch    uint64
 }
 type incoming struct {
+	history     []types.ConversationRecord
+	memory      string
+	excluded    map[string]bool
+	restore     bool
 	epoch       uint64
 	data        []byte
 	conn        *transport

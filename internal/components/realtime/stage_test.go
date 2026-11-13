@@ -11,10 +11,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"net/http"
 	"net/http/httptest"
 	"nhooyr.io/websocket"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +73,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		}
 	}))
 	t.Cleanup(server.Close)
-	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore()}
+	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore(), History: r.history}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -80,7 +82,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		t.Fatal(err)
 	}
 	r.node = node
-	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound})
+	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound, History: r.history})
 	managerQueue := eventqueue.New[types.Event](nil)
 	go manager.Run(ctx)
 	go func() {
@@ -105,9 +107,6 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				if !ok {
 					return
 				}
-				if input, ok := e.Payload.(types.ConversationInput); ok {
-					r.history.Upsert(input.Record)
-				}
 				select {
 				case node.Upstream <- e:
 				case <-ctx.Done():
@@ -128,9 +127,16 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				}
 				switch e.Kind {
 				case types.EventConversationRecord:
-					r.history.Upsert(e.Payload.(types.ConversationRecord))
 					managerQueue.Push(e)
-				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationSnapshotRequest, types.EventConversationEnded, types.EventConversationRecordsUsed:
+					// テストで記録を観測するときは、ミラーではなく実ストアへの保存を待つ。
+					done := make(chan struct{})
+					managerQueue.Push(types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
+					select {
+					case <-done:
+					case <-ctx.Done():
+						return
+					}
+				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
 
@@ -555,5 +561,47 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	detail := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
 	if detail.Name != "set_whiteboard" || detail.GenerationID != 2 || string(detail.Arguments) != `{"content":"取得済みの予報を詳しく表示"}` {
 		t.Fatalf("追加表示の呼び出しが受理されませんでした: %#v", detail)
+	}
+}
+
+func TestConnectReadsSharedHistoryAfterPendingWrites(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	s := newToolResponseStage()
+	s.transport = nil
+	s.ready = false
+	s.queue = eventqueue.New[incoming](nil)
+	s.connect(ctx)
+	var sync types.ConversationHistorySync
+	for len(s.node.Downstream) > 0 {
+		e := <-s.node.Downstream
+		if e.Kind == types.EventConversationHistorySync {
+			sync = e.Payload.(types.ConversationHistorySync)
+		}
+	}
+	if sync.Done == nil {
+		t.Fatal("保存完了待ちがない")
+	}
+	s.cfg.History.Upsert(types.ConversationRecord{ID: "last", Text: "切断直前の発言"})
+	close(sync.Done)
+	in, ok := s.queue.Pop(ctx)
+	if !ok || !in.restore || len(in.history) != 1 || in.history[0].Text != "切断直前の発言" {
+		t.Fatal(in)
+	}
+}
+
+func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
+	memory, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Upsert(memorystate.UpsertInput{Content: "好きな季節は秋"}); err != nil {
+		t.Fatal(err)
+	}
+	r := newRig(t, func(cfg *Config) { cfg.Memory = memory })
+	item := r.wait("conversation.item.create")["item"].(map[string]any)
+	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "好きな季節は秋") {
+		t.Fatal(text)
 	}
 }

@@ -65,20 +65,22 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	}
 }
 
-func TestSnapshotReturnsAllHistoryAndMemoryWithoutReplaying(t *testing.T) {
+func TestHistorySyncFollowsSavedRecords(t *testing.T) {
 	s := testStage()
-	s.cfg.MemoryContext = func(context.Context) (string, error) { return "長期メモリ", nil }
-	s.handle(context.Background(), InputEvent(types.InboundMessage{ID: "input", Text: "依頼"}))
-	<-s.node.Downstream
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationSnapshotRequest, Payload: types.ConversationSnapshotRequest{Epoch: 7}})
-	e := <-s.node.Downstream
-	snapshot := e.Payload.(types.ConversationSnapshot)
-	if e.Kind != types.EventConversationSnapshot || snapshot.Epoch != 7 || len(snapshot.Records) != 1 || snapshot.Memory != "長期メモリ" {
-		t.Fatal(e)
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationRecord, Payload: types.ConversationRecord{ID: "record", Text: "記録"}})
+	done := make(chan struct{})
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
+	select {
+	case <-done:
+	default:
+		t.Fatal("保存完了が通知されませんでした")
+	}
+	if records := s.history.Snapshot(); len(records) != 1 || records[0].Text != "記録" {
+		t.Fatal(records)
 	}
 	select {
 	case e := <-s.node.Downstream:
-		t.Fatal("応答依頼を再発火しました", e)
+		t.Fatal("履歴本体をイベントで返しました", e)
 	default:
 	}
 }
@@ -86,7 +88,7 @@ func TestSnapshotReturnsAllHistoryAndMemoryWithoutReplaying(t *testing.T) {
 func TestConversationEndKeepsUnusedRecordsAndPassesFixedSnapshot(t *testing.T) {
 	s := testStage()
 	snapshots := make(chan []types.ConversationRecord, 1)
-	s.cfg.OnConversationEnd = func(_ context.Context, records []types.ConversationRecord) error { snapshots <- records; return nil }
+	s.cfg.OnConversationEnd = func(_ context.Context, keep map[string]bool) { snapshots <- s.history.DrainExcept(keep) }
 	for _, id := range []string{"used", "unused"} {
 		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: id, Text: id}))
 		<-s.node.Downstream
