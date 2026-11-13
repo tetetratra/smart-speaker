@@ -48,52 +48,80 @@ docker compose up --build
 
 ```mermaid
 flowchart TB
-    chat["wschat<br/>画面連携"]
-    peer["rtcpeer<br/>WebRTC接続"]
-    wake["wakegate<br/>呼びかけ判定"]
-    rt["realtime<br/>Realtime連携"]
-    manager["conversationmanager<br/>会話管理"]
-    segment["speechsegment<br/>発話区切り"]
-    ttsNode["tts<br/>音声合成"]
-    frame["audioframe<br/>音声フレーム分割"]
-    pace["audiopace<br/>送信時刻調整"]
-    output["rtcout<br/>WebRTC音声送信"]
-    tool["toolcaller<br/>ツール実行"]
+    browser{{"ブラウザ<br/>web/"}}
 
-    rt -->|"EventConversationRecord<br/>会話記録"| manager
-    rt -->|"EventConversationContextAddition<br/>会話への情報追加"| manager
-    rt -->|"EventConversationResponseRequest<br/>会話への応答依頼"| manager
-    rt -->|"EventConversationHistorySync<br/>会話履歴の読み出し同期"| manager
-    rt -->|"EventConversationEnded<br/>会話終了"| manager
-    rt -->|"EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
-    manager -->|"EventConversationContextAddition<br/>会話への情報追加"| rt
-    manager -->|"EventConversationResponseRequest<br/>会話への応答依頼"| rt
-    manager -->|"EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
-    peer -->|"EventRTCPeerOutputSink<br/>音声送信先"| output
-    chat -->|"EventRTCSignal<br/>WebRTC制御"| output
-    chat -->|"EventRTCSignal<br/>WebRTC制御"| peer
-    peer -->|"EventRTCSignal<br/>WebRTC制御"| chat
-    peer -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム"| wake
-    peer -->|"EventRTCPeerOutputSink<br/>音声送信先"| wake
-    wake -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム"| rt
-    wake -->|"EventRTCPeerOutputSink<br/>音声送信先"| rt
-    wake -->|"EventLocalWakeUtterance<br/>呼びかけ判定済み発話"| rt
-    wake -->|"EventWakeTranscription<br/>呼びかけ文字起こし結果"| chat
-    rt -->|"EventResponseText<br/>応答テキスト"| segment
-    segment -->|"EventTimelineItem<br/>発話項目"| ttsNode
-    segment -->|"EventAgentTimelineEnd<br/>応答終了"| ttsNode
-    ttsNode -->|"EventPlayableSpeech<br/>合成音声"| frame
-    ttsNode -->|"EventAgentTimelineEnd<br/>応答終了"| frame
-    frame -->|"EventAudioFrame<br/>音声フレーム"| pace
-    pace -->|"EventAudioFrame<br/>音声フレーム"| output
-    output -->|"EventAudioSent<br/>音声送信済み"| chat
-    output -->|"EventAudioSent<br/>音声送信済み"| rt
-    rt -->|"EventGenerationChanged<br/>応答世代の変更"| chat
-    rt -->|"EventRealtimeOutput<br/>会話内容の表示"| chat
-    rt -->|"EventSpeechStart<br/>発話開始"| chat
-    rt -->|"EventSpeechEnd<br/>発話終了"| chat
-    rt -->|"EventRealtimeStatus<br/>Realtime接続状態"| chat
-    rt -->|"EventSessionReset<br/>セッションリセット"| chat
-    rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
-    tool -->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
+    chat["wschat<br/>画面連携"]
+
+    subgraph input["音声入力"]
+        peer["rtcpeer<br/>WebRTC接続"]
+        wake["wakegate<br/>呼びかけ判定"]
+    end
+    localStt{{"local-stt<br/>ローカル文字起こし"}}
+
+    subgraph conversation["会話"]
+        manager["conversationmanager<br/>会話管理"]
+        rt["realtime<br/>Realtime連携"]
+        tool["toolcaller<br/>ツール実行"]
+    end
+    openaiRealtime{{"OpenAI Realtime API<br/>wss://api.openai.com/v1/realtime"}}
+    openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
+
+    subgraph outputGroup["音声出力"]
+        direction LR
+        segment["speechsegment<br/>発話区切り"]
+        ttsNode["tts<br/>音声合成"]
+        frame["audioframe<br/>音声フレーム分割"]
+        pace["audiopace<br/>送信時刻調整"]
+        output["rtcout<br/>WebRTC音声送信"]
+    end
+
+    subgraph stores["ストア"]
+        historyStore[("conversationhistory<br/>会話履歴")]
+        memoryStore[("memory<br/>長期メモリ")]
+        toolHistoryStore[("toolhistory<br/>ツール履歴")]
+        generationStore[("generation<br/>応答世代<br/>出力側で古い世代を破棄")]
+        wakeModeStore[("wakemode<br/>呼びかけモード")]
+    end
+
+    browser ==>|"WebRTC<br/>マイク音声"| peer
+    browser <==>|"WebSocket<br/>画面・WebRTC制御"| chat
+    output ==>|"WebRTC<br/>応答音声"| browser
+    wake <==>|"HTTP<br/>文字起こし"| localStt
+    rt <==>|"WebSocket<br/>会話セッション"| openaiRealtime
+    manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
+    tool <==>|"HTTPS<br/>Web検索"| openaiResponses
+
+    chat -->|"RTCSignal"| peer
+    peer -->|"RTCSignal"| chat
+    chat -->|"RTCSignal"| output
+    peer -->|"RTCPeerAudioFrame<br/>RTCPeerOutputSink"| wake
+    peer -->|"RTCPeerOutputSink"| output
+    wake -->|"RTCPeerAudioFrame<br/>RTCPeerOutputSink<br/>LocalWakeUtterance"| rt
+    wake -->|"WakeTranscription"| chat
+    rt -->|"ConversationRecord<br/>ConversationContextAddition<br/>ConversationResponseRequest<br/>ConversationHistorySync<br/>ConversationEnded<br/>ConversationRecordsUsed"| manager
+    manager --->|"ConversationContextAddition<br/>ConversationResponseRequest<br/>ConversationHistorySync"| rt
+    rt -->|"ToolRequest"| tool
+    tool --->|"ConversationCommitRequest"| rt
+    rt -->|"ResponseText"| segment
+    segment -->|"TimelineItem<br/>AgentTimelineEnd"| ttsNode
+    ttsNode -->|"PlayableSpeech<br/>AgentTimelineEnd"| frame
+    frame -->|"AudioFrame"| pace
+    pace -->|"AudioFrame"| output
+    output -->|"AudioSent"| rt
+    output -->|"AudioSent"| chat
+    rt -->|"GenerationChanged<br/>RealtimeOutput<br/>SpeechStart<br/>SpeechEnd<br/>RealtimeStatus<br/>SessionReset"| chat
+
+    manager <-.->|"記録・取り出し"| historyStore
+    historyStore -.->|"文脈の復元"| rt
+    memoryStore -.->|"文脈"| rt
+    manager -.->|"抽出結果"| memoryStore
+    tool <-.->|"メモリツール"| memoryStore
+    tool -.-> toolHistoryStore
+    rt -.-> toolHistoryStore
+    manager -.-> toolHistoryStore
+    toolHistoryStore -.->|"履歴表示"| chat
+    rt <-.->|"更新・判定"| generationStore
+    wake <-.-> wakeModeStore
+    rt <-.-> wakeModeStore
+    tool <-.->|"切替ツール"| wakeModeStore
 ```
