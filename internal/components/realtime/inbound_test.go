@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
@@ -10,7 +11,7 @@ import (
 
 func TestInboundMessageWaitsForConversation(t *testing.T) {
 	s := &stage{speaking: true}
-	s.queueInbound(types.InboundMessage{Source: "automation/job", Text: "室温を知らせて"})
+	s.queueInbound(types.InboundMessage{Source: "automation", Text: "室温を知らせて"})
 	if s.startInbound(context.Background()) || len(s.inbound) != 1 {
 		t.Fatal(s.inbound)
 	}
@@ -20,7 +21,7 @@ func TestInboundMessageWaitsForConversation(t *testing.T) {
 func TestInboundMessageStartsWhileToolIsRunning(t *testing.T) {
 	s := newToolResponseStage()
 	s.calls["slow"] = &call{epoch: 1, generation: 1}
-	s.queueInbound(types.InboundMessage{Source: "automation/job", Text: "室温を知らせて"})
+	s.queueInbound(types.InboundMessage{Source: "automation", Text: "室温を知らせて"})
 	if !s.startInbound(context.Background()) || len(s.inbound) != 0 {
 		t.Fatal(s.inbound)
 	}
@@ -31,7 +32,7 @@ func TestInboundHistoryWaitsForConnection(t *testing.T) {
 	s := newToolResponseStage()
 	s.ready = false
 	s.cfg.ToolHistory = toolhistory.NewStore(10)
-	message := types.InboundMessage{Source: "future/source", Text: "全文\n<script>外部データ</script>"}
+	message := types.InboundMessage{Source: "future/source", Title: "結果のタイトル", Context: json.RawMessage(`{"automation_id":"job-1","run_id":"run-1"}`), Text: "全文\n<script>外部データ</script>"}
 	s.queueInbound(message)
 	if !s.startInbound(context.Background()) || len(s.pendingText) != 1 {
 		t.Fatal("接続準備待ちの入力になっていません")
@@ -45,10 +46,10 @@ func TestInboundHistoryWaitsForConnection(t *testing.T) {
 		t.Fatal("モデルへ渡す本文が変わりました", got)
 	}
 	entries, records := s.cfg.ToolHistory.Snapshot(), s.cfg.History.Snapshot()
-	if len(entries) != 1 || entries[0].Kind != "inbound" || entries[0].Source != message.Source || entries[0].Text != message.Text {
+	if len(entries) != 1 || entries[0].Kind != "inbound" || entries[0].Source != message.Source || entries[0].Name != message.Source || entries[0].Title != message.Title || entries[0].Text != message.Text {
 		t.Fatal(entries)
 	}
-	if len(records) != 1 || records[0].Role != types.RoleSystem || records[0].Source != message.Source || records[0].Text != message.Text || records[0].GenerationID != entries[0].GenerationID {
+	if len(records) != 1 || records[0].Role != types.RoleSystem || records[0].Metadata["context"] != string(message.Context) || records[0].Source != message.Source || records[0].Text != message.Text || records[0].GenerationID != entries[0].GenerationID {
 		t.Fatal(records)
 	}
 	toolServerEvent(s, map[string]any{"type": "session.updated"})
@@ -86,7 +87,7 @@ func TestInboundKeepsFIFOAndUserInputIsNotDisplayed(t *testing.T) {
 	s := newToolResponseStage()
 	s.cfg.ToolHistory = toolhistory.NewStore(10)
 	for _, text := range []string{"最初", "次"} {
-		s.queueInbound(types.InboundMessage{Source: "automation/job", Text: text})
+		s.queueInbound(types.InboundMessage{Source: "automation", Text: text})
 	}
 	if !s.startInbound(context.Background()) || s.startInbound(context.Background()) || len(s.inbound) != 1 {
 		t.Fatal("応答を待たずに複数差し込みました")

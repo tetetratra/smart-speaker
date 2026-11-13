@@ -15,6 +15,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
+const Source = "automation"
+
 const MaxDuration = 30 * time.Second
 
 type Runner struct {
@@ -46,7 +48,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 			return fmt.Errorf("履歴の送信経路がありません")
 		}
 		raw, _ := json.Marshal(meta)
-		err := r.deliver(ctx, types.InboundMessage{ID: runID + "/" + suffix, Role: role, Source: "automation/" + id, Text: text, Context: raw})
+		err := r.deliver(ctx, types.InboundMessage{ID: runID + "/" + suffix, Role: role, Source: Source, Title: name, Text: text, Context: raw})
 		if err != nil && deliveryErr == nil {
 			deliveryErr = err
 		}
@@ -137,7 +139,8 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		if r.deliver == nil {
 			panic(vm.NewGoError(fmt.Errorf("通知の送信経路がありません")))
 		}
-		prompt := types.InboundMessage{ID: uuid.NewString(), Source: "automation/" + id, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
+		reminderContext, _ := json.Marshal(map[string]string{"automation_id": id, "run_id": runID})
+		prompt := types.InboundMessage{Context: reminderContext, ID: uuid.NewString(), Source: Source, Title: name, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
 		if err := r.deliver(ctx, prompt); err != nil {
 			if deliveryErr == nil {
 				deliveryErr = err

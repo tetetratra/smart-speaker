@@ -73,3 +73,24 @@ func TestDeliveryContextDoesNotShareMutableBytes(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+type titledTestTool struct{ *testTool }
+
+func (t *titledTestTool) Title(args map[string]any) string { return args["subject"].(string) }
+
+func TestTitleIsVisibleWhileRunningAndPreservedAfterCompletion(t *testing.T) {
+	store := toolhistory.NewStore(10)
+	tool := &titledTestTool{&testTool{run: func(_ context.Context, args map[string]any) (map[string]any, error) {
+		entry := store.Snapshot()[0]
+		if entry.Name != "test" || entry.Title != "調査対象" || entry.Status != "running" {
+			t.Fatal(entry)
+		}
+		return map[string]any{"done": true}, nil
+	}}}
+	executor := New(map[string]tools.Handler{"test": tool}, store)
+	executor.Execute(context.Background(), types.ToolRequest{Name: "test", Arguments: json.RawMessage(`{"subject":"調査対象"}`)})
+	entry := store.Snapshot()[0]
+	if entry.Title != "調査対象" || entry.Status != "succeeded" {
+		t.Fatal(entry)
+	}
+}

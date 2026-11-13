@@ -451,3 +451,7 @@ var _ tools.Handler = (*createTool)(nil)
 var _ tools.DefinitionProvider = (*createTool)(nil)
 var _ tools.Handler = (*updateTool)(nil)
 var _ tools.DefinitionProvider = (*updateTool)(nil)
+
+func (t *createTool) Title(args map[string]any) string { return asString(args["summary"]) }
+
+func (t *updateTool) Title(args map[string]any) string { return asString(args["summary"]) }

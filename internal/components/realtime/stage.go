@@ -344,11 +344,11 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 			role = "system"
 			source = p.Source
 		}
-		s.record(ctx, id, role, p.Text, change.GenerationID, source)
+		s.recordWithMetadata(ctx, id, role, p.Text, change.GenerationID, source, p.Metadata)
 		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.Text}}}})
 		// 送信キューへ渡した時点を記録する。接続待ちの pendingText では記録しない。
 		if p.Inbound && s.cfg.ToolHistory != nil {
-			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{Source: p.Source, Text: p.Text}, change.GenerationID)
+			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{Source: p.Source, Title: p.Title, Text: p.Text}, change.GenerationID)
 		}
 		s.wantResponse = true
 		s.maybeRespond(ctx)
@@ -422,7 +422,11 @@ func (s *stage) pendingTools() bool {
 	return false
 }
 func (s *stage) record(ctx context.Context, id, role, text string, gen types.GenerationID, source string) {
-	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: source, CreatedAt: time.Now()})
+	s.recordWithMetadata(ctx, id, role, text, gen, source, nil)
+}
+
+func (s *stage) recordWithMetadata(ctx context.Context, id, role, text string, gen types.GenerationID, source string, metadata map[string]any) {
+	s.cfg.History.Upsert(types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: source, Metadata: metadata, CreatedAt: time.Now()})
 	if text != "" {
 		s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: role, Text: text, GenerationID: gen, Source: source, ResponseID: id, Final: true}})
 	}

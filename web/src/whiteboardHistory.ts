@@ -3,6 +3,7 @@ type ToolEntry = {
   id: string
   call_id: string
   name: string
+  title?: string | null
   arguments: string
   output: string
   status: 'running' | 'succeeded' | 'failed'
@@ -13,6 +14,8 @@ type InboundEntry = {
   kind: 'inbound'
   id: string
   source: string
+  name: string
+  title?: string | null
   text: string
   started_at: string
 }

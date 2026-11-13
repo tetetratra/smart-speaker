@@ -60,7 +60,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.seen[event.EventID] {
 		return nil
 	}
-	prompt := types.InboundMessage{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Context: append(json.RawMessage(nil), event.Context...)}
+	prompt := types.InboundMessage{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Title: event.Title, Context: append(json.RawMessage(nil), event.Context...)}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()

@@ -14,3 +14,8 @@ type Handler interface {
 type DefinitionProvider interface {
 	Definition() map[string]any
 }
+
+// TitleProvider は画面の履歴に添える任意のタイトルを提供します。
+type TitleProvider interface {
+	Title(args map[string]any) string
+}

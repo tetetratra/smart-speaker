@@ -32,6 +32,15 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	if err := r.Run(context.Background(), "job-1", "室温", `const result = toolcall("read", {count: 2}); remind("値は" + result.value);`); err != nil {
 		t.Fatal(err)
 	}
+	for _, message := range messages {
+		if message.Source != Source || message.Title != "室温" {
+			t.Fatal("予約の名前とタイトルが引き継がれていません", message)
+		}
+		var metadata map[string]string
+		if json.Unmarshal(message.Context, &metadata) != nil || metadata["automation_id"] != "job-1" || metadata["run_id"] == "" {
+			t.Fatal("予約の識別情報が引き継がれていません", message)
+		}
+	}
 	if calls != 1 || len(messages) != 4 {
 		t.Fatal(calls, messages)
 	}

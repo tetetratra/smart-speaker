@@ -104,6 +104,7 @@ type WakeTranscription struct {
 
 // InboundMessage は会話の外からモデルへ届ける、送り元で組み立て済みの文章。
 type InboundMessage struct {
+	Title   string
 	ID      string
 	Role    string
 	Context json.RawMessage

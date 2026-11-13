@@ -124,7 +124,7 @@ func (t *Tool) searchAndDeliver(ctx context.Context, query string) {
 		text = "[過去のWeb検索の結果]\n" + dataNotice + "\n" + encode(data)
 	}
 	log.Printf("websearch: 完了 query=%q failed=%t elapsed=%s", query, err != nil, time.Since(started).Round(time.Millisecond))
-	prompt := types.InboundMessage{ID: "websearch/" + uuid.NewString(), Source: source, Text: text, Role: types.RoleToolResult, Context: raw}
+	prompt := types.InboundMessage{ID: "websearch/" + uuid.NewString(), Source: source, Title: query, Text: text, Role: types.RoleToolResult, Context: raw}
 	if err := t.deliver(ctx, prompt); err != nil && ctx.Err() == nil {
 		log.Printf("websearch: 結果を会話へ届けられません query=%q: %v", query, err)
 	}
@@ -170,3 +170,5 @@ func asString(v any) string {
 
 var _ tools.Handler = (*Tool)(nil)
 var _ tools.DefinitionProvider = (*Tool)(nil)
+
+func (t *Tool) Title(args map[string]any) string { return asString(args["query"]) }

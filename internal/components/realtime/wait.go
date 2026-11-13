@@ -32,7 +32,7 @@ func (s *stage) waitForUser(ctx context.Context, req types.ToolRequest) {
 	s.calls[req.ToolCallID].finished = true
 	const output = `{"waiting":true}`
 	if s.cfg.ToolHistory != nil {
-		id := s.cfg.ToolHistory.Begin(req)
+		id := s.cfg.ToolHistory.Begin(req, "")
 		s.cfg.ToolHistory.Finish(id, types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, Output: []byte(output)})
 	}
 	s.record(ctx, "result/"+req.ToolCallID, types.RoleToolResult, output, req.GenerationID, waitToolName)

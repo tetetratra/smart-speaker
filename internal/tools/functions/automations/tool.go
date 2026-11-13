@@ -87,3 +87,11 @@ func (t *Tool) Definition() map[string]any {
 }
 
 var _ tools.Handler = (*Tool)(nil)
+
+func (t *Tool) Title(args map[string]any) string {
+	if t.Operation != "register_job" && t.Operation != "update_job" {
+		return ""
+	}
+	title, _ := args["name"].(string)
+	return title
+}

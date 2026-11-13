@@ -28,7 +28,7 @@ test('失敗・他ツール・不正な結果・空本文からは本文を表�
     tool('failed', { status: 'failed' }), tool('other', { name: 'web_search' }),
     tool('invalid', { output: '{' }), tool('null', { output: 'null' }),
     tool('empty', { output: '{"content":"  "}' }),
-    { kind: 'inbound', id: 'inbound', source: '外部', text: '通知', started_at: '2026-11-11T00:00:00Z' } as HistoryEntry,
+    { kind: 'inbound', id: 'inbound', source: '外部', name: '外部', text: '通知', started_at: '2026-11-11T00:00:00Z' } as HistoryEntry,
   ]
   assert.equal(whiteboardEvents(entries).length, entries.length)
   assert.ok(whiteboardEvents(entries).every(event => event.kind === 'history'))

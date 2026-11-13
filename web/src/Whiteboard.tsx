@@ -82,7 +82,9 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
         .live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }
         .live-tool-entry > summary.failed { background: var(--ui-danger-bg); border-color: var(--ui-danger-line); color: var(--ui-danger-text); }
         .live-tool-entry > summary.inbound { background: #fff0df; border-color: #e6bd93; color: #75451f; }
-        .live-tool-entry .live-tool-toast-tool { overflow-wrap: anywhere; white-space: normal; }
+        .live-tool-entry .live-tool-toast-tool { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
+        .live-tool-entry-name { flex-shrink: 0; white-space: pre; }
+        .live-tool-entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
         .live-tool-entry-status { flex-shrink: 0; font-size: 10px; }
         .live-tool-entry-body { font-size: 12px; padding: 8px; border: 1px solid var(--live-line); border-radius: 8px; margin-top: 4px; overflow-wrap: anywhere; }
         .live-tool-entry-body p { margin: 0 0 8px; color: var(--live-muted); }
@@ -95,6 +97,7 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
             return <div key={event.id} className="live-board-event live-board-entry">{event.content}</div>
           }
           const entry = event.entry
+          const title = entry.title?.trim()
           // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する
           const state = entry.kind === 'inbound' ? 'inbound' : entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
           return (
@@ -102,7 +105,10 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
               if (event.currentTarget.open) follow.current = false
             }}>
               <summary className={`live-tool-toast ${state}`}>
-                <span className="live-tool-toast-tool">{entry.kind === 'inbound' ? entry.source : entry.name}</span>
+                <span className="live-tool-toast-tool">
+                  <span className="live-tool-entry-name">{entry.name}{title && ': '}</span>
+                  {title && <span className="live-tool-entry-title" title={entry.title!}>{title}</span>}
+                </span>
                 <span className="live-tool-entry-status">▾</span>
               </summary>
               <div className="live-tool-entry-body">
