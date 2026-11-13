@@ -268,7 +268,7 @@ func TestNewCreatorHookValidatesConfig(t *testing.T) {
 	}
 }
 
-// testHookは、会話終了時に realtime が渡す履歴（fakeHistory）で ExecRecords を呼ぶためのテスト用の包み。
+// testHookは、固定した履歴（fakeHistory）で ExecRecords を呼ぶためのテスト用の包み。
 type testHook struct {
 	*CreatorHook
 	history *fakeHistory
@@ -305,7 +305,7 @@ func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationC
 	return testHook{CreatorHook: hook, history: history}
 }
 
-// fakeHistoryは、realtime が会話終了時に取り出す会話履歴の代わり。
+// fakeHistoryは、メモリ化のために取り出す会話履歴の代わり。
 type fakeHistory struct {
 	records []types.ConversationRecord
 }
@@ -466,8 +466,8 @@ func TestMemorizeOldDoesNothingWhenAllRecordsFitInContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 対象がなければゴルーチンを起動せずに同期で返る。
 	hook.MemorizeOld(context.Background(), history, nil)
-	time.Sleep(50 * time.Millisecond)
 	if creator.called {
 		t.Fatal("文脈に入る記録をメモリ化しました")
 	}

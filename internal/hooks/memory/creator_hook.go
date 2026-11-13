@@ -15,7 +15,8 @@ import (
 )
 
 // errPartiallyApplied は、抽出はできたが一部の操作を反映できなかったことを表す。
-// 抽出中の手動編集や不明な参照番号が原因で、同じ会話で再試行しても直らず、反映済みの追加が重複するだけになる。
+// 主な原因は抽出中の手動編集や不明な参照番号で、同じ会話で再試行しても直らず、反映済みの追加が重複するだけになる。
+// メモリの保存の失敗（ディスクI/O）も含むが、その記憶はメモリ上には残るため区別しない。
 var errPartiallyApplied = errors.New("memory operations partially applied")
 
 type CreatorHookConfig struct {

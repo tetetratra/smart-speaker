@@ -55,7 +55,7 @@ func newTestHistory(t *testing.T) *conversationhistory.Store {
 
 func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
 	t.Helper()
-	// 会話管理のゴルーチンは停止の直後まで保存しうるため、停止後に消し、t.TempDirの厳密な後片付けも避ける。
+	// 会話管理のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
 	dir, err := os.MkdirTemp("", "realtime-rig")
 	if err != nil {
 		t.Fatal(err)

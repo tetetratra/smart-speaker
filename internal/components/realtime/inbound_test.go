@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestInboundMessageWaitsForConversation(t *testing.T) {
@@ -58,5 +59,22 @@ func TestInboundKeepsFIFO(t *testing.T) {
 	s.active, s.wantResponse = "", false
 	if !s.startInbound(context.Background()) || len(s.inbound) != 0 {
 		t.Fatal(s.inbound)
+	}
+}
+
+// 定期的な外部入力が続いても、無操作の通知（古い履歴のメモリ化）が止まらないようにする。
+func TestInboundDoesNotPostponeIdleButStartsCountingWhenStopped(t *testing.T) {
+	s := newToolResponseStage(t)
+	old := time.Now().Add(-time.Hour)
+	s.lastActivity = old
+	s.queueInbound(testInput("first", "室温を知らせて"))
+	if !s.startInbound(context.Background()) || !s.lastActivity.Equal(old) {
+		t.Fatal(s.lastActivity)
+	}
+
+	s = newToolResponseStage(t)
+	s.queueInbound(testInput("second", "室温を知らせて"))
+	if !s.startInbound(context.Background()) || s.lastActivity.IsZero() {
+		t.Fatal("通知後の外部入力で数え始めていません")
 	}
 }

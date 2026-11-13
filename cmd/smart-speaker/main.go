@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -162,7 +161,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		chatStage.Name = "wschat"
 	}
 	generationStore := generation.NewStore()
-	historyStore, err := conversationhistory.NewStore(filepath.Join(filepath.Dir(cfg.Memory.StorePath), "conversation_history.json"))
+	historyStore, err := conversationhistory.NewStore(cfg.ConversationHistoryPath)
 	if err != nil {
 		return appStages{}, err
 	}

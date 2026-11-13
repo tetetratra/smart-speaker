@@ -28,6 +28,7 @@ type Config struct {
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
+	ConversationHistoryPath    string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -292,6 +293,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
 		WakeEnergyThreshold:        energyThreshold,
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
+		ConversationHistoryPath:    filepath.Join(dataDir, "conversation-history.json"),
 		Memory:                     memoryCfg,
 		ConversationIdleTimeout:    idleTimeout,
 		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),

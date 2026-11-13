@@ -28,7 +28,11 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	}
 
 	s.saveRecord(ctx, record)
-	s.lastActivity = time.Now()
+	// 定期的な外部入力で無操作の通知が止まり、古い履歴がメモリ化されないままにならないよう、
+	// 数え始めていないときだけ起点にする。ユーザーの発話があれば、そちらで数え直す。
+	if s.lastActivity.IsZero() {
+		s.lastActivity = time.Now()
+	}
 	s.addContext(input)
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
 	s.wantResponse = true
