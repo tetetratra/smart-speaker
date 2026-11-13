@@ -2,20 +2,33 @@ package realtime
 
 import (
 	"context"
-
 	"github.com/tetetratra/smart-speaker/internal/types"
+	"time"
 )
 
-func (s *stage) queueInbound(prompt types.InboundMessage) {
-	s.inbound = append(s.inbound, prompt)
+func (s *stage) queueInbound(input types.ConversationInput) {
+	s.inbound = append(s.inbound, input)
 }
+
 func (s *stage) startInbound(ctx context.Context) bool {
-	if len(s.inbound) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.pendingText) > 0 || len(s.repairs) > 0 || s.hasPendingOutput() {
+	if len(s.inbound) == 0 || s.speaking || s.active != "" || s.wantResponse || s.connecting || len(s.repairs) > 0 || s.hasPendingOutput() {
 		return false
 	}
-	// 再生端末がつながっていなくても待たずに実行する。音声は誰にも聞こえないが、それは諦める。
-	prompt := s.inbound[0]
+	if !s.ready || s.transport == nil {
+		s.connect(ctx)
+		return false
+	}
+	input := s.inbound[0]
 	s.inbound = s.inbound[1:]
-	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: prompt.Text, Source: prompt.Source, Title: prompt.Title, Metadata: map[string]any{"context": string(prompt.Context)}, Inbound: true}})
+	record := input.Record
+	change, _ := s.controller.Start(record.ID)
+	s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
+	record.GenerationID = change.GenerationID
+	s.saveRecord(ctx, record)
+	s.lastActivity = time.Now()
+	s.addContext(input)
+	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: change.GenerationID, ResponseID: record.ID, Final: true}})
+	s.wantResponse = true
+	s.maybeRespond(ctx)
 	return true
 }

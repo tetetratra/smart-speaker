@@ -10,7 +10,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -19,7 +18,7 @@ func newToolResponseStage() *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{
-		cfg:        Config{Generation: gen, History: conversationhistory.NewStore()},
+		cfg:        Config{Generation: gen},
 		node:       &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:  &transport{commands: eventqueue.New[any](nil)},
 		controller: generationcontroller.New(gen), epoch: 1, ready: true,

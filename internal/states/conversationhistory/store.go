@@ -6,7 +6,7 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// Store は会話履歴の正本です。realtime が記録し、再接続時の文脈の復元と会話終了時のメモリ抽出に使います。
+// Store は会話履歴の正本です。会話管理が記録し、再接続時の文脈の復元と会話終了時のメモリ抽出に使います。
 type Store struct {
 	mu      sync.RWMutex
 	records []types.ConversationRecord

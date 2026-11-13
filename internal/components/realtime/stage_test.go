@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
@@ -33,7 +34,13 @@ type rig struct {
 func newRig(t *testing.T, options ...func(*Config)) *rig {
 	return newRigWithInitialText(t, "", options...)
 }
+func newRigWithInbound(t *testing.T, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
+	return createRig(t, "", inbound, options...)
+}
 func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Config)) *rig {
+	return createRig(t, initialText, nil, options...)
+}
+func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	t.Cleanup(cancel)
@@ -64,7 +71,7 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 		}
 	}))
 	t.Cleanup(server.Close)
-	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore(), History: r.history}
+	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore()}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -73,6 +80,42 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 		t.Fatal(err)
 	}
 	r.node = node
+	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound})
+	managerQueue := eventqueue.New[types.Event](nil)
+	go manager.Run(ctx)
+	go func() {
+		for {
+			e, ok := managerQueue.Pop(ctx)
+			if !ok {
+				return
+			}
+			select {
+			case manager.Upstream <- e:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e, ok := <-manager.Downstream:
+				if !ok {
+					return
+				}
+				if input, ok := e.Payload.(types.ConversationInput); ok {
+					r.history.Upsert(input.Record)
+				}
+				select {
+				case node.Upstream <- e:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
 	go node.Run(ctx)
 	go func() {
 		for {
@@ -83,6 +126,14 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 				if !ok {
 					return
 				}
+				switch e.Kind {
+				case types.EventConversationRecord:
+					r.history.Upsert(e.Payload.(types.ConversationRecord))
+					managerQueue.Push(e)
+				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationSnapshotRequest, types.EventConversationEnded, types.EventConversationRecordsUsed:
+					managerQueue.Push(e)
+				}
+
 				select {
 				case r.events <- e:
 				case <-ctx.Done():
@@ -91,6 +142,9 @@ func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Co
 			}
 		}
 	}()
+	if initialText == "__offline__" {
+		return r
+	}
 	if initialText == "" {
 		node.Upstream <- types.Event{Payload: types.RTCPeerOutputSink{PeerID: "test", Connected: true}}
 	} else {
@@ -326,30 +380,20 @@ func TestAPIErrorLeavesPendingStateAndStopsOldPlayback(t *testing.T) {
 	}
 	// disconnectで永久待ちを解消し、次回の接続から文脈を復元できる。
 }
-func TestIdleEndRunsEvenAfterPeerDisconnectAndUsesFixedSnapshot(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	history := conversationhistory.NewStore()
-	history.Upsert(types.ConversationRecord{ID: "old", Role: types.RoleUser, Text: "前の会話"})
-	snapshots := make(chan []types.ConversationRecord, 1)
-	s := &stage{cfg: Config{History: history, IdleTimeout: time.Millisecond, OnConversationEnd: func(_ context.Context, r []types.ConversationRecord) error { snapshots <- r; return nil }}, lastActivity: time.Now().Add(-time.Second), node: &graph.Stage{Downstream: make(chan types.Event, 2)}}
+func TestIdleEndNotifiesConversationManagerOnce(t *testing.T) {
+	ctx := context.Background()
+	s := &stage{cfg: Config{IdleTimeout: time.Millisecond}, lastActivity: time.Now().Add(-time.Second), node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
 	s.tick(ctx, time.Now())
-	history.Upsert(types.ConversationRecord{ID: "new", Role: types.RoleUser, Text: "次の会話"})
-	select {
-	case records := <-snapshots:
-		if len(records) != 1 || records[0].ID != "old" {
-			t.Fatal(records)
-		}
-	case <-ctx.Done():
-		t.Fatal("会話終了処理が実行されない")
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationEnded {
+		t.Fatal(e)
 	}
-	if records := history.Snapshot(); len(records) != 1 || records[0].ID != "new" {
-		t.Fatal(records)
+	if e := <-s.node.Downstream; e.Kind != types.EventSessionReset {
+		t.Fatal(e)
 	}
 	s.tick(ctx, time.Now())
 	select {
-	case <-snapshots:
-		t.Fatal("二重終了")
+	case e := <-s.node.Downstream:
+		t.Fatal("二重終了", e)
 	default:
 	}
 }
@@ -359,7 +403,7 @@ func TestQueuedOldConnectionEventsAreIgnoredImmediatelyAfterDisconnect(t *testin
 	defer cancel()
 	gen := generation.NewStore()
 	gen.Next()
-	s := &stage{cfg: Config{History: conversationhistory.NewStore(), Generation: gen}, controller: generationcontroller.New(gen), queue: eventqueue.New[incoming](nil), epoch: 1, ready: true, peers: map[string]bool{}, responses: map[string]*response{"old": {generation: 1}}, items: map[string]*assistantItem{}, pendingOutput: map[string]bool{}}
+	s := &stage{cfg: Config{Generation: gen}, controller: generationcontroller.New(gen), queue: eventqueue.New[incoming](nil), epoch: 1, ready: true, peers: map[string]bool{}, responses: map[string]*response{"old": {generation: 1}}, items: map[string]*assistantItem{}, pendingOutput: map[string]bool{}}
 	s.node = &graph.Stage{Upstream: make(chan types.Event), Downstream: make(chan types.Event, 10)}
 	s.queue.Push(incoming{epoch: 1, err: fmt.Errorf("接続切断")})
 	s.queue.Push(incoming{epoch: 1, data: []byte(`{"type":"response.output_text.delta","response_id":"old","item_id":"late","delta":"旧接続の後着"}`)})

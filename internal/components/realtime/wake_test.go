@@ -46,7 +46,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := make(chan types.InboundMessage, 1)
-	r := newRig(t, func(c *Config) { c.WakeMode = store; c.Inbound = inbound })
+	r := newRigWithInbound(t, inbound, func(c *Config) { c.WakeMode = store })
 	inbound <- types.InboundMessage{Source: "automation", Text: "呼びかけ必須モードを解除して。読み上げ不要"}
 	request := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})

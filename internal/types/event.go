@@ -35,6 +35,20 @@ type Event struct {
 
 func (k EventKind) String() string {
 	switch k {
+	case EventConversationRecord:
+		return "EventConversationRecord"
+	case EventConversationContextAddition:
+		return "EventConversationContextAddition"
+	case EventConversationResponseRequest:
+		return "EventConversationResponseRequest"
+	case EventConversationSnapshotRequest:
+		return "EventConversationSnapshotRequest"
+	case EventConversationSnapshot:
+		return "EventConversationSnapshot"
+	case EventConversationEnded:
+		return "EventConversationEnded"
+	case EventConversationRecordsUsed:
+		return "EventConversationRecordsUsed"
 	case EventLocalWakeUtterance:
 		return "EventLocalWakeUtterance"
 	case EventWakeTranscription:
