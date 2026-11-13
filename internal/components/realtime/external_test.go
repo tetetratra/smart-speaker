@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +13,7 @@ import (
 )
 
 func externalMessage(id, text string) types.InboundMessage {
-	return types.InboundMessage{ID: id, Source: "automation/job", Text: text, Context: json.RawMessage(`{"delivery":"history_only","call_id":"call"}`)}
+	return types.InboundMessage{ID: id, Source: "automation", Text: text, Context: json.RawMessage(`{"delivery":"history_only","call_id":"call"}`)}
 }
 
 func TestExternalRecordDoesNotStartOrInterruptResponse(t *testing.T) {
@@ -82,7 +83,7 @@ func TestExternalRecordsPrecedeRemindAndSurviveIdle(t *testing.T) {
 	// 同一Ingressの順に受信し、先行する記録をremindの応答前に渡す。
 	s = newToolResponseStage()
 	s.recordExternal(context.Background(), externalMessage("result", "処理結果"))
-	s.queueInbound(types.InboundMessage{Source: "automation/job", Text: "結果を伝えて"})
+	s.queueInbound(types.InboundMessage{Source: "automation", Text: "結果を伝えて"})
 	s.startInbound(context.Background())
 	popToolCommand(t, s, "conversation.item.create") // remindの指示
 	item := popToolCommand(t, s, "conversation.item.create")["item"].(map[string]any)
@@ -90,4 +91,24 @@ func TestExternalRecordsPrecedeRemindAndSurviveIdle(t *testing.T) {
 		t.Fatal(item)
 	}
 	popToolCommand(t, s, "response.create")
+}
+
+func TestAutomationRecordsAvoidDuplicateToolEntries(t *testing.T) {
+	s := newToolResponseStage()
+	s.cfg.ToolHistory = toolhistory.NewStore(10)
+	for i, role := range []string{types.RoleToolCall, types.RoleToolResult, types.RoleSystem, ""} {
+		message := externalMessage(fmt.Sprint(i), "予約の記録")
+		message.Role = role
+		message.Title = "室温"
+		s.recordExternal(context.Background(), message)
+	}
+	entries := s.cfg.ToolHistory.Snapshot()
+	if len(entries) != 2 {
+		t.Fatal("呼び出しと受付結果が重複表示されました", entries)
+	}
+	for _, entry := range entries {
+		if entry.Name != "automation" || entry.Title != "室温" {
+			t.Fatal(entry)
+		}
+	}
 }

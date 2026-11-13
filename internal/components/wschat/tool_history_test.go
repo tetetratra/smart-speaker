@@ -59,7 +59,7 @@ func TestToolHistoryPushAndReconnect(t *testing.T) {
 	long := strings.Repeat("長い日本語", 3000)
 	args, _ := json.Marshal(map[string]string{"query": long})
 	output, _ := json.Marshal(map[string]string{"result": long})
-	id := store.Begin(types.ToolRequest{ToolCallID: "call-1", Name: "web_search", Arguments: args})
+	id := store.Begin(types.ToolRequest{ToolCallID: "call-1", Name: "web_search", Arguments: args}, "")
 	for _, conn := range []*websocket.Conn{first, second} {
 		entries := read(conn)
 		if len(entries) != 1 || entries[0].Status != "running" || entries[0].Arguments != string(args) {

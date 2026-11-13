@@ -21,15 +21,23 @@ func New(handlers map[string]tools.Handler, history *toolhistory.Store) *Executo
 
 // Execute は成功と失敗を同じJSON形式で返し、画面用の履歴を記録する。
 func (e *Executor) Execute(ctx context.Context, req types.ToolRequest) types.ToolResultRecord {
+	args := map[string]any{}
+	var argsErr error
+	if len(req.Arguments) > 0 {
+		argsErr = json.Unmarshal(req.Arguments, &args)
+	}
 	var entryID string
 	if e.history != nil {
-		entryID = e.history.Begin(req)
+		var title string
+		if provider, ok := e.handlers[req.Name].(tools.TitleProvider); ok && argsErr == nil && args != nil {
+			title = provider.Title(args)
+		}
+		entryID = e.history.Begin(req, title)
 	}
-	args := map[string]any{}
 	var result map[string]any
 	if err := ctx.Err(); err != nil {
 		result = map[string]any{"error": err.Error()}
-	} else if len(req.Arguments) > 0 && (json.Unmarshal(req.Arguments, &args) != nil || args == nil) {
+	} else if argsErr != nil || args == nil {
 		result = map[string]any{"error": "invalid tool arguments"}
 	} else if handler, ok := e.handlers[req.Name]; !ok {
 		result = map[string]any{"error": "unknown function: " + req.Name}

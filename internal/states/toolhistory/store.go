@@ -16,6 +16,7 @@ type Entry struct {
 	ID           string             `json:"id"`
 	CallID       string             `json:"call_id"`
 	Name         string             `json:"name"`
+	Title        string             `json:"title,omitempty"`
 	GenerationID types.GenerationID `json:"generation_id"`
 	Arguments    string             `json:"arguments"`
 	Output       string             `json:"output"`
@@ -39,11 +40,11 @@ func NewStore(limit int) *Store {
 	return &Store{limit: limit}
 }
 
-func (s *Store) Begin(req types.ToolRequest) string {
+func (s *Store) Begin(req types.ToolRequest, title string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := uuid.NewString()
-	s.appendLocked(Entry{Kind: "tool", ID: id, CallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Arguments: string(req.Arguments), Status: "running", StartedAt: time.Now()})
+	s.appendLocked(Entry{Kind: "tool", ID: id, CallID: req.ToolCallID, Name: req.Name, Title: title, GenerationID: req.GenerationID, Arguments: string(req.Arguments), Status: "running", StartedAt: time.Now()})
 	return id
 }
 
@@ -51,7 +52,7 @@ func (s *Store) Begin(req types.ToolRequest) string {
 func (s *Store) RecordInbound(message types.InboundMessage, gen types.GenerationID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.appendLocked(Entry{Kind: "inbound", ID: uuid.NewString(), Source: message.Source, Text: message.Text, GenerationID: gen, StartedAt: time.Now()})
+	s.appendLocked(Entry{Kind: "inbound", ID: uuid.NewString(), Source: message.Source, Name: message.Source, Title: message.Title, Text: message.Text, GenerationID: gen, StartedAt: time.Now()})
 }
 
 func (s *Store) appendLocked(entry Entry) {

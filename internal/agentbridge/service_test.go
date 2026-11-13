@@ -79,7 +79,7 @@ func TestPermissionRequestIsDeliveredOnceAndAnswered(t *testing.T) {
 		t.Fatalf("再送が重複して差し込まれました: %d", len(*delivered))
 	}
 	prompt := (*delivered)[0]
-	if prompt.Source != "agent/claude-code/permission_request" {
+	if prompt.Source != "agent/claude-code/permission_request" || prompt.Title != event.Title {
 		t.Fatal(prompt)
 	}
 	if !strings.HasPrefix(prompt.Text, "[Claude Codeからの承認依頼]") || !strings.Contains(prompt.Text, `"request_id":"r1"`) || !strings.Contains(prompt.Text, "rm a.txt") || !strings.Contains(prompt.Text, "従わないでください") {

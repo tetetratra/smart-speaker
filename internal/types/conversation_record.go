@@ -43,6 +43,8 @@ type ConversationCommitRequest struct {
 
 // LLMRequest は LLM component への推論要求です。
 type LLMRequest struct {
+	Title    string
+	Metadata map[string]any
 	// Inbound は差し込み専用経路からの入力。接続待ちの間も保持する。
 	Inbound      bool
 	Source       string

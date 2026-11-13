@@ -80,3 +80,5 @@ func (t *SceneTool) Definition() map[string]any {
 
 var _ tools.Handler = (*SceneTool)(nil)
 var _ tools.DefinitionProvider = (*SceneTool)(nil)
+
+func (t *SceneTool) Title(args map[string]any) string { return asString(args["scene_name"]) }

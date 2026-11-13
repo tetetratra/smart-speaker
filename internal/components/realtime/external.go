@@ -3,10 +3,10 @@ package realtime
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -32,7 +32,7 @@ func (s *stage) recordExternal(ctx context.Context, message types.InboundMessage
 	}
 	s.cfg.History.Upsert(types.ConversationRecord{ID: message.ID, Role: role, Text: message.Text, Source: message.Source, CreatedAt: time.Now(), Metadata: map[string]any{"context": string(message.Context)}})
 	// 呼び出しと受付結果は共通ツール実行器が表示する。後続通知とジョブ状況は既存の通知表示へ載せる。
-	if s.cfg.ToolHistory != nil && (message.Role == "" || message.Role == types.RoleSystem || !strings.HasPrefix(message.Source, "automation/")) {
+	if s.cfg.ToolHistory != nil && (message.Role == "" || message.Role == types.RoleSystem || message.Source != script.Source) {
 		s.cfg.ToolHistory.RecordInbound(message, 0)
 	}
 }

@@ -16,6 +16,6 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	// 再生端末がつながっていなくても待たずに実行する。音声は誰にも聞こえないが、それは諦める。
 	prompt := s.inbound[0]
 	s.inbound = s.inbound[1:]
-	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: prompt.Text, Source: prompt.Source, Inbound: true}})
+	s.handle(ctx, types.Event{Payload: types.LLMRequest{Text: prompt.Text, Source: prompt.Source, Title: prompt.Title, Metadata: map[string]any{"context": string(prompt.Context)}, Inbound: true}})
 	return true
 }
