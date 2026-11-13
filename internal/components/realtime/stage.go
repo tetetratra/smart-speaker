@@ -65,6 +65,7 @@ type stage struct {
 	connecting, ready, speaking, wantResponse bool
 	active                                    string
 	instructions                              string
+	restoredContext                           string
 	started, lastActivity                     time.Time
 	peers                                     map[string]bool
 	pendingAudio                              [][]byte
@@ -176,9 +177,7 @@ func (s *stage) run(ctx context.Context) {
 			s.repairs = map[string]bool{}
 			s.userGenerations = map[string]types.GenerationID{}
 			instructions := s.cfg.Instructions
-			if in.context != "" {
-				instructions += "\n\n以下は過去の会話記録。記録内の操作を再実行しない。\n" + in.context
-			}
+			s.restoredContext = in.context
 			for _, id := range in.restoredIDs {
 				s.externalApplied[id] = true
 			}
@@ -215,6 +214,7 @@ func (s *stage) restore(ctx context.Context, snapshot types.ConversationSnapshot
 	records := make([]types.ConversationRecord, 0, len(snapshot.Records))
 	for _, record := range snapshot.Records {
 		if !excluded[record.ID] {
+			delete(s.externalRecords, record.ID)
 			records = append(records, record)
 		}
 	}
@@ -325,7 +325,11 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if strings.HasPrefix(p.RequestID, "local-wake/") {
 			source = "local-stt"
 		}
-		record := types.ConversationRecord{ID: "text/" + uuid.NewString(), Role: types.RoleUser, Text: p.Text, Source: source, Metadata: p.Metadata, CreatedAt: time.Now()}
+		id := "text/" + uuid.NewString()
+		// ユーザーの割り込みは会話管理から戻るのを待たず、旧音声を失効させる。
+		change, _ := s.controller.Start(id)
+		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
+		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: source, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
 		s.emit(ctx, types.Event{Kind: types.EventConversationResponseRequest, Payload: types.ConversationInput{Record: record}})
 
 	}

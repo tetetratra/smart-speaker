@@ -21,13 +21,16 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	input := s.inbound[0]
 	s.inbound = s.inbound[1:]
 	record := input.Record
-	change, _ := s.controller.Start(record.ID)
-	s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
-	record.GenerationID = change.GenerationID
+	if input.External || record.GenerationID == 0 {
+		change, _ := s.controller.Start(record.ID)
+		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
+		record.GenerationID = change.GenerationID
+	}
+
 	s.saveRecord(ctx, record)
 	s.lastActivity = time.Now()
 	s.addContext(input)
-	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: change.GenerationID, ResponseID: record.ID, Final: true}})
+	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
 	s.wantResponse = true
 	s.maybeRespond(ctx)
 	return true

@@ -78,12 +78,13 @@ func TestDisconnectedAdditionIsRestoredAndRequestRunsWithoutPeer(t *testing.T) {
 	case <-r.ctx.Done():
 		t.Fatal("端末なしの応答依頼で接続しませんでした")
 	}
-	update := r.wait("session.update")
-	instructions := update["session"].(map[string]any)["instructions"].(string)
+	r.wait("session.update")
+	r.send(map[string]any{"type": "session.updated"})
+	restored := r.wait("conversation.item.create")["item"].(map[string]any)
+	instructions := restored["content"].([]any)[0].(map[string]any)["text"].(string)
 	if !strings.Contains(instructions, "外出した") || strings.Contains(instructions, "今の場所を教えて") {
 		t.Fatal(instructions)
 	}
-	r.send(map[string]any{"type": "session.updated"})
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if text := item["content"].([]any)[0].(map[string]any)["text"].(string); text != "今の場所を教えて" {
 		t.Fatal(text)
@@ -104,4 +105,29 @@ func TestConnectedAdditionIsImmediateAndDoesNotRequestResponse(t *testing.T) {
 		t.Fatal("情報追加が余分なAPI要求を発行しました", command)
 	case <-time.After(30 * time.Millisecond):
 	}
+}
+
+func TestReconnectDoesNotReplayTrimmedContext(t *testing.T) {
+	inbound := make(chan types.InboundMessage, 3)
+	r := createRig(t, "__offline__", inbound)
+	inbound <- types.InboundMessage{ID: "old", Text: strings.Repeat("古い外部情報", 5000), Context: json.RawMessage(`{"delivery":"history_only"}`)}
+	inbound <- types.InboundMessage{ID: "recent", Text: "直近の結果", Context: json.RawMessage(`{"delivery":"history_only"}`)}
+	inbound <- types.InboundMessage{ID: "request", Text: "短く答えて"}
+	select {
+	case r.conn = <-r.connections:
+	case <-r.ctx.Done():
+		t.Fatal("接続しませんでした")
+	}
+	r.wait("session.update")
+	r.send(map[string]any{"type": "session.updated"})
+	restored := r.wait("conversation.item.create")["item"].(map[string]any)
+	instructions := restored["content"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(instructions, "古い外部情報") || !strings.Contains(instructions, "直近の結果") {
+		t.Fatal("復元範囲が不正")
+	}
+	item := r.wait("conversation.item.create")["item"].(map[string]any)
+	if got := item["content"].([]any)[0].(map[string]any)["text"]; got != "短く答えて" {
+		t.Fatal("復元で除いた情報を追加送信しました")
+	}
+	r.wait("response.create")
 }

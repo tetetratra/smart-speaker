@@ -468,17 +468,21 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 		t.Fatal("再接続されない")
 	}
 	update := r.wait("session.update")
-	if !strings.Contains(update["session"].(map[string]any)["instructions"].(string), "前の会話を覚えて") {
+	if strings.Contains(update["session"].(map[string]any)["instructions"].(string), "前の会話を覚えて") {
 		t.Fatal(update)
 	}
 	r.send(map[string]any{"type": "session.updated"})
+	restored := r.wait("conversation.item.create")["item"].(map[string]any)
+	if text := restored["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "前の会話を覚えて") {
+		t.Fatal(text)
+	}
 	r.utterance("user2")
 	request := r.wait("response.create")
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
 	}
 	instructions, _ := request["response"].(map[string]any)["instructions"].(string)
-	for _, want := range []string{"元のシステム指示", "前の会話を覚えて", "Asia/Tokyo", "今日:"} {
+	for _, want := range []string{"元のシステム指示", "Asia/Tokyo", "今日:"} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("応答ごとの指示に %q がありません: %s", want, instructions)
 		}
