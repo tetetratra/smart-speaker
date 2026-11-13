@@ -34,6 +34,10 @@ docker compose up --build
 
 設定の全項目と既定値は [config.sample.yaml](config.sample.yaml) にあります。
 
+## 内部構成
+
+- [コンポーネントとイベントの全体図](docs/components.md)
+
 ## ディレクトリ構成
 
 | パス | 内容 |
