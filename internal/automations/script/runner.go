@@ -52,9 +52,6 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		}
 		return err
 	}
-	if err := publish(parent, "start", types.RoleSystem, "[予約ジョブ開始: "+name+"]", metadata); err != nil {
-		return err
-	}
 	defer func() {
 		text := "[予約ジョブ終了: " + name + "] スクリプトの実行が終了しました。非同期処理は継続することがあります。"
 		if runErr != nil {
