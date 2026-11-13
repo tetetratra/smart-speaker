@@ -1,6 +1,7 @@
 package wakemode
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestSetWakeModeOnlySwitchesRequired(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &args); err != nil {
 			t.Fatal(err)
 		}
-		_, err := tool.Run(args)
+		_, err := tool.Run(context.Background(), args)
 		return err
 	}
 	if err := run(`{"required":true}`); err != nil || !store.Snapshot(time.Now()).Required {

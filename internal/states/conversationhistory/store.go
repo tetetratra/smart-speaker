@@ -58,3 +58,19 @@ func (s *Store) Drain() []types.ConversationRecord {
 	s.records = nil
 	return out
 }
+
+// DrainExcept はまだ応答に渡していない外部記録を残し、終了した会話を切り離す。
+func (s *Store) DrainExcept(keep map[string]bool) []types.ConversationRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var drained, retained []types.ConversationRecord
+	for _, record := range s.records {
+		if keep[record.ID] {
+			retained = append(retained, record)
+		} else {
+			drained = append(drained, record)
+		}
+	}
+	s.records = retained
+	return drained
+}

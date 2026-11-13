@@ -44,9 +44,13 @@ func (e *Error) Error() string {
 }
 
 // StartTask は作業を依頼する。workdir は作業ディレクトリの候補の名前で、空ならブリッジが先頭の候補を使う。
-func (c *Client) StartTask(ctx context.Context, input, sessionID, workdir string) (TaskAccepted, error) {
+func (c *Client) StartTask(ctx context.Context, input, sessionID, workdir string, deliveryContext ...json.RawMessage) (TaskAccepted, error) {
 	var out TaskAccepted
-	err := c.do(ctx, http.MethodPost, "/tasks", map[string]string{"input": input, "session_id": sessionID, "workdir": workdir}, &out)
+	payload := map[string]any{"input": input, "session_id": sessionID, "workdir": workdir}
+	if len(deliveryContext) > 0 && len(deliveryContext[0]) > 0 {
+		payload["context"] = deliveryContext[0]
+	}
+	err := c.do(ctx, http.MethodPost, "/tasks", payload, &out)
 	return out, err
 }
 

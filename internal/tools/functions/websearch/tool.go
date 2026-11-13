@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -39,17 +41,18 @@ type SearchClient interface {
 }
 
 type Config struct {
-	APIKey string
-	Model  string
-	Client SearchClient
+	AppContext context.Context
+	APIKey     string
+	Model      string
+	Client     SearchClient
 	// Deliver があれば、検索を待たずに受け付けを返し、結果は後から届ける。なければ検索の完了を待って結果を返す。
 	Deliver Deliver
 }
 
 type Tool struct {
-	client  SearchClient
-	deliver Deliver
-	ctx     context.Context
+	appContext context.Context
+	client     SearchClient
+	deliver    Deliver
 }
 
 func New(cfg Config) *Tool {
@@ -60,16 +63,12 @@ func New(cfg Config) *Tool {
 			Model:  cfg.Model,
 		})
 	}
-	return &Tool{client: client, deliver: cfg.Deliver}
+	return &Tool{client: client, deliver: cfg.Deliver, appContext: cfg.AppContext}
 }
 
 func (t *Tool) Name() string { return toolName }
 
-func (t *Tool) SetContext(ctx context.Context) {
-	t.ctx = ctx
-}
-
-func (t *Tool) Run(args map[string]any) (map[string]any, error) {
+func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.client == nil {
 		return nil, fmt.Errorf("web_search client is not configured")
 	}
@@ -86,15 +85,25 @@ func (t *Tool) Run(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("query is required")
 	}
 	if t.deliver == nil {
-		result, err := t.client.Search(t.ctxOrBackground(), query)
+		result, err := t.client.Search(ctx, query)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"result": result}, nil
 	}
 	// 結果待ちの呼び出しが会話に残ると、モデルが同じツールを呼ばなくなるため、すぐ受け付けを返す。
-	go t.searchAndDeliver(t.ctxOrBackground(), query)
-	return map[string]any{"status": "started", "query": query, "instructions": acceptedInstructions}, nil
+	appCtx := t.appContext
+	if appCtx == nil {
+		appCtx = ctx
+	}
+	// JSの実行期限を継承せず、通知方針だけをアプリの寿命へ移す。
+	resultCtx := execution.WithDeliveryContext(appCtx, execution.DeliveryContext(ctx))
+	go t.searchAndDeliver(resultCtx, query)
+	result := map[string]any{"status": "started", "query": query}
+	if !types.HistoryOnly(execution.DeliveryContext(ctx)) {
+		result["instructions"] = acceptedInstructions
+	}
+	return result, nil
 }
 
 // searchAndDeliver は検索し、結果か失敗を会話へ届ける。アプリの停止で ctx が取り消されたら何も届けない。
@@ -104,9 +113,18 @@ func (t *Tool) searchAndDeliver(ctx context.Context, query string) {
 	if ctx.Err() != nil {
 		return
 	}
+	raw := execution.DeliveryContext(ctx)
 	text := resultText(query, result, err)
+	if types.HistoryOnly(raw) {
+		data := map[string]any{"query": query, "result": result}
+		if err != nil {
+			delete(data, "result")
+			data["error"] = err.Error()
+		}
+		text = "[過去のWeb検索の結果]\n" + dataNotice + "\n" + encode(data)
+	}
 	log.Printf("websearch: 完了 query=%q failed=%t elapsed=%s", query, err != nil, time.Since(started).Round(time.Millisecond))
-	prompt := types.InboundMessage{Source: source, Text: text}
+	prompt := types.InboundMessage{ID: "websearch/" + uuid.NewString(), Source: source, Text: text, Role: types.RoleToolResult, Context: raw}
 	if err := t.deliver(ctx, prompt); err != nil && ctx.Err() == nil {
 		log.Printf("websearch: 結果を会話へ届けられません query=%q: %v", query, err)
 	}
@@ -143,13 +161,6 @@ func (t *Tool) Definition() map[string]any {
 	}
 }
 
-func (t *Tool) ctxOrBackground() context.Context {
-	if t.ctx != nil {
-		return t.ctx
-	}
-	return context.Background()
-}
-
 func asString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -158,5 +169,4 @@ func asString(v any) string {
 }
 
 var _ tools.Handler = (*Tool)(nil)
-var _ tools.ContextAware = (*Tool)(nil)
 var _ tools.DefinitionProvider = (*Tool)(nil)

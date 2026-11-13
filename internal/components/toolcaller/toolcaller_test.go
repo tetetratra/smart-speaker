@@ -9,6 +9,7 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -20,7 +21,7 @@ type stubHandler struct {
 
 func (h stubHandler) Name() string { return h.name }
 
-func (h stubHandler) Run(args map[string]any) (map[string]any, error) {
+func (h stubHandler) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if h.err != nil {
 		return nil, h.err
 	}
@@ -202,8 +203,8 @@ func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 }
 func TestInvalidArgumentsDoNotExecuteTool(t *testing.T) {
 	handler := &countingHandler{}
-	caller := &toolCaller{tools: map[string]tools.Handler{"count": handler}}
-	result := caller.executeTool(types.ToolRequest{Name: "count", Arguments: json.RawMessage(`{"broken"`)})
+	executor := execution.New(map[string]tools.Handler{"count": handler}, nil)
+	result := executor.Execute(context.Background(), types.ToolRequest{Name: "count", Arguments: json.RawMessage(`{"broken"`)})
 	if handler.calls != 0 || !json.Valid(result.Output) {
 		t.Fatal(handler.calls, string(result.Output))
 	}
@@ -212,7 +213,7 @@ func TestInvalidArgumentsDoNotExecuteTool(t *testing.T) {
 type countingHandler struct{ calls int }
 
 func (h *countingHandler) Name() string { return "count" }
-func (h *countingHandler) Run(map[string]any) (map[string]any, error) {
+func (h *countingHandler) Run(context.Context, map[string]any) (map[string]any, error) {
 	h.calls++
 	return map[string]any{"ok": true}, nil
 }
@@ -220,7 +221,7 @@ func (h *countingHandler) Run(map[string]any) (map[string]any, error) {
 type blockingHandler struct{ started, release chan struct{} }
 
 func (h *blockingHandler) Name() string { return "blocked" }
-func (h *blockingHandler) Run(map[string]any) (map[string]any, error) {
+func (h *blockingHandler) Run(context.Context, map[string]any) (map[string]any, error) {
 	close(h.started)
 	<-h.release
 	return map[string]any{"result": "結果の全文"}, nil

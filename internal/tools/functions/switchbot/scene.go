@@ -12,7 +12,6 @@ const sceneToolName = "switchbot_execute_scene"
 
 type SceneTool struct {
 	client       *Client
-	ctx          context.Context
 	scenesByName map[string]Scene
 	sceneNames   []string
 }
@@ -44,11 +43,7 @@ func NewScene(client *Client, scenes []Scene) *SceneTool {
 
 func (t *SceneTool) Name() string { return sceneToolName }
 
-func (t *SceneTool) SetContext(ctx context.Context) {
-	t.ctx = ctx
-}
-
-func (t *SceneTool) Run(args map[string]any) (map[string]any, error) {
+func (t *SceneTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.client == nil {
 		return nil, errNotConfigured
 	}
@@ -59,10 +54,6 @@ func (t *SceneTool) Run(args map[string]any) (map[string]any, error) {
 	scene, ok := t.scenesByName[sceneName]
 	if !ok {
 		return nil, fmt.Errorf("未登録のシーン名です: %s。引数の検証で中止し、外部操作は実行していません。登録済みの候補から依頼に一致する名前を選んでください。利用可能なシーン: %s", sceneName, strings.Join(t.sceneNames, ", "))
-	}
-	ctx := t.ctx
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	return t.client.ExecuteScene(ctx, scene.SceneID)
 }
@@ -88,5 +79,4 @@ func (t *SceneTool) Definition() map[string]any {
 }
 
 var _ tools.Handler = (*SceneTool)(nil)
-var _ tools.ContextAware = (*SceneTool)(nil)
 var _ tools.DefinitionProvider = (*SceneTool)(nil)

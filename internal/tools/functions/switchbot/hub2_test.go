@@ -52,8 +52,8 @@ func TestHub2MeasurementTools(t *testing.T) {
 			if tool == nil {
 				t.Fatalf("tool %q not found", tt.name)
 			}
-			tool.SetContext(context.Background())
-			out, err := tool.Run(map[string]any{})
+
+			out, err := tool.Run(context.Background(), map[string]any{})
 			if err != nil {
 				t.Fatalf("Run() error = %v", err)
 			}
@@ -78,7 +78,7 @@ func TestHub2MeasurementToolReturnsUnavailableWhenFieldMissing(t *testing.T) {
 	defer server.Close()
 
 	tool := NewHub2ToolsWithClient(newTestClient(server))[0]
-	out, err := tool.Run(map[string]any{})
+	out, err := tool.Run(context.Background(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestHub2MeasurementToolReturnsUnavailableWhenFieldMissing(t *testing.T) {
 
 func TestHub2MeasurementToolRequiresClient(t *testing.T) {
 	tool := &hub2MeasurementTool{spec: hub2MeasurementSpecs[0]}
-	if _, err := tool.Run(map[string]any{}); err != errNotConfigured {
+	if _, err := tool.Run(context.Background(), map[string]any{}); err != errNotConfigured {
 		t.Fatalf("Run() error = %v, want %v", err, errNotConfigured)
 	}
 }

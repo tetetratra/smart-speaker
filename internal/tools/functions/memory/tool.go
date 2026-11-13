@@ -3,6 +3,7 @@ package memory
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,7 @@ type Tool struct {
 
 func (t *Tool) Name() string { return t.Operation }
 
-func (t *Tool) Run(args map[string]any) (map[string]any, error) {
+func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	var req struct {
 		ID      string `json:"id"`
 		Content string `json:"content"`

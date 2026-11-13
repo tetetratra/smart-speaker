@@ -77,6 +77,41 @@ test("続きの依頼は resume を使い、タグは付け直さない", async 
   assert.deepEqual(tags, []);
 });
 
+test("開始応答より早い承認依頼と完了の両方に開始時のcontextを付ける", async () => {
+  const context = { delivery: "history_only", automation_id: "a1", nested: { unknown: [1, "日本語", null] } };
+  const expected = structuredClone(context);
+  let startReturned = false;
+  const { manager, broker, events, finished } = setup(async function* (options) {
+    assert.equal(startReturned, false);
+    const permission = await options.canUseTool!("Bash", { command: "ls" }, { signal: new AbortController().signal, toolUseID: "u1" } as never);
+    yield success({ summary: permission?.behavior, details: [] });
+  });
+  const starting = manager.start("確認", undefined, undefined, context);
+  context.nested.unknown.push("呼び出し後の変更");
+  const accepted = await starting;
+  startReturned = true;
+  // 作業開始時から情報を持つため、startの応答前に出る通知でも失われない。
+  assert.equal(events[0]?.type, "permission_request");
+  assert.deepEqual(events[0].context, expected);
+  const request = events[0] as Extract<EventInput, { type: "permission_request" }>;
+  assert.equal(request.task_id, accepted.task_id);
+  broker.answer(request.request_id, false);
+  await finished;
+  assert.equal(events[1].type, "completed");
+  assert.deepEqual(events[1].context, expected);
+});
+
+test("失敗通知にも同じcontextを付け、内容を解釈しない", async () => {
+  const context = { delivery: "未知のモード", future: { enabled: false } };
+  const { manager, events, finished } = setup(async function* () {
+    throw new Error("失敗");
+  });
+  await manager.start("確認", undefined, undefined, context);
+  await finished;
+  assert.equal(events[0].type, "failed");
+  assert.deepEqual(events[0].context, context);
+});
+
 test("canUseTool の承認依頼は、作業とセッションのIDを付けて通知する", async () => {
   const { manager, broker, events, finished } = setup(async function* (options) {
     const result = await options.canUseTool!("Bash", { command: "rm a" }, { signal: new AbortController().signal, toolUseID: "u1", title: "Claude wants to run rm a" } as never);

@@ -1,6 +1,7 @@
 package whiteboard
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -27,7 +28,7 @@ func New() *Tool {
 
 func (t *Tool) Name() string { return toolName }
 
-func (t *Tool) Run(args map[string]any) (map[string]any, error) {
+func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	content := strings.TrimSpace(asString(args["content"]))
 	content = strings.ReplaceAll(content, `\n`, "\n")
 	content = strings.TrimSpace(content)

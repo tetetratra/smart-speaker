@@ -50,7 +50,6 @@ var hub2MeasurementSpecs = []hub2MeasurementSpec{
 type hub2MeasurementTool struct {
 	spec   hub2MeasurementSpec
 	client *Client
-	ctx    context.Context
 }
 
 // NewHub2ToolsWithClient は温度・湿度・照度の Hub2 ツール群を生成します。
@@ -67,17 +66,9 @@ func NewHub2ToolsWithClient(client *Client) []*hub2MeasurementTool {
 
 func (t *hub2MeasurementTool) Name() string { return t.spec.name }
 
-func (t *hub2MeasurementTool) SetContext(ctx context.Context) {
-	t.ctx = ctx
-}
-
-func (t *hub2MeasurementTool) Run(args map[string]any) (map[string]any, error) {
+func (t *hub2MeasurementTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.client == nil {
 		return nil, errNotConfigured
-	}
-	ctx := t.ctx
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	status, err := t.client.GetStatus(ctx, "", hub2Alias)
 	if err != nil {
@@ -107,7 +98,6 @@ func (t *hub2MeasurementTool) Definition() map[string]any {
 }
 
 var _ tools.Handler = (*hub2MeasurementTool)(nil)
-var _ tools.ContextAware = (*hub2MeasurementTool)(nil)
 var _ tools.DefinitionProvider = (*hub2MeasurementTool)(nil)
 
 func normalizeValue(v any) string {

@@ -28,7 +28,6 @@ type calendarClient interface {
 
 type baseTool struct {
 	client calendarClient
-	ctx    context.Context
 }
 
 func newBaseTool(client calendarClient) *baseTool {
@@ -36,17 +35,6 @@ func newBaseTool(client calendarClient) *baseTool {
 		client = calendarapi.NewClient(calendarapi.Config{})
 	}
 	return &baseTool{client: client}
-}
-
-func (t *baseTool) SetContext(ctx context.Context) {
-	t.ctx = ctx
-}
-
-func (t *baseTool) ctxOrBackground() context.Context {
-	if t.ctx != nil {
-		return t.ctx
-	}
-	return context.Background()
 }
 
 type listTool struct {
@@ -59,7 +47,7 @@ func NewList(client calendarClient) *listTool {
 
 func (t *listTool) Name() string { return listToolName }
 
-func (t *listTool) Run(args map[string]any) (map[string]any, error) {
+func (t *listTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	calendarID := strings.TrimSpace(asString(args["calendar_id"]))
 	if calendarID == "" {
 		calendarID = "primary"
@@ -98,7 +86,7 @@ func (t *listTool) Run(args map[string]any) (map[string]any, error) {
 		return nil, fmt.Errorf("date もしくは time_min/time_max を指定してください")
 	}
 
-	events, err := t.client.ListEvents(t.ctxOrBackground(), calendarapi.ListEventsRequest{
+	events, err := t.client.ListEvents(ctx, calendarapi.ListEventsRequest{
 		CalendarID: calendarID,
 		TimeMin:    timeMin,
 		TimeMax:    timeMax,
@@ -171,7 +159,7 @@ func NewCreate(client calendarClient) *createTool {
 
 func (t *createTool) Name() string { return createToolName }
 
-func (t *createTool) Run(args map[string]any) (map[string]any, error) {
+func (t *createTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	calendarID := strings.TrimSpace(asString(args["calendar_id"]))
 	if calendarID == "" {
 		calendarID = "primary"
@@ -194,7 +182,7 @@ func (t *createTool) Run(args map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 
-	event, err := t.client.CreateEvent(t.ctxOrBackground(), calendarapi.CreateEventRequest{
+	event, err := t.client.CreateEvent(ctx, calendarapi.CreateEventRequest{
 		CalendarID:  calendarID,
 		Summary:     summary,
 		Description: strings.TrimSpace(asString(args["description"])),
@@ -262,7 +250,7 @@ func NewUpdate(client calendarClient) *updateTool {
 
 func (t *updateTool) Name() string { return updateToolName }
 
-func (t *updateTool) Run(args map[string]any) (map[string]any, error) {
+func (t *updateTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	action := strings.TrimSpace(asString(args["action"]))
 	if action == "" {
 		action = "update"
@@ -275,7 +263,6 @@ func (t *updateTool) Run(args map[string]any) (map[string]any, error) {
 	if calendarID == "" {
 		calendarID = "primary"
 	}
-	ctx := t.ctxOrBackground()
 
 	if action == "delete" {
 		if err := t.client.DeleteEvent(ctx, calendarapi.DeleteEventRequest{CalendarID: calendarID, EventID: eventID}); err != nil {

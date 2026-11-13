@@ -57,6 +57,10 @@ type stage struct {
 	awaitingInputCommit                       string
 	itemOrder                                 []string
 	pendingText                               []types.LLMRequest
+	externalPending                           map[string]bool
+	externalApplied                           map[string]bool
+	externalRequested                         map[string]bool
+	externalSeen                              map[string]bool
 	contextResults                            []types.ToolResultRecord
 	pendingOutput                             map[string]bool
 	node                                      *graph.Stage
@@ -167,6 +171,10 @@ func (s *stage) run(ctx context.Context) {
 			case types.Event:
 				s.handle(ctx, e)
 			case types.InboundMessage:
+				if types.HistoryOnly(e.Context) {
+					s.recordExternal(ctx, e)
+					continue
+				}
 				s.queueInbound(e)
 				s.startInbound(ctx)
 			case time.Time:
@@ -213,11 +221,21 @@ func (s *stage) connect(ctx context.Context) {
 		return
 	}
 	s.connecting = true
+	s.externalApplied = nil
+	s.externalRequested = nil
 	s.epoch++
 	epoch := s.epoch
 	s.status(ctx, "connecting", "")
+	// 未利用の外部記録は要約せず、応答開始前にそのまま渡す。
+	records := s.cfg.History.Snapshot()
+	restoreRecords := make([]types.ConversationRecord, 0, len(records))
+	for _, record := range records {
+		if !s.externalPending[record.ID] {
+			restoreRecords = append(restoreRecords, record)
+		}
+	}
 	go func() {
-		restore, err := s.cfg.Context.Build(ctx, s.cfg.History.Snapshot())
+		restore, err := s.cfg.Context.Build(ctx, restoreRecords)
 		if err != nil {
 			log.Printf("realtime: 履歴要約失敗、元の履歴を使う: %v", err)
 		}
@@ -245,6 +263,8 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 		s.transport.close()
 	}
 	s.transport = nil
+	s.externalApplied = nil
+	s.externalRequested = nil
 	s.connecting = false
 	s.ready = false
 	s.active = ""
@@ -348,7 +368,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	}
 
 	if s.cfg.IdleTimeout > 0 && !s.lastActivity.IsZero() && now.Sub(s.lastActivity) >= s.cfg.IdleTimeout {
-		records := s.cfg.History.Drain()
+		records := s.cfg.History.DrainExcept(s.externalPending)
 		if s.cfg.OnConversationEnd != nil && len(records) > 0 {
 			go func() {
 				if err := s.cfg.OnConversationEnd(ctx, records); err != nil {
@@ -377,6 +397,8 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	}
 }
 func (s *stage) rotate(ctx context.Context) {
+	s.externalApplied = nil
+	s.externalRequested = nil
 	s.awaitingInputCommit = ""
 	if s.transport != nil {
 		s.transport.close()

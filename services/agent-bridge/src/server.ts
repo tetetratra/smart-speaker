@@ -40,7 +40,7 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse): Pr
     const input = stringField(body, "input", true);
     const sessionId = stringField(body, "session_id", false);
     const workdir = stringField(body, "workdir", false);
-    return send(res, 202, await deps.tasks.start(input, sessionId, workdir));
+    return send(res, 202, await deps.tasks.start(input, sessionId, workdir, contextField(body)));
   }
   if (method === "POST" && (match = path.match(/^\/permissions\/([^/]+)$/))) {
     const body = await readJSON(req);
@@ -102,6 +102,19 @@ async function readJSON(req: IncomingMessage): Promise<Record<string, unknown>> 
     // 下でまとめて400にする。
   }
   throw new HttpError(400, "JSONオブジェクトを指定してください");
+}
+
+// contextの内容は解釈せず、JSONオブジェクトとしての形式とバイト数だけを確かめる。
+function contextField(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  const value = body.context;
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "context はJSONオブジェクトで指定してください");
+  }
+  if (Buffer.byteLength(JSON.stringify(value), "utf8") > 16 * 1024) {
+    throw new HttpError(400, "context は16KiB以内で指定してください");
+  }
+  return value as Record<string, unknown>;
 }
 
 function stringField(body: Record<string, unknown>, name: string, required: true): string;

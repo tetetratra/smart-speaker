@@ -46,7 +46,7 @@ func TestListToolRunWithDate(t *testing.T) {
 	client := &stubClient{listResp: []calendarapi.Event{{ID: "evt-1", Summary: "朝会"}}}
 	tool := NewList(client)
 
-	out, err := tool.Run(map[string]any{
+	out, err := tool.Run(context.Background(), map[string]any{
 		"date":        "2026-03-21",
 		"max_results": 10,
 	})
@@ -75,7 +75,7 @@ func TestCreateToolRun(t *testing.T) {
 	client := &stubClient{createResp: calendarapi.Event{ID: "evt-2", Summary: "病院", HTMLLink: "https://example.com"}}
 	tool := NewCreate(client)
 
-	out, err := tool.Run(map[string]any{
+	out, err := tool.Run(context.Background(), map[string]any{
 		"summary":     "病院",
 		"description": "定期検診",
 		"location":    "渋谷",
@@ -103,7 +103,7 @@ func TestUpdateToolRunUpdate(t *testing.T) {
 	client := &stubClient{updateResp: calendarapi.Event{ID: "evt-3", Summary: "更新後"}}
 	tool := NewUpdate(client)
 
-	out, err := tool.Run(map[string]any{
+	out, err := tool.Run(context.Background(), map[string]any{
 		"event_id":    "evt-3",
 		"summary":     "更新後",
 		"description": "説明",
@@ -134,7 +134,7 @@ func TestUpdateToolRunDelete(t *testing.T) {
 	client := &stubClient{}
 	tool := NewUpdate(client)
 
-	out, err := tool.Run(map[string]any{
+	out, err := tool.Run(context.Background(), map[string]any{
 		"action":   "delete",
 		"event_id": "evt-4",
 	})

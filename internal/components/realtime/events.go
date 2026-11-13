@@ -139,6 +139,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		}
 		s.responses[e.Response.ID] = &response{generation: types.GenerationID(gen64), items: map[string]bool{}}
 		s.active = e.Response.ID
+		for id := range s.externalRequested {
+			delete(s.externalPending, id)
+		}
+		s.externalRequested = nil
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
 		if r == nil {
@@ -257,6 +261,11 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	}
 	if repaired {
 		return
+	}
+	s.flushExternal()
+	s.externalRequested = make(map[string]bool, len(s.externalPending))
+	for id := range s.externalPending {
+		s.externalRequested[id] = true
 	}
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}

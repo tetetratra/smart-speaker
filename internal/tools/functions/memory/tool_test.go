@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func newStore(t *testing.T) *memorystate.Store {
 
 func run(t *testing.T, store *memorystate.Store, operation string, args map[string]any) (map[string]any, error) {
 	t.Helper()
-	return (&Tool{Store: store, Operation: operation}).Run(args)
+	return (&Tool{Store: store, Operation: operation}).Run(context.Background(), args)
 }
 
 // 会話から追加・一覧・変更・削除ができ、画面と同じ保存先に反映される。

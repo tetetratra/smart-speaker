@@ -1,6 +1,7 @@
 package wakemode
 
 import (
+	"context"
 	"fmt"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"time"
@@ -17,7 +18,7 @@ func (t *Tool) Name() string {
 	}
 	return "set_wake_mode"
 }
-func (t *Tool) Run(args map[string]any) (map[string]any, error) {
+func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.ReadOnly {
 		if len(args) > 0 {
 			return nil, fmt.Errorf("引数は指定しません")

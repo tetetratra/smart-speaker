@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/tools/execution"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const (
@@ -24,11 +26,9 @@ var Operations = []string{OpAsk, OpAnswer, OpCancel, OpList, OpRead}
 type Tool struct {
 	Service   *agentbridge.Service
 	Operation string
-	ctx       context.Context
 }
 
-func (t *Tool) Name() string                   { return t.Operation }
-func (t *Tool) SetContext(ctx context.Context) { t.ctx = ctx }
+func (t *Tool) Name() string { return t.Operation }
 
 // resultInstructions は操作ごとの、結果を受けたAIへの指示。
 var resultInstructions = map[string]string{
@@ -38,23 +38,19 @@ var resultInstructions = map[string]string{
 	OpRead:   "会話の内容を要約して短く伝えてください。全文は読み上げず、必要ならset_whiteboardに要点を表示してください。",
 }
 
-func (t *Tool) Run(args map[string]any) (map[string]any, error) {
-	result, err := t.run(args)
-	if err == nil && resultInstructions[t.Operation] != "" {
+func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
+	result, err := t.run(ctx, args)
+	if err == nil && resultInstructions[t.Operation] != "" && !types.HistoryOnly(execution.DeliveryContext(ctx)) {
 		result["instructions"] = resultInstructions[t.Operation]
 	}
 	return result, err
 }
 
-func (t *Tool) run(args map[string]any) (map[string]any, error) {
+func (t *Tool) run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.Service == nil || t.Service.Client == nil {
 		return nil, fmt.Errorf("Claude Code連携が設定されていません")
 	}
 	a := arguments(args)
-	ctx := t.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	client := t.Service.Client
 	switch t.Operation {
 	case OpAsk:
@@ -70,7 +66,7 @@ func (t *Tool) run(args map[string]any) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		accepted, err := client.StartTask(ctx, input, sessionID, workdir)
+		accepted, err := client.StartTask(ctx, input, sessionID, workdir, execution.DeliveryContext(ctx))
 		if err != nil {
 			return nil, err
 		}

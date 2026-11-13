@@ -15,10 +15,11 @@ const (
 
 // Event はブリッジから届く通知。type によって使う項目が変わる。
 type Event struct {
-	Type      string `json:"type"`
-	EventID   string `json:"event_id"`
-	TaskID    string `json:"task_id"`
-	SessionID string `json:"session_id"`
+	Context   json.RawMessage `json:"context,omitempty"`
+	Type      string          `json:"type"`
+	EventID   string          `json:"event_id"`
+	TaskID    string          `json:"task_id"`
+	SessionID string          `json:"session_id"`
 
 	// 承認依頼
 	RequestID   string          `json:"request_id,omitempty"`

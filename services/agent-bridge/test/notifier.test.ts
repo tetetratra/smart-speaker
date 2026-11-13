@@ -32,6 +32,16 @@ test("4xxは再送しない", async () => {
   assert.equal(bodies.length, 1);
 });
 
+test("contextの未知キーと入れ子は同じevent_idの再送でも保持する", async () => {
+  const context = { delivery: "history_only", automation_id: "a1", unknown: { values: [null, 1, "あ"] } };
+  const { n, bodies } = notifier([new Error("down"), 503, 202]);
+  assert.equal(await n.send({ ...event, context }, new Date(60_000)), true);
+  assert.equal(bodies.length, 3);
+  assert.deepEqual(bodies[0].context, context);
+  assert.deepEqual(bodies[1], bodies[0]);
+  assert.deepEqual(bodies[2], bodies[0]);
+});
+
 test("中止されたら再送しない", async () => {
   const { n, bodies } = notifier([503, 503, 503]);
   const abort = new AbortController();

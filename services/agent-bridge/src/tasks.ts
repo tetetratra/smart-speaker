@@ -15,6 +15,7 @@ type Task = {
   workdir: Workdir;
   abort: AbortController;
   status: "running" | "completed" | "failed";
+  context?: Record<string, unknown>;
 };
 
 type Deps = {
@@ -79,7 +80,9 @@ export class TaskManager {
 
   // start は作業を始める。workdirName は作業ディレクトリの候補の名前で、空なら先頭の候補を使う。
   // 続きの依頼（sessionId あり）は、workdirName にかかわらずセッションを始めた場所で再開する。
-  async start(input: string, sessionId?: string, workdirName?: string): Promise<TaskAccepted> {
+  async start(input: string, sessionId?: string, workdirName?: string, context?: Record<string, unknown>): Promise<TaskAccepted> {
+    // 呼び出し元の変更や早着する通知の影響を受けない、作業単位の情報として保持する。
+    const taskContext = context === undefined ? undefined : structuredClone(context);
     input = input?.trim() ?? "";
     if (!input) throw new HttpError(400, "input を指定してください");
     if (input.length > MAX_INPUT) throw new HttpError(400, `input は${MAX_INPUT}文字以内にしてください`);
@@ -96,7 +99,7 @@ export class TaskManager {
     if (resume && running.some((t) => t.sessionId === resume)) throw new HttpError(409, "このセッションは作業中です");
     if (running.length >= this.#deps.maxTasks) throw new HttpError(429, "同時に動かせる作業の上限に達しています");
 
-    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), workdir, abort: new AbortController(), status: "running" };
+    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), workdir, abort: new AbortController(), status: "running", context: taskContext };
     this.#tasks.set(task.id, task);
     void this.#run(task, input, !resume);
     return { task_id: task.id, session_id: task.sessionId, workdir: workdir.name };
@@ -147,6 +150,7 @@ export class TaskManager {
     const timer = setTimeout(() => task.abort.abort(TIMEOUT), this.#deps.taskTimeoutMs);
     const canUseTool: CanUseTool = (toolName, toolInput, options) =>
       broker.request({
+        ...(task.context === undefined ? {} : { context: task.context }),
         taskId: task.id,
         sessionId: task.sessionId,
         tool: toolName,
@@ -193,7 +197,7 @@ export class TaskManager {
     task.status = outcome.type;
     this.#log(`task ${task.id}: ${outcome.type}`);
     const deadline = new Date(Date.now() + RESULT_NOTIFY_WINDOW_MS);
-    await notify({ ...outcome, task_id: task.id, session_id: task.sessionId, request: short(input, 100) }, deadline);
+    await notify({ ...outcome, task_id: task.id, session_id: task.sessionId, request: short(input, 100), ...(task.context === undefined ? {} : { context: task.context }) }, deadline);
     // 終わった作業は動作確認用にしばらく残してから消す。
     setTimeout(() => this.#tasks.delete(task.id), 10 * 60 * 1000).unref();
   }
