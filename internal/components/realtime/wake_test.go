@@ -20,7 +20,7 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 		r.send(map[string]any{"type": kind, "item_id": "meeting", "transcript": "会議の話"})
 	}
 	r.wait("conversation.item.delete")
-	if len(r.history.Snapshot()) != 0 {
+	if len(r.records()) != 0 {
 		t.Fatal("呼びかけなしの音声を記録しました")
 	}
 	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、今日の予定は", Revision: m.Revision, Confidence: 0.9}}
@@ -30,7 +30,7 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 		t.Fatal(item)
 	}
 	r.wait("response.create")
-	records := r.history.Snapshot()
+	records := r.records()
 	if len(records) != 1 || records[0].Source != "local-stt" {
 		t.Fatal(records)
 	}

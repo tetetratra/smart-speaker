@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"reflect"
 	"strings"
 	"testing"
@@ -372,4 +373,37 @@ func (f *fakeMemoryWriter) Delete(id string) error {
 		}
 	}
 	return nil
+}
+
+func TestStartTakesHistoryBeforeBackgroundExtraction(t *testing.T) {
+	history := conversationhistory.NewStore()
+	history.Upsert(types.ConversationRecord{ID: "old", Text: "終了した会話"})
+	history.Upsert(types.ConversationRecord{ID: "unused", Text: "まだ使っていない結果"})
+	entered, release := make(chan struct{}), make(chan struct{})
+	creator := &fakeOperationCreator{onCreate: func() { close(entered); <-release }}
+	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook.Start(context.Background(), history, map[string]bool{"unused": true})
+	// Startが返った時点で終了した会話は取り出され、未利用の結果だけが残る。
+	remaining := history.Snapshot()
+	if len(remaining) != 1 || remaining[0].ID != "unused" {
+		t.Fatal(remaining)
+	}
+	history.Upsert(types.ConversationRecord{ID: "new", Text: "次の会話"})
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("抽出が始まらない")
+	}
+	if len(creator.records) != 1 || creator.records[0].ID != "old" {
+		close(release)
+		t.Fatal(creator.records)
+	}
+	close(release)
+	if got := history.Snapshot(); len(got) != 2 || got[1].ID != "new" {
+		t.Fatal(got)
+	}
 }

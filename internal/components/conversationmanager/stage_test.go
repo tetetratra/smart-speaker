@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
@@ -65,28 +66,50 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	}
 }
 
-func TestSnapshotReturnsAllHistoryAndMemoryWithoutReplaying(t *testing.T) {
+func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
 	s := testStage()
-	s.cfg.MemoryContext = func(context.Context) (string, error) { return "長期メモリ", nil }
-	s.handle(context.Background(), InputEvent(types.InboundMessage{ID: "input", Text: "依頼"}))
-	<-s.node.Downstream
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationSnapshotRequest, Payload: types.ConversationSnapshotRequest{Epoch: 7}})
-	e := <-s.node.Downstream
-	snapshot := e.Payload.(types.ConversationSnapshot)
-	if e.Kind != types.EventConversationSnapshot || snapshot.Epoch != 7 || len(snapshot.Records) != 1 || snapshot.Memory != "長期メモリ" {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	s.handle(ctx, InputEvent(types.InboundMessage{ID: "request", Text: "通常入力として渡す依頼"}))
+	done, returned := make(chan struct{}), make(chan struct{})
+	go func() {
+		s.handle(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: 1, Done: done}})
+		close(returned)
+	}()
+	// 保存済みの応答依頼が、読み出しマーカーより先に配送される。
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationResponseRequest {
+		t.Fatal(e)
+	}
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationHistorySync {
 		t.Fatal(e)
 	}
 	select {
-	case e := <-s.node.Downstream:
-		t.Fatal("応答依頼を再発火しました", e)
+	case <-returned:
+		t.Fatal("読み出し前に後続処理を再開した")
 	default:
 	}
+	if records := s.history.Snapshot(); len(records) != 1 || records[0].ID != "request" {
+		t.Fatal(records)
+	}
+	close(done)
+	select {
+	case <-returned:
+	case <-ctx.Done():
+		t.Fatal("読み出し後に再開しない")
+	}
+}
+
+func TestHistorySyncCanBeCancelled(t *testing.T) {
+	s := testStage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.handle(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: make(chan struct{})}})
 }
 
 func TestConversationEndKeepsUnusedRecordsAndPassesFixedSnapshot(t *testing.T) {
 	s := testStage()
 	snapshots := make(chan []types.ConversationRecord, 1)
-	s.cfg.OnConversationEnd = func(_ context.Context, records []types.ConversationRecord) error { snapshots <- records; return nil }
+	s.cfg.OnConversationEnd = func(_ context.Context, keep map[string]bool) { snapshots <- s.history.DrainExcept(keep) }
 	for _, id := range []string{"used", "unused"} {
 		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: id, Text: id}))
 		<-s.node.Downstream

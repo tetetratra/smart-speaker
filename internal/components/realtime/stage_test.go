@@ -11,24 +11,27 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"net/http"
 	"net/http/httptest"
 	"nhooyr.io/websocket"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
 type rig struct {
-	connections chan *websocket.Conn
-	t           *testing.T
-	ctx         context.Context
-	node        *graph.Stage
-	conn        *websocket.Conn
-	commands    chan map[string]any
-	events      chan types.Event
-	history     *conversationhistory.Store
+	managerQueue *eventqueue.Queue[types.Event]
+	connections  chan *websocket.Conn
+	t            *testing.T
+	ctx          context.Context
+	node         *graph.Stage
+	conn         *websocket.Conn
+	commands     chan map[string]any
+	events       chan types.Event
+	history      *conversationhistory.Store
 }
 
 func newRig(t *testing.T, options ...func(*Config)) *rig {
@@ -71,7 +74,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		}
 	}))
 	t.Cleanup(server.Close)
-	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore()}
+	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore(), History: r.history}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -80,8 +83,9 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		t.Fatal(err)
 	}
 	r.node = node
-	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound})
+	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound, History: r.history})
 	managerQueue := eventqueue.New[types.Event](nil)
+	r.managerQueue = managerQueue
 	go manager.Run(ctx)
 	go func() {
 		for {
@@ -105,9 +109,6 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				if !ok {
 					return
 				}
-				if input, ok := e.Payload.(types.ConversationInput); ok {
-					r.history.Upsert(input.Record)
-				}
 				select {
 				case node.Upstream <- e:
 				case <-ctx.Done():
@@ -128,9 +129,8 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				}
 				switch e.Kind {
 				case types.EventConversationRecord:
-					r.history.Upsert(e.Payload.(types.ConversationRecord))
 					managerQueue.Push(e)
-				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationSnapshotRequest, types.EventConversationEnded, types.EventConversationRecordsUsed:
+				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
 
@@ -258,7 +258,7 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 			break
 		}
 	}
-	records := r.history.Snapshot()
+	records := r.records()
 	if records[0].Text != "おはよう" || records[1].Role != types.RoleAgent {
 		t.Fatal(records)
 	}
@@ -316,7 +316,7 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 			break
 		}
 	}
-	records := r.history.Snapshot()
+	records := r.records()
 	found := false
 	for _, rec := range records {
 		if rec.Role == types.RoleToolResult {
@@ -556,4 +556,44 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	if detail.Name != "set_whiteboard" || detail.GenerationID != 2 || string(detail.Arguments) != `{"content":"取得済みの予報を詳しく表示"}` {
 		t.Fatalf("追加表示の呼び出しが受理されませんでした: %#v", detail)
 	}
+}
+
+func TestStaleHistorySyncReleasesWriter(t *testing.T) {
+	s := newToolResponseStage()
+	done := make(chan struct{})
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
+	select {
+	case <-done:
+	default:
+		t.Fatal("旧接続の同期で会話管理が止まる")
+	}
+	noToolCommand(t, s)
+}
+
+func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
+	memory, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Upsert(memorystate.UpsertInput{Content: "好きな季節は秋"}); err != nil {
+		t.Fatal(err)
+	}
+	r := newRig(t, func(cfg *Config) { cfg.Memory = memory })
+	item := r.wait("conversation.item.create")["item"].(map[string]any)
+	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "好きな季節は秋") {
+		t.Fatal(text)
+	}
+}
+
+// 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
+func (r *rig) records() []types.ConversationRecord {
+	done := make(chan struct{})
+	r.managerQueue.Push(types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
+	select {
+	case <-done:
+	case <-r.ctx.Done():
+		r.t.Fatal("履歴の保存を待てない")
+	}
+	return r.history.Snapshot()
 }

@@ -5,8 +5,7 @@ const (
 	EventConversationRecord EventKind = 130 + iota
 	EventConversationContextAddition
 	EventConversationResponseRequest
-	EventConversationSnapshotRequest
-	EventConversationSnapshot
+	EventConversationHistorySync
 	EventConversationEnded
 	EventConversationRecordsUsed
 )
@@ -19,14 +18,11 @@ type ConversationInput struct {
 	External bool
 }
 
-// ConversationSnapshotRequest は接続世代に対応する履歴の取得要求。
-type ConversationSnapshotRequest struct{ Epoch uint64 }
-
-// ConversationSnapshot は会話管理から返す履歴と長期メモリ。
-type ConversationSnapshot struct {
-	Epoch   uint64
-	Records []ConversationRecord
-	Memory  string
+// ConversationHistorySync は先行入力の配送と直接読み出しの順序を揃える。
+// 履歴本体は運ばず、読了時にDoneを閉じて後続の保存を再開する。
+type ConversationHistorySync struct {
+	Epoch uint64
+	Done  chan struct{}
 }
 
 // ConversationRecordsUsed は応答開始時点で参照した外部記録を通知する。

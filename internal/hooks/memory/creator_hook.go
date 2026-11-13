@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"log"
 	"strconv"
 	"time"
 
@@ -43,6 +45,19 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 		operationCreator: cfg.OperationCreator,
 		memory:           cfg.Memory,
 	}, nil
+}
+
+// Start は抽出対象をストアから同期的に取り出し、固定した履歴のメモリ化を開始する。
+func (h *CreatorHook) Start(ctx context.Context, history *conversationhistory.Store, keep map[string]bool) {
+	records := history.DrainExcept(keep)
+	if len(records) == 0 {
+		return
+	}
+	go func() {
+		if err := h.ExecRecords(ctx, records); err != nil {
+			log.Printf("会話終了のメモリ抽出: %v", err)
+		}
+	}()
 }
 
 // ExecRecords は終了時点で固定した会話を対象にする。

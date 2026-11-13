@@ -9,16 +9,22 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
+	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
+	"log"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
+	History                                                   *conversationhistory.Store
+	Memory                                                    *memorystate.Store
 	WakeMode                                                  *wakemode.Store
 	ToolHistory                                               *toolhistory.Store
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
@@ -95,8 +101,8 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	}
 	cfg.Tools = withWaitTool(cfg.Tools)
 	cfg.Instructions = withClaudeCodeInstructions(cfg.Instructions, cfg.Tools)
-	if cfg.Generation == nil {
-		return nil, fmt.Errorf("realtime: 世代のStoreが必要")
+	if cfg.Generation == nil || cfg.History == nil {
+		return nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")
 	}
 	if cfg.RotateAfter <= 0 {
 		cfg.RotateAfter = 55 * time.Minute
@@ -199,31 +205,48 @@ func (s *stage) connect(ctx context.Context) {
 	s.externalRequested = nil
 	s.epoch++
 	s.status(ctx, "connecting", "")
-	s.emit(ctx, types.Event{Kind: types.EventConversationSnapshotRequest, Payload: types.ConversationSnapshotRequest{Epoch: s.epoch}})
+	// 先に発行した記録が会話管理で保存されてから、共有ストアを直接読む。
+	done := make(chan struct{})
+	s.emit(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch, Done: done}})
 }
 
-func (s *stage) restore(ctx context.Context, snapshot types.ConversationSnapshot) {
-	if snapshot.Epoch != s.epoch || !s.connecting || s.transport != nil {
+func (s *stage) restore(ctx context.Context, sync types.ConversationHistorySync) {
+	defer close(sync.Done)
+	if sync.Epoch != s.epoch || !s.connecting || s.transport != nil {
 		return
 	}
+	history := s.cfg.History.Snapshot()
+	memory := ""
+	if s.cfg.Memory != nil {
+		provider, _ := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{Memory: s.cfg.Memory})
+		messages, err := provider.BuildContext(ctx, nil)
+		if err != nil {
+			log.Printf("Realtime: 長期メモリの読み出し: %v", err)
+		} else {
+			for _, m := range messages {
+				memory += m.Content + "\n"
+			}
+		}
+	}
+
 	// 応答待ちの依頼は、復元文脈ではなく通常入力として一度だけ渡す。
 	excluded := map[string]bool{}
 	for _, input := range s.inbound {
 		excluded[input.Record.ID] = true
 	}
-	records := make([]types.ConversationRecord, 0, len(snapshot.Records))
-	for _, record := range snapshot.Records {
+	records := make([]types.ConversationRecord, 0, len(history))
+	for _, record := range history {
 		if !excluded[record.ID] {
 			delete(s.externalRecords, record.ID)
 			records = append(records, record)
 		}
 	}
-	records = conversation.TrimHistory(records, snapshot.Memory, 0)
+	records = conversation.TrimHistory(records, memory, 0)
 	ids := make([]string, 0, len(records))
 	for _, record := range records {
 		ids = append(ids, record.ID)
 	}
-	restore := conversation.RestoreContext(records, snapshot.Memory, 0)
+	restore := conversation.RestoreContext(records, memory, 0)
 	epoch := s.epoch
 	go func() {
 		t, err := dial(ctx, s.cfg, epoch)
@@ -268,8 +291,8 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 }
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e.Kind {
-	case types.EventConversationSnapshot:
-		s.restore(ctx, e.Payload.(types.ConversationSnapshot))
+	case types.EventConversationHistorySync:
+		s.restore(ctx, e.Payload.(types.ConversationHistorySync))
 		return
 	case types.EventConversationContextAddition:
 		input := e.Payload.(types.ConversationInput)

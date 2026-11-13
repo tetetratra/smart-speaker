@@ -27,6 +27,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
@@ -160,14 +161,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		chatStage.Name = "wschat"
 	}
 	generationStore := generation.NewStore()
+	historyStore := conversationhistory.NewStore()
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
-	}
-	memoryContextProvider, err := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{
-		Memory: memoryStore,
-	})
-	if err != nil {
-		return appStages{}, fmt.Errorf("failed to init memory context provider: %w", err)
 	}
 	memoryOperationCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
 		APIKey: cfg.APIKey,
@@ -188,7 +184,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if toolHandlers == nil {
 		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
 	}
-	stages.realtime, err = realtime.NewStage(realtime.Config{
+	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
 		ToolHistory: services.ToolHistory,
 		WakeMode:    services.WakeMode,
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
@@ -199,17 +195,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.manager = conversationmanager.NewStage(conversationmanager.Config{Inbound: services.Inbound, ToolHistory: services.ToolHistory,
-		MemoryContext: func(ctx context.Context) (string, error) {
-			messages, err := memoryContextProvider.BuildContext(ctx, nil)
-			var parts []string
-			for _, m := range messages {
-				parts = append(parts, m.Content)
-			}
-			return strings.Join(parts, "\n"), err
-		},
-		OnConversationEnd: memoryCreatorHook.ExecRecords,
+	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore, Inbound: services.Inbound, ToolHistory: services.ToolHistory,
+		OnConversationEnd: func(ctx context.Context, keep map[string]bool) { memoryCreatorHook.Start(ctx, historyStore, keep) },
 	})
+
 	ttsCfg := ttsConfig(cfg)
 	ttsCfg.Selector = services.TTS
 	stages.tts, err = tts.NewStage(ttsCfg)
@@ -299,8 +288,8 @@ func wireGraph(g *graph.Graph, s appStages) {
 	}
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
 	manager := add(s.manager)
-	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationSnapshotRequest, types.EventConversationEnded, types.EventConversationRecordsUsed)
-	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationSnapshot)
+	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed)
+	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync)
 	output := add(s.output)
 	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
 	connectKinds(g, chat, output, types.EventRTCSignal)

@@ -4,7 +4,6 @@ package conversationmanager
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,8 +18,8 @@ import (
 type Config struct {
 	Inbound           <-chan types.InboundMessage
 	ToolHistory       *toolhistory.Store
-	MemoryContext     func(context.Context) (string, error)
-	OnConversationEnd func(context.Context, []types.ConversationRecord) error
+	History           *conversationhistory.Store
+	OnConversationEnd func(context.Context, map[string]bool)
 }
 
 type stage struct {
@@ -32,7 +31,7 @@ type stage struct {
 }
 
 func NewStage(cfg Config) *graph.Stage {
-	s := &stage{cfg: cfg, history: conversationhistory.NewStore(), seen: map[string]bool{}, unused: map[string]bool{}}
+	s := &stage{cfg: cfg, history: cfg.History, seen: map[string]bool{}, unused: map[string]bool{}}
 	s.node = &graph.Stage{Name: "conversationmanager", Upstream: make(chan types.Event), Downstream: make(chan types.Event), Run: s.run, CloseFn: func() error { return nil }}
 	return s.node
 }
@@ -124,30 +123,19 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		e.Payload = input
 		s.emit(ctx, e)
-	case types.EventConversationSnapshotRequest:
-		request := e.Payload.(types.ConversationSnapshotRequest)
-		snapshot := types.ConversationSnapshot{Epoch: request.Epoch, Records: s.history.Snapshot()}
-		if s.cfg.MemoryContext != nil {
-			memory, err := s.cfg.MemoryContext(ctx)
-			if err != nil {
-				log.Printf("会話管理: 長期メモリの読み出し: %v", err)
-			} else {
-				snapshot.Memory = memory
-			}
+	case types.EventConversationHistorySync:
+		s.emit(ctx, e)
+		select {
+		case <-e.Payload.(types.ConversationHistorySync).Done:
+		case <-ctx.Done():
 		}
-		s.emit(ctx, types.Event{Kind: types.EventConversationSnapshot, Payload: snapshot})
 	case types.EventConversationRecordsUsed:
 		for _, id := range e.Payload.(types.ConversationRecordsUsed).IDs {
 			delete(s.unused, id)
 		}
 	case types.EventConversationEnded:
-		records := s.history.DrainExcept(s.unused)
-		if len(records) > 0 && s.cfg.OnConversationEnd != nil {
-			go func() {
-				if err := s.cfg.OnConversationEnd(ctx, records); err != nil {
-					log.Printf("会話終了のメモリ抽出: %v", err)
-				}
-			}()
+		if s.cfg.OnConversationEnd != nil {
+			s.cfg.OnConversationEnd(ctx, s.unused)
 		}
 	}
 }

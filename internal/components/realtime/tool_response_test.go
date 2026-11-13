@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func newToolResponseStage() *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{
-		cfg:        Config{Generation: gen},
+		cfg:        Config{Generation: gen, History: conversationhistory.NewStore()},
 		node:       &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:  &transport{commands: eventqueue.New[any](nil)},
 		controller: generationcontroller.New(gen), epoch: 1, ready: true,
