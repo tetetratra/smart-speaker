@@ -32,16 +32,16 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	if err := r.Run(context.Background(), "job-1", "室温", `const result = toolcall("read", {count: 2}); remind("値は" + result.value);`); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || len(messages) != 5 {
+	if calls != 1 || len(messages) != 4 {
 		t.Fatal(calls, messages)
 	}
-	if messages[1].Role != types.RoleToolCall || messages[2].Role != types.RoleToolResult || types.HistoryOnly(messages[3].Context) || !strings.Contains(messages[3].Text, "値は3") {
+	if messages[0].Role != types.RoleToolCall || messages[1].Role != types.RoleToolResult || types.HistoryOnly(messages[2].Context) || !strings.Contains(messages[2].Text, "値は3") {
 		t.Fatal(messages)
 	}
-	if strings.Contains(messages[2].Text, "instructions") {
-		t.Fatal("通知用指示が履歴に残りました", messages[2])
+	if strings.Contains(messages[1].Text, "instructions") {
+		t.Fatal("通知用指示が履歴に残りました", messages[1])
 	}
-	if messages[0].ID == "" || !types.HistoryOnly(messages[4].Context) {
+	if messages[3].ID == "" || messages[3].Role != types.RoleSystem || !types.HistoryOnly(messages[3].Context) {
 		t.Fatal(messages)
 	}
 }
@@ -68,7 +68,7 @@ func TestTimeoutAndJSFailureLeaveRunHistory(t *testing.T) {
 			if err := r.Run(context.Background(), "job", "予約", source); err == nil {
 				t.Fatal("失敗を成功にしました")
 			}
-			if len(messages) != 2 || !strings.Contains(messages[1].Text, "予約ジョブ失敗") {
+			if len(messages) != 1 || !strings.Contains(messages[0].Text, "予約ジョブ失敗") {
 				t.Fatal(messages)
 			}
 		})
@@ -132,5 +132,31 @@ func TestCaughtDeliveryFailureStillFailsRun(t *testing.T) {
 				t.Fatal("受付失敗後にツールを実行しました")
 			}
 		})
+	}
+}
+
+func TestSuccessfulRunNotifiesOnlyOnce(t *testing.T) {
+	var messages []types.InboundMessage
+	runner := New(func(context.Context, types.ToolRequest) types.ToolResultRecord {
+		return types.ToolResultRecord{Output: json.RawMessage(`{"updated":true}`)}
+	}, func(_ context.Context, message types.InboundMessage) error {
+		messages = append(messages, message)
+		return nil
+	})
+	if err := runner.Run(context.Background(), "job", "通知確認", `toolcall("set_whiteboard",{content:"確認"});`); err != nil {
+		t.Fatal(err)
+	}
+	notifications := 0
+	for _, message := range messages {
+		if message.Role != types.RoleSystem {
+			continue
+		}
+		notifications++
+		if !strings.Contains(message.Text, "予約ジョブ終了") {
+			t.Fatal("終了以外の通知を表示しました", message)
+		}
+	}
+	if notifications != 1 {
+		t.Fatalf("予約の通知が%d件あります", notifications)
 	}
 }
