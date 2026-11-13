@@ -46,28 +46,28 @@ docker compose up --build
 | `services/agent-bridge` | Claude Code 連携のブリッジ |
 | `scripts/` | デプロイなどのスクリプト |
 
+## コンポーネントとデータの流れ
+
+細い実線はイベントと Inbound、太線は外部との通信、点線はストアの読み書きを表します。
+
+### 音声の流れ
+
 ```mermaid
-flowchart TB
+flowchart LR
     browser{{"ブラウザ<br/>web/"}}
-
     chat["wschat<br/>画面連携"]
+    localStt{{"local-stt<br/>ローカル文字起こし"}}
+    rt["realtime<br/>Realtime連携"]
+    openaiRealtime{{"OpenAI Realtime API<br/>wss://api.openai.com/v1/realtime"}}
+    elevenLabs{{"ElevenLabs API<br/>https://api.elevenlabs.io"}}
+    voicevox{{"VOICEVOX<br/>http://voicevox:50021"}}
 
-    subgraph input["音声入力"]
+    subgraph g0["音声入力"]
         peer["rtcpeer<br/>WebRTC接続"]
         wake["wakegate<br/>呼びかけ判定"]
     end
-    localStt{{"local-stt<br/>ローカル文字起こし"}}
 
-    subgraph conversation["会話"]
-        manager["conversationmanager<br/>会話管理"]
-        rt["realtime<br/>Realtime連携"]
-        tool["toolcaller<br/>ツール実行"]
-    end
-    openaiRealtime{{"OpenAI Realtime API<br/>wss://api.openai.com/v1/realtime"}}
-    openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
-
-    subgraph outputGroup["音声出力"]
-        direction LR
+    subgraph g1["音声出力"]
         segment["speechsegment<br/>発話区切り"]
         ttsNode["tts<br/>音声合成"]
         frame["audioframe<br/>音声フレーム分割"]
@@ -75,12 +75,10 @@ flowchart TB
         output["rtcout<br/>WebRTC音声送信"]
     end
 
-    subgraph stores["ストア"]
-        historyStore[("conversationhistory<br/>会話履歴")]
-        memoryStore[("memory<br/>長期メモリ")]
-        toolHistoryStore[("toolhistory<br/>ツール履歴")]
-        generationStore[("generation<br/>応答世代<br/>出力側で古い世代を破棄")]
+    subgraph g2["ストア"]
+        generationStore[("generation<br/>応答世代")]
         wakeModeStore[("wakemode<br/>呼びかけモード")]
+        ttsSelectionStore[("tts.Selector<br/>使う音声合成")]
     end
 
     browser ==>|"WebRTC<br/>マイク音声"| peer
@@ -88,40 +86,143 @@ flowchart TB
     output ==>|"WebRTC<br/>応答音声"| browser
     wake <==>|"HTTP<br/>文字起こし"| localStt
     rt <==>|"WebSocket<br/>会話セッション"| openaiRealtime
+    chat -->|"RTCSignal<br/>WebRTC制御"| peer
+    peer -->|"RTCSignal<br/>WebRTC制御"| chat
+    chat -->|"RTCSignal<br/>WebRTC制御"| output
+    peer -->|"RTCPeerAudioFrame<br/>マイク音声フレーム<br/>RTCPeerOutputSink<br/>音声送信先"| wake
+    peer -->|"RTCPeerOutputSink<br/>音声送信先"| output
+    wake -->|"RTCPeerAudioFrame<br/>マイク音声フレーム<br/>RTCPeerOutputSink<br/>音声送信先<br/>LocalWakeUtterance<br/>呼びかけ判定済み発話"| rt
+    wake -->|"WakeTranscription<br/>呼びかけ文字起こし結果"| chat
+    rt -->|"ResponseText<br/>応答テキスト"| segment
+    segment -->|"TimelineItem<br/>発話項目<br/>AgentTimelineEnd<br/>応答終了"| ttsNode
+    ttsNode -->|"PlayableSpeech<br/>合成音声<br/>AgentTimelineEnd<br/>応答終了"| frame
+    frame -->|"AudioFrame<br/>音声フレーム"| pace
+    pace -->|"AudioFrame<br/>音声フレーム"| output
+    output -->|"AudioSent<br/>音声送信済み"| rt
+    output -->|"AudioSent<br/>音声送信済み"| chat
+    rt -->|"GenerationChanged<br/>応答世代の変更<br/>RealtimeOutput<br/>会話内容の表示<br/>SpeechStart<br/>発話開始<br/>SpeechEnd<br/>発話終了<br/>RealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
+    ttsNode <==>|"HTTPS<br/>音声合成"| elevenLabs
+    ttsNode <==>|"HTTP<br/>音声合成"| voicevox
+    rt <-.->|"世代の更新・判定"| generationStore
+    generationStore -.->|"古い世代の破棄"| segment
+    generationStore -.->|"古い世代の破棄"| ttsNode
+    generationStore -.->|"古い世代の破棄"| frame
+    generationStore -.->|"古い世代の破棄"| pace
+    generationStore -.->|"古い世代の破棄"| output
+    generationStore -.->|"古い世代の破棄"| chat
+    wake <-.->|"呼びかけ判定"| wakeModeStore
+    rt <-.->|"状態の参照、会話中の延長"| wakeModeStore
+    ttsSelectionStore -.->|"使う音声合成"| ttsNode
+```
+
+### 会話
+
+```mermaid
+flowchart LR
+    manager["conversationmanager<br/>会話管理"]
+    openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
+    rt["realtime<br/>Realtime連携"]
+    tool["toolcaller<br/>ツール実行"]
+    scheduler("予約ジョブ実行<br/>automations")
+    chat["wschat<br/>画面連携"]
+
+    subgraph g0["ストア"]
+        historyStore[("conversationhistory<br/>会話履歴")]
+        memoryStore[("memory<br/>長期メモリ")]
+        toolHistoryStore[("toolhistory<br/>ツール履歴")]
+        automationStore[("automations<br/>予約ジョブ")]
+    end
+
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    tool <==>|"HTTPS<br/>Web検索"| openaiResponses
-
-    chat -->|"RTCSignal"| peer
-    peer -->|"RTCSignal"| chat
-    chat -->|"RTCSignal"| output
-    peer -->|"RTCPeerAudioFrame<br/>RTCPeerOutputSink"| wake
-    peer -->|"RTCPeerOutputSink"| output
-    wake -->|"RTCPeerAudioFrame<br/>RTCPeerOutputSink<br/>LocalWakeUtterance"| rt
-    wake -->|"WakeTranscription"| chat
-    rt -->|"ConversationRecord<br/>ConversationContextAddition<br/>ConversationResponseRequest<br/>ConversationHistorySync<br/>ConversationEnded<br/>ConversationRecordsUsed"| manager
-    manager --->|"ConversationContextAddition<br/>ConversationResponseRequest<br/>ConversationHistorySync"| rt
-    rt -->|"ToolRequest"| tool
-    tool --->|"ConversationCommitRequest"| rt
-    rt -->|"ResponseText"| segment
-    segment -->|"TimelineItem<br/>AgentTimelineEnd"| ttsNode
-    ttsNode -->|"PlayableSpeech<br/>AgentTimelineEnd"| frame
-    frame -->|"AudioFrame"| pace
-    pace -->|"AudioFrame"| output
-    output -->|"AudioSent"| rt
-    output -->|"AudioSent"| chat
-    rt -->|"GenerationChanged<br/>RealtimeOutput<br/>SpeechStart<br/>SpeechEnd<br/>RealtimeStatus<br/>SessionReset"| chat
-
-    manager <-.->|"記録・取り出し"| historyStore
-    historyStore -.->|"文脈の復元"| rt
-    memoryStore -.->|"文脈"| rt
-    manager -.->|"抽出結果"| memoryStore
-    tool <-.->|"メモリツール"| memoryStore
-    tool -.-> toolHistoryStore
-    rt -.-> toolHistoryStore
-    manager -.-> toolHistoryStore
+    rt -->|"ConversationRecord<br/>会話記録<br/>ConversationContextAddition<br/>会話への情報追加<br/>ConversationResponseRequest<br/>会話への応答依頼<br/>ConversationHistorySync<br/>会話履歴の読み出し同期<br/>ConversationEnded<br/>会話終了<br/>ConversationRecordsUsed<br/>参照済みの外部記録"| manager
+    manager --->|"ConversationContextAddition<br/>会話への情報追加<br/>ConversationResponseRequest<br/>会話への応答依頼<br/>ConversationHistorySync<br/>会話履歴の読み出し同期"| rt
+    rt -->|"ToolRequest<br/>ツール実行依頼"| tool
+    tool --->|"ConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
+    scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager
+    tool -->|"Inbound<br/>Web検索の結果"| manager
+    manager <-.->|"記録、会話終了時に取り出し"| historyStore
+    historyStore -.->|"接続時の文脈復元"| rt
+    memoryStore -.->|"接続時の文脈"| rt
+    manager <-.->|"会話終了時の抽出結果"| memoryStore
+    tool -.->|"ツール実行の記録"| toolHistoryStore
+    scheduler -.->|"ツール実行の記録"| toolHistoryStore
+    rt -.->|"待機ツールの記録"| toolHistoryStore
+    manager -.->|"外部からの差し込みの記録"| toolHistoryStore
     toolHistoryStore -.->|"履歴表示"| chat
-    rt <-.->|"更新・判定"| generationStore
-    wake <-.-> wakeModeStore
-    rt <-.-> wakeModeStore
+    scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
+```
+
+### 画面と設定
+
+```mermaid
+flowchart LR
+    browser{{"ブラウザ<br/>web/"}}
+    httpApi("HTTP API<br/>画面からの設定・編集")
+    agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
+    googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
+    switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
+    manager["conversationmanager<br/>会話管理"]
+
+    subgraph g0["ストア"]
+        memoryStore[("memory<br/>長期メモリ")]
+        wakeModeStore[("wakemode<br/>呼びかけモード")]
+        automationStore[("automations<br/>予約ジョブ")]
+        locationStore[("userlocation<br/>ユーザーの居場所")]
+        ttsSelectionStore[("tts.Selector<br/>使う音声合成")]
+        googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
+    end
+
+    browser <==>|"HTTP<br/>設定・編集"| httpApi
+    agentBridge ==>|"HTTP<br/>Claude Codeの通知"| httpApi
+    httpApi <==>|"HTTPS<br/>認可コードの交換"| googleOAuth
+    httpApi <==>|"HTTPS<br/>シーンの一覧・実行"| switchBot
+    httpApi -->|"Inbound<br/>Claude Codeの通知"| manager
+    httpApi <-.->|"一覧・編集"| memoryStore
+    httpApi <-.->|"参照・切替"| wakeModeStore
+    httpApi <-.->|"一覧・編集"| automationStore
+    httpApi <-.->|"参照・更新"| locationStore
+    httpApi <-.->|"参照・切替"| ttsSelectionStore
+    httpApi -.->|"認可結果の保存"| googleTokenStore
+```
+
+### ツール
+
+```mermaid
+flowchart TB
+
+    subgraph g0["ツールを呼ぶ側"]
+        tool["toolcaller<br/>ツール実行"]
+        scheduler("予約ジョブ実行<br/>automations")
+    end
+
+    subgraph g1["外部サービス"]
+        openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
+        agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
+        googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
+        switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
+    end
+
+    subgraph g2["ストア"]
+        memoryStore[("memory<br/>長期メモリ")]
+        wakeModeStore[("wakemode<br/>呼びかけモード")]
+        automationStore[("automations<br/>予約ジョブ")]
+        googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
+    end
+
+    tool <==>|"HTTPS<br/>Web検索ツール"| openaiResponses
+    scheduler <==>|"HTTPS<br/>Web検索ツール"| openaiResponses
+    tool <==>|"HTTP<br/>Claude Codeツール"| agentBridge
+    scheduler <==>|"HTTP<br/>Claude Codeツール"| agentBridge
+    tool <==>|"HTTPS<br/>カレンダーツール"| googleCalendar
+    scheduler <==>|"HTTPS<br/>カレンダーツール"| googleCalendar
+    tool <==>|"HTTPS<br/>SwitchBotツール"| switchBot
+    scheduler <==>|"HTTPS<br/>SwitchBotツール"| switchBot
+    tool <-.->|"メモリツール"| memoryStore
+    scheduler <-.->|"メモリツール"| memoryStore
     tool <-.->|"切替ツール"| wakeModeStore
+    scheduler <-.->|"切替ツール"| wakeModeStore
+    tool <-.->|"予約ツール"| automationStore
+    scheduler <-.->|"予約ツール"| automationStore
+    googleTokenStore -.->|"カレンダーツール"| tool
+    googleTokenStore -.->|"カレンダーツール"| scheduler
 ```
