@@ -126,6 +126,7 @@ flowchart LR
     tool["toolcaller<br/>ツール実行"]
     scheduler("予約ジョブ実行<br/>automations")
     chat["wschat<br/>画面連携"]
+    browser{{"ブラウザ<br/>web/"}}
 
     subgraph g0["ストア"]
         historyStore[("conversationhistory<br/>会話履歴")]
@@ -150,6 +151,7 @@ flowchart LR
     rt -.->|"待機ツールの記録"| toolHistoryStore
     manager -.->|"外部からの差し込みの記録"| toolHistoryStore
     toolHistoryStore -.->|"履歴表示"| chat
+    chat ==>|"WebSocket<br/>ツール履歴（変更のたびに全件）"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```
 
@@ -183,6 +185,7 @@ flowchart LR
     wakeModeStore[("wakemode<br/>呼びかけモード")]
     automationStore[("automations<br/>予約ジョブ")]
     locationStore[("userlocation<br/>ユーザーの居場所")]
+    browser{{"ブラウザ<br/>web/"}}
 
     tool -->|"ツール呼び出し"| toolset
     scheduler -->|"スクリプトからのツール呼び出し"| toolset
@@ -199,4 +202,5 @@ flowchart LR
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     %% 居場所はツールにする予定で、まだどこからも使われていない。位置だけをそろえる見えない線。
     whiteboardTool ~~~ locationStore
+    whiteboardTool ==>|"WebSocket<br/>ツール履歴経由<br/>ホワイトボードの内容"| browser
 ```
