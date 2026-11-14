@@ -148,9 +148,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 					return
 				}
 				switch e.Kind {
-				case types.EventConversationRecord:
-					managerQueue.Push(e)
-				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
+				case types.EventConversationInput, types.EventConversationSignal:
 					managerQueue.Push(e)
 				}
 
@@ -404,7 +402,7 @@ func TestIdleNotifiesConversationManagerOnceWithoutReset(t *testing.T) {
 	ctx := context.Background()
 	s := &stage{cfg: Config{IdleTimeout: time.Millisecond, RotateAfter: time.Hour}, lastActivity: time.Now().Add(-time.Second), started: time.Now(), ready: true, transport: &transport{}, node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
 	s.tick(ctx, time.Now())
-	if e := <-s.node.Downstream; e.Kind != types.EventConversationIdle {
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationSignal || e.Payload != (types.ConversationIdle{}) {
 		t.Fatal(e)
 	}
 	s.tick(ctx, time.Now())
@@ -581,7 +579,7 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 func TestStaleHistorySyncReleasesWriter(t *testing.T) {
 	s := newToolResponseStage(t)
 	done := make(chan struct{})
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
+	s.handle(context.Background(), types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
 	select {
 	case <-done:
 	default:
@@ -609,11 +607,49 @@ func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
 // 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
 func (r *rig) records() []types.ConversationRecord {
 	done := make(chan struct{})
-	r.managerQueue.Push(types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Done: done}})
+	r.managerQueue.Push(types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationHistorySync{Done: done}})
 	select {
 	case <-done:
 	case <-r.ctx.Done():
 		r.t.Fatal("履歴の保存を待てない")
 	}
 	return r.history.Snapshot()
+}
+
+func TestToolRecordsCarryDisplayFields(t *testing.T) {
+	r := newRig(t, func(cfg *Config) {
+		cfg.ToolTitle = func(name string, arguments json.RawMessage) string { return name + "のタイトル" }
+	})
+	r.utterance("user1")
+	req := r.wait("response.create")
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
+	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
+	r.event(types.EventToolRequest)
+	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
+	r.node.Upstream <- types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{ToolResult: &result}}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var call, result *types.ConversationRecord
+		for _, record := range r.records() {
+			record := record
+			switch record.Role {
+			case types.RoleToolCall:
+				call = &record
+			case types.RoleToolResult:
+				result = &record
+			}
+		}
+		if call != nil && result != nil {
+			// Text はモデル向けに今の形のまま残し、表示用の項目を別に持つ。
+			if call.Text != `set_whiteboard: {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" || call.Arguments != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
+				t.Fatal(*call)
+			}
+			if result.Source != "realtime" || result.ToolName != "set_whiteboard" || result.CallID != "call1" || result.Output != `{"content":"メモ"}` {
+				t.Fatal(*result)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("ツールの記録が揃いません", r.records())
 }

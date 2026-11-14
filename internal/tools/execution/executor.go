@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -12,27 +11,31 @@ import (
 // Executor は会話と予約で共有する、1回分のツール実行処理。
 type Executor struct {
 	handlers map[string]tools.Handler
-	history  *toolhistory.Store
 }
 
-func New(handlers map[string]tools.Handler, history *toolhistory.Store) *Executor {
-	return &Executor{handlers: handlers, history: history}
+func New(handlers map[string]tools.Handler) *Executor {
+	return &Executor{handlers: handlers}
 }
 
-// Execute は成功と失敗を同じJSON形式で返し、画面用の履歴を記録する。
+// Title は、画面に出すツールのタイトルを引数から作る。タイトルを持たないツールや引数が壊れているときは空。
+func (e *Executor) Title(name string, arguments json.RawMessage) string {
+	provider, ok := e.handlers[name].(tools.TitleProvider)
+	if !ok {
+		return ""
+	}
+	args := map[string]any{}
+	if err := json.Unmarshal(arguments, &args); err != nil || args == nil {
+		return ""
+	}
+	return provider.Title(args)
+}
+
+// Execute は成功と失敗を同じJSON形式で返す。
 func (e *Executor) Execute(ctx context.Context, req types.ToolRequest) types.ToolResultRecord {
 	args := map[string]any{}
 	var argsErr error
 	if len(req.Arguments) > 0 {
 		argsErr = json.Unmarshal(req.Arguments, &args)
-	}
-	var entryID string
-	if e.history != nil {
-		var title string
-		if provider, ok := e.handlers[req.Name].(tools.TitleProvider); ok && argsErr == nil && args != nil {
-			title = provider.Title(args)
-		}
-		entryID = e.history.Begin(req, title)
 	}
 	var result map[string]any
 	if err := ctx.Err(); err != nil {
@@ -53,9 +56,5 @@ func (e *Executor) Execute(ctx context.Context, req types.ToolRequest) types.Too
 	if err != nil {
 		output = []byte(`{"error":"result encoding failed"}`)
 	}
-	record := types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: output}
-	if e.history != nil {
-		e.history.Finish(entryID, record)
-	}
-	return record
+	return types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: output}
 }

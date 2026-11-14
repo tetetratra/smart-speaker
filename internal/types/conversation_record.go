@@ -22,6 +22,19 @@ type ConversationRecord struct {
 	Source       string
 	Metadata     map[string]any
 	CreatedAt    time.Time
+	// 以下は画面の表示用。Text はモデル向けに今の形のまま残し、同じ内容を重ねて持つ。
+	// 古い履歴ファイルには無い項目なので、空なら保存しない。
+	Title     string `json:",omitempty"`
+	External  bool   `json:",omitempty"`
+	ToolName  string `json:",omitempty"`
+	CallID    string `json:",omitempty"`
+	Arguments string `json:",omitempty"`
+	Output    string `json:",omitempty"`
+}
+
+// IsDialogue は、ユーザーとモデルの発話かどうかを返す。ツールや通知の記録は false。
+func (r ConversationRecord) IsDialogue() bool {
+	return r.Role == RoleUser || r.Role == RoleAgent
 }
 
 // ToolResultRecord は tool 実行結果を履歴へ保存するための payload です。

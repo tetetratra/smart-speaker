@@ -8,18 +8,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
-	Inbound     <-chan types.InboundMessage
-	ToolHistory *toolhistory.Store
-	History     *conversationhistory.Store
+	Inbound <-chan types.InboundMessage
+	History *conversationhistory.Store
 	// OnIdle は無操作が続いたときに呼ぶ。まだ応答に使っていない外部記録のIDを渡す。
 	OnIdle func(context.Context, map[string]bool)
 }
@@ -82,15 +79,16 @@ func (s *stage) run(ctx context.Context) {
 
 // InputEvent は既存の非同期通知を会話への情報追加・応答依頼へ変換する。
 func InputEvent(message types.InboundMessage) types.Event {
-	kind := types.EventConversationResponseRequest
+	handling := types.ModelHandlingAddAndRespond
 	if types.HistoryOnly(message.Context) {
-		kind = types.EventConversationContextAddition
+		handling = types.ModelHandlingAddToContext
 	}
 	// 通知方針は制御情報なので履歴には残さない。依頼の識別情報は維持する。
 	var metadata map[string]json.RawMessage
 	_ = json.Unmarshal(message.Context, &metadata)
 	delete(metadata, "delivery")
-	record := types.ConversationRecord{ID: message.ID, Role: message.Role, Text: message.Text, Source: message.Source}
+	record := types.ConversationRecord{ID: message.ID, Role: message.Role, Text: message.Text, Source: message.Source, Title: message.Title, External: true,
+		ToolName: message.ToolName, CallID: message.CallID, Arguments: message.Arguments, Output: message.Output}
 	if len(metadata) > 0 {
 		raw, _ := json.Marshal(metadata)
 		record.Metadata = map[string]any{"context": string(raw)}
@@ -98,16 +96,17 @@ func InputEvent(message types.InboundMessage) types.Event {
 	if record.Role == "" {
 		record.Role = types.RoleSystem
 	}
-	return types.Event{Kind: kind, Payload: types.ConversationInput{Record: record, Title: message.Title, External: true}}
+	return types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: handling}}
 }
 
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e.Kind {
-	case types.EventConversationRecord:
-		record := e.Payload.(types.ConversationRecord)
-		s.save(record)
-	case types.EventConversationContextAddition, types.EventConversationResponseRequest:
+	case types.EventConversationInput:
 		input := e.Payload.(types.ConversationInput)
+		if input.ModelHandling == types.ModelHandlingAlreadyKnown {
+			s.save(ctx, input.Record)
+			return
+		}
 		if input.Record.ID == "" {
 			input.Record.ID = "input/" + uuid.NewString()
 		}
@@ -118,24 +117,28 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if input.Record.CreatedAt.IsZero() {
 			input.Record.CreatedAt = time.Now()
 		}
-		s.save(input.Record)
+		s.save(ctx, input.Record)
 		s.unused[input.Record.ID] = true
-		if input.External && s.cfg.ToolHistory != nil && (input.Record.Source != script.Source || input.Record.Role == types.RoleSystem) {
-			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{ID: input.Record.ID, Source: input.Record.Source, Title: input.Title, Text: input.Record.Text}, input.Record.GenerationID)
-		}
 		e.Payload = input
 		s.emit(ctx, e)
-	case types.EventConversationHistorySync:
+	case types.EventConversationSignal:
+		s.handleSignal(ctx, e)
+	}
+}
+
+func (s *stage) handleSignal(ctx context.Context, e types.Event) {
+	switch p := e.Payload.(type) {
+	case types.ConversationHistorySync:
 		s.emit(ctx, e)
 		select {
-		case <-e.Payload.(types.ConversationHistorySync).Done:
+		case <-p.Done:
 		case <-ctx.Done():
 		}
-	case types.EventConversationRecordsUsed:
-		for _, id := range e.Payload.(types.ConversationRecordsUsed).IDs {
+	case types.ConversationRecordsUsed:
+		for _, id := range p.IDs {
 			delete(s.unused, id)
 		}
-	case types.EventConversationIdle:
+	case types.ConversationIdle:
 		if s.cfg.OnIdle != nil {
 			s.cfg.OnIdle(ctx, s.unused)
 		}
@@ -143,8 +146,12 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 }
 
 // 保存に失敗しても会話は続けられるので、記録はメモリ上に残してログだけ出す。
-func (s *stage) save(record types.ConversationRecord) {
+// ホワイトボードに出す記録（会話でないもの）は、保存したあとで画面へ知らせる。
+func (s *stage) save(ctx context.Context, record types.ConversationRecord) {
 	if err := s.history.Upsert(record); err != nil {
 		log.Printf("会話管理: 会話履歴の保存: %v", err)
+	}
+	if !record.IsDialogue() {
+		s.emit(ctx, types.Event{Kind: types.EventConversationRecordChanged, Payload: record})
 	}
 }

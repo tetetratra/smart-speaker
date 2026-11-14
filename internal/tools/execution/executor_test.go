@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -22,7 +21,7 @@ func (t *testTool) Run(ctx context.Context, args map[string]any) (map[string]any
 	return t.run(ctx, args)
 }
 
-func TestExecutorSharesContextArgumentsAndErrorHistory(t *testing.T) {
+func TestExecutorSharesContextArgumentsAndError(t *testing.T) {
 	raw := json.RawMessage(`{"delivery":"history_only","future":{"value":2}}`)
 	tool := &testTool{run: func(ctx context.Context, args map[string]any) (map[string]any, error) {
 		if string(DeliveryContext(ctx)) != string(raw) || args["n"] != float64(3) {
@@ -30,13 +29,9 @@ func TestExecutorSharesContextArgumentsAndErrorHistory(t *testing.T) {
 		}
 		return nil, errors.New("失敗")
 	}}
-	store := toolhistory.NewStore(10)
-	result := New(map[string]tools.Handler{"test": tool}, store).Execute(WithDeliveryContext(context.Background(), raw), types.ToolRequest{ToolCallID: "call", Name: "test", Arguments: json.RawMessage(`{"n":3}`)})
+	result := New(map[string]tools.Handler{"test": tool}).Execute(WithDeliveryContext(context.Background(), raw), types.ToolRequest{ToolCallID: "call", Name: "test", Arguments: json.RawMessage(`{"n":3}`)})
 	if string(result.Output) != `{"error":"失敗"}` || tool.calls != 1 {
 		t.Fatal(result, tool.calls)
-	}
-	if entries := store.Snapshot(); len(entries) != 1 || entries[0].Status != "failed" {
-		t.Fatal(entries)
 	}
 }
 
@@ -45,7 +40,7 @@ func TestExecutorRejectsCanceledAndInvalidCallsBeforeSideEffect(t *testing.T) {
 		t.Fatal("実行してはいけません")
 		return nil, nil
 	}}
-	executor := New(map[string]tools.Handler{"test": tool}, nil)
+	executor := New(map[string]tools.Handler{"test": tool})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, test := range []struct {
@@ -78,19 +73,14 @@ type titledTestTool struct{ *testTool }
 
 func (t *titledTestTool) Title(args map[string]any) string { return args["subject"].(string) }
 
-func TestTitleIsVisibleWhileRunningAndPreservedAfterCompletion(t *testing.T) {
-	store := toolhistory.NewStore(10)
-	tool := &titledTestTool{&testTool{run: func(_ context.Context, args map[string]any) (map[string]any, error) {
-		entry := store.Snapshot()[0]
-		if entry.Name != "test" || entry.Title != "調査対象" || entry.Status != "running" {
-			t.Fatal(entry)
+func TestTitleUsesToolArgumentsAndIgnoresBrokenInput(t *testing.T) {
+	executor := New(map[string]tools.Handler{"titled": &titledTestTool{&testTool{}}, "plain": &testTool{}})
+	if title := executor.Title("titled", json.RawMessage(`{"subject":"調査対象"}`)); title != "調査対象" {
+		t.Fatal(title)
+	}
+	for _, c := range []struct{ name, args string }{{"titled", `{"subject"`}, {"titled", `null`}, {"plain", `{}`}, {"unknown", `{}`}} {
+		if title := executor.Title(c.name, json.RawMessage(c.args)); title != "" {
+			t.Fatal(c, title)
 		}
-		return map[string]any{"done": true}, nil
-	}}}
-	executor := New(map[string]tools.Handler{"test": tool}, store)
-	executor.Execute(context.Background(), types.ToolRequest{Name: "test", Arguments: json.RawMessage(`{"subject":"調査対象"}`)})
-	entry := store.Snapshot()[0]
-	if entry.Title != "調査対象" || entry.Status != "succeeded" {
-		t.Fatal(entry)
 	}
 }

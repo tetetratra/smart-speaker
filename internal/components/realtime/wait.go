@@ -31,11 +31,8 @@ func (s *stage) waitForUser(ctx context.Context, req types.ToolRequest) {
 	// 完了を記録してAPI上の呼び出しを閉じるが、応答生成や情報取得後の表示処理は起動しない。
 	s.calls[req.ToolCallID].finished = true
 	const output = `{"waiting":true}`
-	if s.cfg.ToolHistory != nil {
-		id := s.cfg.ToolHistory.Begin(req, "")
-		s.cfg.ToolHistory.Finish(id, types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, Output: []byte(output)})
-	}
-	s.record(ctx, "result/"+req.ToolCallID, types.RoleToolResult, output, req.GenerationID, waitToolName)
+	s.recordTool(ctx, types.ConversationRecord{ID: "result/" + req.ToolCallID, Role: types.RoleToolResult, Text: output, GenerationID: req.GenerationID,
+		ToolName: waitToolName, CallID: req.ToolCallID, Output: output})
 	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{
 		"type": "function_call_output", "call_id": req.ToolCallID, "output": output,
 	}})

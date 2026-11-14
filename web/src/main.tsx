@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { Whiteboard, type HistoryEntry } from './Whiteboard'
+import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
@@ -646,7 +647,8 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
-  const [toolEntries, setToolEntries] = useState<HistoryEntry[]>([])
+  const [whiteboardRecords, setWhiteboardRecords] = useState<Map<string, WhiteboardRecord>>(() => new Map())
+  const toolEntries = useMemo(() => historyEntries(whiteboardRecords.values()), [whiteboardRecords])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
@@ -861,8 +863,8 @@ function App() {
           setSttStatus('最終結果待ち')
           break
         }
-        case 'tool_history': {
-          if (Array.isArray(raw.entries)) setToolEntries(raw.entries)
+        case 'conversation_records': {
+          if (Array.isArray(raw.records)) setWhiteboardRecords(current => mergeRecords(current, raw.records))
           break
         }
         default:

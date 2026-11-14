@@ -29,7 +29,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 		Addr:    cfg.WSAddr,
 		Handler: mux,
 	}
-	chat := wschat.NewStage(mux, wschat.Config{ToolHistory: services.ToolHistory})
+	chat := wschat.NewStage(mux, wschat.Config{History: services.History})
 	return server, chat, nil
 }
 

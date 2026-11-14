@@ -147,7 +147,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			delete(s.externalPending, id)
 			delete(s.externalRecords, id)
 		}
-		s.emit(ctx, types.Event{Kind: types.EventConversationRecordsUsed, Payload: types.ConversationRecordsUsed{IDs: used}})
+		s.emit(ctx, types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationRecordsUsed{IDs: used}})
 		s.externalRequested = nil
 		order := s.externalOrder[:0]
 		for _, id := range s.externalOrder {
@@ -198,7 +198,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		// 捨てると結果のない呼び出しが会話に残り、モデルが「実行中」とみなして再実行しなくなるため。
 		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
-		s.record(ctx, "call/"+e.CallID, types.RoleToolCall, e.Name+": "+e.Arguments, r.generation, e.Name)
+		s.recordTool(ctx, types.ConversationRecord{ID: "call/" + e.CallID, Role: types.RoleToolCall, Text: e.Name + ": " + e.Arguments, GenerationID: r.generation,
+			Title: s.toolTitle(e.Name, req.Arguments), ToolName: e.Name, CallID: e.CallID, Arguments: e.Arguments})
 		if e.Name == waitToolName {
 			s.waitForUser(ctx, req)
 			return
@@ -214,7 +215,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 	}
 }
 func (s *stage) saveAssistant(ctx context.Context, itemID string, item *assistantItem) {
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, itemID), Role: types.RoleAgent, Text: item.sent, GenerationID: item.generation, Source: "realtime", CreatedAt: time.Now(), Metadata: map[string]any{"generated_text": item.generated, "interrupted": !sameSpokenText(item.sent, item.generated)}})
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, itemID), Role: types.RoleAgent, Text: item.sent, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now(), Metadata: map[string]any{"generated_text": item.generated, "interrupted": !sameSpokenText(item.sent, item.generated)}})
 }
 func (s *stage) sent(ctx context.Context, frame types.AudioFrame) {
 	if frame.End {
@@ -304,7 +305,8 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: result.Name, CreatedAt: time.Now()})
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: realtimeSource, CreatedAt: time.Now(),
+		ToolName: result.Name, CallID: result.ToolCallID, Output: string(result.Output)})
 	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
 	if c.epoch != s.epoch || s.transport == nil {
 		if s.ready && s.transport != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 func testInput(id, text string) types.ConversationInput {
-	return types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleSystem, Source: "automation", Text: text}, External: true}
+	return types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleSystem, Source: "automation", Text: text, External: true}}
 }
 
 func TestContextAdditionDoesNotStartOrInterruptResponse(t *testing.T) {
