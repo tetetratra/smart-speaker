@@ -285,7 +285,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		}
 		var msg struct {
 			Type      string                 `json:"type"`
-			Gain      *float64               `json:"gain"`
 			SDP       string                 `json:"sdp"`
 			Candidate *types.RTCIceCandidate `json:"candidate"`
 		}
@@ -296,7 +295,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(msg.Type, "webrtc.") {
 			sig := types.RTCSignal{
 				Type:      msg.Type,
-				Gain:      msg.Gain,
 				SDP:       msg.SDP,
 				Candidate: msg.Candidate,
 				ClientID:  connID,

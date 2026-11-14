@@ -50,7 +50,7 @@ func TestUpmixToStereo(t *testing.T) {
 }
 
 func TestHandlePeerOutputSinkAddsAndRemovesSink(t *testing.T) {
-	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
+	s := &stage{sinks: map[string]*peerSink{}}
 	writer := &sampleWriter{}
 
 	s.handlePeerOutputSink(types.RTCPeerOutputSink{
@@ -80,7 +80,7 @@ func TestHandlePeerOutputSinkAddsAndRemovesSink(t *testing.T) {
 }
 
 func TestSendFrameEncodesOnePacketPerPeerWithoutBuffering(t *testing.T) {
-	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
+	s := &stage{sinks: map[string]*peerSink{}}
 	for _, channels := range []int{1, 2} {
 		writer := &sampleWriter{}
 		s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "peer", Writer: writer, Connected: true, OpusChannels: channels})
@@ -130,27 +130,6 @@ func TestInvalidFrameAndFailedWriteDoNotCountAsSent(t *testing.T) {
 type failingWriter struct{}
 
 func (failingWriter) WriteSample(media.Sample) error { return errors.New("送信失敗") }
-
-func TestVolumeIsAppliedPerPeerIncludingBeforeConnection(t *testing.T) {
-	s := &stage{sinks: map[string]*peerSink{}}
-	gain := 1.5
-	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
-	s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "a", Writer: &sampleWriter{}, Connected: true})
-	s.handlePeerOutputSink(types.RTCPeerOutputSink{PeerID: "b", Writer: &sampleWriter{}, Connected: true})
-	if s.sinks["a"].gain != 1.5 || s.sinks["b"].gain != 1 {
-		t.Fatal("端末別の音量が保持されなかった")
-	}
-	gain = 0
-	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
-	if s.sinks["a"].gain != 0 {
-		t.Fatal("ミュートが反映されなかった")
-	}
-	gain = 100
-	s.handleVolume(types.RTCSignal{Type: "webrtc.volume", ClientID: "a", Gain: &gain})
-	if s.sinks["a"].gain != 0 {
-		t.Fatal("範囲外の増幅が反映された")
-	}
-}
 
 func equalInt16(a, b []int16) bool {
 	if len(a) != len(b) {

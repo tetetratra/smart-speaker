@@ -31,7 +31,6 @@ type RTCIceCandidate struct {
 }
 
 type RTCSignal struct {
-	Gain      *float64         `json:"gain,omitempty"`
 	Type      string           `json:"type"`
 	SDP       string           `json:"sdp,omitempty"`
 	Candidate *RTCIceCandidate `json:"candidate,omitempty"`

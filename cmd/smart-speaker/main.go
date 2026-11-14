@@ -30,6 +30,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
@@ -65,7 +66,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{UserLocation: &userlocation.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{UserLocation: &userlocation.Store{}, PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
@@ -253,6 +254,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
 		UserLocation:     services.UserLocation,
+		PlaybackVolume:   services.PlaybackVolume,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
 		ClaudeCode:       services.ClaudeCode,
@@ -307,7 +309,6 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, manager, chat, types.EventConversationRecordChanged{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})
-	connect(g, chat, output, types.EventRTCSignal{})
 	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
 	connect(g, chat, peer, types.EventRTCSignal{})
 	connect(g, peer, chat, types.EventRTCSignal{})

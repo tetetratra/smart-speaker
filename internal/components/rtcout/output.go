@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"log"
-	"math"
 	"time"
 
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -25,10 +24,7 @@ func (s *stage) sendFrame(frame types.AudioFrame) bool {
 	copy(pcm, upsampleBy2(bytesToInt16(raw)))
 	sent := false
 	for _, sink := range s.sinks {
-		samples := make([]int16, len(pcm))
-		for i, sample := range pcm {
-			samples[i] = int16(max(-32768, min(32767, int(float64(sample)*sink.gain))))
-		}
+		samples := pcm
 		if sink.opusChannels == 2 {
 			samples = upmixToStereo(samples)
 		}
@@ -53,7 +49,6 @@ func (s *stage) handlePeerOutputSink(evt types.RTCPeerOutputSink) {
 	}
 	if !evt.Connected || evt.Writer == nil {
 		delete(s.sinks, evt.PeerID)
-		delete(s.gains, evt.PeerID)
 		return
 	}
 	channels := evt.OpusChannels
@@ -65,29 +60,7 @@ func (s *stage) handlePeerOutputSink(evt types.RTCPeerOutputSink) {
 		log.Printf("rtcout: opus encoder error: %v", err)
 		return
 	}
-	gain, ok := s.gains[evt.PeerID]
-	if !ok {
-		gain = 1
-	}
-	s.sinks[evt.PeerID] = &peerSink{writer: evt.Writer, encoder: encoder, opusChannels: channels, gain: gain}
-}
-
-// ブラウザの音声をWeb Audioへ回さず、端末別の音量と1.5倍の増幅を送信前に適用する。
-func (s *stage) handleVolume(sig types.RTCSignal) {
-	if sig.Type != "webrtc.volume" || sig.Gain == nil || sig.ClientID == "" {
-		return
-	}
-	gain := *sig.Gain
-	if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < 0 || gain > 1.5 {
-		return
-	}
-	if s.gains == nil {
-		s.gains = map[string]float64{}
-	}
-	s.gains[sig.ClientID] = gain
-	if sink := s.sinks[sig.ClientID]; sink != nil {
-		sink.gain = gain
-	}
+	s.sinks[evt.PeerID] = &peerSink{writer: evt.Writer, encoder: encoder, opusChannels: channels}
 }
 
 func bytesToInt16(b []byte) []int16 {
