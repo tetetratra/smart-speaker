@@ -113,6 +113,7 @@ flowchart LR
     wake <-.->|"呼びかけ判定"| wakeModeStore
     rt <-.->|"状態の参照、会話中の延長"| wakeModeStore
     ttsSelectionStore -.->|"使う音声合成"| ttsNode
+    browser <-.->|"参照・切替"| ttsSelectionStore
 ```
 
 ### 会話
@@ -152,77 +153,50 @@ flowchart LR
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```
 
-### 画面と設定
-
-```mermaid
-flowchart LR
-    browser{{"ブラウザ<br/>web/"}}
-    httpApi("HTTP API<br/>画面からの設定・編集")
-    agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
-    googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
-    switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
-    manager["conversationmanager<br/>会話管理"]
-
-    subgraph g0["ストア"]
-        memoryStore[("memory<br/>長期メモリ")]
-        wakeModeStore[("wakemode<br/>呼びかけモード")]
-        automationStore[("automations<br/>予約ジョブ")]
-        locationStore[("userlocation<br/>ユーザーの居場所")]
-        ttsSelectionStore[("tts.Selector<br/>使う音声合成")]
-        googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
-    end
-
-    browser <==>|"HTTP<br/>設定・編集"| httpApi
-    agentBridge ==>|"HTTP<br/>Claude Codeの通知"| httpApi
-    httpApi <==>|"HTTPS<br/>認可コードの交換"| googleOAuth
-    httpApi <==>|"HTTPS<br/>シーンの一覧・実行"| switchBot
-    httpApi -->|"Inbound<br/>Claude Codeの通知"| manager
-    httpApi <-.->|"一覧・編集"| memoryStore
-    httpApi <-.->|"参照・切替"| wakeModeStore
-    httpApi <-.->|"一覧・編集"| automationStore
-    httpApi <-.->|"参照・更新"| locationStore
-    httpApi <-.->|"参照・切替"| ttsSelectionStore
-    httpApi -.->|"認可結果の保存"| googleTokenStore
-```
-
 ### ツール
 
 ```mermaid
-flowchart TB
+flowchart LR
+    tool["toolcaller<br/>ツール実行"]
+    scheduler("予約ジョブ実行<br/>automations")
+    manager["conversationmanager<br/>会話管理"]
 
-    subgraph g0["ツールを呼ぶ側"]
-        tool["toolcaller<br/>ツール実行"]
-        scheduler("予約ジョブ実行<br/>automations")
+    subgraph toolset["ツール"]
+        webSearchTool["web_search<br/>Web検索"]
+        claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携"]
+        calendarTool["google_calendar_list<br/>google_calendar_create<br/>google_calendar_update<br/>Googleカレンダー"]
+        switchBotTool["hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene<br/>SwitchBot"]
+        memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
+        wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
+        automationTool["register_job<br/>list_jobs<br/>update_job<br/>delete_job<br/>予約"]
+        whiteboardTool["set_whiteboard<br/>ホワイトボード表示"]
     end
 
-    subgraph g1["外部サービス"]
-        openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
-        agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
-        googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
-        switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
-    end
 
-    subgraph g2["ストア"]
-        memoryStore[("memory<br/>長期メモリ")]
-        wakeModeStore[("wakemode<br/>呼びかけモード")]
-        automationStore[("automations<br/>予約ジョブ")]
-        googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
-    end
+    openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
+    agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
+    googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
+    googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
+    googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
+    switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
+    memoryStore[("memory<br/>長期メモリ")]
+    wakeModeStore[("wakemode<br/>呼びかけモード")]
+    automationStore[("automations<br/>予約ジョブ")]
+    locationStore[("userlocation<br/>ユーザーの居場所")]
 
-    tool <==>|"HTTPS<br/>Web検索ツール"| openaiResponses
-    scheduler <==>|"HTTPS<br/>Web検索ツール"| openaiResponses
-    tool <==>|"HTTP<br/>Claude Codeツール"| agentBridge
-    scheduler <==>|"HTTP<br/>Claude Codeツール"| agentBridge
-    tool <==>|"HTTPS<br/>カレンダーツール"| googleCalendar
-    scheduler <==>|"HTTPS<br/>カレンダーツール"| googleCalendar
-    tool <==>|"HTTPS<br/>SwitchBotツール"| switchBot
-    scheduler <==>|"HTTPS<br/>SwitchBotツール"| switchBot
-    tool <-.->|"メモリツール"| memoryStore
-    scheduler <-.->|"メモリツール"| memoryStore
-    tool <-.->|"切替ツール"| wakeModeStore
-    scheduler <-.->|"切替ツール"| wakeModeStore
-    tool <-.->|"予約ツール"| automationStore
-    scheduler <-.->|"予約ツール"| automationStore
-    googleTokenStore -.->|"カレンダーツール"| tool
-    googleTokenStore -.->|"カレンダーツール"| scheduler
+    tool -->|"ツール呼び出し"| toolset
+    scheduler -->|"スクリプトからのツール呼び出し"| toolset
+
+    webSearchTool <==>|"HTTPS<br/>Web検索"| openaiResponses
+    claudeCodeTool <==>|"HTTP<br/>依頼・承認・取消・参照"| agentBridge
+    agentBridge -->|"HTTP・Inbound<br/>Claude Codeの通知"| manager
+    calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
+    calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
+    calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
+    switchBotTool <==>|"HTTPS<br/>計測値の取得・シーン実行"| switchBot
+    memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
+    wakeModeTool <-.->|"参照・切替"| wakeModeStore
+    automationTool <-.->|"登録・一覧・更新・削除"| automationStore
+    %% 居場所はツールにする予定で、まだどこからも使われていない。位置だけをそろえる見えない線。
+    whiteboardTool ~~~ locationStore
 ```
