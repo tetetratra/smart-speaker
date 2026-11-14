@@ -21,12 +21,26 @@ const MaxDuration = 30 * time.Second
 
 type Runner struct {
 	execute func(context.Context, types.ToolRequest) types.ToolResultRecord
+	title   func(string, json.RawMessage) string
 	deliver func(context.Context, types.InboundMessage) error
 	timeout time.Duration
 }
 
 func New(execute func(context.Context, types.ToolRequest) types.ToolResultRecord, deliver func(context.Context, types.InboundMessage) error) *Runner {
 	return &Runner{execute: execute, deliver: deliver, timeout: MaxDuration}
+}
+
+// WithTitle は、ツールの呼び出しを記録するときに画面に出すタイトルを作る関数を設定する。
+func (r *Runner) WithTitle(title func(name string, arguments json.RawMessage) string) *Runner {
+	r.title = title
+	return r
+}
+
+func (r *Runner) toolTitle(name string, arguments json.RawMessage) string {
+	if r.title == nil {
+		return ""
+	}
+	return r.title(name, arguments)
 }
 
 // Compile はファイルやURLからsource mapを読み込まずに構文を検証する。
@@ -43,12 +57,15 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 	runID := uuid.NewString()
 	var deliveryErr error
 	metadata := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID}
-	publish := func(ctx context.Context, suffix, role, text string, meta map[string]string) error {
+	publish := func(ctx context.Context, message types.InboundMessage, meta map[string]string) error {
 		if r.deliver == nil {
 			return fmt.Errorf("履歴の送信経路がありません")
 		}
 		raw, _ := json.Marshal(meta)
-		err := r.deliver(ctx, types.InboundMessage{ID: runID + "/" + suffix, Role: role, Source: Source, Title: name, Text: text, Context: raw})
+		message.ID = runID + "/" + message.ID
+		message.Source = Source
+		message.Context = raw
+		err := r.deliver(ctx, message)
 		if err != nil && deliveryErr == nil {
 			deliveryErr = err
 		}
@@ -59,7 +76,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		if runErr != nil {
 			text = "[予約ジョブ失敗: " + name + "] " + runErr.Error()
 		}
-		if err := publish(parent, "end", types.RoleSystem, text, metadata); err != nil && runErr == nil {
+		if err := publish(parent, types.InboundMessage{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata); err != nil && runErr == nil {
 			runErr = err
 		}
 	}()
@@ -103,7 +120,8 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		}
 		callID := uuid.NewString()
 		meta := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID, "call_id": callID, "tool_name": name}
-		if err := publish(ctx, "call/"+callID, types.RoleToolCall, name+": "+string(raw), meta); err != nil {
+		if err := publish(ctx, types.InboundMessage{ID: "call/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw),
+			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw)}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
 		deliveryContext, _ := json.Marshal(meta)
@@ -124,7 +142,8 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 			}
 		}
 		historyRaw, _ := json.Marshal(historyOut)
-		if err := publish(parent, "result/"+callID, types.RoleToolResult, name+": "+string(historyRaw), meta); err != nil {
+		if err := publish(parent, types.InboundMessage{ID: "result/" + callID, Role: types.RoleToolResult, Text: name + ": " + string(historyRaw),
+			ToolName: name, CallID: callID, Output: string(historyRaw)}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
 		check()

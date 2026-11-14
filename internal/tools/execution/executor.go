@@ -19,6 +19,19 @@ func New(handlers map[string]tools.Handler, history *toolhistory.Store) *Executo
 	return &Executor{handlers: handlers, history: history}
 }
 
+// Title は、画面に出すツールのタイトルを引数から作る。タイトルを持たないツールや引数が壊れているときは空。
+func (e *Executor) Title(name string, arguments json.RawMessage) string {
+	provider, ok := e.handlers[name].(tools.TitleProvider)
+	if !ok {
+		return ""
+	}
+	args := map[string]any{}
+	if err := json.Unmarshal(arguments, &args); err != nil || args == nil {
+		return ""
+	}
+	return provider.Title(args)
+}
+
 // Execute は成功と失敗を同じJSON形式で返し、画面用の履歴を記録する。
 func (e *Executor) Execute(ctx context.Context, req types.ToolRequest) types.ToolResultRecord {
 	args := map[string]any{}

@@ -21,7 +21,7 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	input := s.inbound[0]
 	s.inbound = s.inbound[1:]
 	record := input.Record
-	if input.External || record.GenerationID == 0 {
+	if record.External || record.GenerationID == 0 {
 		change, _ := s.controller.Start(record.ID)
 		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
 		record.GenerationID = change.GenerationID

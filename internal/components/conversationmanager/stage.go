@@ -90,7 +90,8 @@ func InputEvent(message types.InboundMessage) types.Event {
 	var metadata map[string]json.RawMessage
 	_ = json.Unmarshal(message.Context, &metadata)
 	delete(metadata, "delivery")
-	record := types.ConversationRecord{ID: message.ID, Role: message.Role, Text: message.Text, Source: message.Source}
+	record := types.ConversationRecord{ID: message.ID, Role: message.Role, Text: message.Text, Source: message.Source, Title: message.Title, External: true,
+		ToolName: message.ToolName, CallID: message.CallID, Arguments: message.Arguments, Output: message.Output}
 	if len(metadata) > 0 {
 		raw, _ := json.Marshal(metadata)
 		record.Metadata = map[string]any{"context": string(raw)}
@@ -98,7 +99,7 @@ func InputEvent(message types.InboundMessage) types.Event {
 	if record.Role == "" {
 		record.Role = types.RoleSystem
 	}
-	return types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: handling, Title: message.Title, External: true}}
+	return types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: handling}}
 }
 
 func (s *stage) handle(ctx context.Context, e types.Event) {
@@ -121,8 +122,8 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.save(input.Record)
 		s.unused[input.Record.ID] = true
-		if input.External && s.cfg.ToolHistory != nil && (input.Record.Source != script.Source || input.Record.Role == types.RoleSystem) {
-			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{ID: input.Record.ID, Source: input.Record.Source, Title: input.Title, Text: input.Record.Text}, input.Record.GenerationID)
+		if input.Record.External && s.cfg.ToolHistory != nil && (input.Record.Source != script.Source || input.Record.Role == types.RoleSystem) {
+			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{ID: input.Record.ID, Source: input.Record.Source, Title: input.Record.Title, Text: input.Record.Text}, input.Record.GenerationID)
 		}
 		e.Payload = input
 		s.emit(ctx, e)

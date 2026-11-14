@@ -85,7 +85,8 @@ func main() {
 		log.Fatal(err)
 	}
 	services.ToolSchemas, services.ToolHandlers = buildToolRegistry(cfg, memoryStore, services)
-	services.Runner = script.New(execution.New(services.ToolHandlers, services.ToolHistory).Execute, services.Deliver)
+	executor := execution.New(services.ToolHandlers, services.ToolHistory)
+	services.Runner = script.New(executor.Execute, services.Deliver).WithTitle(executor.Title)
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
@@ -193,6 +194,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, Tools: toolSchemas,
+		ToolTitle:   execution.New(toolHandlers, nil).Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
 	if err != nil {

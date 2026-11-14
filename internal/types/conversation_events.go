@@ -24,8 +24,6 @@ const (
 type ConversationInput struct {
 	Record        ConversationRecord
 	ModelHandling ModelHandling
-	Title         string
-	External      bool
 }
 
 // ConversationHistorySync は先行入力の配送と直接読み出しの順序を揃える。

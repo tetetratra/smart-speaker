@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
@@ -23,10 +24,12 @@ import (
 )
 
 type Config struct {
-	History                                                   *conversationhistory.Store
-	Memory                                                    *memorystate.Store
-	WakeMode                                                  *wakemode.Store
-	ToolHistory                                               *toolhistory.Store
+	History     *conversationhistory.Store
+	Memory      *memorystate.Store
+	WakeMode    *wakemode.Store
+	ToolHistory *toolhistory.Store
+	// ToolTitle はツールの呼び出しを記録するときに、画面に出すタイトルを作る。
+	ToolTitle                                                 func(name string, arguments json.RawMessage) string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection                                             string
 	Tools                                                     []any
@@ -434,6 +437,27 @@ func (s *stage) hasPendingOutput() bool {
 		}
 	}
 	return false
+}
+
+// realtimeSource は、モデルの応答とモデルが呼んだツールの記録の出どころ。
+const realtimeSource = "realtime"
+
+// recordTool は、モデルが呼んだツールの呼び出しと結果を記録する。ID には接続のエポックを付ける。
+// 吹き出しの経路には、これまでどおりツール名を出どころとして送る。
+func (s *stage) recordTool(ctx context.Context, record types.ConversationRecord) {
+	id := record.ID
+	record.ID = fmt.Sprintf("%d/%s", s.epoch, id)
+	record.Source = realtimeSource
+	record.CreatedAt = time.Now()
+	s.saveRecord(ctx, record)
+	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, GenerationID: record.GenerationID, Source: record.ToolName, ResponseID: id, Final: true}})
+}
+
+func (s *stage) toolTitle(name string, arguments json.RawMessage) string {
+	if s.cfg.ToolTitle == nil {
+		return ""
+	}
+	return s.cfg.ToolTitle(name, arguments)
 }
 
 func (s *stage) saveRecord(ctx context.Context, record types.ConversationRecord) {

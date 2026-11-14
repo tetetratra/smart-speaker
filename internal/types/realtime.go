@@ -110,4 +110,6 @@ type InboundMessage struct {
 	Context json.RawMessage
 	Source  string
 	Text    string
+	// ツールの呼び出しと結果を届けるときの表示用の項目。
+	ToolName, CallID, Arguments, Output string
 }

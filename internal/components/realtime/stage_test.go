@@ -615,3 +615,41 @@ func (r *rig) records() []types.ConversationRecord {
 	}
 	return r.history.Snapshot()
 }
+
+func TestToolRecordsCarryDisplayFields(t *testing.T) {
+	r := newRig(t, func(cfg *Config) {
+		cfg.ToolTitle = func(name string, arguments json.RawMessage) string { return name + "のタイトル" }
+	})
+	r.utterance("user1")
+	req := r.wait("response.create")
+	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
+	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
+	r.event(types.EventToolRequest)
+	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
+	r.node.Upstream <- types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{ToolResult: &result}}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var call, result *types.ConversationRecord
+		for _, record := range r.records() {
+			record := record
+			switch record.Role {
+			case types.RoleToolCall:
+				call = &record
+			case types.RoleToolResult:
+				result = &record
+			}
+		}
+		if call != nil && result != nil {
+			// Text はモデル向けに今の形のまま残し、表示用の項目を別に持つ。
+			if call.Text != `set_whiteboard: {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" || call.Arguments != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
+				t.Fatal(*call)
+			}
+			if result.Source != "realtime" || result.ToolName != "set_whiteboard" || result.CallID != "call1" || result.Output != `{"content":"メモ"}` {
+				t.Fatal(*result)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("ツールの記録が揃いません", r.records())
+}

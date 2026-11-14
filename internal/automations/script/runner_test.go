@@ -33,7 +33,8 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, message := range messages {
-		if message.Source != Source || message.Title != "室温" {
+		// ツールの呼び出しと結果のタイトルはツールが決めるので、予約の名前は通知にだけ付ける。
+		if message.Source != Source || (message.ToolName == "" && message.Title != "室温") {
 			t.Fatal("予約の名前とタイトルが引き継がれていません", message)
 		}
 		var metadata map[string]string
@@ -43,6 +44,9 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	}
 	if calls != 1 || len(messages) != 4 {
 		t.Fatal(calls, messages)
+	}
+	if call, result := messages[0], messages[1]; call.ToolName != "read" || call.CallID == "" || call.Arguments != `{"count":2}` || result.CallID != call.CallID || strings.Contains(result.Output, "instructions") {
+		t.Fatal("ツールの表示用の項目がありません", messages)
 	}
 	if messages[0].Role != types.RoleToolCall || messages[1].Role != types.RoleToolResult || types.HistoryOnly(messages[2].Context) || !strings.Contains(messages[2].Text, "値は3") {
 		t.Fatal(messages)
