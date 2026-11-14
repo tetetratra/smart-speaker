@@ -7,6 +7,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
@@ -26,6 +27,8 @@ type runtimeServices struct {
 	Deliver     func(context.Context, types.InboundMessage) error
 	TTS         *tts.Selector
 	ToolHistory *toolhistory.Store
+	// History は会話履歴。会話管理が記録し、realtime と画面連携が直接読む。nil なら buildStages で作る。
+	History *conversationhistory.Store
 	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。
 	ClaudeCode *agentbridge.Service
 }

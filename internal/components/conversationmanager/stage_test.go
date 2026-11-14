@@ -26,7 +26,7 @@ func testStage(t *testing.T) *stage {
 func TestRecordsOnlyUpdateHistory(t *testing.T) {
 	s := testStage(t)
 	for _, text := range []string{"仮の文字起こし", "確定した文字起こし"} {
-		s.handle(context.Background(), types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: types.ConversationRecord{ID: "speech", Text: text}, ModelHandling: types.ModelHandlingAlreadyKnown}})
+		s.handle(context.Background(), types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: types.ConversationRecord{ID: "speech", Role: types.RoleUser, Text: text}, ModelHandling: types.ModelHandlingAlreadyKnown}})
 	}
 	records := s.history.Snapshot()
 	if len(records) != 1 || records[0].Text != "確定した文字起こし" {
@@ -52,7 +52,7 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 		e := InputEvent(types.InboundMessage{ID: "result", Source: "tool/web_search", Title: "天気", Text: "検索結果", Context: raw})
 		s.handle(context.Background(), e)
 		s.handle(context.Background(), e)
-		forwarded := <-s.node.Downstream
+		forwarded := nextForwarded(s)
 		records := s.history.Snapshot()
 		if forwarded.Kind != types.EventConversationInput || forwarded.Payload.(types.ConversationInput).ModelHandling != want || len(records) != 1 || records[0].Text != "検索結果" {
 			t.Fatal(forwarded, records)
@@ -64,10 +64,10 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 		if entries := s.cfg.ToolHistory.Snapshot(); len(entries) != 1 || entries[0].Title != "天気" {
 			t.Fatal(entries)
 		}
-		select {
-		case e := <-s.node.Downstream:
-			t.Fatal("再送を二度配信しました", e)
-		default:
+		for len(s.node.Downstream) > 0 {
+			if e := <-s.node.Downstream; e.Kind != types.EventConversationRecordChanged {
+				t.Fatal("再送を二度配信しました", e)
+			}
 		}
 	}
 }
@@ -83,7 +83,7 @@ func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
 		close(returned)
 	}()
 	// 保存済みの応答依頼が、読み出しマーカーより先に配送される。
-	if e := <-s.node.Downstream; e.Kind != types.EventConversationInput {
+	if e := nextForwarded(s); e.Kind != types.EventConversationInput {
 		t.Fatal(e)
 	}
 	if e := <-s.node.Downstream; e.Kind != types.EventConversationSignal || !isHistorySync(e) {
@@ -146,4 +146,39 @@ func TestAutomationToolCallsAreNotDisplayedTwice(t *testing.T) {
 func isHistorySync(e types.Event) bool {
 	_, ok := e.Payload.(types.ConversationHistorySync)
 	return ok
+}
+
+// nextForwarded は、画面への記録の通知を飛ばして、realtime へ渡すイベントを取り出す。
+func nextForwarded(s *stage) types.Event {
+	for {
+		if e := <-s.node.Downstream; e.Kind != types.EventConversationRecordChanged {
+			return e
+		}
+	}
+}
+
+func TestOnlyNonDialogueRecordsAreSentToScreen(t *testing.T) {
+	s := testStage(t)
+	for _, record := range []types.ConversationRecord{
+		{ID: "user", Role: types.RoleUser, Text: "こんにちは"},
+		{ID: "agent", Role: types.RoleAgent, Text: "はい"},
+		{ID: "call", Role: types.RoleToolCall, ToolName: "set_whiteboard", CallID: "c1"},
+		{ID: "result", Role: types.RoleToolResult, ToolName: "set_whiteboard", CallID: "c1"},
+	} {
+		s.handle(context.Background(), types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: types.ModelHandlingAlreadyKnown}})
+	}
+	var sent []string
+	for len(s.node.Downstream) > 0 {
+		e := <-s.node.Downstream
+		if e.Kind != types.EventConversationRecordChanged {
+			t.Fatal(e)
+		}
+		sent = append(sent, e.Payload.(types.ConversationRecord).ID)
+	}
+	if strings.Join(sent, ",") != "call,result" {
+		t.Fatal(sent)
+	}
+	if len(s.history.Snapshot()) != 4 {
+		t.Fatal("会話の記録も保存する必要があります", s.history.Snapshot())
+	}
 }

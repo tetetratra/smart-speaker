@@ -61,7 +61,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200)}
+	historyStore, err := conversationhistory.NewStore(cfg.ConversationHistoryPath)
+	if err != nil {
+		log.Fatalf("failed to init conversation history: %v", err)
+	}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200), History: historyStore}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
@@ -162,9 +166,12 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		chatStage.Name = "wschat"
 	}
 	generationStore := generation.NewStore()
-	historyStore, err := conversationhistory.NewStore(cfg.ConversationHistoryPath)
-	if err != nil {
-		return appStages{}, err
+	historyStore := services.History
+	if historyStore == nil {
+		var err error
+		if historyStore, err = conversationhistory.NewStore(cfg.ConversationHistoryPath); err != nil {
+			return appStages{}, err
+		}
 	}
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
@@ -297,6 +304,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	manager := add(s.manager)
 	connectKinds(g, rt, manager, types.EventConversationInput, types.EventConversationSignal)
 	connectKinds(g, manager, rt, types.EventConversationInput, types.EventConversationSignal)
+	connectKinds(g, manager, chat, types.EventConversationRecordChanged)
 	output := add(s.output)
 	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
 	connectKinds(g, chat, output, types.EventRTCSignal)

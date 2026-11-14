@@ -38,6 +38,8 @@ func (k EventKind) String() string {
 		return "EventConversationInput"
 	case EventConversationSignal:
 		return "EventConversationSignal"
+	case EventConversationRecordChanged:
+		return "EventConversationRecordChanged"
 	case EventLocalWakeUtterance:
 		return "EventLocalWakeUtterance"
 	case EventWakeTranscription:

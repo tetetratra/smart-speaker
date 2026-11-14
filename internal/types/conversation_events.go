@@ -6,6 +6,9 @@ package types
 const (
 	EventConversationInput EventKind = 130 + iota
 	EventConversationSignal
+	// EventConversationRecordChanged は、会話管理が保存した記録を画面へ知らせる。ペイロードは ConversationRecord。
+	// 世代を持たない型なので、世代フィルタに捨てられない（EventGeneration に加えないこと）。
+	EventConversationRecordChanged
 )
 
 // ModelHandling は、会話の中身をモデルに対してどう扱うかを表す。
