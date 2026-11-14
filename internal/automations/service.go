@@ -30,12 +30,55 @@ type Job struct {
 }
 type Delivery struct {
 	ID, Name, Script string
+	// Event はイベントで動いたときの、イベントの中身（JSON）。時刻で動いたときは空。
+	Event json.RawMessage
 }
 type Service struct {
 	mu      sync.Mutex
 	path    string
 	jobs    map[string]Job
 	deliver func(context.Context, Delivery) error
+	// events は schedule.event に指定できるイベントの名前と説明。main が gateway へ配線したものと揃える。
+	events map[string]string
+}
+
+// SetEvents は schedule.event に指定できるイベントを設定する。
+func (s *Service) SetEvents(events map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = make(map[string]string, len(events))
+	for name, description := range events {
+		s.events[name] = description
+	}
+}
+
+// Events は schedule.event に指定できるイベントの名前と説明を返す。
+func (s *Service) Events() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := make(map[string]string, len(s.events))
+	for name, description := range s.events {
+		events[name] = description
+	}
+	return events
+}
+
+// checkEvent は、登録・更新するジョブのイベントが購読できるものかを確かめる。
+// 読み込み時は確かめない（配線を減らしても、既存のジョブが読めなくならないように）。
+func (s *Service) checkEvent(spec Spec) error {
+	if spec.Schedule.Event == "" {
+		return nil
+	}
+	events := s.Events()
+	if _, ok := events[spec.Schedule.Event]; ok {
+		return nil
+	}
+	names := make([]string, 0, len(events))
+	for name := range events {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("購読できないイベントです（指定できるもの: %s）", strings.Join(names, "、"))
 }
 
 func New(path string, deliver func(context.Context, Delivery) error) (*Service, error) {
@@ -138,6 +181,9 @@ func (s *Service) Create(spec Spec, now time.Time) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	if err := s.checkEvent(spec); err != nil {
+		return Job{}, err
+	}
 	next, _ := spec.Schedule.next(now, false)
 	job := Job{ID: uuid.NewString(), Spec: spec, NextRunAt: next, LastStatus: "scheduled"}
 	s.mu.Lock()
@@ -155,6 +201,9 @@ func (s *Service) Create(spec Spec, now time.Time) (Job, error) {
 func (s *Service) Update(id string, spec Spec, now time.Time) (Job, error) {
 	spec, err := validate(spec, now, true)
 	if err != nil {
+		return Job{}, err
+	}
+	if err := s.checkEvent(spec); err != nil {
 		return Job{}, err
 	}
 	next, _ := spec.Schedule.next(now, false)
@@ -237,31 +286,69 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	s.mu.Unlock()
 	// 実行済みの予定を先に保存し、再起動で同じ一度きりの予約を繰り返さない。
 	for _, job := range due {
-		var err error
-		if s.deliver == nil {
-			err = fmt.Errorf("スクリプトの実行経路がありません")
-		} else {
-			err = s.deliver(ctx, Delivery{ID: job.ID, Name: job.Name, Script: job.Script})
-		}
+		err := s.run(ctx, Delivery{ID: job.ID, Name: job.Name, Script: job.Script})
 		if err != nil && job.Schedule.Cron == "" {
 			// 削除済みの一度きりの予約は一覧に残らないため、実行履歴に加えてログにも出す。
 			fmt.Fprintf(os.Stderr, "予約ジョブの実行失敗 id=%s name=%s: %v\n", job.ID, job.Name, err)
 		}
-		s.mu.Lock()
-		current, ok := s.jobs[job.ID]
-		if ok && current.LastRunAt.Equal(now) {
-			current.LastStatus = "succeeded"
-			if err != nil {
-				current.LastStatus = "failed"
-				current.LastError = err.Error()
-			}
-			s.jobs[job.ID] = current
-			if saveErr := s.saveLocked(); saveErr != nil {
-				s.mu.Unlock()
-				return saveErr
-			}
+		if saveErr := s.finish(job.ID, now, err); saveErr != nil {
+			return saveErr
 		}
-		s.mu.Unlock()
 	}
 	return nil
+}
+
+// HandleEvent は、届いたイベントで動くジョブ（schedule.event が name のもの）を順に動かす。
+// payload はスクリプトの event 変数に渡すイベントの中身。
+func (s *Service) HandleEvent(ctx context.Context, name string, payload json.RawMessage, now time.Time) error {
+	s.mu.Lock()
+	var matched []Job
+	for _, job := range s.listLocked() {
+		if job.Schedule.Event != name {
+			continue
+		}
+		job.LastRunAt = now
+		job.LastStatus = "queued"
+		job.LastError = ""
+		s.jobs[job.ID] = job
+		matched = append(matched, job)
+	}
+	if len(matched) > 0 {
+		if err := s.saveLocked(); err != nil {
+			s.mu.Unlock()
+			return err
+		}
+	}
+	s.mu.Unlock()
+	for _, job := range matched {
+		err := s.run(ctx, Delivery{ID: job.ID, Name: job.Name, Script: job.Script, Event: payload})
+		if saveErr := s.finish(job.ID, now, err); saveErr != nil {
+			return saveErr
+		}
+	}
+	return nil
+}
+
+func (s *Service) run(ctx context.Context, delivery Delivery) error {
+	if s.deliver == nil {
+		return fmt.Errorf("スクリプトの実行経路がありません")
+	}
+	return s.deliver(ctx, delivery)
+}
+
+// finish は、now に動かしたジョブの結果を記録する。その間に更新・削除されたジョブには触らない。
+func (s *Service) finish(id string, now time.Time, err error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.jobs[id]
+	if !ok || !current.LastRunAt.Equal(now) {
+		return nil
+	}
+	current.LastStatus = "succeeded"
+	if err != nil {
+		current.LastStatus = "failed"
+		current.LastError = err.Error()
+	}
+	s.jobs[id] = current
+	return s.saveLocked()
 }

@@ -167,3 +167,49 @@ func TestScriptValidationRejectsSyntaxAndOldFormat(t *testing.T) {
 		t.Fatal("旧形式を受け付けました")
 	}
 }
+
+func TestEventJobRunsOnMatchingEventAndRemains(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	var deliveries []Delivery
+	service, err := New(path, func(_ context.Context, d Delivery) error { deliveries = append(deliveries, d); return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := stamp("2026-11-06T08:00:00+09:00")
+	if _, err := service.Create(Spec{Name: "落ち着いたら", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle"}}, now); err == nil {
+		t.Fatal("購読できないイベントを受理しました")
+	}
+	service.SetEvents(map[string]string{"EventConversationIdle": "無操作が続いた"})
+	job, err := service.Create(Spec{Name: "落ち着いたら", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle"}}, now)
+	if err != nil || !job.NextRunAt.IsZero() {
+		t.Fatal(job, err)
+	}
+	if _, err := service.Create(Spec{Name: "二重指定", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle", Cron: "0 8 * * *"}}, now); err == nil {
+		t.Fatal("eventとcronの二重指定を受理しました")
+	}
+	// 時刻では動かない。
+	if err := service.RunDue(context.Background(), now.Add(24*time.Hour)); err != nil || len(deliveries) != 0 {
+		t.Fatal(deliveries, err)
+	}
+	// 別のイベントでは動かない。
+	if err := service.HandleEvent(context.Background(), "EventOther", nil, now); err != nil || len(deliveries) != 0 {
+		t.Fatal(deliveries, err)
+	}
+	for i := range 2 {
+		if err := service.HandleEvent(context.Background(), "EventConversationIdle", []byte(`{"n":1}`), now.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(deliveries) != 2 || deliveries[0].ID != job.ID || string(deliveries[0].Event) != `{"n":1}` {
+		t.Fatal(deliveries)
+	}
+	// 動いたあとも消えず、結果が記録される。再起動後も読み込める。
+	reloaded, err := New(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := reloaded.List()
+	if len(jobs) != 1 || jobs[0].LastStatus != "succeeded" || jobs[0].Schedule.Event != "EventConversationIdle" {
+		t.Fatal(jobs)
+	}
+}

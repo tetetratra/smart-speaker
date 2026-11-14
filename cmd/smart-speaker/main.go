@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os/signal"
@@ -73,11 +74,12 @@ func main() {
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
-		return services.Runner.Run(ctx, delivery.ID, delivery.Name, delivery.Script)
+		return services.Runner.RunWithEvent(ctx, delivery.ID, delivery.Name, delivery.Script, delivery.Event)
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+	subscribeAutomationEvents(services.Gateway, services.Automations)
 	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, services.Deliver)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
@@ -305,7 +307,11 @@ func wireGraph(g *graph.Graph, s appStages) {
 	manager := add(s.manager)
 	connect(g, rt, manager, types.EventConversationInput{}, types.EventConversationHistorySync{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
 	connect(g, manager, rt, types.EventConversationInput{}, types.EventConversationHistorySync{})
-	connect(g, add(s.gateway), manager, types.EventConversationInput{})
+	gw := add(s.gateway)
+	connect(g, gw, manager, types.EventConversationInput{})
+	for _, event := range automationEvents {
+		connect(g, rt, gw, event.event)
+	}
 	connect(g, manager, chat, types.EventConversationRecordChanged{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})
@@ -326,6 +332,38 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventRealtimeOutput{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
 	connect(g, rt, tool, types.EventToolRequest{})
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
+}
+
+// automationEvents は、予約ジョブの schedule.event に指定できるイベント。
+// ここに足したイベントは、realtime から gateway へ配線され、予約ジョブ実行へ渡る。
+var automationEvents = []struct {
+	event       types.Event
+	description string
+}{
+	{types.EventConversationIdle{}, "会話が落ち着いた状態で無操作が続いた"},
+}
+
+// subscribeAutomationEvents は、gateway に届いたイベントで動く予約ジョブを、届いた順に1つずつ動かす。
+func subscribeAutomationEvents(gw *gateway.Gateway, service *automations.Service) {
+	events := make(map[string]string, len(automationEvents))
+	for _, e := range automationEvents {
+		events[types.EventName(e.event)] = e.description
+	}
+	service.SetEvents(events)
+	gw.Subscribe(func(ctx context.Context, e types.Event) {
+		name := types.EventName(e)
+		if _, ok := events[name]; !ok {
+			return
+		}
+		payload, err := json.Marshal(e)
+		if err != nil {
+			log.Printf("予約ジョブ: イベントの中身を JSON にできません event=%s: %v", name, err)
+			return
+		}
+		if err := service.HandleEvent(ctx, name, payload, time.Now()); err != nil {
+			log.Printf("予約ジョブ: イベントで動くジョブの実行 event=%s: %v", name, err)
+		}
+	})
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。

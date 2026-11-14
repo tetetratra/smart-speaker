@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/automations"
@@ -70,7 +72,18 @@ func (t *Tool) Definition() map[string]any {
 		description = "ユーザーが依頼した処理をJavaScriptの予約ジョブとして永続化します。JSへ公開されるアプリの関数はtoolcallとremindだけです。switchbot_execute_sceneなどのツール名そのものはJSの関数ではありません。必ずtoolcallへツール名の文字列と引数オブジェクトを渡します。toolcall(name, args)は登録済みツールを同期で直接実行して結果を返します。失敗はerror付きオブジェクトで返します。非同期ツールは受付結果だけを返し、後続結果も履歴に記録するだけで発話しません。remind(text)はAIに応答させたいときだけ使います。Node.jsのAPIやPromiseによる非同期処理は使えません。scheduleはafter_seconds（指定秒後）、at（時差付きRFC3339日時）、cron（分・時・日・月・曜日の5項目）の1つを指定します。タイムゾーンの既定はAsia/Tokyo。ユーザーに知らせる必要がない処理はtoolcallだけを使い、remindやwait_for_userは呼びません。現在日時から予定を計算し、登録後に次回日時を確認してください。いつ実行するか（「1分後に」「毎朝8時に」など）はscheduleだけで表し、nameとscriptには含めないでください。日時指定の予約は実行後に自動で削除されます。"
 		description += fmt.Sprintf("\n\nscriptの記述例（時刻と頻度はscheduleに指定）:\n例1: ツールを直接呼び、発話せず画面へ残す。\n%s\n\n例2: AIに応答させるリマインダー。\n%s\n\n例3: Hub2が利用可能な場合、温度取得と画面表示の複数ツールを使い、28℃以上のときだけリマインダーで知らせる。temperatureは文字列なのでNumberで数値へ変換する。\n%s", directScriptExample, remindScriptExample, temperatureScriptExample)
 
-		props = map[string]any{"name": map[string]any{"type": "string", "description": "予約の内容を表す短い名前。時刻・頻度は含めない。例: 室温を知らせる"}, "script": map[string]any{"type": "string", "description": "予定時刻に実行するJavaScript。ツール説明の3例を参考にtoolcallとremindを使う。ツール名を直接JSの関数として呼ばない。時刻や頻度はscheduleに指定する。"}, "schedule": map[string]any{"type": "object", "properties": map[string]any{"after_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 31536000}, "at": map[string]any{"type": "string", "description": "例: 2026-11-10T08:00:00+09:00"}, "cron": map[string]any{"type": "string", "description": "例: 平日8時は0 8 * * 1-5"}, "timezone": map[string]any{"type": "string"}}, "additionalProperties": false}}
+		scheduleProps := map[string]any{"after_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 31536000}, "at": map[string]any{"type": "string", "description": "例: 2026-11-10T08:00:00+09:00"}, "cron": map[string]any{"type": "string", "description": "例: 平日8時は0 8 * * 1-5"}, "timezone": map[string]any{"type": "string"}}
+		if events := t.events(); len(events) > 0 {
+			names := make([]string, 0, len(events))
+			lines := make([]string, 0, len(events))
+			for _, name := range sortedKeys(events) {
+				names = append(names, name)
+				lines = append(lines, name+": "+events[name])
+			}
+			scheduleProps["event"] = map[string]any{"type": "string", "enum": names}
+			description += "\n\nscheduleにeventを指定すると、時刻ではなくそのイベントが起きるたびに実行され、実行後も削除されません。スクリプトではevent変数でイベントの中身（JSONのオブジェクト）を読めるので、条件の絞り込みはスクリプトの中で書きます。指定できるイベント:\n" + strings.Join(lines, "\n")
+		}
+		props = map[string]any{"name": map[string]any{"type": "string", "description": "予約の内容を表す短い名前。時刻・頻度は含めない。例: 室温を知らせる"}, "script": map[string]any{"type": "string", "description": "予定時刻に実行するJavaScript。ツール説明の3例を参考にtoolcallとremindを使う。ツール名を直接JSの関数として呼ばない。時刻や頻度はscheduleに指定する。"}, "schedule": map[string]any{"type": "object", "properties": scheduleProps, "additionalProperties": false}}
 		required = []string{"name", "script", "schedule"}
 		if t.Operation == "update_job" {
 			props["id"] = map[string]any{"type": "string"}
@@ -87,6 +100,22 @@ func (t *Tool) Definition() map[string]any {
 }
 
 var _ tools.Handler = (*Tool)(nil)
+
+func (t *Tool) events() map[string]string {
+	if t.Service == nil {
+		return nil
+	}
+	return t.Service.Events()
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func (t *Tool) Title(args map[string]any) string {
 	if t.Operation != "register_job" && t.Operation != "update_job" {
