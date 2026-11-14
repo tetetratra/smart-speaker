@@ -127,17 +127,24 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		e.Payload = input
 		s.emit(ctx, e)
-	case types.EventConversationHistorySync:
+	case types.EventConversationSignal:
+		s.handleSignal(ctx, e)
+	}
+}
+
+func (s *stage) handleSignal(ctx context.Context, e types.Event) {
+	switch p := e.Payload.(type) {
+	case types.ConversationHistorySync:
 		s.emit(ctx, e)
 		select {
-		case <-e.Payload.(types.ConversationHistorySync).Done:
+		case <-p.Done:
 		case <-ctx.Done():
 		}
-	case types.EventConversationRecordsUsed:
-		for _, id := range e.Payload.(types.ConversationRecordsUsed).IDs {
+	case types.ConversationRecordsUsed:
+		for _, id := range p.IDs {
 			delete(s.unused, id)
 		}
-	case types.EventConversationIdle:
+	case types.ConversationIdle:
 		if s.cfg.OnIdle != nil {
 			s.cfg.OnIdle(ctx, s.unused)
 		}

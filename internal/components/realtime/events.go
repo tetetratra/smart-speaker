@@ -147,7 +147,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			delete(s.externalPending, id)
 			delete(s.externalRecords, id)
 		}
-		s.emit(ctx, types.Event{Kind: types.EventConversationRecordsUsed, Payload: types.ConversationRecordsUsed{IDs: used}})
+		s.emit(ctx, types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationRecordsUsed{IDs: used}})
 		s.externalRequested = nil
 		order := s.externalOrder[:0]
 		for _, id := range s.externalOrder {

@@ -136,8 +136,8 @@ flowchart LR
     end
 
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"ConversationInput<br/>会話の記録・情報追加・応答依頼<br/>ConversationHistorySync<br/>会話履歴の読み出し同期<br/>ConversationIdle<br/>無操作の継続<br/>ConversationRecordsUsed<br/>参照済みの外部記録"| manager
-    manager --->|"ConversationInput<br/>会話への情報追加・応答依頼<br/>ConversationHistorySync<br/>会話履歴の読み出し同期"| rt
+    rt -->|"ConversationInput<br/>会話の記録・情報追加・応答依頼<br/>ConversationSignal<br/>読み出し同期・無操作の継続・参照済みの外部記録"| manager
+    manager --->|"ConversationInput<br/>会話への情報追加・応答依頼<br/>ConversationSignal<br/>読み出し同期"| rt
     rt -->|"ToolRequest<br/>ツール実行依頼"| tool
     tool --->|"ConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager

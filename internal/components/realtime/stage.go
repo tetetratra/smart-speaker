@@ -210,7 +210,7 @@ func (s *stage) connect(ctx context.Context) {
 	s.status(ctx, "connecting", "")
 	// 先に発行した記録が会話管理で保存されてから、共有ストアを直接読む。
 	done := make(chan struct{})
-	s.emit(ctx, types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch, Done: done}})
+	s.emit(ctx, types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationHistorySync{Epoch: s.epoch, Done: done}})
 }
 
 func (s *stage) restore(ctx context.Context, sync types.ConversationHistorySync) {
@@ -294,8 +294,11 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 }
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e.Kind {
-	case types.EventConversationHistorySync:
-		s.restore(ctx, e.Payload.(types.ConversationHistorySync))
+	case types.EventConversationSignal:
+		// 会話管理から戻ってくる合図は、読み出し同期だけ。
+		if sync, ok := e.Payload.(types.ConversationHistorySync); ok {
+			s.restore(ctx, sync)
+		}
 		return
 	case types.EventConversationInput:
 		input := e.Payload.(types.ConversationInput)
@@ -377,7 +380,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 
 	// 無操作が続いても会話の文脈は保ったまま、古い履歴のメモリ化だけを会話管理へ頼む。
 	if s.cfg.IdleTimeout > 0 && !s.lastActivity.IsZero() && now.Sub(s.lastActivity) >= s.cfg.IdleTimeout {
-		s.emit(ctx, types.Event{Kind: types.EventConversationIdle})
+		s.emit(ctx, types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationIdle{}})
 		s.lastActivity = time.Time{}
 		return
 	}
