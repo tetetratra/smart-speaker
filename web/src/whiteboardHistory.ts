@@ -36,7 +36,7 @@ export type WhiteboardRecord = {
   created_at: string
 }
 
-// mergeRecords は届いた記録を ID で上書きする。開いた直後の一覧と差分の前後が入れ替わっても崩れない。
+// mergeRecords は接続後に届いた差分を ID で上書きする。
 export function mergeRecords(current: Map<string, WhiteboardRecord>, records: WhiteboardRecord[]): Map<string, WhiteboardRecord> {
   const next = new Map(current)
   for (const record of records) next.set(record.id, record)

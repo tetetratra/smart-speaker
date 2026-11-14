@@ -14,25 +14,18 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
-
-type Config struct {
-	// History は、画面を開いた直後にホワイトボード用の記録をまとめて送るために読む。
-	History *conversationhistory.Store
-}
 
 // NewStage registers /ws/chat on the provided mux and returns a stage that
 // pushes graph events to the connected client, and receives WebRTC signaling
 // messages from the client.
-func NewStage(mux *http.ServeMux, cfg Config) *graph.Stage {
+func NewStage(mux *http.ServeMux) *graph.Stage {
 	holder := &connHolder{}
 	c := &chatWS{
 		upstream:   make(chan types.Event),
 		downstream: make(chan types.Event),
 		holder:     holder,
-		history:    cfg.History,
 	}
 	mux.HandleFunc("/ws/chat", c.handleWS)
 	c.node = &graph.Stage{
@@ -103,7 +96,6 @@ func (h *connHolder) clearAll() {
 }
 
 type chatWS struct {
-	history    *conversationhistory.Store
 	node       *graph.Stage
 	upstream   chan types.Event
 	downstream chan types.Event
@@ -226,23 +218,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	return msg, targetID, true
 }
 
-// initialRecordLimit は、画面を開いた直後に送るホワイトボード用の記録の上限。
-const initialRecordLimit = 200
-
-// whiteboardRecords は、会話履歴からホワイトボードに出す記録（会話でないもの）を新しい方から上限まで選ぶ。
-func whiteboardRecords(records []types.ConversationRecord) []map[string]any {
-	var selected []map[string]any
-	for i := len(records) - 1; i >= 0 && len(selected) < initialRecordLimit; i-- {
-		if !records[i].IsDialogue() {
-			selected = append(selected, recordMessage(records[i]))
-		}
-	}
-	for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
-		selected[i], selected[j] = selected[j], selected[i]
-	}
-	return selected
-}
-
 func recordMessage(record types.ConversationRecord) map[string]any {
 	return map[string]any{
 		"id":         record.ID,
@@ -300,14 +275,6 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 			c.holder.remove(connID)
 		}
 	}()
-	// 接続を登録してから会話履歴を読むので、その間に届いた差分も読み出した中に含まれる。
-	// 差分が先に届いても、画面は記録の ID で上書きするので崩れない。
-	if c.history != nil {
-		msg := map[string]any{"type": "conversation_records", "records": whiteboardRecords(c.history.Snapshot())}
-		if !c.writeMessage(r.Context(), msg, connID) {
-			return
-		}
-	}
 	for {
 		_, data, err := conn.Read(r.Context())
 		if err != nil {

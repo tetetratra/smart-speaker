@@ -14,13 +14,13 @@ test('同時刻の呼び出しも、それぞれの履歴の直後に本文を�
   ])
 })
 
-test('開始から完了への更新とスナップショットの再送で本文が重複しない', () => {
+test('開始から完了への更新と再描画で本文が重複しない', () => {
   assert.deepEqual(whiteboardEvents([tool('a', { status: 'running' })]).map(event => event.kind), ['history'])
-  const snapshot = [tool('a')]
-  const first = whiteboardEvents(snapshot)
-  assert.deepEqual(whiteboardEvents(snapshot), first)
+  const entries = [tool('a')]
+  const first = whiteboardEvents(entries)
+  assert.deepEqual(whiteboardEvents(entries), first)
   assert.equal(first.filter(event => event.kind === 'board').length, 1)
-  assert.equal(snapshot.length, 1)
+  assert.equal(entries.length, 1)
 })
 
 test('失敗・他ツール・不正な結果・空本文からは本文を表示しない', () => {
@@ -34,7 +34,7 @@ test('失敗・他ツール・不正な結果・空本文からは本文を表�
   assert.ok(whiteboardEvents(entries).every(event => event.kind === 'history'))
 })
 
-test('新しい順のスナップショットを時刻順に復元する', () => {
+test('記録の受信順によらず時刻順に表示する', () => {
   assert.deepEqual(whiteboardEvents([tool('new', { started_at: '2026-11-11T00:01:00Z' }), tool('old')]).map(event => event.id), [
     'tool-old', 'board-old', 'tool-new', 'board-new',
   ])
@@ -71,7 +71,7 @@ test('呼び出しと対にならない結果や通知は差し込みとして�
   ])
 })
 
-test('開いた直後の一覧と差分は ID で上書きし、順番が前後しても重複しない', () => {
+test('差分は ID で上書きし、順番が前後しても重複しない', () => {
   let merged = mergeRecords(new Map(), [record('result', { role: 'tool_result', call_id: 'a' })])
   merged = mergeRecords(merged, [record('call', { call_id: 'a' }), record('result', { role: 'tool_result', call_id: 'a' })])
   assert.equal(merged.size, 2)
