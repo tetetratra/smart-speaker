@@ -1,21 +1,18 @@
-// Package conversationmanager は会話の記録と外部入力を集約する。
+// Package conversationmanager は会話の記録と外部入力を集約する。外部入力は gateway からイベントとして届く。
 package conversationmanager
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
-	Inbound <-chan types.InboundMessage
 	History *conversationhistory.Store
 	// OnIdle は無操作が続いたときに呼ぶ。まだ応答に使っていない外部記録のIDを渡す。
 	OnIdle func(context.Context, map[string]bool)
@@ -44,59 +41,14 @@ func (s *stage) emit(ctx context.Context, e types.Event) {
 
 func (s *stage) run(ctx context.Context) {
 	defer close(s.node.Downstream)
-	// グラフと外部通知を一つのキューへ集め、保存と引き渡しの順序を揃える。
-	queue := eventqueue.New[types.Event](nil)
-	go func() {
-		for {
-			e, ok := s.node.Receive(ctx)
-			if !ok {
-				return
-			}
-			queue.Push(e)
-		}
-	}()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case message, ok := <-s.cfg.Inbound:
-				if !ok {
-					return
-				}
-				queue.Push(InputEvent(message))
-			}
-		}
-	}()
+	// 外からの入力も gateway からイベントとして届くので、グラフのイベントを届いた順に処理するだけでよい。
 	for {
-		e, ok := queue.Pop(ctx)
+		e, ok := s.node.Receive(ctx)
 		if !ok {
 			return
 		}
 		s.handle(ctx, e)
 	}
-}
-
-// InputEvent は既存の非同期通知を会話への情報追加・応答依頼へ変換する。
-func InputEvent(message types.InboundMessage) types.Event {
-	handling := types.ModelHandlingAddAndRespond
-	if types.HistoryOnly(message.Context) {
-		handling = types.ModelHandlingAddToContext
-	}
-	// 通知方針は制御情報なので履歴には残さない。依頼の識別情報は維持する。
-	var metadata map[string]json.RawMessage
-	_ = json.Unmarshal(message.Context, &metadata)
-	delete(metadata, "delivery")
-	record := types.ConversationRecord{ID: message.ID, Role: message.Role, Text: message.Text, Source: message.Source, Title: message.Title, External: true,
-		ToolName: message.ToolName, CallID: message.CallID, Arguments: message.Arguments, Output: message.Output}
-	if len(metadata) > 0 {
-		raw, _ := json.Marshal(metadata)
-		record.Metadata = map[string]any{"context": string(raw)}
-	}
-	if record.Role == "" {
-		record.Role = types.RoleSystem
-	}
-	return types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelHandling: handling}}
 }
 
 func (s *stage) handle(ctx context.Context, e types.Event) {

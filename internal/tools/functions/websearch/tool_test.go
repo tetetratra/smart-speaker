@@ -103,8 +103,8 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 			client.err = errors.New("検索APIの失敗")
 			heading = "[Web検索の失敗]"
 		}
-		delivered := make(chan types.InboundMessage, 1)
-		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.InboundMessage) error {
+		delivered := make(chan types.ConversationInput, 1)
+		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
 			delivered <- prompt
 			return nil
 		}})
@@ -117,7 +117,7 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 		close(client.release)
 		select {
 		case prompt := <-delivered:
-			if prompt.Source != "tool/web_search" || prompt.Title != "明日の天気" || !strings.HasPrefix(prompt.Text, heading) || !strings.Contains(prompt.Text, "明日の天気") {
+			if prompt.Record.Source != "tool/web_search" || prompt.Record.Title != "明日の天気" || !strings.HasPrefix(prompt.Record.Text, heading) || !strings.Contains(prompt.Record.Text, "明日の天気") {
 				t.Fatal(prompt)
 			}
 		case <-ctx.Done():
@@ -130,8 +130,8 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 // アプリの停止で検索が打ち切られたら、何も届けない。
 func TestCanceledSearchDeliversNothing(t *testing.T) {
 	client := &blockingSearchClient{release: make(chan struct{})}
-	delivered := make(chan types.InboundMessage, 1)
-	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.InboundMessage) error {
+	delivered := make(chan types.ConversationInput, 1)
+	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
 		delivered <- prompt
 		return nil
 	}})
@@ -154,8 +154,8 @@ func TestHistoryOnlySearchSurvivesCallerCancellation(t *testing.T) {
 	defer stop()
 	caller, cancel := context.WithCancel(context.Background())
 	client := &blockingSearchClient{release: make(chan struct{}), resp: "後から届く結果"}
-	delivered := make(chan types.InboundMessage, 1)
-	tool := New(Config{Client: client, AppContext: appCtx, Deliver: func(_ context.Context, p types.InboundMessage) error { delivered <- p; return nil }})
+	delivered := make(chan types.ConversationInput, 1)
+	tool := New(Config{Client: client, AppContext: appCtx, Deliver: func(_ context.Context, p types.ConversationInput) error { delivered <- p; return nil }})
 	result, err := tool.Run(execution.WithDeliveryContext(caller, raw), map[string]any{"query": "調べもの"})
 	if err != nil || result["status"] != "started" || result["instructions"] != nil {
 		t.Fatal(result, err)
@@ -164,7 +164,7 @@ func TestHistoryOnlySearchSurvivesCallerCancellation(t *testing.T) {
 	close(client.release)
 	select {
 	case prompt := <-delivered:
-		if prompt.ID == "" || string(prompt.Context) != string(raw) || !strings.Contains(prompt.Text, "後から届く結果") || strings.Contains(prompt.Text, resultInstructions) {
+		if prompt.Record.ID == "" || prompt.ModelHandling != types.ModelHandlingAddToContext || prompt.Record.Metadata["context"] != `{"automation_id":"job-1","future":[1,true]}` || !strings.Contains(prompt.Record.Text, "後から届く結果") || strings.Contains(prompt.Record.Text, resultInstructions) {
 			t.Fatal(prompt)
 		}
 	case <-time.After(time.Second):

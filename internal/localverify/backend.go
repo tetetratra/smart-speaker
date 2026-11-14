@@ -86,6 +86,8 @@ func (b *Backend) realtime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.Close(websocket.StatusNormalClosure, "")
+	// ツールの一覧を含むセッション設定は既定の上限（32KiB）を超えるので、本物の API と同じく大きめに受け付ける。
+	c.SetReadLimit(1 << 20)
 	b.mu.Lock()
 	b.conn = c
 	b.mu.Unlock()

@@ -13,8 +13,8 @@ import (
 )
 
 func TestAgentEventsAPI(t *testing.T) {
-	var delivered []types.InboundMessage
-	service := agentbridge.NewService(agentbridge.NewClient("http://bridge.invalid", "token"), func(_ context.Context, p types.InboundMessage) error {
+	var delivered []types.ConversationInput
+	service := agentbridge.NewService(agentbridge.NewClient("http://bridge.invalid", "token"), func(_ context.Context, p types.ConversationInput) error {
 		delivered = append(delivered, p)
 		return nil
 	})
@@ -62,7 +62,7 @@ func TestAgentEventsAPI(t *testing.T) {
 
 func TestAgentEventsIngressFailureIsRetryable(t *testing.T) {
 	calls := 0
-	service := agentbridge.NewService(nil, func(context.Context, types.InboundMessage) error {
+	service := agentbridge.NewService(nil, func(context.Context, types.ConversationInput) error {
 		calls++
 		if calls == 1 {
 			return errors.New("一時的な受付失敗")

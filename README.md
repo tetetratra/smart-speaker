@@ -48,7 +48,7 @@ docker compose up --build
 
 ## コンポーネントとデータの流れ
 
-細い実線はイベントと Inbound、太線は外部との通信、点線はストアの読み書きを表します。
+細い実線はイベントと、グラフの外から gateway への受け渡し（Deliver）、太線は外部との通信、点線はストアの読み書きを表します。
 
 ### 音声の流れ
 
@@ -124,6 +124,7 @@ flowchart LR
     rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
     scheduler("予約ジョブ実行<br/>automations")
+    gateway["gateway<br/>グラフの外との境目"]
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
 
@@ -138,8 +139,9 @@ flowchart LR
     manager --->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
-    scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager
-    tool -->|"Inbound<br/>Web検索の結果"| manager
+    scheduler -->|"Deliver<br/>予約ジョブの実行結果・Web検索の結果"| gateway
+    tool -->|"Deliver<br/>Web検索の結果"| gateway
+    gateway -->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼"| manager
     manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
@@ -156,7 +158,7 @@ flowchart LR
 flowchart LR
     tool["toolcaller<br/>ツール実行"]
     scheduler("予約ジョブ実行<br/>automations")
-    manager["conversationmanager<br/>会話管理"]
+    gateway["gateway<br/>グラフの外との境目"]
 
     subgraph toolset["ツール"]
         webSearchTool["web_search<br/>Web検索"]
@@ -189,7 +191,7 @@ flowchart LR
 
     webSearchTool <==>|"HTTPS<br/>Web検索"| openaiResponses
     claudeCodeTool <==>|"HTTP<br/>依頼・承認・取消・参照"| agentBridge
-    agentBridge -->|"HTTP・Inbound<br/>Claude Codeの通知"| manager
+    agentBridge -->|"HTTP・Deliver<br/>Claude Codeの通知"| gateway
     calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
     calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
     calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth

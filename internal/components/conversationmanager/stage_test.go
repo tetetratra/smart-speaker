@@ -47,7 +47,7 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 			raw = json.RawMessage(`{"delivery":"history_only","automation_id":"job"}`)
 			want = types.ModelHandlingAddToContext
 		}
-		e := InputEvent(types.InboundMessage{ID: "result", Source: "tool/web_search", Title: "天気", Text: "検索結果", Context: raw})
+		e := types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "result", Source: "tool/web_search", Title: "天気", Text: "検索結果"}, raw)}
 		s.handle(context.Background(), e)
 		s.handle(context.Background(), e)
 		forwarded := nextForwarded(s)
@@ -74,7 +74,7 @@ func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
 	s := testStage(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	s.handle(ctx, InputEvent(types.InboundMessage{ID: "request", Text: "通常入力として渡す依頼"}))
+	s.handle(ctx, types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "request", Text: "通常入力として渡す依頼"}, nil)})
 	done, returned := make(chan struct{}), make(chan struct{})
 	go func() {
 		s.handle(ctx, types.EventConversationHistorySync{Epoch: 1, Done: done})
@@ -115,7 +115,7 @@ func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {
 	var keep map[string]bool
 	s.cfg.OnIdle = func(_ context.Context, unused map[string]bool) { keep = unused }
 	for _, id := range []string{"used", "unused"} {
-		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: id, Text: id}))
+		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: id, Text: id}, nil)})
 		<-s.node.Downstream
 	}
 	s.handle(context.Background(), types.EventConversationRecordsUsed{IDs: []string{"used"}})

@@ -22,11 +22,11 @@ const MaxDuration = 30 * time.Second
 type Runner struct {
 	execute func(context.Context, types.ToolRequest) types.ToolResultRecord
 	title   func(string, json.RawMessage) string
-	deliver func(context.Context, types.InboundMessage) error
+	deliver func(context.Context, types.ConversationInput) error
 	timeout time.Duration
 }
 
-func New(execute func(context.Context, types.ToolRequest) types.ToolResultRecord, deliver func(context.Context, types.InboundMessage) error) *Runner {
+func New(execute func(context.Context, types.ToolRequest) types.ToolResultRecord, deliver func(context.Context, types.ConversationInput) error) *Runner {
 	return &Runner{execute: execute, deliver: deliver, timeout: MaxDuration}
 }
 
@@ -57,15 +57,14 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 	runID := uuid.NewString()
 	var deliveryErr error
 	metadata := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID}
-	publish := func(ctx context.Context, message types.InboundMessage, meta map[string]string) error {
+	publish := func(ctx context.Context, record types.ConversationRecord, meta map[string]string) error {
 		if r.deliver == nil {
 			return fmt.Errorf("履歴の送信経路がありません")
 		}
 		raw, _ := json.Marshal(meta)
-		message.ID = runID + "/" + message.ID
-		message.Source = Source
-		message.Context = raw
-		err := r.deliver(ctx, message)
+		record.ID = runID + "/" + record.ID
+		record.Source = Source
+		err := r.deliver(ctx, types.ExternalInput(record, raw))
 		if err != nil && deliveryErr == nil {
 			deliveryErr = err
 		}
@@ -76,7 +75,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		if runErr != nil {
 			text = "[予約ジョブ失敗: " + name + "] " + runErr.Error()
 		}
-		if err := publish(parent, types.InboundMessage{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata); err != nil && runErr == nil {
+		if err := publish(parent, types.ConversationRecord{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata); err != nil && runErr == nil {
 			runErr = err
 		}
 	}()
@@ -120,7 +119,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 		}
 		callID := uuid.NewString()
 		meta := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID, "call_id": callID, "tool_name": name}
-		if err := publish(ctx, types.InboundMessage{ID: "call/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw),
+		if err := publish(ctx, types.ConversationRecord{ID: "call/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw),
 			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw)}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
@@ -142,7 +141,7 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 			}
 		}
 		historyRaw, _ := json.Marshal(historyOut)
-		if err := publish(parent, types.InboundMessage{ID: "result/" + callID, Role: types.RoleToolResult, Text: name + ": " + string(historyRaw),
+		if err := publish(parent, types.ConversationRecord{ID: "result/" + callID, Role: types.RoleToolResult, Text: name + ": " + string(historyRaw),
 			ToolName: name, CallID: callID, Output: string(historyRaw)}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
@@ -159,8 +158,8 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 			panic(vm.NewGoError(fmt.Errorf("通知の送信経路がありません")))
 		}
 		reminderContext, _ := json.Marshal(map[string]string{"automation_id": id, "run_id": runID})
-		prompt := types.InboundMessage{Context: reminderContext, ID: uuid.NewString(), Source: Source, Title: name, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
-		if err := r.deliver(ctx, prompt); err != nil {
+		prompt := types.ConversationRecord{ID: uuid.NewString(), Source: Source, Title: name, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
+		if err := r.deliver(ctx, types.ExternalInput(prompt, reminderContext)); err != nil {
 			if deliveryErr == nil {
 				deliveryErr = err
 			}
