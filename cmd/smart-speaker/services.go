@@ -8,6 +8,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
@@ -15,6 +16,7 @@ import (
 
 // runtimeServices はHTTP APIと会話処理で共有する状態をまとめる。
 type runtimeServices struct {
+	UserLocation *userlocation.Store
 	AppContext   context.Context
 	Runner       *script.Runner
 	ToolSchemas  []any

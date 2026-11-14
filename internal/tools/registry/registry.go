@@ -5,10 +5,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
+	locationtool "github.com/tetetratra/smart-speaker/internal/tools/functions/userlocation"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
@@ -32,6 +34,7 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
+	UserLocation       *userlocation.Store
 	AppContext         context.Context
 	WakeMode           *wakemode.Store
 	Automations        *automations.Service
@@ -74,6 +77,10 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
+	}
+	if cfg.UserLocation != nil {
+		t := &locationtool.Tool{Store: cfg.UserLocation}
+		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {

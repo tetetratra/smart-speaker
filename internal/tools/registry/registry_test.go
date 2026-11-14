@@ -2,6 +2,7 @@ package registry
 
 import (
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"path/filepath"
 	"testing"
 
@@ -204,4 +205,20 @@ func definitionByName(r *Registry, name string) (map[string]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func TestRegistryUserLocation(t *testing.T) {
+	reg := New(Config{UserLocation: &userlocation.Store{}})
+	assertRegistered(t, reg, "get_current_location")
+	def, ok := definitionByName(reg, "get_current_location")
+	if !ok {
+		t.Fatal("現在地ツールの定義がありません")
+	}
+	params := def["parameters"].(map[string]any)
+	if params["additionalProperties"] != false || len(params["properties"].(map[string]any)) != 0 || len(params["required"].([]string)) != 0 {
+		t.Fatalf("引数なしの定義ではありません: %#v", params)
+	}
+	if _, ok := New(Config{}).Handlers()["get_current_location"]; ok {
+		t.Fatal("保存先なしで登録されました")
+	}
 }
