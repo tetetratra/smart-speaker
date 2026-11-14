@@ -86,21 +86,21 @@ flowchart LR
     output ==>|"WebRTC<br/>応答音声"| browser
     wake <==>|"HTTP<br/>文字起こし"| localStt
     rt <==>|"WebSocket<br/>会話セッション"| openaiRealtime
-    chat -->|"RTCSignal<br/>WebRTC制御"| peer
-    peer -->|"RTCSignal<br/>WebRTC制御"| chat
-    chat -->|"RTCSignal<br/>WebRTC制御"| output
-    peer -->|"RTCPeerAudioFrame<br/>マイク音声フレーム<br/>RTCPeerOutputSink<br/>音声送信先"| wake
-    peer -->|"RTCPeerOutputSink<br/>音声送信先"| output
-    wake -->|"RTCPeerAudioFrame<br/>マイク音声フレーム<br/>RTCPeerOutputSink<br/>音声送信先<br/>LocalWakeUtterance<br/>呼びかけ判定済み発話"| rt
-    wake -->|"WakeTranscription<br/>呼びかけ文字起こし結果"| chat
-    rt -->|"ResponseText<br/>応答テキスト"| segment
-    segment -->|"TimelineItem<br/>発話項目<br/>AgentTimelineEnd<br/>応答終了"| ttsNode
-    ttsNode -->|"PlayableSpeech<br/>合成音声<br/>AgentTimelineEnd<br/>応答終了"| frame
-    frame -->|"AudioFrame<br/>音声フレーム"| pace
-    pace -->|"AudioFrame<br/>音声フレーム"| output
-    output -->|"AudioSent<br/>音声送信済み"| rt
-    output -->|"AudioSent<br/>音声送信済み"| chat
-    rt -->|"GenerationChanged<br/>応答世代の変更<br/>RealtimeOutput<br/>会話内容の表示<br/>SpeechStart<br/>発話開始<br/>SpeechEnd<br/>発話終了<br/>RealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
+    chat -->|"EventRTCSignal<br/>WebRTC制御"| peer
+    peer -->|"EventRTCSignal<br/>WebRTC制御"| chat
+    chat -->|"EventRTCSignal<br/>WebRTC制御"| output
+    peer -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先"| wake
+    peer -->|"EventRTCPeerOutputSink<br/>音声送信先"| output
+    wake -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先<br/>EventLocalWakeUtterance<br/>呼びかけ判定済み発話"| rt
+    wake -->|"EventWakeTranscription<br/>呼びかけ文字起こし結果"| chat
+    rt -->|"EventResponseText<br/>応答テキスト"| segment
+    segment -->|"EventTimelineItem<br/>発話項目<br/>EventAgentTimelineEnd<br/>応答終了"| ttsNode
+    ttsNode -->|"EventPlayableSpeech<br/>合成音声<br/>EventAgentTimelineEnd<br/>応答終了"| frame
+    frame -->|"EventAudioFrame<br/>音声フレーム"| pace
+    pace -->|"EventAudioFrame<br/>音声フレーム"| output
+    output -->|"EventAudioSent<br/>音声送信済み"| rt
+    output -->|"EventAudioSent<br/>音声送信済み"| chat
+    rt -->|"EventGenerationChanged<br/>応答世代の変更<br/>EventRealtimeOutput<br/>会話内容の表示<br/>EventSpeechStart<br/>発話開始<br/>EventSpeechEnd<br/>発話終了<br/>EventRealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
     ttsNode <==>|"HTTPS<br/>音声合成"| elevenLabs
     ttsNode <==>|"HTTP<br/>音声合成"| voicevox
     rt <-.->|"世代の更新・判定"| generationStore
@@ -135,17 +135,17 @@ flowchart LR
     end
 
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"ConversationInput{ModelHandling: AlreadyKnown}<br/>会話の記録<br/>ConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>ConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/>ConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期<br/>ConversationSignal{ConversationIdle}<br/>無操作の継続<br/>ConversationSignal{ConversationRecordsUsed}<br/>参照済みの外部記録"| manager
-    manager --->|"ConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>ConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/>ConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期"| rt
-    rt -->|"ToolRequest<br/>ツール実行依頼"| tool
-    tool --->|"ConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
+    rt -->|"EventConversationInput{ModelHandling: AlreadyKnown}<br/>会話の記録<br/>EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期<br/>EventConversationSignal{ConversationIdle}<br/>無操作の継続<br/>EventConversationSignal{ConversationRecordsUsed}<br/>参照済みの外部記録"| manager
+    manager --->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期"| rt
+    rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
+    tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager
     tool -->|"Inbound<br/>Web検索の結果"| manager
     manager <-.->|"記録、会話終了時に取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"会話終了時の抽出結果"| memoryStore
-    manager -->|"ConversationRecordChanged<br/>会話でない記録の追加・更新"| chat
+    manager -->|"EventConversationRecordChanged<br/>会話でない記録の追加・更新"| chat
     historyStore -.->|"開いた直後の会話でない記録"| chat
     chat ==>|"WebSocket<br/>ホワイトボード用の記録（開いた直後は一覧、以降は差分）"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
