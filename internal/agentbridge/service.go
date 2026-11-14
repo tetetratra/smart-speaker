@@ -13,8 +13,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// Deliver は通知をRealtimeの会話へ差し込む。main.go で InboundMessage のチャネルにつなぐ。
-type Deliver func(ctx context.Context, prompt types.InboundMessage) error
+// Deliver は通知を会話へ届ける。main.go で gateway につなぐ。
+type Deliver func(ctx context.Context, input types.ConversationInput) error
 
 type pendingPermission struct {
 	taskID    string
@@ -60,7 +60,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.seen[event.EventID] {
 		return nil
 	}
-	prompt := types.InboundMessage{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Title: event.Title, Context: append(json.RawMessage(nil), event.Context...)}
+	prompt := types.ConversationRecord{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Title: event.Title}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()
@@ -83,7 +83,7 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 		prompt.Role = types.RoleToolResult
 		prompt.Text = "[過去のClaude Codeの通知]\n" + dataNotice + "\n" + encode(event)
 	}
-	if err := s.deliver(ctx, prompt); err != nil {
+	if err := s.deliver(ctx, types.ExternalInput(prompt, event.Context)); err != nil {
 		return err
 	}
 	s.rememberEvent(event.EventID)

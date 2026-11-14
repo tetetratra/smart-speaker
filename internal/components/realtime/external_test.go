@@ -64,15 +64,15 @@ func TestContextAdditionPrecedesResponseRequest(t *testing.T) {
 }
 
 func TestDisconnectedAdditionIsRestoredAndRequestRunsWithoutPeer(t *testing.T) {
-	inbound := make(chan types.InboundMessage, 2)
+	inbound := make(chan types.ConversationInput, 2)
 	r := createRig(t, "__offline__", inbound)
-	inbound <- types.InboundMessage{ID: "stored", Text: "外出した", Context: json.RawMessage(`{"delivery":"history_only"}`)}
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "stored", Text: "外出した"}, json.RawMessage(`{"delivery":"history_only"}`))
 	select {
 	case <-r.connections:
 		t.Fatal("情報追加だけで接続しました")
 	case <-time.After(50 * time.Millisecond):
 	}
-	inbound <- types.InboundMessage{ID: "request", Text: "今の場所を教えて", Source: "automation"}
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "request", Text: "今の場所を教えて", Source: "automation"}, nil)
 	select {
 	case r.conn = <-r.connections:
 	case <-r.ctx.Done():
@@ -93,9 +93,9 @@ func TestDisconnectedAdditionIsRestoredAndRequestRunsWithoutPeer(t *testing.T) {
 }
 
 func TestConnectedAdditionIsImmediateAndDoesNotRequestResponse(t *testing.T) {
-	inbound := make(chan types.InboundMessage, 1)
+	inbound := make(chan types.ConversationInput, 1)
 	r := newRigWithInbound(t, inbound)
-	inbound <- types.InboundMessage{ID: "context", Text: "照明を消した", Context: json.RawMessage(`{"delivery":"history_only"}`)}
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "context", Text: "照明を消した"}, json.RawMessage(`{"delivery":"history_only"}`))
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if !strings.Contains(item["content"].([]any)[0].(map[string]any)["text"].(string), "照明を消した") {
 		t.Fatal(item)
@@ -108,11 +108,11 @@ func TestConnectedAdditionIsImmediateAndDoesNotRequestResponse(t *testing.T) {
 }
 
 func TestReconnectDoesNotReplayTrimmedContext(t *testing.T) {
-	inbound := make(chan types.InboundMessage, 3)
+	inbound := make(chan types.ConversationInput, 3)
 	r := createRig(t, "__offline__", inbound)
-	inbound <- types.InboundMessage{ID: "old", Text: strings.Repeat("古い外部情報", 5000), Context: json.RawMessage(`{"delivery":"history_only"}`)}
-	inbound <- types.InboundMessage{ID: "recent", Text: "直近の結果", Context: json.RawMessage(`{"delivery":"history_only"}`)}
-	inbound <- types.InboundMessage{ID: "request", Text: "短く答えて"}
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "old", Text: strings.Repeat("古い外部情報", 5000)}, json.RawMessage(`{"delivery":"history_only"}`))
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "recent", Text: "直近の結果"}, json.RawMessage(`{"delivery":"history_only"}`))
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "request", Text: "短く答えて"}, nil)
 	select {
 	case r.conn = <-r.connections:
 	case <-r.ctx.Done():

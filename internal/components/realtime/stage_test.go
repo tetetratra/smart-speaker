@@ -39,7 +39,7 @@ type rig struct {
 func newRig(t *testing.T, options ...func(*Config)) *rig {
 	return newRigWithInitialText(t, "", options...)
 }
-func newRigWithInbound(t *testing.T, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
+func newRigWithInbound(t *testing.T, inbound <-chan types.ConversationInput, options ...func(*Config)) *rig {
 	return createRig(t, "", inbound, options...)
 }
 func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Config)) *rig {
@@ -54,7 +54,7 @@ func newTestHistory(t *testing.T) *conversationhistory.Store {
 	return history
 }
 
-func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
+func createRig(t *testing.T, initialText string, inbound <-chan types.ConversationInput, options ...func(*Config)) *rig {
 	t.Helper()
 	// 会話管理のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
 	dir, err := os.MkdirTemp("", "realtime-rig")
@@ -104,10 +104,24 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		t.Fatal(err)
 	}
 	r.node = node
-	manager := conversationmanager.NewStage(conversationmanager.Config{Inbound: inbound, History: r.history})
+	manager := conversationmanager.NewStage(conversationmanager.Config{History: r.history})
 	managerQueue := eventqueue.New[types.Event](nil)
 	r.managerQueue = managerQueue
 	go manager.Run(ctx)
+	// 外からの入力は、gateway と同じく会話管理へイベントとして届ける。
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case input, ok := <-inbound:
+				if !ok {
+					return
+				}
+				managerQueue.Push(types.EventConversationInput{ConversationInput: input})
+			}
+		}
+	}()
 	go func() {
 		for {
 			e, ok := managerQueue.Pop(ctx)

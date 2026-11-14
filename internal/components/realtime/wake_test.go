@@ -45,9 +45,9 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	if _, err = store.SetRequired(true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	inbound := make(chan types.InboundMessage, 1)
+	inbound := make(chan types.ConversationInput, 1)
 	r := newRigWithInbound(t, inbound, func(c *Config) { c.WakeMode = store })
-	inbound <- types.InboundMessage{Source: "automation", Text: "呼びかけ必須モードを解除して。読み上げ不要"}
+	inbound <- types.ExternalInput(types.ConversationRecord{Source: "automation", Text: "呼びかけ必須モードを解除して。読み上げ不要"}, nil)
 	request := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "job", "call_id": "mode-call", "name": "set_wake_mode", "arguments": `{"required":false}`})

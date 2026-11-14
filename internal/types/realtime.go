@@ -1,7 +1,6 @@
 package types
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -90,16 +89,4 @@ type WakeTranscription struct {
 	Awake bool
 	// ErrorはSTTの失敗内容。成功したときは空。
 	Error string
-}
-
-// InboundMessage は会話の外からモデルへ届ける、送り元で組み立て済みの文章。
-type InboundMessage struct {
-	Title   string
-	ID      string
-	Role    string
-	Context json.RawMessage
-	Source  string
-	Text    string
-	// ツールの呼び出しと結果を届けるときの表示用の項目。
-	ToolName, CallID, Arguments, Output string
 }

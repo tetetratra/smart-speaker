@@ -16,6 +16,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
+	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
@@ -67,17 +68,10 @@ func main() {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
 	services := runtimeServices{UserLocation: &userlocation.Store{}, PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
-	inbound := make(chan types.InboundMessage, 100)
-	services.Inbound = inbound
-	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
-	services.Deliver = func(ctx context.Context, prompt types.InboundMessage) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case inbound <- prompt:
-			return nil
-		}
-	}
+	// 会話の外からの入力（予約ジョブ・Claude Codeの通知・Web検索の結果）は、gateway を通ってグラフへ入る。
+	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
+	services.Gateway = gateway.New()
+	services.Deliver = services.Gateway.Deliver
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
 		return services.Runner.Run(ctx, delivery.ID, delivery.Name, delivery.Script)
 	})
@@ -145,11 +139,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output *graph.Stage
+	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output, gateway *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output, s.gateway}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -207,7 +201,12 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore, Inbound: services.Inbound,
+	gw := services.Gateway
+	if gw == nil {
+		gw = gateway.New()
+	}
+	stages.gateway = gw.Stage()
+	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore,
 		OnIdle: func(ctx context.Context, keep map[string]bool) {
 			memoryCreatorHook.MemorizeOld(ctx, historyStore, keep)
 		},
@@ -268,7 +267,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 }
 
 // newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
-func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver func(context.Context, types.InboundMessage) error) *agentbridge.Service {
+func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver agentbridge.Deliver) *agentbridge.Service {
 	if cfg.URL == "" || cfg.Token == "" {
 		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
 		return nil
@@ -306,6 +305,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	manager := add(s.manager)
 	connect(g, rt, manager, types.EventConversationInput{}, types.EventConversationHistorySync{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
 	connect(g, manager, rt, types.EventConversationInput{}, types.EventConversationHistorySync{})
+	connect(g, add(s.gateway), manager, types.EventConversationInput{})
 	connect(g, manager, chat, types.EventConversationRecordChanged{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})

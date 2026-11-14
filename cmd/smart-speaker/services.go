@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
@@ -26,9 +27,10 @@ type runtimeServices struct {
 	// PlaybackVolume は全端末で共通の再生音量。画面とツールの両方が変える。
 	PlaybackVolume *playbackvolume.Store
 	Automations    *automations.Service
-	Inbound        <-chan types.InboundMessage
-	// Deliver は Inbound へ1件送る。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
-	Deliver func(context.Context, types.InboundMessage) error
+	// Gateway はグラフの外とグラフの境目。nil なら buildStages で作る。
+	Gateway *gateway.Gateway
+	// Deliver は Gateway を通して会話へ1件届ける。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
+	Deliver func(context.Context, types.ConversationInput) error
 	TTS     *tts.Selector
 	// History は会話履歴。会話管理が記録し、realtime と画面連携が直接読む。nil なら buildStages で作る。
 	History *conversationhistory.Store
