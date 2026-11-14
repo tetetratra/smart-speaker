@@ -21,6 +21,9 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)
+	if services.PlaybackVolume != nil {
+		wschat.RegisterPlaybackVolume(mux, services.PlaybackVolume)
+	}
 	registerAutomationsAPI(mux, services.Automations)
 	registerAgentEventsAPI(mux, services.ClaudeCode, cfg.AgentBridge.Token)
 	registerWebUI(mux, cfg.WebDistDir)

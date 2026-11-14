@@ -88,7 +88,6 @@ flowchart LR
     rt <==>|"WebSocket<br/>会話セッション"| openaiRealtime
     chat -->|"EventRTCSignal<br/>WebRTC制御"| peer
     peer -->|"EventRTCSignal<br/>WebRTC制御"| chat
-    chat -->|"EventRTCSignal<br/>WebRTC制御"| output
     peer -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先"| wake
     peer -->|"EventRTCPeerOutputSink<br/>音声送信先"| output
     wake -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先<br/>EventLocalWakeUtterance<br/>呼びかけ判定済み発話"| rt

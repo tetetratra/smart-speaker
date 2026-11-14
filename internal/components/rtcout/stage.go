@@ -18,7 +18,7 @@ type Config struct{}
 // NewStage は送信時刻の調整を終えた一フレームだけを圧縮・送信する。
 // 待機音声を内部に蓄積せず、受け取り直後の世代フィルターを有効にする。
 func NewStage(cfg Config) (*graph.Stage, error) {
-	s := &stage{sinks: map[string]*peerSink{}, gains: map[string]float64{}}
+	s := &stage{sinks: map[string]*peerSink{}}
 	s.node = &graph.Stage{Name: "rtcout", Upstream: make(chan types.Event), Downstream: make(chan types.Event)}
 	s.node.Run = s.run
 	s.node.CloseFn = func() error { close(s.node.Upstream); return nil }
@@ -28,14 +28,12 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 type stage struct {
 	node  *graph.Stage
 	sinks map[string]*peerSink
-	gains map[string]float64
 }
 
 type peerSink struct {
 	writer       types.RTCPeerOutputWriter
 	encoder      *opus.Encoder
 	opusChannels int
-	gain         float64
 }
 
 func (s *stage) run(ctx context.Context) {
@@ -49,9 +47,6 @@ func (s *stage) run(ctx context.Context) {
 		case types.EventRTCPeerOutputSink:
 			p := ev.RTCPeerOutputSink
 			s.handlePeerOutputSink(p)
-		case types.EventRTCSignal:
-			p := ev.RTCSignal
-			s.handleVolume(p)
 		case types.EventAudioFrame:
 			p := ev.AudioFrame
 			if !s.sendFrame(p) {

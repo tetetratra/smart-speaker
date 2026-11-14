@@ -6,6 +6,7 @@ import { Whiteboard, type HistoryEntry } from './Whiteboard'
 import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
+import { defaultPlaybackVolumeLevel, playbackVolumeLevels, usePlaybackVolume, type PlaybackVolumeLevel } from './playbackVolume'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
 
@@ -39,8 +40,6 @@ const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const serverEventLogLimit = 1000
 
-type PlaybackVolumeLevel = 'mute' | 'quiet' | 'low' | 'normal' | 'boost'
-
 const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: number }> = {
   mute: { label: '0倍', gain: 0 },
   quiet: { label: '0.3倍', gain: 0.3 },
@@ -48,8 +47,6 @@ const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: 
   normal: { label: '1倍', gain: 1.0 },
   boost: { label: '1.5倍', gain: 1.5 },
 }
-const playbackVolumeLevels: PlaybackVolumeLevel[] = ['mute', 'quiet', 'low', 'normal', 'boost']
-const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'boost'
 
 const liveRootStyle = `
   :root {
@@ -647,7 +644,7 @@ function App() {
   const [speechDetectStatus, setSpeechDetectStatus] = useState('待機中')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
-  const [playbackVolumeLevel, setPlaybackVolumeLevel] = useState<PlaybackVolumeLevel>(defaultPlaybackVolumeLevel)
+  const [playbackVolumeLevel, setPlaybackVolumeLevel] = usePlaybackVolume(backendURL)
   const [whiteboardRecords, setWhiteboardRecords] = useState<Map<string, WhiteboardRecord>>(() => new Map())
   const toolEntries = useMemo(() => historyEntries(whiteboardRecords.values()), [whiteboardRecords])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
@@ -940,8 +937,6 @@ function App() {
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState
       if (state === 'connected') {
-        // 音量はWeb Audio側だけで調整し、サーバーとの二重増幅を避ける。
-        ws.send({ type: 'webrtc.volume', gain: 1 })
         setRtcStatus('接続済み')
       } else if (state === 'connecting') {
         setRtcStatus('接続中')

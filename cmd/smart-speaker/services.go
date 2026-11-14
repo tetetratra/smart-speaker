@@ -8,6 +8,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
@@ -22,8 +23,10 @@ type runtimeServices struct {
 	ToolSchemas  []any
 	ToolHandlers map[string]tools.Handler
 	WakeMode     *wakemode.Store
-	Automations  *automations.Service
-	Inbound      <-chan types.InboundMessage
+	// PlaybackVolume は全端末で共通の再生音量。画面とツールの両方が変える。
+	PlaybackVolume *playbackvolume.Store
+	Automations    *automations.Service
+	Inbound        <-chan types.InboundMessage
 	// Deliver は Inbound へ1件送る。予約ジョブ・Claude Codeの通知・Web検索の結果が使う。
 	Deliver func(context.Context, types.InboundMessage) error
 	TTS     *tts.Selector

@@ -5,11 +5,13 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
+	volumetool "github.com/tetetratra/smart-speaker/internal/tools/functions/playbackvolume"
 	locationtool "github.com/tetetratra/smart-speaker/internal/tools/functions/userlocation"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
@@ -37,6 +39,7 @@ type Config struct {
 	UserLocation       *userlocation.Store
 	AppContext         context.Context
 	WakeMode           *wakemode.Store
+	PlaybackVolume     *playbackvolume.Store
 	Automations        *automations.Service
 	Memory             *memorystate.Store
 	ClaudeCode         *agentbridge.Service
@@ -80,6 +83,10 @@ func New(cfg Config) *Registry {
 	}
 	if cfg.UserLocation != nil {
 		t := &locationtool.Tool{Store: cfg.UserLocation}
+		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
+	}
+	if cfg.PlaybackVolume != nil {
+		t := &volumetool.Tool{Store: cfg.PlaybackVolume}
 		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.WakeMode != nil {
