@@ -612,6 +612,7 @@ function isScrolledToBottom(el: HTMLElement): boolean {
 }
 
 type LiveViewProps = {
+  visible: boolean
   connected: boolean
   connecting: boolean
   speechDetectStatus: string
@@ -1275,6 +1276,7 @@ function App() {
     <>
       <div style={{ display: uiMode === 'app' ? 'block' : 'none' }}>
         <LiveView
+          visible={uiMode === 'app'}
           connected={connected}
           connecting={busy}
           speechDetectStatus={speechDetectStatus}
@@ -1829,7 +1831,7 @@ type TTSSelection = {
   providers: { id: string; label: string; available: boolean }[]
 }
 
-function TTSControl() {
+function TTSControl({ visible }: { visible: boolean }) {
   const [selection, setSelection] = useState<TTSSelection | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -1855,14 +1857,10 @@ function TTSControl() {
     }
   }, [])
   useEffect(() => {
-    const refresh = () => { void request() }
-    refresh()
-    window.addEventListener('focus', refresh)
-    return () => {
-      window.removeEventListener('focus', refresh)
-      requestID.current++
-    }
-  }, [request])
+    if (!visible) return
+    void request()
+    return () => { requestID.current++ }
+  }, [request, visible])
   return (
     <div style={{ display: 'grid', gap: 4, fontSize: 12, minWidth: 0 }}>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
@@ -1973,7 +1971,7 @@ function LiveView(props: LiveViewProps) {
                   <div className="live-status-value">{sttStatus}</div>
                 </div>
               </div>
-              <TTSControl />
+              <TTSControl visible={props.visible} />
               <div className="live-playback-slider-row">
                 <span className="live-playback-slider-label">再生音量</span>
                 <input

@@ -61,12 +61,13 @@ type Snapshot struct {
 func (s Snapshot) Gated() bool { return s.Required && !s.Awake }
 
 type Store struct {
-	mu         sync.Mutex
-	path       string
-	config     Config
-	last       *Decision
-	revision   uint64
-	awakeUntil time.Time
+	mu          sync.Mutex
+	path        string
+	config      Config
+	last        *Decision
+	revision    uint64
+	awakeUntil  time.Time
+	subscribers map[chan struct{}]struct{}
 }
 
 // NewStoreは保存済みの必須モードを読み込み、判定の設定には引数のsettingsを使う。
@@ -181,6 +182,7 @@ func (s *Store) SetRequired(required bool, now time.Time) (Snapshot, error) {
 	s.last = nil
 	s.awakeUntil = time.Time{}
 	s.revision++
+	s.notifyLocked()
 	return s.snapshotLocked(now), nil
 }
 
@@ -212,6 +214,7 @@ func (s *Store) Evaluate(text string, confidence float64, revision uint64, faile
 	}
 	if d.Accepted {
 		s.awakeUntil = now.Add(s.config.ConversationTimeout)
+		s.notifyLocked()
 	}
 	return d
 }
@@ -223,6 +226,7 @@ func (s *Store) Wake(now time.Time) Snapshot {
 	defer s.mu.Unlock()
 	if s.config.Required {
 		s.awakeUntil = now.Add(s.config.ConversationTimeout)
+		s.notifyLocked()
 	}
 	return s.snapshotLocked(now)
 }
@@ -233,6 +237,7 @@ func (s *Store) Touch(now time.Time) {
 	defer s.mu.Unlock()
 	if s.config.Required && now.Before(s.awakeUntil) {
 		s.awakeUntil = now.Add(s.config.ConversationTimeout)
+		s.notifyLocked()
 	}
 }
 
@@ -278,4 +283,30 @@ func similarity(x, b []rune) float64 {
 		prev = next
 	}
 	return 1 - float64(prev[len(b)])/float64(max(len(x), len(b)))
+}
+
+// Subscribeは状態の変更を通知する。購読後にSnapshotを読むことで初期取得中の変更も取りこぼさない。
+// 通知が重なった場合はまとめ、受信側で最新の状態を取得する。
+func (s *Store) Subscribe() (<-chan struct{}, func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.subscribers == nil {
+		s.subscribers = make(map[chan struct{}]struct{})
+	}
+	changed := make(chan struct{}, 1)
+	s.subscribers[changed] = struct{}{}
+	return changed, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.subscribers, changed)
+	}
+}
+
+func (s *Store) notifyLocked() {
+	for changed := range s.subscribers {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
 }

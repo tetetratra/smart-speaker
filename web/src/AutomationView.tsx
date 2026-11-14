@@ -75,8 +75,7 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
       finally { loading = false }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 5000)
-    return () => { controller.abort(); window.clearInterval(timer) }
+    return () => controller.abort()
   }, [visible, backendURL, revision])
   const mutate = async (method: string, id?: string, body?: unknown) => {
     setPending(true)

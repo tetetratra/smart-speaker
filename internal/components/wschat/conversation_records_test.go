@@ -81,7 +81,7 @@ func TestConversationRecordsOnlySendDiff(t *testing.T) {
 	// 後から開いた画面にも過去の記録を再送せず、次の差分だけを送る。
 	third := connect()
 	result.ID = "next-result"
-	stage.Upstream <- types.Event{Kind: types.EventConversationRecordChanged, Payload: result}
+	stage.Upstream <- types.EventConversationRecordChanged{ConversationRecord: result}
 	for _, conn := range []*websocket.Conn{first, second, third} {
 		records := read(conn)
 		if len(records) != 1 || records[0].ID != "next-result" || records[0].Output != long {
