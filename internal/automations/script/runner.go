@@ -75,14 +75,15 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 		}
 		return err
 	}
+	// スクリプトそのものが失敗したとき（構文エラー・例外・打ち切りなど）だけ、失敗を会話へ知らせる。
+	// 成功したときは、remind やツールの呼び出しと結果の記録で動いたことが分かるので、通知しない。
+	// ツールの失敗はツールの結果の error で分かり、スクリプトは続くので、ここには来ない。
 	defer func() {
-		text := "[予約ジョブ終了: " + name + "] スクリプトの実行が終了しました。非同期処理は継続することがあります。"
-		if runErr != nil {
-			text = "[予約ジョブ失敗: " + name + "] " + runErr.Error()
+		if runErr == nil {
+			return
 		}
-		if err := publish(parent, types.ConversationRecord{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata); err != nil && runErr == nil {
-			runErr = err
-		}
+		text := "[予約ジョブ失敗: " + name + "] " + runErr.Error()
+		_ = publish(parent, types.ConversationRecord{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata)
 	}()
 	program, err := Compile(source)
 	if err != nil {

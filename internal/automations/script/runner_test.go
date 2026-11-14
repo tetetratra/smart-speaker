@@ -42,7 +42,8 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 			t.Fatal("予約の識別情報が引き継がれていません", message)
 		}
 	}
-	if calls != 1 || len(messages) != 4 {
+	// 成功したときは終了の通知を送らないので、ツールの呼び出しと結果、remind の3件になる。
+	if calls != 1 || len(messages) != 3 {
 		t.Fatal(calls, messages)
 	}
 	if call, result := messages[0], messages[1]; call.Record.ToolName != "read" || call.Record.CallID == "" || call.Record.Arguments != `{"count":2}` || result.Record.CallID != call.Record.CallID || strings.Contains(result.Record.Output, "instructions") {
@@ -53,9 +54,6 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	}
 	if strings.Contains(messages[1].Record.Text, "instructions") {
 		t.Fatal("通知用指示が履歴に残りました", messages[1])
-	}
-	if messages[3].Record.ID == "" || messages[3].Record.Role != types.RoleSystem || messages[3].ModelHandling != types.ModelHandlingAddToContext {
-		t.Fatal(messages)
 	}
 }
 
@@ -151,7 +149,8 @@ func TestCaughtDeliveryFailureStillFailsRun(t *testing.T) {
 	}
 }
 
-func TestSuccessfulRunNotifiesOnlyOnce(t *testing.T) {
+// 成功したときは終了の通知を送らない。動いたことはツールの記録で分かる。
+func TestSuccessfulRunSendsNoEndNotification(t *testing.T) {
 	var messages []types.ConversationInput
 	runner := New(func(context.Context, types.ToolRequest) types.ToolResultRecord {
 		return types.ToolResultRecord{Output: json.RawMessage(`{"updated":true}`)}
@@ -168,12 +167,24 @@ func TestSuccessfulRunNotifiesOnlyOnce(t *testing.T) {
 			continue
 		}
 		notifications++
-		if !strings.Contains(message.Record.Text, "予約ジョブ終了") {
-			t.Fatal("終了以外の通知を表示しました", message)
-		}
 	}
-	if notifications != 1 {
-		t.Fatalf("予約の通知が%d件あります", notifications)
+	if notifications != 0 || len(messages) != 2 {
+		t.Fatalf("予約の通知が%d件あります: %v", notifications, messages)
+	}
+}
+
+// スクリプトそのものが失敗したときは、ツールを呼んでいなくても失敗を知らせる。
+func TestScriptFailureIsNotifiedWithoutToolCalls(t *testing.T) {
+	var messages []types.ConversationInput
+	runner := New(nil, func(_ context.Context, message types.ConversationInput) error {
+		messages = append(messages, message)
+		return nil
+	})
+	if err := runner.Run(context.Background(), "job", "失敗確認", `const place = undefined; place.name;`); err == nil {
+		t.Fatal("例外を失敗として返していません")
+	}
+	if len(messages) != 1 || messages[0].Record.Role != types.RoleSystem || messages[0].ModelHandling != types.ModelHandlingAddToContext || !strings.HasPrefix(messages[0].Record.Text, "[予約ジョブ失敗: 失敗確認]") {
+		t.Fatal(messages)
 	}
 }
 
@@ -192,7 +203,7 @@ func TestEventIsAvailableToScript(t *testing.T) {
 	if err := r.RunWithEvent(context.Background(), "id", "名前", `if (event.place === "home") remind("帰宅した");`, json.RawMessage(`{"place":"home"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if len(texts) != 2 || !strings.Contains(texts[0], "帰宅した") {
+	if len(texts) != 1 || !strings.Contains(texts[0], "帰宅した") {
 		t.Fatal(texts)
 	}
 	// 時刻で動いたときは event 変数がない。
