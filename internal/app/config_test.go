@@ -247,28 +247,6 @@ func TestBuildConfigFallsBackOnOutOfRangeNumbers(t *testing.T) {
 	}
 }
 
-// 呼びかけなしで話せる時間は、無操作リセットより短くなければ起動時にエラーにする。
-// 無操作リセットが無効（0）なら比べない。
-func TestBuildConfigRequiresWakeTimeoutShorterThanIdleTimeout(t *testing.T) {
-	for _, content := range []string{
-		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 300\n",
-		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 301\n",
-		"conversation:\n  idle_timeout_seconds: 240\n",
-	} {
-		if _, err := loadFromYAML(t, content, minimalEnv); err == nil {
-			t.Errorf("無操作リセット以上の会話中の時間を受理しました: %q", content)
-		}
-	}
-	for _, content := range []string{
-		"conversation:\n  idle_timeout_seconds: 300\nwake:\n  conversation_timeout_seconds: 299\n",
-		"conversation:\n  idle_timeout_seconds: 0\nwake:\n  conversation_timeout_seconds: 3600\n",
-	} {
-		if _, err := loadFromYAML(t, content, minimalEnv); err != nil {
-			t.Errorf("%q: %v", content, err)
-		}
-	}
-}
-
 // config.sample.yamlがそのままでも、コメントアウトされた項目をすべて有効にしても読み込めることを確かめる。
 // 構造体に無い項目がサンプルに書かれていると、未知のキーとしてエラーになる。
 func TestConfigSampleYAMLIsLoadable(t *testing.T) {

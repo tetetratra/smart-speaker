@@ -3,7 +3,6 @@ package realtime
 import (
 	"context"
 	"encoding/json"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"strings"
 	"testing"
 	"time"
@@ -15,11 +14,11 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func newToolResponseStage() *stage {
+func newToolResponseStage(t *testing.T) *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{
-		cfg:        Config{Generation: gen, History: conversationhistory.NewStore()},
+		cfg:        Config{Generation: gen, History: newTestHistory(t)},
 		node:       &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:  &transport{commands: eventqueue.New[any](nil)},
 		controller: generationcontroller.New(gen), epoch: 1, ready: true,
@@ -59,7 +58,7 @@ func toolServerEvent(s *stage, event any) {
 }
 
 func TestToolInstructionsWaitForCurrentInputCommit(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	toolServerEvent(s, map[string]any{"type": "input_audio_buffer.speech_started", "item_id": "user2"})
 	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"晴れ"}`))
 	popToolCommand(t, s, "conversation.item.create")
@@ -92,7 +91,7 @@ func TestToolInstructionsWaitForCurrentInputCommit(t *testing.T) {
 }
 
 func TestToolInstructionsWaitForActiveResponseAndRepairs(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.active = "ack"
 	s.repairs = map[string]bool{"old-item": true}
 	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"晴れ"}`))
@@ -108,7 +107,7 @@ func TestToolInstructionsWaitForActiveResponseAndRepairs(t *testing.T) {
 
 // 同じ応答で出た別の呼び出しが実行中でも、届いた結果から先に応答する。
 func TestToolResultRespondsWhileOtherCallIsRunning(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.calls["slow"] = &call{epoch: 1, generation: 1}
 	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
 	popToolCommand(t, s, "conversation.item.create")
@@ -119,7 +118,7 @@ func TestToolResultRespondsWhileOtherCallIsRunning(t *testing.T) {
 }
 
 func TestReconnectedToolResultUsesContextAndKeepsInstructions(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.epoch = 2
 	s.ready = false
 	s.awaitingInputCommit = ""
@@ -137,7 +136,7 @@ func TestReconnectedToolResultUsesContextAndKeepsInstructions(t *testing.T) {
 }
 
 func TestToolResultBetweenDisconnectAndReconnectIsRetained(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.epoch = 2
 	s.ready = false
 	transport := s.transport

@@ -49,8 +49,7 @@ openai:
     # endpoint: ""
 
 conversation:
-  # 会話終了（履歴リセット）までの無操作時間（秒）。0 で無効。既定: 1800
-  # 0 以外では wake.conversation_timeout_seconds より長くしてください（短いと起動時にエラーになります）。
+  # 文脈に入らなくなった古い会話履歴を長期メモリ化するまでの無操作時間（秒）。0 で無効。既定: 1800
   # idle_timeout_seconds: 1800
 
 memory:
@@ -114,7 +113,6 @@ wake:
   # energy_threshold: 0.005
 
   # 呼びかけ後に、呼びかけなしで話せる時間（秒）。最後の発話から数えます。0より大きい値。既定: 300
-  # conversation.idle_timeout_seconds が 0 以外なら、それより短くしてください。
   # conversation_timeout_seconds: 300
 
 switchbot:

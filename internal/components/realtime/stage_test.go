@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"nhooyr.io/websocket"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,11 +44,30 @@ func newRigWithInbound(t *testing.T, inbound <-chan types.InboundMessage, option
 func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Config)) *rig {
 	return createRig(t, initialText, nil, options...)
 }
+func newTestHistory(t *testing.T) *conversationhistory.Store {
+	t.Helper()
+	history, err := conversationhistory.NewStore(filepath.Join(t.TempDir(), "conversation_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return history
+}
+
 func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMessage, options ...func(*Config)) *rig {
 	t.Helper()
+	// 会話管理のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
+	dir, err := os.MkdirTemp("", "realtime-rig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	t.Cleanup(cancel)
-	r := &rig{t: t, ctx: ctx, commands: make(chan map[string]any, 100), events: make(chan types.Event, 100), history: conversationhistory.NewStore()}
+	history, err := conversationhistory.NewStore(filepath.Join(dir, "conversation_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &rig{t: t, ctx: ctx, commands: make(chan map[string]any, 100), events: make(chan types.Event, 100), history: history}
 	connected := make(chan *websocket.Conn, 1)
 	r.connections = connected
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -130,7 +150,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				switch e.Kind {
 				case types.EventConversationRecord:
 					managerQueue.Push(e)
-				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed:
+				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
 
@@ -380,21 +400,21 @@ func TestAPIErrorLeavesPendingStateAndStopsOldPlayback(t *testing.T) {
 	}
 	// disconnectで永久待ちを解消し、次回の接続から文脈を復元できる。
 }
-func TestIdleEndNotifiesConversationManagerOnce(t *testing.T) {
+func TestIdleNotifiesConversationManagerOnceWithoutReset(t *testing.T) {
 	ctx := context.Background()
-	s := &stage{cfg: Config{IdleTimeout: time.Millisecond}, lastActivity: time.Now().Add(-time.Second), node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
+	s := &stage{cfg: Config{IdleTimeout: time.Millisecond, RotateAfter: time.Hour}, lastActivity: time.Now().Add(-time.Second), started: time.Now(), ready: true, transport: &transport{}, node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
 	s.tick(ctx, time.Now())
-	if e := <-s.node.Downstream; e.Kind != types.EventConversationEnded {
-		t.Fatal(e)
-	}
-	if e := <-s.node.Downstream; e.Kind != types.EventSessionReset {
+	if e := <-s.node.Downstream; e.Kind != types.EventConversationIdle {
 		t.Fatal(e)
 	}
 	s.tick(ctx, time.Now())
 	select {
 	case e := <-s.node.Downstream:
-		t.Fatal("二重終了", e)
+		t.Fatal("リセットまたは二重通知", e)
 	default:
+	}
+	if s.transport == nil {
+		t.Fatal("無操作で接続を張り直しました")
 	}
 }
 
@@ -559,7 +579,7 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 }
 
 func TestStaleHistorySyncReleasesWriter(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	done := make(chan struct{})
 	s.handle(context.Background(), types.Event{Kind: types.EventConversationHistorySync, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
 	select {

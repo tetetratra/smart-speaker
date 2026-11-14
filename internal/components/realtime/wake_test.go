@@ -167,7 +167,7 @@ func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.cfg.WakeMode = store
 	s.peers = map[string]bool{"test": true}
 	old := s.cfg.Generation.Current()

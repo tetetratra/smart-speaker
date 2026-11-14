@@ -148,7 +148,7 @@ func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[str
 }
 
 // RetentionCriteria は、長期記憶に残す価値があるかの判断基準。
-// 会話終了時の抽出と、会話中にメモリを操作するツール（internal/tools/functions/memory）で共有する。
+// 古い会話の抽出と、会話中にメモリを操作するツール（internal/tools/functions/memory）で共有する。
 const RetentionCriteria = `「数週間後の別の会話で、これを知っているとアシスタントの応答が明確に良くなるか」で判断してください。
 迷ったら保存しないでください。変更が不要なら operations を空配列にしてください。多くの会話では空配列が正解です（下の「不要になった記憶の削除」に当たる記憶があるときを除きます）。
 

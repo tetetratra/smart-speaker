@@ -1,19 +1,48 @@
 package conversationhistory
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// Store は会話履歴の正本です。会話管理が記録し、再接続時の文脈の復元と会話終了時のメモリ抽出に使います。
+const currentVersion = 1
+
+// Store は会話履歴の正本です。会話管理が記録し、再接続時の文脈の復元と古い履歴のメモリ化に使います。
+// 複数日の会話を再起動後も引き継ぐため、変更のたびにファイルへ保存します。
 type Store struct {
 	mu      sync.RWMutex
+	path    string
 	records []types.ConversationRecord
 }
 
-func NewStore() *Store {
-	return &Store{}
+type filePayload struct {
+	Version int                        `json:"version"`
+	Records []types.ConversationRecord `json:"records"`
+}
+
+// NewStore は path の履歴を読み込む。ファイルがなければ空の履歴から始める。
+func NewStore(path string) (*Store, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return &Store{path: path}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var payload filePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("会話履歴の読み込み %s: %w", path, err)
+	}
+	if payload.Version != currentVersion {
+		return nil, fmt.Errorf("会話履歴の形式に未対応です: version %d", payload.Version)
+	}
+	return &Store{path: path, records: payload.Records}, nil
 }
 
 func (s *Store) Snapshot() []types.ConversationRecord {
@@ -38,39 +67,53 @@ func cloneRecord(record types.ConversationRecord) types.ConversationRecord {
 }
 
 // Upsert は遅れて届く文字起こしや送信実績を、元の発話位置へ反映する。
-func (s *Store) Upsert(record types.ConversationRecord) {
+func (s *Store) Upsert(record types.ConversationRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.records {
 		if s.records[i].ID == record.ID {
 			s.records[i] = cloneRecord(record)
-			return
+			return s.saveLocked()
 		}
 	}
 	s.records = append(s.records, cloneRecord(record))
+	return s.saveLocked()
 }
 
-// Drain は終了した会話だけを切り離し、後から始まる会話を消さない。
-func (s *Store) Drain() []types.ConversationRecord {
+// Remove はメモリ化を終えた記録だけを消す。その間に追加・更新された別の記録は残す。
+func (s *Store) Remove(ids []string) error {
+	remove := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		remove[id] = true
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.records
-	s.records = nil
-	return out
-}
-
-// DrainExcept はまだ応答に渡していない外部記録を残し、終了した会話を切り離す。
-func (s *Store) DrainExcept(keep map[string]bool) []types.ConversationRecord {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var drained, retained []types.ConversationRecord
+	retained := s.records[:0]
 	for _, record := range s.records {
-		if keep[record.ID] {
+		if !remove[record.ID] {
 			retained = append(retained, record)
-		} else {
-			drained = append(drained, record)
 		}
 	}
 	s.records = retained
-	return drained
+	return s.saveLocked()
+}
+
+// saveLocked はメモリのストアと同じく、一時ファイルを書いてから置き換える。
+func (s *Store) saveLocked() error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(filePayload{Version: currentVersion, Records: s.records})
+	if err != nil {
+		return err
+	}
+	tmpPath := s.path + ".tmp"
+	if err := os.WriteFile(tmpPath, raw, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }

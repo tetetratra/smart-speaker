@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestInboundMessageWaitsForConversation(t *testing.T) {
@@ -15,7 +16,7 @@ func TestInboundMessageWaitsForConversation(t *testing.T) {
 
 // 時間のかかるツールの実行中でも、予約ジョブは時刻どおりに始める。再生端末がつながっていなくても待たない。
 func TestInboundMessageStartsWhileToolIsRunning(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	s.calls["slow"] = &call{epoch: 1, generation: 1}
 	s.queueInbound(testInput("input", "室温を知らせて"))
 	if !s.startInbound(context.Background()) || len(s.inbound) != 0 {
@@ -37,7 +38,7 @@ func TestInboundWaitsForEachBusyState(t *testing.T) {
 	}
 	for name, busy := range cases {
 		t.Run(name, func(t *testing.T) {
-			s := newToolResponseStage()
+			s := newToolResponseStage(t)
 			busy(s)
 			s.queueInbound(testInput("input", "結果"))
 			if s.startInbound(context.Background()) || len(s.inbound) != 1 {
@@ -48,7 +49,7 @@ func TestInboundWaitsForEachBusyState(t *testing.T) {
 }
 
 func TestInboundKeepsFIFO(t *testing.T) {
-	s := newToolResponseStage()
+	s := newToolResponseStage(t)
 	for _, text := range []string{"最初", "次"} {
 		s.queueInbound(testInput(text, text))
 	}
@@ -58,5 +59,22 @@ func TestInboundKeepsFIFO(t *testing.T) {
 	s.active, s.wantResponse = "", false
 	if !s.startInbound(context.Background()) || len(s.inbound) != 0 {
 		t.Fatal(s.inbound)
+	}
+}
+
+// 定期的な外部入力が続いても、無操作の通知（古い履歴のメモリ化）が止まらないようにする。
+func TestInboundDoesNotPostponeIdleButStartsCountingWhenStopped(t *testing.T) {
+	s := newToolResponseStage(t)
+	old := time.Now().Add(-time.Hour)
+	s.lastActivity = old
+	s.queueInbound(testInput("first", "室温を知らせて"))
+	if !s.startInbound(context.Background()) || !s.lastActivity.Equal(old) {
+		t.Fatal(s.lastActivity)
+	}
+
+	s = newToolResponseStage(t)
+	s.queueInbound(testInput("second", "室温を知らせて"))
+	if !s.startInbound(context.Background()) || s.lastActivity.IsZero() {
+		t.Fatal("通知後の外部入力で数え始めていません")
 	}
 }

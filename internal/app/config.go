@@ -28,6 +28,7 @@ type Config struct {
 	APIKey                     string
 	ResponsesModel             string
 	AutomationStorePath        string
+	ConversationHistoryPath    string
 	RealtimeModel              string
 	RealtimeVAD                string
 	RealtimeEndpoint           string
@@ -270,11 +271,6 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 
 	idleTimeout := conversationIdleTimeout(file.Conversation.IdleTimeoutSeconds)
 	wake := wakeSettings(file)
-	// 無操作リセットで会話が終わった後も呼びかけなしで話せると、文脈のない会話が始まってしまうため、
-	// 呼びかけなしで話せる時間は無操作リセットより短くする。無操作リセットが無効（0）なら比べない。
-	if idleTimeout > 0 && wake.ConversationTimeout >= idleTimeout {
-		return Config{}, fmt.Errorf("wake.conversation_timeout_seconds (%s) must be shorter than conversation.idle_timeout_seconds (%s)", wake.ConversationTimeout, idleTimeout)
-	}
 
 	energyThreshold := DefaultWakeEnergyThreshold
 	if v := file.Wake.EnergyThreshold; v != nil {
@@ -297,6 +293,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
 		WakeEnergyThreshold:        energyThreshold,
 		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
+		ConversationHistoryPath:    filepath.Join(dataDir, "conversation-history.json"),
 		Memory:                     memoryCfg,
 		ConversationIdleTimeout:    idleTimeout,
 		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
@@ -377,7 +374,7 @@ func positiveFloat(value *float64) *float64 {
 	return &v
 }
 
-// conversationIdleTimeoutは会話終了までの無操作時間を返す。0は無効、負の値は既定値にする。
+// conversationIdleTimeoutは古い会話履歴を長期メモリ化するまでの無操作時間を返す。0は無効、負の値は既定値にする。
 func conversationIdleTimeout(seconds *int) time.Duration {
 	const defaultConversationIdleTimeout = 30 * time.Minute
 	if seconds == nil || *seconds < 0 {

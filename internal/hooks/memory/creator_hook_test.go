@@ -3,12 +3,14 @@ package memory
 import (
 	"context"
 	"errors"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -266,7 +268,7 @@ func TestNewCreatorHookValidatesConfig(t *testing.T) {
 	}
 }
 
-// testHookは、会話終了時に realtime が渡す履歴（fakeHistory）で ExecRecords を呼ぶためのテスト用の包み。
+// testHookは、固定した履歴（fakeHistory）で ExecRecords を呼ぶためのテスト用の包み。
 type testHook struct {
 	*CreatorHook
 	history *fakeHistory
@@ -303,7 +305,7 @@ func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationC
 	return testHook{CreatorHook: hook, history: history}
 }
 
-// fakeHistoryは、realtime が会話終了時に取り出す会話履歴の代わり。
+// fakeHistoryは、メモリ化のために取り出す会話履歴の代わり。
 type fakeHistory struct {
 	records []types.ConversationRecord
 }
@@ -375,35 +377,98 @@ func (f *fakeMemoryWriter) Delete(id string) error {
 	return nil
 }
 
-func TestStartTakesHistoryBeforeBackgroundExtraction(t *testing.T) {
-	history := conversationhistory.NewStore()
-	history.Upsert(types.ConversationRecord{ID: "old", Text: "終了した会話"})
-	history.Upsert(types.ConversationRecord{ID: "unused", Text: "まだ使っていない結果"})
+func newTestHistory(t *testing.T, ids ...string) *conversationhistory.Store {
+	t.Helper()
+	history, err := conversationhistory.NewStore(filepath.Join(t.TempDir(), "conversation_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1件で予算の半分強を使い、直近の1件だけが文脈に残るようにする。
+	for _, id := range ids {
+		if err := history.Upsert(types.ConversationRecord{ID: id, Role: types.RoleUser, Text: strings.Repeat("あ", 5000)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return history
+}
+
+func waitHistory(t *testing.T, history *conversationhistory.Store, want ...string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		var got []string
+		for _, record := range history.Snapshot() {
+			got = append(got, record.ID)
+		}
+		if slices.Equal(got, want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("history = %v, want %v", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestMemorizeOldExtractsOnlyOverflowedRecordsAndRemovesThemAfterSuccess(t *testing.T) {
+	history := newTestHistory(t, "unused", "old1", "old2", "recent")
 	entered, release := make(chan struct{}), make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(entered); <-release }}
 	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hook.Start(context.Background(), history, map[string]bool{"unused": true})
-	// Startが返った時点で終了した会話は取り出され、未利用の結果だけが残る。
-	remaining := history.Snapshot()
-	if len(remaining) != 1 || remaining[0].ID != "unused" {
-		t.Fatal(remaining)
-	}
-	history.Upsert(types.ConversationRecord{ID: "new", Text: "次の会話"})
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		close(release)
-		t.Fatal("抽出が始まらない")
-	}
-	if len(creator.records) != 1 || creator.records[0].ID != "old" {
+	hook.MemorizeOld(context.Background(), history, map[string]bool{"unused": true})
+	<-entered
+	if len(creator.records) != 2 || creator.records[0].ID != "old1" || creator.records[1].ID != "old2" {
 		close(release)
 		t.Fatal(creator.records)
 	}
+	// 抽出の最中に届いた記録は、完了後の削除で消さない。
+	if err := history.Upsert(types.ConversationRecord{ID: "new", Text: "次の会話"}); err != nil {
+		t.Fatal(err)
+	}
 	close(release)
-	if got := history.Snapshot(); len(got) != 2 || got[1].ID != "new" {
-		t.Fatal(got)
+	waitHistory(t, history, "unused", "recent", "new")
+}
+
+func TestMemorizeOldKeepsRecordsWhenExtractionFails(t *testing.T) {
+	history := newTestHistory(t, "old", "recent")
+	done := make(chan struct{})
+	creator := &fakeOperationCreator{err: errors.New("抽出失敗"), onCreate: func() { close(done) }}
+	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook.MemorizeOld(context.Background(), history, nil)
+	<-done
+	// 失敗後に消されないことを、少し待ってから確かめる。
+	time.Sleep(50 * time.Millisecond)
+	waitHistory(t, history, "old", "recent")
+}
+
+// 一部の操作を反映できなくても抽出は済んでいるため、再試行で追加を重複させないよう履歴を消す。
+func TestMemorizeOldRemovesRecordsWhenOperationsArePartiallyApplied(t *testing.T) {
+	history := newTestHistory(t, "old", "recent")
+	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationDelete, TargetID: "9"}}}
+	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook.MemorizeOld(context.Background(), history, nil)
+	waitHistory(t, history, "recent")
+}
+
+func TestMemorizeOldDoesNothingWhenAllRecordsFitInContext(t *testing.T) {
+	history := newTestHistory(t, "recent")
+	creator := &fakeOperationCreator{}
+	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 対象がなければゴルーチンを起動せずに同期で返る。
+	hook.MemorizeOld(context.Background(), history, nil)
+	if creator.called {
+		t.Fatal("文脈に入る記録をメモリ化しました")
 	}
 }

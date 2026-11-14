@@ -4,14 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"log"
 	"strconv"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/conversation"
+	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
+
+// errPartiallyApplied は、抽出はできたが一部の操作を反映できなかったことを表す。
+// 主な原因は抽出中の手動編集や不明な参照番号で、同じ会話で再試行しても直らず、反映済みの追加が重複するだけになる。
+// メモリの保存の失敗（ディスクI/O）も含むが、その記憶はメモリ上には残るため区別しない。
+var errPartiallyApplied = errors.New("memory operations partially applied")
 
 type CreatorHookConfig struct {
 	OperationCreator operationCreator
@@ -47,20 +53,52 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 	}, nil
 }
 
-// Start は抽出対象をストアから同期的に取り出し、固定した履歴のメモリ化を開始する。
-func (h *CreatorHook) Start(ctx context.Context, history *conversationhistory.Store, keep map[string]bool) {
-	records := history.DrainExcept(keep)
-	if len(records) == 0 {
+// MemorizeOld は、接続時に復元する文脈からあふれた古い記録を長期メモリにする。
+// 文脈に入る範囲は接続時の復元と同じ予算で決め、まだ応答に使っていない外部記録（keep）は対象にしない。
+// 抽出に成功した記録だけを履歴から消し、失敗したら次の発火で再試行できるよう残す。
+func (h *CreatorHook) MemorizeOld(ctx context.Context, history *conversationhistory.Store, keep map[string]bool) {
+	messages, err := memoryContextMessages(h.memory.Snapshot())
+	if err != nil {
+		log.Printf("古い履歴のメモリ化: 長期メモリを読めないため見送ります: %v", err)
 		return
 	}
-	go func() {
-		if err := h.ExecRecords(ctx, records); err != nil {
-			log.Printf("会話終了のメモリ抽出: %v", err)
+	memory := ""
+	for _, m := range messages {
+		memory += m.Content + "\n"
+	}
+	var records []types.ConversationRecord
+	for _, record := range history.Snapshot() {
+		if !keep[record.ID] {
+			records = append(records, record)
 		}
+	}
+	old := records[:len(records)-len(conversation.TrimHistory(records, memory, 0))]
+	if len(old) == 0 {
+		return
+	}
+	ids := make([]string, len(old))
+	for i, record := range old {
+		ids[i] = record.ID
+	}
+	log.Printf("古い履歴のメモリ化を開始します: %d件", len(old))
+	go func() {
+		err := h.ExecRecords(ctx, old)
+		if errors.Is(err, errPartiallyApplied) {
+			// 抽出自体は済んでいるため、再試行で追加を重複させないよう履歴は消す。
+			log.Printf("古い履歴のメモリ化: %v", err)
+		} else if err != nil {
+			log.Printf("古い履歴のメモリ化に失敗しました。履歴は残します: %v", err)
+			return
+		}
+		if err := history.Remove(ids); err != nil {
+			log.Printf("古い履歴のメモリ化: 履歴の削除: %v", err)
+			return
+		}
+		log.Printf("古い履歴のメモリ化が完了しました: %d件", len(old))
 	}()
 }
 
-// ExecRecords は終了時点で固定した会話を対象にする。
+// ExecRecords は取り出した時点で固定した記録を対象にする。
 // 保存済みメモリを一緒に渡し、LLM が返した add / update / delete を順に適用する。
 func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.ConversationRecord) error {
 	if len(records) == 0 {
@@ -129,7 +167,10 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	if len(errs) > 0 {
+		return fmt.Errorf("%w: %w", errPartiallyApplied, errors.Join(errs...))
+	}
+	return nil
 }
 
 // resolvedOperation は参照番号を抽出開始時点の記憶に解決した操作。

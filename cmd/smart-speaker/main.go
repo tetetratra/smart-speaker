@@ -161,7 +161,10 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		chatStage.Name = "wschat"
 	}
 	generationStore := generation.NewStore()
-	historyStore := conversationhistory.NewStore()
+	historyStore, err := conversationhistory.NewStore(cfg.ConversationHistoryPath)
+	if err != nil {
+		return appStages{}, err
+	}
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
 	}
@@ -196,7 +199,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		return appStages{}, err
 	}
 	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore, Inbound: services.Inbound, ToolHistory: services.ToolHistory,
-		OnConversationEnd: func(ctx context.Context, keep map[string]bool) { memoryCreatorHook.Start(ctx, historyStore, keep) },
+		OnIdle: func(ctx context.Context, keep map[string]bool) {
+			memoryCreatorHook.MemorizeOld(ctx, historyStore, keep)
+		},
 	})
 
 	ttsCfg := ttsConfig(cfg)
@@ -288,7 +293,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	}
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
 	manager := add(s.manager)
-	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync, types.EventConversationEnded, types.EventConversationRecordsUsed)
+	connectKinds(g, rt, manager, types.EventConversationRecord, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed)
 	connectKinds(g, manager, rt, types.EventConversationContextAddition, types.EventConversationResponseRequest, types.EventConversationHistorySync)
 	output := add(s.output)
 	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
@@ -307,7 +312,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connectKinds(g, pace, output, types.EventAudioFrame)
 	connectKinds(g, output, chat, types.EventAudioSent)
 	connectKinds(g, output, rt, types.EventAudioSent)
-	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus, types.EventSessionReset)
+	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus)
 	connectKinds(g, rt, tool, types.EventToolRequest)
 	connectKinds(g, tool, rt, types.EventConversationCommitRequest)
 }
