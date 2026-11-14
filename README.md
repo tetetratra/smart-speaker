@@ -165,6 +165,7 @@ flowchart LR
         switchBotTool["hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene<br/>SwitchBot"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
+        volumeTool["set_playback_volume<br/>全端末の再生音量"]
         automationTool["register_job<br/>list_jobs<br/>update_job<br/>delete_job<br/>予約"]
         whiteboardTool["set_whiteboard<br/>ホワイトボード表示"]
     end
@@ -178,6 +179,7 @@ flowchart LR
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]
+    volumeStore[("playbackvolume<br/>全端末の再生音量（メモリのみ）")]
     automationStore[("automations<br/>予約ジョブ")]
     locationStore[("userlocation<br/>ユーザーの居場所")]
     browser{{"ブラウザ<br/>web/"}}
@@ -194,6 +196,8 @@ flowchart LR
     switchBotTool <==>|"HTTPS<br/>計測値の取得・シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
     wakeModeTool <-.->|"参照・切替"| wakeModeStore
+    volumeTool <-.->|"切替"| volumeStore
+    volumeStore <==>|"WebSocket<br/>/ws/playback-volume<br/>接続時・変更時の配信、画面からの変更"| browser
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     %% 居場所はツールにする予定で、まだどこからも使われていない。位置だけをそろえる見えない線。
     whiteboardTool ~~~ locationStore
