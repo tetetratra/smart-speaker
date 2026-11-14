@@ -1,22 +1,31 @@
 package types
 
-// 会話管理へ渡す3種類のイベントと、接続・無操作の通知のためのイベント。
+// 会話管理とやりとりするイベント。会話の中身は EventConversationInput の1種類で運び、
+// ほかは接続・無操作・応答への利用を知らせる進行の合図。
 const (
-	EventConversationRecord EventKind = 130 + iota
-	EventConversationContextAddition
-	EventConversationResponseRequest
+	EventConversationInput EventKind = 130 + iota
 	EventConversationHistorySync
 	// EventConversationIdle は、会話が落ち着いた状態で無操作が続いたことを知らせる。古い履歴のメモリ化に使う。
 	EventConversationIdle
 	EventConversationRecordsUsed
 )
 
-// ConversationInput は保存する記録と、通知表示用の情報を持つ。
-// 応答を要求するかはイベントの種類で表し、履歴には保存しない。
+// ModelHandling は、会話の中身をモデルに対してどう扱うかを表す。
+type ModelHandling string
+
+const (
+	ModelHandlingAlreadyKnown  ModelHandling = "already_known"   // モデルはもう知っている。記録だけする
+	ModelHandlingAddToContext  ModelHandling = "add_to_context"  // モデルに足すが、応答はさせない
+	ModelHandlingAddAndRespond ModelHandling = "add_and_respond" // モデルに足し、応答も依頼する
+)
+
+// ConversationInput は保存する記録と、モデルへの扱いを持つ。
+// モデルへの扱いは処理の分岐にだけ使い、履歴には保存しない。
 type ConversationInput struct {
-	Record   ConversationRecord
-	Title    string
-	External bool
+	Record        ConversationRecord
+	ModelHandling ModelHandling
+	Title         string
+	External      bool
 }
 
 // ConversationHistorySync は先行入力の配送と直接読み出しの順序を揃える。

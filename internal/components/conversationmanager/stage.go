@@ -82,9 +82,9 @@ func (s *stage) run(ctx context.Context) {
 
 // InputEvent は既存の非同期通知を会話への情報追加・応答依頼へ変換する。
 func InputEvent(message types.InboundMessage) types.Event {
-	kind := types.EventConversationResponseRequest
+	handling := types.ModelHandlingAddAndRespond
 	if types.HistoryOnly(message.Context) {
-		kind = types.EventConversationContextAddition
+		handling = types.ModelHandlingAddToContext
 	}
 	// 通知方針は制御情報なので履歴には残さない。依頼の識別情報は維持する。
 	var metadata map[string]json.RawMessage
@@ -98,16 +98,17 @@ func InputEvent(message types.InboundMessage) types.Event {
 	if record.Role == "" {
 		record.Role = types.RoleSystem
 	}
-	return types.Event{Kind: kind, Payload: types.ConversationInput{Record: record, Title: message.Title, External: true}}
+	return types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: handling, Title: message.Title, External: true}}
 }
 
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e.Kind {
-	case types.EventConversationRecord:
-		record := e.Payload.(types.ConversationRecord)
-		s.save(record)
-	case types.EventConversationContextAddition, types.EventConversationResponseRequest:
+	case types.EventConversationInput:
 		input := e.Payload.(types.ConversationInput)
+		if input.ModelHandling == types.ModelHandlingAlreadyKnown {
+			s.save(input.Record)
+			return
+		}
 		if input.Record.ID == "" {
 			input.Record.ID = "input/" + uuid.NewString()
 		}

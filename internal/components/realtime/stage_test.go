@@ -148,9 +148,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 					return
 				}
 				switch e.Kind {
-				case types.EventConversationRecord:
-					managerQueue.Push(e)
-				case types.EventConversationResponseRequest, types.EventConversationContextAddition, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
+				case types.EventConversationInput, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
 
