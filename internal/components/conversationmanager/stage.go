@@ -8,18 +8,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 type Config struct {
-	Inbound     <-chan types.InboundMessage
-	ToolHistory *toolhistory.Store
-	History     *conversationhistory.Store
+	Inbound <-chan types.InboundMessage
+	History *conversationhistory.Store
 	// OnIdle は無操作が続いたときに呼ぶ。まだ応答に使っていない外部記録のIDを渡す。
 	OnIdle func(context.Context, map[string]bool)
 }
@@ -122,9 +119,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.save(ctx, input.Record)
 		s.unused[input.Record.ID] = true
-		if input.Record.External && s.cfg.ToolHistory != nil && (input.Record.Source != script.Source || input.Record.Role == types.RoleSystem) {
-			s.cfg.ToolHistory.RecordInbound(types.InboundMessage{ID: input.Record.ID, Source: input.Record.Source, Title: input.Record.Title, Text: input.Record.Text}, input.Record.GenerationID)
-		}
 		e.Payload = input
 		s.emit(ctx, e)
 	case types.EventConversationSignal:

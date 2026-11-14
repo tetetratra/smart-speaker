@@ -14,7 +14,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
@@ -24,10 +23,9 @@ import (
 )
 
 type Config struct {
-	History     *conversationhistory.Store
-	Memory      *memorystate.Store
-	WakeMode    *wakemode.Store
-	ToolHistory *toolhistory.Store
+	History  *conversationhistory.Store
+	Memory   *memorystate.Store
+	WakeMode *wakemode.Store
 	// ToolTitle はツールの呼び出しを記録するときに、画面に出すタイトルを作る。
 	ToolTitle                                                 func(name string, arguments json.RawMessage) string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string

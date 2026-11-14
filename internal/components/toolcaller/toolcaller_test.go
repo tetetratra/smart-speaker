@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -29,7 +28,7 @@ func (h stubHandler) Run(ctx context.Context, args map[string]any) (map[string]a
 }
 
 func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
-	st := NewStage(nil, nil)
+	st := NewStage(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -81,7 +80,7 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 			name: "set_whiteboard",
 			out:  map[string]any{"updated": true},
 		},
-	}, nil)
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -111,7 +110,7 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 			name: "set_whiteboard",
 			err:  errors.New("failed"),
 		},
-	}, nil)
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -151,7 +150,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 			name: "web_search",
 			out:  map[string]any{"result": "ok"},
 		},
-	}, nil)
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -184,7 +183,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 
 func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 	handler := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"count": handler}, nil)
+	st := NewStage(map[string]tools.Handler{"count": handler})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -203,7 +202,7 @@ func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 }
 func TestInvalidArgumentsDoNotExecuteTool(t *testing.T) {
 	handler := &countingHandler{}
-	executor := execution.New(map[string]tools.Handler{"count": handler}, nil)
+	executor := execution.New(map[string]tools.Handler{"count": handler})
 	result := executor.Execute(context.Background(), types.ToolRequest{Name: "count", Arguments: json.RawMessage(`{"broken"`)})
 	if handler.calls != 0 || !json.Valid(result.Output) {
 		t.Fatal(handler.calls, string(result.Output))
@@ -227,10 +226,9 @@ func (h *blockingHandler) Run(context.Context, map[string]any) (map[string]any, 
 	return map[string]any{"result": "結果の全文"}, nil
 }
 
-func TestHistoryTracksRunningResultAndDuplicateCall(t *testing.T) {
-	history := toolhistory.NewStore(200)
+func TestDuplicateCallReturnsFinishedResultWithoutRerun(t *testing.T) {
 	handler := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
-	stage := NewStage(map[string]tools.Handler{"blocked": handler}, history)
+	stage := NewStage(map[string]tools.Handler{"blocked": handler})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	stage.Run(ctx)
@@ -242,49 +240,44 @@ func TestHistoryTracksRunningResultAndDuplicateCall(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("ツールが開始されませんでした")
 	}
-	entries := history.Snapshot()
-	if len(entries) != 1 || entries[0].Status != "running" || entries[0].Arguments != string(req.Arguments) {
-		t.Fatal(entries)
-	}
 	close(handler.release)
-	select {
-	case <-stage.Downstream:
-	case <-ctx.Done():
-		t.Fatal("結果が届きませんでした")
-	}
-	stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
-	select {
-	case <-stage.Downstream:
-	case <-ctx.Done():
-		t.Fatal("再送の結果が届きませんでした")
-	}
-	entries = history.Snapshot()
-	if len(entries) != 1 || entries[0].Status != "succeeded" || entries[0].FinishedAt.IsZero() || entries[0].Output != `{"result":"結果の全文"}` {
-		t.Fatal(entries)
+	for i := 0; i < 2; i++ {
+		select {
+		case e := <-stage.Downstream:
+			// 再送でも blockingHandler を二度実行すると started の二重 close で落ちる。
+			if result := e.Payload.(types.ConversationCommitRequest).ToolResult; result == nil || string(result.Output) != `{"result":"結果の全文"}` {
+				t.Fatal(e)
+			}
+		case <-ctx.Done():
+			t.Fatal("結果が届きませんでした")
+		}
+		if i == 0 {
+			stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+		}
 	}
 }
 
-func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
+func TestFailuresIncludingMalformedArgumentsReturnError(t *testing.T) {
 	for _, req := range []types.ToolRequest{
 		{ToolCallID: "invalid", Name: "count", Arguments: json.RawMessage(`{"broken"`)},
 		{ToolCallID: "unknown", Name: "unknown", Arguments: json.RawMessage(`{}`)},
 		{ToolCallID: "failed", Name: "failed", Arguments: json.RawMessage(`{}`)},
 	} {
 		t.Run(req.ToolCallID, func(t *testing.T) {
-			history := toolhistory.NewStore(200)
-			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}}, history)
+			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}})
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			stage.Run(ctx)
 			defer stage.Close()
 			stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
 			select {
-			case <-stage.Downstream:
+			case e := <-stage.Downstream:
+				var payload map[string]any
+				if result := e.Payload.(types.ConversationCommitRequest).ToolResult; result == nil || json.Unmarshal(result.Output, &payload) != nil || payload["error"] == nil {
+					t.Fatal(e)
+				}
 			case <-ctx.Done():
 				t.Fatal("結果が届きませんでした")
-			}
-			if history.Snapshot()[0].Status != "failed" {
-				t.Fatal(history.Snapshot())
 			}
 		})
 	}
@@ -295,7 +288,7 @@ func TestHistoryRecordsFailuresIncludingMalformedArguments(t *testing.T) {
 func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
 	slow := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
 	fast := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"blocked": slow, "count": fast}, nil)
+	st := NewStage(map[string]tools.Handler{"blocked": slow, "count": fast})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	st.Run(ctx)

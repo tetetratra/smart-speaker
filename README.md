@@ -131,7 +131,6 @@ flowchart LR
     subgraph g0["ストア"]
         historyStore[("conversationhistory<br/>会話履歴")]
         memoryStore[("memory<br/>長期メモリ")]
-        toolHistoryStore[("toolhistory<br/>ツール履歴")]
         automationStore[("automations<br/>予約ジョブ")]
     end
 
@@ -146,12 +145,9 @@ flowchart LR
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"会話終了時の抽出結果"| memoryStore
-    tool -.->|"ツール実行の記録"| toolHistoryStore
-    scheduler -.->|"ツール実行の記録"| toolHistoryStore
-    rt -.->|"待機ツールの記録"| toolHistoryStore
-    manager -.->|"外部からの差し込みの記録"| toolHistoryStore
-    toolHistoryStore -.->|"履歴表示"| chat
-    chat ==>|"WebSocket<br/>ツール履歴（変更のたびに全件）"| browser
+    manager -->|"ConversationRecordChanged<br/>会話でない記録の追加・更新"| chat
+    historyStore -.->|"開いた直後の会話でない記録"| chat
+    chat ==>|"WebSocket<br/>ホワイトボード用の記録（開いた直後は一覧、以降は差分）"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```
 
@@ -202,5 +198,5 @@ flowchart LR
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     %% 居場所はツールにする予定で、まだどこからも使われていない。位置だけをそろえる見えない線。
     whiteboardTool ~~~ locationStore
-    whiteboardTool ==>|"WebSocket<br/>ツール履歴経由<br/>ホワイトボードの内容"| browser
+    whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
 ```

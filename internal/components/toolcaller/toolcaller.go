@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -30,9 +29,8 @@ type toolCaller struct {
 	results map[string]*types.ToolResultRecord
 }
 
-// NewStage は tool の実行 stage を作る。history を渡すと、実行の開始と終了をツール呼び出し履歴に記録する。
-// 呼び出しは届いた順を待たずに並行して実行する。
-func NewStage(handlers map[string]tools.Handler, history *toolhistory.Store) *graph.Stage {
+// NewStage は tool の実行 stage を作る。呼び出しは届いた順を待たずに並行して実行する。
+func NewStage(handlers map[string]tools.Handler) *graph.Stage {
 	if handlers == nil {
 		handlers = map[string]tools.Handler{}
 	}
@@ -40,7 +38,7 @@ func NewStage(handlers map[string]tools.Handler, history *toolhistory.Store) *gr
 		upstream:   make(chan types.Event),
 		results:    map[string]*types.ToolResultRecord{},
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		executor:   execution.New(handlers, history),
+		executor:   execution.New(handlers),
 	}
 	s.node = &graph.Stage{
 		Upstream:   s.upstream,

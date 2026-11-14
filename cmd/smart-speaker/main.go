@@ -30,7 +30,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
@@ -65,7 +64,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, ToolHistory: toolhistory.NewStore(200), History: historyStore}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
@@ -89,7 +88,7 @@ func main() {
 		log.Fatal(err)
 	}
 	services.ToolSchemas, services.ToolHandlers = buildToolRegistry(cfg, memoryStore, services)
-	executor := execution.New(services.ToolHandlers, services.ToolHistory)
+	executor := execution.New(services.ToolHandlers)
 	services.Runner = script.New(executor.Execute, services.Deliver).WithTitle(executor.Title)
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
@@ -196,18 +195,17 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
 	}
 	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
-		ToolHistory: services.ToolHistory,
-		WakeMode:    services.WakeMode,
-		APIKey:      cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
+		WakeMode: services.WakeMode,
+		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
 		Instructions:  cfg.SystemPrompt, Generation: generationStore, Tools: toolSchemas,
-		ToolTitle:   execution.New(toolHandlers, nil).Title,
+		ToolTitle:   execution.New(toolHandlers).Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore, Inbound: services.Inbound, ToolHistory: services.ToolHistory,
+	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore, Inbound: services.Inbound,
 		OnIdle: func(ctx context.Context, keep map[string]bool) {
 			memoryCreatorHook.MemorizeOld(ctx, historyStore, keep)
 		},
@@ -226,7 +224,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStage(toolHandlers, services.ToolHistory)
+	stages.tool = toolcaller.NewStage(toolHandlers)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)

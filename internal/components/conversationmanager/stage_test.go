@@ -10,7 +10,6 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/states/toolhistory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -42,7 +41,6 @@ func TestRecordsOnlyUpdateHistory(t *testing.T) {
 func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	for _, quiet := range []bool{false, true} {
 		s := testStage(t)
-		s.cfg.ToolHistory = toolhistory.NewStore(10)
 		raw := json.RawMessage(`{"automation_id":"job"}`)
 		want := types.ModelHandlingAddAndRespond
 		if quiet {
@@ -61,8 +59,8 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 		if strings.Contains(metadata, "delivery") || !strings.Contains(metadata, "job") {
 			t.Fatal(metadata)
 		}
-		if entries := s.cfg.ToolHistory.Snapshot(); len(entries) != 1 || entries[0].Title != "天気" {
-			t.Fatal(entries)
+		if records[0].Title != "天気" || !records[0].External {
+			t.Fatal("表示用のタイトルと外部からの入力の印を記録に持つ必要があります", records[0])
 		}
 		for len(s.node.Downstream) > 0 {
 			if e := <-s.node.Downstream; e.Kind != types.EventConversationRecordChanged {
@@ -128,18 +126,6 @@ func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {
 	// 無操作の通知だけでは履歴を消さない。
 	if records := s.history.Snapshot(); len(records) != 2 {
 		t.Fatal(records)
-	}
-}
-
-func TestAutomationToolCallsAreNotDisplayedTwice(t *testing.T) {
-	s := testStage(t)
-	s.cfg.ToolHistory = toolhistory.NewStore(10)
-	for _, role := range []string{types.RoleToolCall, types.RoleToolResult, types.RoleSystem} {
-		s.handle(context.Background(), InputEvent(types.InboundMessage{ID: role, Role: role, Source: "automation", Title: "室温", Context: json.RawMessage(`{"delivery":"history_only"}`)}))
-		<-s.node.Downstream
-	}
-	if entries := s.cfg.ToolHistory.Snapshot(); len(entries) != 1 || entries[0].Title != "室温" {
-		t.Fatal(entries)
 	}
 }
 
