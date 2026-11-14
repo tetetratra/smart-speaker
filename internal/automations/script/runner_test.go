@@ -182,3 +182,25 @@ func deliveryMetadata(m types.ConversationInput) json.RawMessage {
 	raw, _ := m.Record.Metadata["context"].(string)
 	return json.RawMessage(raw)
 }
+
+func TestEventIsAvailableToScript(t *testing.T) {
+	var texts []string
+	r := New(nil, func(_ context.Context, m types.ConversationInput) error {
+		texts = append(texts, m.Record.Text)
+		return nil
+	})
+	if err := r.RunWithEvent(context.Background(), "id", "名前", `if (event.place === "home") remind("帰宅した");`, json.RawMessage(`{"place":"home"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(texts) != 2 || !strings.Contains(texts[0], "帰宅した") {
+		t.Fatal(texts)
+	}
+	// 時刻で動いたときは event 変数がない。
+	texts = nil
+	if err := r.Run(context.Background(), "id", "名前", `remind(typeof event);`); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(texts[0], "undefined") {
+		t.Fatal(texts)
+	}
+}

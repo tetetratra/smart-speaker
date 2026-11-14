@@ -39,3 +39,25 @@ func TestDeliverRejectsCanceledContext(t *testing.T) {
 		t.Fatal("取り消された context でも受け付けました")
 	}
 }
+
+// gateway へ配線されたイベントは、購読している処理へ届いた順に1つずつ渡す。
+func TestSubscribersReceiveEventsInOrder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	g := New()
+	got := make(chan types.Event, 2)
+	g.Subscribe(func(_ context.Context, e types.Event) { got <- e })
+	go g.Stage().Run(ctx)
+	g.Stage().Upstream <- types.EventConversationIdle{}
+	g.Stage().Upstream <- types.EventConversationRecordsUsed{IDs: []string{"a"}}
+	for _, want := range []string{"EventConversationIdle", "EventConversationRecordsUsed"} {
+		select {
+		case e := <-got:
+			if types.EventName(e) != want {
+				t.Fatal(e)
+			}
+		case <-ctx.Done():
+			t.Fatal("イベントが届きません")
+		}
+	}
+}

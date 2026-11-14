@@ -12,7 +12,9 @@ type Schedule struct {
 	AfterSeconds int64     `json:"after_seconds,omitempty"`
 	At           time.Time `json:"at,omitzero"`
 	Cron         string    `json:"cron,omitempty"`
-	Timezone     string    `json:"timezone,omitempty"`
+	// Event はこのイベント（型名、例: EventConversationIdle）が届くたびに動かす。時刻では動かさない。
+	Event    string `json:"event,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 func (s Schedule) next(now time.Time, creating bool) (time.Time, error) {
@@ -32,8 +34,15 @@ func (s Schedule) next(now time.Time, creating bool) (time.Time, error) {
 	if s.Cron != "" {
 		count++
 	}
+	if s.Event != "" {
+		count++
+	}
 	if count != 1 {
-		return time.Time{}, fmt.Errorf("after_seconds・at・cronのいずれか1つを指定してください")
+		return time.Time{}, fmt.Errorf("after_seconds・at・cron・eventのいずれか1つを指定してください")
+	}
+	if s.Event != "" {
+		// イベントで動くジョブには次回の日時がない。
+		return time.Time{}, nil
 	}
 	if s.AfterSeconds != 0 {
 		if s.AfterSeconds < 1 || s.AfterSeconds > 31536000 {

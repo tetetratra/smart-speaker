@@ -48,7 +48,7 @@ docker compose up --build
 
 ## コンポーネントとデータの流れ
 
-細い実線はイベントと、グラフの外から gateway への受け渡し（Deliver）、太線は外部との通信、点線はストアの読み書きを表します。
+細い実線はイベントと、gateway とグラフの外との受け渡し（Deliver・購読）、太線は外部との通信、点線はストアの読み書きを表します。
 
 ### 音声の流れ
 
@@ -142,6 +142,8 @@ flowchart LR
     scheduler -->|"Deliver<br/>予約ジョブの実行結果・Web検索の結果"| gateway
     tool -->|"Deliver<br/>Web検索の結果"| gateway
     gateway -->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼"| manager
+    rt -->|"EventConversationIdle<br/>予約ジョブのきっかけ"| gateway
+    gateway -->|"購読<br/>schedule.event が一致するジョブを動かす"| scheduler
     manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt

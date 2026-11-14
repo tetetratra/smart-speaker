@@ -53,7 +53,12 @@ func Compile(source string) (*goja.Program, error) {
 }
 
 // Run は非同期ツールの最終結果を待たず、同期部分だけを制限時間内に実行する。
-func (r *Runner) Run(parent context.Context, id, name, source string) (runErr error) {
+func (r *Runner) Run(parent context.Context, id, name, source string) error {
+	return r.RunWithEvent(parent, id, name, source, nil)
+}
+
+// RunWithEvent は Run と同じく実行し、イベントで動いたときはその中身（JSON）を JS の event 変数で渡す。
+func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, event json.RawMessage) (runErr error) {
 	runID := uuid.NewString()
 	var deliveryErr error
 	metadata := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID}
@@ -89,6 +94,13 @@ func (r *Runner) Run(parent context.Context, id, name, source string) (runErr er
 	vm.SetParserOptions(parser.WithDisableSourceMaps)
 	// 予約は同期JSだけを扱い、Promise APIは提供しない。
 	_ = vm.Set("Promise", goja.Undefined())
+	if len(event) > 0 {
+		var value any
+		if err := json.Unmarshal(event, &value); err != nil {
+			return fmt.Errorf("イベントの中身をJSONとして解釈できません: %w", err)
+		}
+		_ = vm.Set("event", value)
+	}
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
