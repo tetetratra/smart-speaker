@@ -7,66 +7,60 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
   const [mode, setMode] = useState<WakeMode>()
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const socketRef = useRef<WebSocket | null>(null)
   const writing = useRef(false)
-  const sequence = useRef(0)
 
   useEffect(() => {
-    const controller = new AbortController()
-    let loading = false
-    const refresh = async () => {
-      if (loading || writing.current) return
-      loading = true
-      const id = ++sequence.current
-      try {
-        const response = await fetch(new URL('/api/wake-mode', backendURL), { signal: controller.signal, cache: 'no-store' })
-        if (!response.ok) throw new Error('ウェイクアップワードの設定を取得できませんでした')
-        const next = await response.json() as WakeMode
-        if (id !== sequence.current || controller.signal.aborted) return
-        setMode(next)
-        setError('')
-      } catch (err) {
-        if (!controller.signal.aborted && id === sequence.current) {
-          setError(err instanceof Error ? err.message : '設定を取得できませんでした')
+    let disposed = false
+    let timer: number | undefined
+    let socket: WebSocket
+    const connect = () => {
+      const url = new URL('/ws/wake-mode', backendURL)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      socket = new WebSocket(url)
+      socketRef.current = socket
+      socket.onmessage = event => {
+        if (disposed) return
+        let next: { type?: string; required?: boolean; awake?: boolean; error?: string }
+        try { next = JSON.parse(event.data) } catch { return }
+        if (next.type !== 'wake_mode' && next.type !== 'wake_mode_result') return
+        if (typeof next.required !== 'boolean' || typeof next.awake !== 'boolean') return
+        setMode({ required: next.required, awake: next.awake })
+        if (next.type === 'wake_mode_result') {
+          writing.current = false
+          setPending(false)
+          setError(next.error || '')
+        } else if (!writing.current) {
+          setError('')
         }
-      } finally {
-        loading = false
       }
+      socket.onclose = () => {
+        if (disposed) return
+        socketRef.current = null
+        writing.current = false
+        setPending(false)
+        setMode(undefined)
+        setError('呼びかけ設定に再接続しています')
+        timer = window.setTimeout(connect, 2000)
+      }
+      socket.onerror = () => socket.close()
     }
-    const onFocus = () => { void refresh() }
-    void refresh()
-    const timer = window.setInterval(onFocus, 2000)
-    window.addEventListener('focus', onFocus)
+    connect()
     return () => {
-      controller.abort()
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-      sequence.current++
+      disposed = true
+      window.clearTimeout(timer)
+      socketRef.current = null
+      socket.close()
     }
   }, [backendURL])
 
-  const save = async (required: boolean) => {
-    if (writing.current) return
+  const save = (required: boolean) => {
+    const socket = socketRef.current
+    if (writing.current || !socket || socket.readyState !== WebSocket.OPEN) return
     writing.current = true
     setPending(true)
-    const id = ++sequence.current
-    try {
-      const response = await fetch(new URL('/api/wake-mode', backendURL), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ required }),
-      })
-      if (!response.ok) throw new Error(await response.text() || 'ウェイクアップワードの設定を更新できませんでした')
-      const next = await response.json() as WakeMode
-      if (id === sequence.current) {
-        setMode(next)
-        setError('')
-      }
-    } catch (err) {
-      if (id === sequence.current) setError(err instanceof Error ? err.message : '設定を更新できませんでした')
-    } finally {
-      writing.current = false
-      if (id === sequence.current) setPending(false)
-    }
+    setError('')
+    socket.send(JSON.stringify({ type: 'set_wake_mode', required }))
   }
 
   return (
