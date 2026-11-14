@@ -141,10 +141,10 @@ flowchart LR
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager
     tool -->|"Inbound<br/>Web検索の結果"| manager
-    manager <-.->|"記録、会話終了時に取り出し"| historyStore
+    manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
-    manager <-.->|"会話終了時の抽出結果"| memoryStore
+    manager <-.->|"古い会話からの抽出結果"| memoryStore
     manager -->|"EventConversationRecordChanged<br/>会話でない記録の追加・更新"| chat
     historyStore -.->|"開いた直後の会話でない記録"| chat
     chat ==>|"WebSocket<br/>ホワイトボード用の記録（開いた直後は一覧、以降は差分）"| browser
