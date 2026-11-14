@@ -2,87 +2,72 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-// EventKind represents the type of payload in an Event.
-type EventKind int
+// Event はイベントグラフを流れるもの。型がそのまま種類になる。
+// イベントの型は Event を接頭辞にし、ほかでも使うデータの型を埋め込んで包む。
+type Event interface{ isEvent() }
 
-const (
-	EventSpeechStart EventKind = iota
-	EventSpeechEnd
-	EventRealtimeOutput
-	EventToolRequest
-	EventRTCSignal
-	EventConversationCommitRequest
-	EventLLMRequest
-	EventTimelineItem
-	EventPlayableSpeech
-	EventAgentTimelineEnd
-	EventRTCPeerAudioFrame
-	EventRTCPeerOutputSink
-)
-
-// Event is the common data structure passed between stages.
-type Event struct {
-	Kind    EventKind
-	Payload any
-}
-
-func (k EventKind) String() string {
-	switch k {
-	case EventConversationInput:
-		return "EventConversationInput"
-	case EventConversationSignal:
-		return "EventConversationSignal"
-	case EventConversationRecordChanged:
-		return "EventConversationRecordChanged"
-	case EventLocalWakeUtterance:
-		return "EventLocalWakeUtterance"
-	case EventWakeTranscription:
-		return "EventWakeTranscription"
-	case EventResponseText:
-		return "EventResponseText"
-	case EventGenerationChanged:
-		return "EventGenerationChanged"
-	case EventAudioFrame:
-		return "EventAudioFrame"
-	case EventAudioSent:
-		return "EventAudioSent"
-	case EventRealtimeStatus:
-		return "EventRealtimeStatus"
-
-	case EventSpeechStart:
-		return "EventSpeechStart"
-	case EventSpeechEnd:
-		return "EventSpeechEnd"
-	case EventRealtimeOutput:
-		return "EventRealtimeOutput"
-	case EventToolRequest:
-		return "EventToolRequest"
-	case EventRTCSignal:
-		return "EventRTCSignal"
-	case EventConversationCommitRequest:
-		return "EventConversationCommitRequest"
-	case EventLLMRequest:
-		return "EventLLMRequest"
-	case EventTimelineItem:
-		return "EventTimelineItem"
-	case EventPlayableSpeech:
-		return "EventPlayableSpeech"
-	case EventAgentTimelineEnd:
-		return "EventAgentTimelineEnd"
-	case EventRTCPeerAudioFrame:
-		return "EventRTCPeerAudioFrame"
-	case EventRTCPeerOutputSink:
-		return "EventRTCPeerOutputSink"
-	default:
-		return fmt.Sprintf("EventKind(%d)", int(k))
+// EventName は転送ログなどに出すイベントの名前（型名）を返す。
+func EventName(e Event) string {
+	if e == nil {
+		return "<nil>"
 	}
+	return reflect.TypeOf(e).Name()
 }
+
+// Is は e が T のイベントかどうかを返す。
+func Is[T Event](e Event) bool {
+	_, ok := e.(T)
+	return ok
+}
+
+type EventSpeechStart struct{ SpeechEvent }
+type EventSpeechEnd struct{ SpeechEvent }
+type EventRealtimeOutput struct{ OutputLine }
+type EventRealtimeStatus struct{ RealtimeStatus }
+type EventToolRequest struct{ ToolRequest }
+type EventRTCSignal struct{ RTCSignal }
+type EventRTCPeerAudioFrame struct{ RTCPeerAudioFrame }
+type EventRTCPeerOutputSink struct{ RTCPeerOutputSink }
+type EventConversationCommitRequest struct{ ConversationCommitRequest }
+type EventLLMRequest struct{ LLMRequest }
+type EventResponseText struct{ ResponseText }
+type EventGenerationChanged struct{ GenerationChanged }
+type EventTimelineItem struct{ TimelineItem }
+type EventPlayableSpeech struct{ PlayableSpeech }
+type EventAgentTimelineEnd struct{ AgentTimelineEnd }
+
+// EventAudioFrame は再生へ送る音声のフレーム。EventAudioSent は送り終えたフレームの通知。
+type EventAudioFrame struct{ AudioFrame }
+type EventAudioSent struct{ AudioFrame }
+
+type EventLocalWakeUtterance struct{ LocalWakeUtterance }
+type EventWakeTranscription struct{ WakeTranscription }
+
+func (EventSpeechStart) isEvent()               {}
+func (EventSpeechEnd) isEvent()                 {}
+func (EventRealtimeOutput) isEvent()            {}
+func (EventRealtimeStatus) isEvent()            {}
+func (EventToolRequest) isEvent()               {}
+func (EventRTCSignal) isEvent()                 {}
+func (EventRTCPeerAudioFrame) isEvent()         {}
+func (EventRTCPeerOutputSink) isEvent()         {}
+func (EventConversationCommitRequest) isEvent() {}
+func (EventLLMRequest) isEvent()                {}
+func (EventResponseText) isEvent()              {}
+func (EventGenerationChanged) isEvent()         {}
+func (EventTimelineItem) isEvent()              {}
+func (EventPlayableSpeech) isEvent()            {}
+func (EventAgentTimelineEnd) isEvent()          {}
+func (EventAudioFrame) isEvent()                {}
+func (EventAudioSent) isEvent()                 {}
+func (EventLocalWakeUtterance) isEvent()        {}
+func (EventWakeTranscription) isEvent()         {}
 
 type RTCPeerAudioFrame struct {
 	PeerID     string

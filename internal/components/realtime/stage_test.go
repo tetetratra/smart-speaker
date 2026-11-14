@@ -18,6 +18,7 @@ import (
 	"nhooyr.io/websocket"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -147,8 +148,8 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 				if !ok {
 					return
 				}
-				switch e.Kind {
-				case types.EventConversationInput, types.EventConversationSignal:
+				switch e.(type) {
+				case types.EventConversationInput, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
 					managerQueue.Push(e)
 				}
 
@@ -164,9 +165,9 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		return r
 	}
 	if initialText == "" {
-		node.Upstream <- types.Event{Payload: types.RTCPeerOutputSink{PeerID: "test", Connected: true}}
+		node.Upstream <- types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{PeerID: "test", Connected: true}}
 	} else {
-		node.Upstream <- types.Event{Payload: types.LLMRequest{Text: initialText}}
+		node.Upstream <- types.EventLLMRequest{LLMRequest: types.LLMRequest{Text: initialText}}
 	}
 	select {
 	case r.conn = <-connected:
@@ -203,7 +204,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.InboundMes
 		t.Fatalf("日本時間または元の指示がありません: %s", instructions)
 	}
 	r.send(map[string]any{"type": "session.updated"})
-	r.event(types.EventRealtimeStatus)
+	r.event(types.EventRealtimeStatus{})
 	return r
 }
 func (r *rig) send(v any) {
@@ -227,17 +228,19 @@ func (r *rig) wait(kind string) map[string]any {
 		}
 	}
 }
-func (r *rig) event(kind types.EventKind) types.Event {
+
+// event は want と同じ型のイベントが届くまで待つ。want にはゼロ値を渡す。
+func (r *rig) event(want types.Event) types.Event {
 	r.t.Helper()
 	for {
 		select {
 		case e := <-r.events:
-			if e.Kind == kind {
+			if reflect.TypeOf(e) == reflect.TypeOf(want) {
 				return e
 			}
 		case <-r.ctx.Done():
-			r.t.Fatalf("%v が届かない", kind)
-			return types.Event{}
+			r.t.Fatalf("%s が届かない", types.EventName(want))
+			return nil
 		}
 	}
 }
@@ -255,7 +258,7 @@ func (r *rig) response(id, item, text string, metadata any) {
 }
 func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 	r := newRig(t)
-	r.node.Upstream <- types.Event{Payload: types.RTCPeerAudioFrame{PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
+	r.node.Upstream <- types.EventRTCPeerAudioFrame{RTCPeerAudioFrame: types.RTCPeerAudioFrame{PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
 	audio := r.wait("input_audio_buffer.append")
 	pcm, err := base64.StdEncoding.DecodeString(audio["audio"].(string))
 	if err != nil || len(pcm) != 960 {
@@ -265,14 +268,14 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 	request := r.wait("response.create")
 	meta := request["response"].(map[string]any)["metadata"]
 	r.response("response1", "assistant1", "こんにちは。", meta)
-	text := r.event(types.EventResponseText).Payload.(types.ResponseText)
+	text := r.event(types.EventResponseText{}).(types.EventResponseText).ResponseText
 	if text.GenerationID != 1 || text.Text != "こんにちは。" {
 		t.Fatal(text)
 	}
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "おはよう"})
 	for {
-		e := r.event(types.EventRealtimeOutput)
-		if e.Payload.(types.OutputLine).Role == types.RoleUser {
+		e := r.event(types.EventRealtimeOutput{})
+		if e.(types.EventRealtimeOutput).OutputLine.Role == types.RoleUser {
 			break
 		}
 	}
@@ -286,7 +289,7 @@ func TestRepairCompletesBeforeNextResponse(t *testing.T) {
 	r.utterance("user1")
 	request := r.wait("response.create")
 	r.response("response1", "assistant1", "未送信の文章。", request["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText)
+	r.event(types.EventResponseText{})
 	r.utterance("user2")
 	deleted := r.wait("conversation.item.delete")
 	if deleted["item_id"] != "assistant1" {
@@ -313,11 +316,11 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	req := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "test", "arguments": "{}"})
-	r.event(types.EventToolRequest)
+	r.event(types.EventToolRequest{})
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "r1"}})
 	r.utterance("user2")
 	for {
-		change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
+		change := r.event(types.EventGenerationChanged{}).(types.EventGenerationChanged).GenerationChanged
 		if change.GenerationID == 2 {
 			break
 		}
@@ -326,11 +329,11 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": ack["response"].(map[string]any)["metadata"]}})
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "test", GenerationID: 1, Output: json.RawMessage(`{"ok":true}`)}
-	r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &result}}
+	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
 	r.wait("conversation.item.create")
 	for {
-		e := r.event(types.EventRealtimeOutput)
-		if e.Payload.(types.OutputLine).Role == types.RoleToolResult {
+		e := r.event(types.EventRealtimeOutput{})
+		if e.(types.EventRealtimeOutput).OutputLine.Role == types.RoleToolResult {
 			break
 		}
 	}
@@ -358,13 +361,13 @@ func TestToolCallArrivingAfterGenerationChangeIsExecuted(t *testing.T) {
 	// 引数が確定する前にユーザーが話し始め、世代が進む。
 	r.utterance("user2")
 	for {
-		change := r.event(types.EventGenerationChanged).Payload.(types.GenerationChanged)
+		change := r.event(types.EventGenerationChanged{}).(types.EventGenerationChanged).GenerationChanged
 		if change.GenerationID == 2 {
 			break
 		}
 	}
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
-	tool := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	tool := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
 	if tool.ToolCallID != "call1" || tool.GenerationID != 1 {
 		t.Fatal(tool)
 	}
@@ -384,15 +387,15 @@ func TestAPIErrorLeavesPendingStateAndStopsOldPlayback(t *testing.T) {
 	r.wait("response.create")
 	r.send(map[string]any{"type": "error", "error": map[string]any{"code": "invalid_request_error", "message": "生成要求が拒否された"}})
 	for {
-		e := r.event(types.EventRealtimeStatus)
-		p := e.Payload.(types.RealtimeStatus)
+		e := r.event(types.EventRealtimeStatus{})
+		p := e.(types.EventRealtimeStatus).RealtimeStatus
 		if p.Status == "error" {
 			break
 		}
 	}
 	for {
-		e := r.event(types.EventGenerationChanged)
-		if e.Payload.(types.GenerationChanged).GenerationID == 2 {
+		e := r.event(types.EventGenerationChanged{})
+		if e.(types.EventGenerationChanged).GenerationChanged.GenerationID == 2 {
 			break
 		}
 	}
@@ -402,7 +405,7 @@ func TestIdleNotifiesConversationManagerOnceWithoutReset(t *testing.T) {
 	ctx := context.Background()
 	s := &stage{cfg: Config{IdleTimeout: time.Millisecond, RotateAfter: time.Hour}, lastActivity: time.Now().Add(-time.Second), started: time.Now(), ready: true, transport: &transport{}, node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
 	s.tick(ctx, time.Now())
-	if e := <-s.node.Downstream; e.Kind != types.EventConversationSignal || e.Payload != (types.ConversationIdle{}) {
+	if e := <-s.node.Downstream; !types.Is[types.EventConversationIdle](e) {
 		t.Fatal(e)
 	}
 	s.tick(ctx, time.Now())
@@ -437,7 +440,7 @@ func TestQueuedOldConnectionEventsAreIgnoredImmediatelyAfterDisconnect(t *testin
 	s.queue.Push(incoming{event: time.Now()})
 	select {
 	case e := <-s.node.Downstream:
-		if e.Kind != types.EventGenerationChanged {
+		if !types.Is[types.EventGenerationChanged](e) {
 			t.Fatal(e)
 		}
 	case <-ctx.Done():
@@ -454,8 +457,8 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 	r.utterance("user1")
 	req := r.wait("response.create")
 	r.response("r1", "a1", "こんにちは。\n次の文章です。", req["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText)
-	r.node.Upstream <- types.Event{Kind: types.EventAudioSent, Payload: types.AudioFrame{GenerationID: 1, ItemID: "a1", Final: true, Text: "こんにちは。次の文章です。"}}
+	r.event(types.EventResponseText{})
+	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", Final: true, Text: "こんにちは。次の文章です。"}}
 	r.utterance("user2")
 	// delete/createを待ち飛ばさず、次のコマンドが直接response.createであることを確認する。
 	select {
@@ -474,7 +477,7 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 	r.wait("response.create")
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "前の会話を覚えて"})
 	for {
-		line := r.event(types.EventRealtimeOutput).Payload.(types.OutputLine)
+		line := r.event(types.EventRealtimeOutput{}).(types.EventRealtimeOutput).OutputLine
 		if line.Role == types.RoleUser {
 			break
 		}
@@ -511,13 +514,13 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 	r.utterance("user1")
 	req := r.wait("response.create")
 	r.response("r1", "a1", "まだ音声送信中。", req["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText)
+	r.event(types.EventResponseText{})
 	select {
 	case <-r.connections:
 		t.Fatal("音声送信中に接続更新された")
 	case <-time.After(1100 * time.Millisecond):
 	}
-	r.node.Upstream <- types.Event{Kind: types.EventAudioSent, Payload: types.AudioFrame{ItemID: "a1", GenerationID: 1, End: true}}
+	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{ItemID: "a1", GenerationID: 1, End: true}}
 	select {
 	case r.conn = <-r.connections:
 	case <-r.ctx.Done():
@@ -538,12 +541,12 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	}
 	call := func(responseID, callID, name string) {
 		r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": responseID, "call_id": callID, "name": name, "arguments": "{}"})
-		r.event(types.EventToolRequest)
+		r.event(types.EventToolRequest{})
 		r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": responseID}})
 	}
 	result := func(callID, name, output string) {
 		p := types.ToolResultRecord{ToolCallID: callID, Name: name, GenerationID: 1, Output: json.RawMessage(output)}
-		r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &p}}
+		r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &p}}
 		r.wait("conversation.item.create")
 	}
 	created("r1", initial)
@@ -570,7 +573,7 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	}
 	created("r4", manual)
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r4", "call_id": "board-detail", "name": "set_whiteboard", "arguments": `{"content":"取得済みの予報を詳しく表示"}`})
-	detail := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	detail := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
 	if detail.Name != "set_whiteboard" || detail.GenerationID != 2 || string(detail.Arguments) != `{"content":"取得済みの予報を詳しく表示"}` {
 		t.Fatalf("追加表示の呼び出しが受理されませんでした: %#v", detail)
 	}
@@ -579,7 +582,7 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 func TestStaleHistorySyncReleasesWriter(t *testing.T) {
 	s := newToolResponseStage(t)
 	done := make(chan struct{})
-	s.handle(context.Background(), types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationHistorySync{Epoch: s.epoch - 1, Done: done}})
+	s.handle(context.Background(), types.EventConversationHistorySync{Epoch: s.epoch - 1, Done: done})
 	select {
 	case <-done:
 	default:
@@ -607,7 +610,7 @@ func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
 // 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
 func (r *rig) records() []types.ConversationRecord {
 	done := make(chan struct{})
-	r.managerQueue.Push(types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationHistorySync{Done: done}})
+	r.managerQueue.Push(types.EventConversationHistorySync{Done: done})
 	select {
 	case <-done:
 	case <-r.ctx.Done():
@@ -624,9 +627,9 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 	req := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
-	r.event(types.EventToolRequest)
+	r.event(types.EventToolRequest{})
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
-	r.node.Upstream <- types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{ToolResult: &result}}
+	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		var call, result *types.ConversationRecord

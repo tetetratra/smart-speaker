@@ -44,10 +44,10 @@ func (s *Stage) Receive(ctx context.Context) (types.Event, bool) {
 	for {
 		select {
 		case <-ctx.Done():
-			return types.Event{}, false
+			return nil, false
 		case e, ok := <-s.Upstream:
 			if !ok {
-				return types.Event{}, false
+				return nil, false
 			}
 			if s.ReceiveFilter == nil || s.ReceiveFilter(ctx, e) {
 				return e, true

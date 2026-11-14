@@ -146,10 +146,10 @@ func (c *chatWS) handleEvent(ctx context.Context, evt types.Event) {
 func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 	msg := map[string]any{}
 	targetID := ""
-	switch evt.Kind {
+	switch ev := evt.(type) {
 	case types.EventAudioSent:
-		p, ok := evt.Payload.(types.AudioFrame)
-		if !ok || (!p.End && p.Sequence != 0) {
+		p := ev.AudioFrame
+		if !p.End && p.Sequence != 0 {
 			return nil, "", false
 		}
 		// 音声はWebRTCで送り、画面には区間の開始と終了だけ通知する。
@@ -158,23 +158,14 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			msg["duration_ms"] = p.SegmentDuration.Milliseconds()
 		}
 	case types.EventGenerationChanged:
-		p, ok := evt.Payload.(types.GenerationChanged)
-		if !ok {
-			return nil, "", false
-		}
+		p := ev.GenerationChanged
 		msg = map[string]any{"type": "playback_stop", "generation_id": uint64(p.GenerationID)}
 	case types.EventRealtimeStatus:
-		p, ok := evt.Payload.(types.RealtimeStatus)
-		if !ok {
-			return nil, "", false
-		}
+		p := ev.RealtimeStatus
 		msg = map[string]any{"type": "realtime_status", "status": p.Status, "message": p.Message}
 
 	case types.EventRealtimeOutput:
-		line, ok := evt.Payload.(types.OutputLine)
-		if !ok {
-			return nil, "", false
-		}
+		line := ev.OutputLine
 		msg = map[string]any{
 			"type":          "message",
 			"role":          line.Role,
@@ -187,10 +178,7 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			msg["source"] = line.Source
 		}
 	case types.EventRTCSignal:
-		sig, ok := evt.Payload.(types.RTCSignal)
-		if !ok {
-			return nil, "", false
-		}
+		sig := ev.RTCSignal
 		targetID = sig.ClientID
 		msg = map[string]any{
 			"type":      sig.Type,
@@ -198,30 +186,21 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			"candidate": sig.Candidate,
 		}
 	case types.EventSpeechStart:
-		speech, ok := evt.Payload.(types.SpeechEvent)
-		if !ok {
-			return nil, "", false
-		}
+		speech := ev.SpeechEvent
 		msg = map[string]any{
 			"type":        "speech_start",
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
 	case types.EventSpeechEnd:
-		speech, ok := evt.Payload.(types.SpeechEvent)
-		if !ok {
-			return nil, "", false
-		}
+		speech := ev.SpeechEvent
 		msg = map[string]any{
 			"type":        "speech_end",
 			"source":      speech.Source,
 			"captured_at": speech.CapturedAt.Format(time.RFC3339Nano),
 		}
 	case types.EventWakeTranscription:
-		tr, ok := evt.Payload.(types.WakeTranscription)
-		if !ok {
-			return nil, "", false
-		}
+		tr := ev.WakeTranscription
 		// 呼びかけの見逃しを調べるための情報。画面ではログ管理画面にだけ並ぶ。
 		msg = map[string]any{
 			"type":       "wake_transcription",
@@ -239,10 +218,7 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 			msg["error"] = tr.Error
 		}
 	case types.EventConversationRecordChanged:
-		record, ok := evt.Payload.(types.ConversationRecord)
-		if !ok {
-			return nil, "", false
-		}
+		record := ev.ConversationRecord
 		msg = map[string]any{"type": "conversation_records", "records": []map[string]any{recordMessage(record)}}
 	default:
 		return nil, "", false
@@ -359,7 +335,7 @@ func (c *chatWS) handleWS(rw http.ResponseWriter, r *http.Request) {
 				ClientID:  connID,
 			}
 			select {
-			case c.downstream <- types.Event{Kind: types.EventRTCSignal, Payload: sig}:
+			case c.downstream <- types.EventRTCSignal{RTCSignal: sig}:
 			case <-r.Context().Done():
 				return
 			case <-c.ctx.Done():

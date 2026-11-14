@@ -71,5 +71,5 @@ func (s *stage) localWake(ctx context.Context, p types.LocalWakeUtterance) {
 	// 既存の応答は世代変更で再生を止める。キャンセル完了後に次の生成を始める。
 	s.speaking = false
 	s.wakeOnlyReply = p.WakeOnly
-	s.handle(ctx, types.Event{Kind: types.EventLLMRequest, Payload: types.LLMRequest{RequestID: fmt.Sprintf("local-wake/%s", p.PeerID), Text: p.Text}})
+	s.handle(ctx, types.EventLLMRequest{LLMRequest: types.LLMRequest{RequestID: fmt.Sprintf("local-wake/%s", p.PeerID), Text: p.Text}})
 }

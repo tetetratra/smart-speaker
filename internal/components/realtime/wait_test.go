@@ -37,7 +37,7 @@ observe:
 		case command := <-r.commands:
 			t.Fatalf("待機後に不要なAPI要求が出ました: %v", command)
 		case event := <-r.events:
-			if event.Kind == types.EventToolRequest || event.Kind == types.EventResponseText {
+			if types.Is[types.EventToolRequest](event) || types.Is[types.EventResponseText](event) {
 				t.Fatalf("待機がツール実行・発話・画面更新を起動しました: %v", event)
 			}
 		case <-timer.C:
@@ -60,7 +60,7 @@ observe:
 		t.Fatal("待機が次の発話にホワイトボード更新を強制しました", next)
 	}
 	r.response("next", "answer", "こんにちは。", response["metadata"])
-	if text := r.event(types.EventResponseText).Payload.(types.ResponseText).Text; text != "こんにちは。" {
+	if text := r.event(types.EventResponseText{}).(types.EventResponseText).ResponseText.Text; text != "こんにちは。" {
 		t.Fatal("待機後の通常応答が届きません", text)
 	}
 }

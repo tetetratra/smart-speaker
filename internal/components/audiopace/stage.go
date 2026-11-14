@@ -19,10 +19,11 @@ func NewStage() *graph.Stage {
 			if !ok {
 				return
 			}
-			p, ok := e.Payload.(types.AudioFrame)
+			ev, ok := e.(types.EventAudioFrame)
 			if !ok {
 				continue
 			}
+			p := ev.AudioFrame
 			now := time.Now()
 			if next.IsZero() || now.Sub(next) > 100*time.Millisecond {
 				next = now

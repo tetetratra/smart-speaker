@@ -23,7 +23,7 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	if len(r.records()) != 0 {
 		t.Fatal("呼びかけなしの音声を記録しました")
 	}
-	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、今日の予定は", Revision: m.Revision, Confidence: 0.9}}
+	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、今日の予定は", Revision: m.Revision, Confidence: 0.9}}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	content := item["content"].([]any)[0].(map[string]any)
 	if content["type"] != "input_text" || content["text"] != "起きて、今日の予定は" {
@@ -51,7 +51,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	request := r.wait("response.create")
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "job", "call_id": "mode-call", "name": "set_wake_mode", "arguments": `{"required":false}`})
-	req := r.event(types.EventToolRequest).Payload.(types.ToolRequest)
+	req := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
 	var args map[string]any
 	if err = json.Unmarshal(req.Arguments, &args); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	}
 	output, _ := json.Marshal(result)
 	record := types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: output}
-	r.node.Upstream <- types.Event{Payload: types.ConversationCommitRequest{ToolResult: &record}}
+	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &record}}
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "job", "status": "completed"}})
 	update := r.wait("session.update")
 	select {
@@ -81,7 +81,7 @@ check:
 	for {
 		select {
 		case e := <-r.events:
-			if e.Kind == types.EventResponseText {
+			if types.Is[types.EventResponseText](e) {
 				t.Fatal("無音の予約が音声合成へ届きました")
 			}
 		case <-timer.C:
@@ -98,7 +98,7 @@ func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
 	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	m, _ := s.SetRequired(true, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
-	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
+	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if text := item["content"].([]any)[0].(map[string]any)["text"]; text != "起きて" {
 		t.Fatal(item)
@@ -110,7 +110,7 @@ func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": request["metadata"]}})
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
 	// 本文のある次の発話には指示を持ち越さない。
-	r.node.Upstream <- types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、天気は", Revision: m.Revision, Confidence: 0.9}}
+	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、天気は", Revision: m.Revision, Confidence: 0.9}}
 	next := r.wait("response.create")["response"].(map[string]any)
 	if strings.Contains(next["instructions"].(string), "呼びかけの言葉だけを言いました") {
 		t.Fatal("本文のある発話に呼びかけだけの指示を付けました")
@@ -122,7 +122,7 @@ func TestConversationAfterWakeUsesAudioUntilItEnds(t *testing.T) {
 	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	m, _ := s.SetRequired(true, time.Now())
 	r := newRig(t, func(c *Config) { c.WakeMode = s })
-	frame := types.Event{Payload: types.RTCPeerAudioFrame{PeerID: "test", PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
+	frame := types.EventRTCPeerAudioFrame{RTCPeerAudioFrame: types.RTCPeerAudioFrame{PeerID: "test", PCM: make([]byte, 1920), SampleRate: 48000, Channels: 1}}
 	r.node.Upstream <- frame
 	if d := s.Evaluate("起きて", 0.9, m.Revision, false, time.Now()); !d.Accepted {
 		t.Fatal(d)
@@ -182,14 +182,14 @@ func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
 	var request types.Event
 	for len(s.node.Downstream) > 0 {
 		e := <-s.node.Downstream
-		if e.Kind == types.EventConversationInput && e.Payload.(types.ConversationInput).ModelHandling == types.ModelHandlingAddAndRespond {
+		if types.Is[types.EventConversationInput](e) && e.(types.EventConversationInput).ConversationInput.ModelHandling == types.ModelHandlingAddAndRespond {
 			request = e
 		}
 	}
-	if request.Kind != types.EventConversationInput {
+	if !types.Is[types.EventConversationInput](request) {
 		t.Fatal("応答依頼なし")
 	}
-	input := request.Payload.(types.ConversationInput)
+	input := request.(types.EventConversationInput).ConversationInput
 	if input.Record.GenerationID != s.cfg.Generation.Current() {
 		t.Fatal(input)
 	}

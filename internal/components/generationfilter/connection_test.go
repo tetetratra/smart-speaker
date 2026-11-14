@@ -20,9 +20,9 @@ func TestAttachPassesOnlyCurrentGeneration(t *testing.T) {
 		t.Fatal("LatestOnly = false, want true")
 	}
 	ctx := context.Background()
-	current := types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{GenerationID: 2}}
-	stale := types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{GenerationID: 1}}
-	noGeneration := types.Event{Kind: types.EventRealtimeStatus, Payload: types.RealtimeStatus{Status: "connecting"}}
+	current := types.EventTimelineItem{TimelineItem: types.TimelineItem{GenerationID: 2}}
+	stale := types.EventTimelineItem{TimelineItem: types.TimelineItem{GenerationID: 1}}
+	noGeneration := types.EventRealtimeStatus{RealtimeStatus: types.RealtimeStatus{Status: "connecting"}}
 	if !st.ReceiveFilter(ctx, current) {
 		t.Fatal("現在の世代の event が捨てられました")
 	}

@@ -30,10 +30,11 @@ func NewStage() *graph.Stage {
 			if !ok {
 				return
 			}
-			p, ok := e.Payload.(types.ResponseText)
+			ev, ok := e.(types.EventResponseText)
 			if !ok {
 				continue
 			}
+			p := ev.ResponseText
 			nextKey := p.ResponseID + "/" + p.ItemID
 			if key != nextKey {
 				key = nextKey
@@ -49,12 +50,12 @@ func NewStage() *graph.Stage {
 				buffer = rest
 				index++
 				item := types.TimelineItem{Kind: types.TimelineKindSpeech, ItemID: p.ItemID, GenerationID: p.GenerationID, SequenceID: fmt.Sprintf("%s/%d", key, index), Text: part}
-				if !emit(types.Event{Kind: types.EventTimelineItem, Payload: item}) {
+				if !emit(types.EventTimelineItem{TimelineItem: item}) {
 					return
 				}
 			}
 			if p.Done {
-				if !emit(types.Event{Kind: types.EventAgentTimelineEnd, Payload: types.AgentTimelineEnd{GenerationID: p.GenerationID, ItemID: p.ItemID}}) {
+				if !emit(types.EventAgentTimelineEnd{AgentTimelineEnd: types.AgentTimelineEnd{GenerationID: p.GenerationID, ItemID: p.ItemID}}) {
 					return
 				}
 				buffer = ""

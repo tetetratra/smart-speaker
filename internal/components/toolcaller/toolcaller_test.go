@@ -34,7 +34,7 @@ func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{
 		ToolCallID:   "call-1",
 		Name:         "unknown",
 		Arguments:    json.RawMessage(`{}`),
@@ -43,12 +43,13 @@ func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
 
 	select {
 	case evt := <-st.Downstream:
-		if evt.Kind != types.EventConversationCommitRequest {
-			t.Fatalf("Kind = %s, want EventConversationCommitRequest", evt.Kind)
+		if !types.Is[types.EventConversationCommitRequest](evt) {
+			t.Fatalf("event = %s, want EventConversationCommitRequest", types.EventName(evt))
 		}
-		req, ok := evt.Payload.(types.ConversationCommitRequest)
+		reqEvent, ok := evt.(types.EventConversationCommitRequest)
+		req := reqEvent.ConversationCommitRequest
 		if !ok {
-			t.Fatalf("Payload type = %T, want ConversationCommitRequest", evt.Payload)
+			t.Fatalf("Payload type = %T, want ConversationCommitRequest", evt)
 		}
 		if req.Role != types.RoleToolResult {
 			t.Fatalf("Role = %q, want tool_result", req.Role)
@@ -86,7 +87,7 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{
 		ToolCallID:   "call-1",
 		Name:         "set_whiteboard",
 		Arguments:    json.RawMessage(`{"content":"メモ"}`),
@@ -95,7 +96,7 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 
 	select {
 	case evt := <-st.Downstream:
-		req := evt.Payload.(types.ConversationCommitRequest)
+		req := evt.(types.EventConversationCommitRequest).ConversationCommitRequest
 		if req.ToolResult == nil {
 			t.Fatal("成功した操作結果が保存されない")
 		}
@@ -116,7 +117,7 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{
 		ToolCallID:   "call-1",
 		Name:         "set_whiteboard",
 		Arguments:    json.RawMessage(`{"content":"メモ"}`),
@@ -125,7 +126,7 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 
 	select {
 	case evt := <-st.Downstream:
-		req := evt.Payload.(types.ConversationCommitRequest)
+		req := evt.(types.EventConversationCommitRequest).ConversationCommitRequest
 		if req.ToolResult == nil {
 			t.Fatal("ToolResult is nil")
 		}
@@ -156,7 +157,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{
 		ToolCallID:   "call-1",
 		Name:         "web_search",
 		Arguments:    json.RawMessage(`{"query":"今日の天気を教えて"}`),
@@ -165,7 +166,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 
 	select {
 	case evt := <-st.Downstream:
-		req := evt.Payload.(types.ConversationCommitRequest)
+		req := evt.(types.EventConversationCommitRequest).ConversationCommitRequest
 		if req.ToolResult == nil {
 			t.Fatal("ToolResult is nil")
 		}
@@ -189,7 +190,7 @@ func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 	st.Run(ctx)
 	defer st.Close()
 	for i := 0; i < 2; i++ {
-		st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "same", Name: "count", Arguments: json.RawMessage(`{}`)}}
+		st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{ToolCallID: "same", Name: "count", Arguments: json.RawMessage(`{}`)}}
 		select {
 		case <-st.Downstream:
 		case <-time.After(time.Second):
@@ -234,7 +235,7 @@ func TestDuplicateCallReturnsFinishedResultWithoutRerun(t *testing.T) {
 	stage.Run(ctx)
 	defer stage.Close()
 	req := types.ToolRequest{ToolCallID: "call-id", Name: "blocked", Arguments: json.RawMessage(`{"text":"引数の全文"}`), GenerationID: 4}
-	stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+	stage.Upstream <- types.EventToolRequest{ToolRequest: req}
 	select {
 	case <-handler.started:
 	case <-ctx.Done():
@@ -245,14 +246,14 @@ func TestDuplicateCallReturnsFinishedResultWithoutRerun(t *testing.T) {
 		select {
 		case e := <-stage.Downstream:
 			// 再送でも blockingHandler を二度実行すると started の二重 close で落ちる。
-			if result := e.Payload.(types.ConversationCommitRequest).ToolResult; result == nil || string(result.Output) != `{"result":"結果の全文"}` {
+			if result := e.(types.EventConversationCommitRequest).ConversationCommitRequest.ToolResult; result == nil || string(result.Output) != `{"result":"結果の全文"}` {
 				t.Fatal(e)
 			}
 		case <-ctx.Done():
 			t.Fatal("結果が届きませんでした")
 		}
 		if i == 0 {
-			stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+			stage.Upstream <- types.EventToolRequest{ToolRequest: req}
 		}
 	}
 }
@@ -269,11 +270,11 @@ func TestFailuresIncludingMalformedArgumentsReturnError(t *testing.T) {
 			defer cancel()
 			stage.Run(ctx)
 			defer stage.Close()
-			stage.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: req}
+			stage.Upstream <- types.EventToolRequest{ToolRequest: req}
 			select {
 			case e := <-stage.Downstream:
 				var payload map[string]any
-				if result := e.Payload.(types.ConversationCommitRequest).ToolResult; result == nil || json.Unmarshal(result.Output, &payload) != nil || payload["error"] == nil {
+				if result := e.(types.EventConversationCommitRequest).ConversationCommitRequest.ToolResult; result == nil || json.Unmarshal(result.Output, &payload) != nil || payload["error"] == nil {
 					t.Fatal(e)
 				}
 			case <-ctx.Done():
@@ -293,13 +294,13 @@ func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
 	defer cancel()
 	st.Run(ctx)
 	defer st.Close()
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
 	<-slow.started
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
-	st.Upstream <- types.Event{Kind: types.EventToolRequest, Payload: types.ToolRequest{ToolCallID: "fast", Name: "count"}}
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{ToolCallID: "slow", Name: "blocked"}}
+	st.Upstream <- types.EventToolRequest{ToolRequest: types.ToolRequest{ToolCallID: "fast", Name: "count"}}
 	select {
 	case evt := <-st.Downstream:
-		if id := evt.Payload.(types.ConversationCommitRequest).ToolResult.ToolCallID; id != "fast" {
+		if id := evt.(types.EventConversationCommitRequest).ConversationCommitRequest.ToolResult.ToolCallID; id != "fast" {
 			t.Fatal(id)
 		}
 	case <-ctx.Done():
@@ -308,7 +309,7 @@ func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
 	close(slow.release)
 	select {
 	case evt := <-st.Downstream:
-		if id := evt.Payload.(types.ConversationCommitRequest).ToolResult.ToolCallID; id != "slow" {
+		if id := evt.(types.EventConversationCommitRequest).ConversationCommitRequest.ToolResult.ToolCallID; id != "slow" {
 			t.Fatal(id)
 		}
 	case <-ctx.Done():

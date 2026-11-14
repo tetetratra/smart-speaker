@@ -100,13 +100,13 @@ func NewStage(cfg Config) *graph.Stage {
 				b := peers[r.peer]
 				if b == nil || b.epoch != r.epoch || cfg.Store == nil {
 					log.Printf("wakegate: 端末の再接続で認識結果を破棄 peer=%s text=%q", r.peer, r.transcript.Text)
-					emit(types.Event{Kind: types.EventWakeTranscription, Payload: transcription(r, types.WakeTranscriptionDiscardedReconnect)})
+					emit(types.EventWakeTranscription{WakeTranscription: transcription(r, types.WakeTranscriptionDiscardedReconnect)})
 					continue
 				}
 				mode := cfg.Store.Snapshot(time.Now())
 				if !mode.Required || mode.Revision != r.revision {
 					log.Printf("wakegate: 設定の変更で認識結果を破棄 peer=%s text=%q", r.peer, r.transcript.Text)
-					emit(types.Event{Kind: types.EventWakeTranscription, Payload: transcription(r, types.WakeTranscriptionDiscardedModeChange)})
+					emit(types.EventWakeTranscription{WakeTranscription: transcription(r, types.WakeTranscriptionDiscardedModeChange)})
 					continue
 				}
 				// 呼びかけの確定前に区切った発話は、会話中へ移った後に結果が届いても受け付ける。
@@ -116,16 +116,17 @@ func NewStage(cfg Config) *graph.Stage {
 				tr := transcription(r, types.WakeTranscriptionJudged)
 				tr.Confidence, tr.Similarity = d.Confidence, d.Similarity
 				tr.Matched, tr.Accepted, tr.WakeOnly, tr.Awake = d.Matched, d.Accepted, d.WakeOnly, mode.Awake
-				emit(types.Event{Kind: types.EventWakeTranscription, Payload: tr})
+				emit(types.EventWakeTranscription{WakeTranscription: tr})
 				if d.Accepted {
-					emit(types.Event{Kind: types.EventLocalWakeUtterance, Payload: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, WakeOnly: d.WakeOnly}})
+					emit(types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, WakeOnly: d.WakeOnly}})
 				}
 			case e, ok := <-node.Upstream:
 				if !ok {
 					return
 				}
-				switch p := e.Payload.(type) {
-				case types.RTCPeerOutputSink:
+				switch ev := e.(type) {
+				case types.EventRTCPeerOutputSink:
+					p := ev.RTCPeerOutputSink
 					if p.Connected {
 						epoch++
 						peers[p.PeerID] = &peerBuffer{epoch: epoch}
@@ -133,7 +134,8 @@ func NewStage(cfg Config) *graph.Stage {
 						delete(peers, p.PeerID)
 					}
 					emit(e)
-				case types.RTCPeerAudioFrame:
+				case types.EventRTCPeerAudioFrame:
+					p := ev.RTCPeerAudioFrame
 					b := peers[p.PeerID]
 					if b == nil {
 						continue

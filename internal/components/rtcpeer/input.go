@@ -46,18 +46,15 @@ func (s *stage) handleIncomingTrack(peerID string, trackRemote *webrtc.TrackRemo
 		if len(mono) == 0 {
 			continue
 		}
-		s.emit(types.Event{
-			Kind: types.EventRTCPeerAudioFrame,
-			Payload: types.RTCPeerAudioFrame{
-				PeerID:     peerID,
-				Samples:    mono,
-				PCM:        int16ToBytes(mono),
-				SampleRate: sampleRate,
-				Channels:   1,
-				DurationMs: packetDurationMs(len(mono), sampleRate),
-				CapturedAt: time.Now(),
-			},
-		})
+		s.emit(types.EventRTCPeerAudioFrame{RTCPeerAudioFrame: types.RTCPeerAudioFrame{
+			PeerID:     peerID,
+			Samples:    mono,
+			PCM:        int16ToBytes(mono),
+			SampleRate: sampleRate,
+			Channels:   1,
+			DurationMs: packetDurationMs(len(mono), sampleRate),
+			CapturedAt: time.Now(),
+		}})
 	}
 }
 

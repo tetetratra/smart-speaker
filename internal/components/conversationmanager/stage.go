@@ -96,13 +96,13 @@ func InputEvent(message types.InboundMessage) types.Event {
 	if record.Role == "" {
 		record.Role = types.RoleSystem
 	}
-	return types.Event{Kind: types.EventConversationInput, Payload: types.ConversationInput{Record: record, ModelHandling: handling}}
+	return types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelHandling: handling}}
 }
 
 func (s *stage) handle(ctx context.Context, e types.Event) {
-	switch e.Kind {
+	switch e := e.(type) {
 	case types.EventConversationInput:
-		input := e.Payload.(types.ConversationInput)
+		input := e.ConversationInput
 		if input.ModelHandling == types.ModelHandlingAlreadyKnown {
 			s.save(ctx, input.Record)
 			return
@@ -119,26 +119,18 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.save(ctx, input.Record)
 		s.unused[input.Record.ID] = true
-		e.Payload = input
-		s.emit(ctx, e)
-	case types.EventConversationSignal:
-		s.handleSignal(ctx, e)
-	}
-}
-
-func (s *stage) handleSignal(ctx context.Context, e types.Event) {
-	switch p := e.Payload.(type) {
-	case types.ConversationHistorySync:
+		s.emit(ctx, types.EventConversationInput{ConversationInput: input})
+	case types.EventConversationHistorySync:
 		s.emit(ctx, e)
 		select {
-		case <-p.Done:
+		case <-e.Done:
 		case <-ctx.Done():
 		}
-	case types.ConversationRecordsUsed:
-		for _, id := range p.IDs {
+	case types.EventConversationRecordsUsed:
+		for _, id := range e.IDs {
 			delete(s.unused, id)
 		}
-	case types.ConversationIdle:
+	case types.EventConversationIdle:
 		if s.cfg.OnIdle != nil {
 			s.cfg.OnIdle(ctx, s.unused)
 		}
@@ -152,6 +144,6 @@ func (s *stage) save(ctx context.Context, record types.ConversationRecord) {
 		log.Printf("会話管理: 会話履歴の保存: %v", err)
 	}
 	if !record.IsDialogue() {
-		s.emit(ctx, types.Event{Kind: types.EventConversationRecordChanged, Payload: record})
+		s.emit(ctx, types.EventConversationRecordChanged{ConversationRecord: record})
 	}
 }

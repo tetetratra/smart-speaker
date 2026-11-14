@@ -23,7 +23,7 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	record := input.Record
 	if record.External || record.GenerationID == 0 {
 		change, _ := s.controller.Start(record.ID)
-		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
+		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record.GenerationID = change.GenerationID
 	}
 
@@ -34,7 +34,7 @@ func (s *stage) startInbound(ctx context.Context) bool {
 		s.lastActivity = time.Now()
 	}
 	s.addContext(input)
-	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
+	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
 	s.wantResponse = true
 	s.maybeRespond(ctx)
 	return true

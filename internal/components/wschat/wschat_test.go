@@ -9,13 +9,10 @@ import (
 
 func TestMessageForEventSpeechStart(t *testing.T) {
 	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 123, time.UTC)
-	msg, targetID, ok := messageForEvent(types.Event{
-		Kind: types.EventSpeechStart,
-		Payload: types.SpeechEvent{
-			Source:     "server-vad",
-			CapturedAt: capturedAt,
-		},
-	})
+	msg, targetID, ok := messageForEvent(types.EventSpeechStart{SpeechEvent: types.SpeechEvent{
+		Source:     "server-vad",
+		CapturedAt: capturedAt,
+	}})
 
 	if !ok {
 		t.Fatal("messageForEvent returned ok=false")
@@ -35,17 +32,14 @@ func TestMessageForEventSpeechStart(t *testing.T) {
 }
 
 func TestMessageForAudioSentIncludesSegmentDuration(t *testing.T) {
-	msg, _, ok := messageForEvent(types.Event{
-		Kind:    types.EventAudioSent,
-		Payload: types.AudioFrame{GenerationID: 2, SegmentID: "item/1", Text: "こんにちは", SegmentDuration: 1500 * time.Millisecond},
-	})
+	msg, _, ok := messageForEvent(types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 2, SegmentID: "item/1", Text: "こんにちは", SegmentDuration: 1500 * time.Millisecond}})
 	if !ok {
 		t.Fatal("messageForEvent returned ok=false")
 	}
 	if got := msg["duration_ms"]; got != int64(1500) {
 		t.Fatalf("duration_ms = %v, want 1500", got)
 	}
-	msg, _, ok = messageForEvent(types.Event{Kind: types.EventAudioSent, Payload: types.AudioFrame{GenerationID: 2, End: true}})
+	msg, _, ok = messageForEvent(types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 2, End: true}})
 	if !ok {
 		t.Fatal("messageForEvent returned ok=false")
 	}
@@ -55,18 +49,15 @@ func TestMessageForAudioSentIncludesSegmentDuration(t *testing.T) {
 }
 
 func TestMessageForEventWakeTranscription(t *testing.T) {
-	msg, targetID, ok := messageForEvent(types.Event{
-		Kind: types.EventWakeTranscription,
-		Payload: types.WakeTranscription{
-			PeerID:     "peer-1",
-			Text:       "置きて",
-			Outcome:    types.WakeTranscriptionJudged,
-			Confidence: 0.4,
-			Similarity: 0.67,
-			Matched:    true,
-			Error:      "STT停止",
-		},
-	})
+	msg, targetID, ok := messageForEvent(types.EventWakeTranscription{WakeTranscription: types.WakeTranscription{
+		PeerID:     "peer-1",
+		Text:       "置きて",
+		Outcome:    types.WakeTranscriptionJudged,
+		Confidence: 0.4,
+		Similarity: 0.67,
+		Matched:    true,
+		Error:      "STT停止",
+	}})
 	if !ok {
 		t.Fatal("messageForEvent returned ok=false")
 	}

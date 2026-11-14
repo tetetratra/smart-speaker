@@ -135,8 +135,8 @@ flowchart LR
     end
 
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"EventConversationInput{ModelHandling: AlreadyKnown}<br/>会話の記録<br/>EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期<br/>EventConversationSignal{ConversationIdle}<br/>無操作の継続<br/>EventConversationSignal{ConversationRecordsUsed}<br/>参照済みの外部記録"| manager
-    manager --->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationSignal{ConversationHistorySync}<br/>会話履歴の読み出し同期"| rt
+    rt -->|"EventConversationInput{ModelHandling: AlreadyKnown}<br/>会話の記録<br/>EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
+    manager --->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     scheduler -->|"Inbound<br/>予約ジョブの通知・Web検索の結果"| manager

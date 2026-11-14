@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -10,53 +11,50 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-type EventDetailFormatter func(types.Event) string
-
-func defaultSuppressedForwardLogKinds() map[types.EventKind]struct{} {
-	return map[types.EventKind]struct{}{
-		types.EventAudioFrame:        {},
-		types.EventAudioSent:         {},
-		types.EventResponseText:      {},
-		types.EventRTCPeerAudioFrame: {},
+func defaultSuppressedForwardLogTypes() map[reflect.Type]struct{} {
+	suppressed := map[reflect.Type]struct{}{}
+	for _, e := range []types.Event{types.EventAudioFrame{}, types.EventAudioSent{}, types.EventResponseText{}, types.EventRTCPeerAudioFrame{}} {
+		suppressed[reflect.TypeOf(e)] = struct{}{}
 	}
+	return suppressed
 }
 
-func defaultEventDetailFormatters() map[types.EventKind]EventDetailFormatter {
-	return map[types.EventKind]EventDetailFormatter{
-		types.EventSpeechEnd:                 formatSpeechEventDetail,
-		types.EventRealtimeOutput:            formatOutputLineDetail,
-		types.EventToolRequest:               formatToolRequestDetail,
-		types.EventRTCSignal:                 formatRTCSignalDetail,
-		types.EventConversationCommitRequest: formatCommitRequestDetail,
-		types.EventLLMRequest:                formatLLMRequestDetail,
-		types.EventTimelineItem:              formatTimelineItemDetail,
-		types.EventPlayableSpeech:            formatPlayableSpeechDetail,
-		types.EventAgentTimelineEnd:          formatAgentTimelineEndDetail,
-	}
-}
-
-func (g *Graph) shouldLogForwardEvent(kind types.EventKind) bool {
-	if g == nil || g.suppressedForwardLogKinds == nil {
+func (g *Graph) shouldLogForwardEvent(eventType reflect.Type) bool {
+	if g == nil || g.suppressedForwardLogTypes == nil {
 		return true
 	}
-	_, suppressed := g.suppressedForwardLogKinds[kind]
+	_, suppressed := g.suppressedForwardLogTypes[eventType]
 	return !suppressed
 }
 
-func (g *Graph) eventDetail(evt types.Event) (string, bool) {
-	if g == nil || g.eventDetailFormatters == nil {
-		return "", false
+// eventDetail は、転送ログでイベント名の後ろに添える要約を返す。要約しないイベントは false。
+func eventDetail(evt types.Event) (string, bool) {
+	switch e := evt.(type) {
+	case types.EventSpeechEnd:
+		return formatSpeechEventDetail(e.SpeechEvent), true
+	case types.EventRealtimeOutput:
+		return formatOutputLineDetail(e.OutputLine), true
+	case types.EventToolRequest:
+		return formatToolRequestDetail(e.ToolRequest), true
+	case types.EventRTCSignal:
+		return formatRTCSignalDetail(e.RTCSignal), true
+	case types.EventConversationCommitRequest:
+		return formatCommitRequestDetail(e.ConversationCommitRequest), true
+	case types.EventLLMRequest:
+		return formatLLMRequestDetail(e.LLMRequest), true
+	case types.EventTimelineItem:
+		return formatTimelineItemDetail(e.TimelineItem), true
+	case types.EventPlayableSpeech:
+		return formatPlayableSpeechDetail(e.PlayableSpeech), true
+	case types.EventAgentTimelineEnd:
+		return fmt.Sprintf("generation=%d", e.GenerationID), true
 	}
-	fn, ok := g.eventDetailFormatters[evt.Kind]
-	if !ok || fn == nil {
-		return "", false
-	}
-	return fn(evt), true
+	return "", false
 }
 
 func (g *Graph) formatForwardLog(from *Stage, downstreams []*Stage, evt types.Event) string {
-	eventName := evt.Kind.String()
-	detail, hasDetail := g.eventDetail(evt)
+	eventName := types.EventName(evt)
+	detail, hasDetail := eventDetail(evt)
 	detailPart := ""
 	if hasDetail {
 		detailPart = "{" + detail + "}"
@@ -81,11 +79,7 @@ func stageNames(stages []*Stage) []string {
 	return names
 }
 
-func formatOutputLineDetail(evt types.Event) string {
-	line, ok := evt.Payload.(types.OutputLine)
-	if !ok {
-		return ""
-	}
+func formatOutputLineDetail(line types.OutputLine) string {
 	parts := []string{
 		fmt.Sprintf("text=%s", quoteText(line.Text)),
 		fmt.Sprintf("chars=%d", utf8.RuneCountInString(line.Text)),
@@ -100,11 +94,7 @@ func formatOutputLineDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatToolRequestDetail(evt types.Event) string {
-	req, ok := evt.Payload.(types.ToolRequest)
-	if !ok {
-		return ""
-	}
+func formatToolRequestDetail(req types.ToolRequest) string {
 	args := string(req.Arguments)
 	parts := []string{
 		fmt.Sprintf("name=%s", req.Name),
@@ -115,11 +105,7 @@ func formatToolRequestDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatSpeechEventDetail(evt types.Event) string {
-	speech, ok := evt.Payload.(types.SpeechEvent)
-	if !ok {
-		return ""
-	}
+func formatSpeechEventDetail(speech types.SpeechEvent) string {
 	parts := []string{
 		fmt.Sprintf("at=%s", speech.CapturedAt.Format(time.RFC3339Nano)),
 	}
@@ -129,11 +115,7 @@ func formatSpeechEventDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatCommitRequestDetail(evt types.Event) string {
-	req, ok := evt.Payload.(types.ConversationCommitRequest)
-	if !ok {
-		return ""
-	}
+func formatCommitRequestDetail(req types.ConversationCommitRequest) string {
 	parts := []string{
 		fmt.Sprintf("role=%s", req.Role),
 		fmt.Sprintf("text=%s", quoteText(req.Text)),
@@ -145,19 +127,11 @@ func formatCommitRequestDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatLLMRequestDetail(evt types.Event) string {
-	req, ok := evt.Payload.(types.LLMRequest)
-	if !ok {
-		return ""
-	}
+func formatLLMRequestDetail(req types.LLMRequest) string {
 	return fmt.Sprintf("role=%s, text=%s, generation=%d, request_id=%s", req.Role, quoteText(req.Text), req.GenerationID, req.RequestID)
 }
 
-func formatTimelineItemDetail(evt types.Event) string {
-	item, ok := evt.Payload.(types.TimelineItem)
-	if !ok {
-		return ""
-	}
+func formatTimelineItemDetail(item types.TimelineItem) string {
 	parts := []string{
 		fmt.Sprintf("kind=%s", item.Kind),
 		fmt.Sprintf("generation=%d", item.GenerationID),
@@ -168,27 +142,11 @@ func formatTimelineItemDetail(evt types.Event) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatPlayableSpeechDetail(evt types.Event) string {
-	speech, ok := evt.Payload.(types.PlayableSpeech)
-	if !ok {
-		return ""
-	}
+func formatPlayableSpeechDetail(speech types.PlayableSpeech) string {
 	return fmt.Sprintf("text=%s, generation=%d, duration=%.3f", quoteText(speech.Text), speech.GenerationID, speech.DurationSeconds)
 }
 
-func formatAgentTimelineEndDetail(evt types.Event) string {
-	end, ok := evt.Payload.(types.AgentTimelineEnd)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf("generation=%d", end.GenerationID)
-}
-
-func formatRTCSignalDetail(evt types.Event) string {
-	sig, ok := evt.Payload.(types.RTCSignal)
-	if !ok {
-		return ""
-	}
+func formatRTCSignalDetail(sig types.RTCSignal) string {
 	parts := []string{
 		fmt.Sprintf("type=%s", sig.Type),
 		fmt.Sprintf("sdp_chars=%d", utf8.RuneCountInString(sig.SDP)),
