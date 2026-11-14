@@ -13,11 +13,11 @@ func TestFramesPreserveIdentityAndPartialTail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	go st.Run(ctx)
-	st.Upstream <- types.Event{Payload: types.PlayableSpeech{GenerationID: 3, SequenceID: "item/1", Text: "こんにちは", Audio: base64.StdEncoding.EncodeToString(make([]byte, 2000))}}
+	st.Upstream <- types.EventPlayableSpeech{PlayableSpeech: types.PlayableSpeech{GenerationID: 3, SequenceID: "item/1", Text: "こんにちは", Audio: base64.StdEncoding.EncodeToString(make([]byte, 2000))}}
 	for i := 0; i < 3; i++ {
 		select {
 		case e := <-st.Downstream:
-			p := e.Payload.(types.AudioFrame)
+			p := e.(types.EventAudioFrame).AudioFrame
 			if p.GenerationID != 3 || p.SegmentID != "item/1" || p.Sequence != i || p.Final != (i == 2) {
 				t.Fatal(p)
 			}

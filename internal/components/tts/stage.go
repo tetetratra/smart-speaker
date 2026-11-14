@@ -49,17 +49,15 @@ func (t *streamTTS) run(ctx context.Context) {
 		if !ok {
 			return
 		}
-		if evt.Kind == types.EventAgentTimelineEnd {
+		if _, ok := evt.(types.EventAgentTimelineEnd); ok {
 			t.emit(ctx, evt)
 			continue
 		}
-		if evt.Kind != types.EventTimelineItem {
-			continue
-		}
-		item, ok := evt.Payload.(types.TimelineItem)
+		event, ok := evt.(types.EventTimelineItem)
 		if !ok {
 			continue
 		}
+		item := event.TimelineItem
 		if item.Kind != types.TimelineKindSpeech {
 			t.emit(ctx, evt)
 			continue
@@ -100,7 +98,7 @@ func (t *streamTTS) handleSpeech(ctx context.Context, item types.TimelineItem) {
 	}
 	select {
 	case <-ctx.Done():
-	case t.downstream <- types.Event{Kind: types.EventPlayableSpeech, Payload: playable}:
+	case t.downstream <- types.EventPlayableSpeech{PlayableSpeech: playable}:
 	}
 }
 

@@ -37,7 +37,7 @@ func TestSelectorSwitchDuringSpeechPreservesCurrentAndChangesNext(t *testing.T) 
 	defer cancel()
 	go stage.Run(ctx)
 	defer stage.Close()
-	stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "切り替え前"}}
+	stage.Upstream <- types.EventTimelineItem{TimelineItem: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "切り替え前"}}
 	select {
 	case <-first.started:
 	case <-ctx.Done():
@@ -54,11 +54,11 @@ func TestSelectorSwitchDuringSpeechPreservesCurrentAndChangesNext(t *testing.T) 
 		t.Fatal("生成中の音声が切り替えを妨げました")
 	}
 	close(first.release)
-	if got := receiveEvent(t, stage.Downstream).Payload.(types.PlayableSpeech).Audio; got != base64.StdEncoding.EncodeToString([]byte{1, 2}) {
+	if got := receiveEvent(t, stage.Downstream).(types.EventPlayableSpeech).PlayableSpeech.Audio; got != base64.StdEncoding.EncodeToString([]byte{1, 2}) {
 		t.Fatal("生成中の音声が変更されました")
 	}
-	stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "切り替え後"}}
-	if got := receiveEvent(t, stage.Downstream).Payload.(types.PlayableSpeech).Audio; got != base64.StdEncoding.EncodeToString(next.pcm) {
+	stage.Upstream <- types.EventTimelineItem{TimelineItem: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "切り替え後"}}
+	if got := receiveEvent(t, stage.Downstream).(types.EventPlayableSpeech).PlayableSpeech.Audio; got != base64.StdEncoding.EncodeToString(next.pcm) {
 		t.Fatal("次の音声に選択が反映されていません")
 	}
 }

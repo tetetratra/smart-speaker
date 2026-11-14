@@ -83,7 +83,7 @@ func TestConversationRecordsInitialAndDiff(t *testing.T) {
 		}
 	}
 	result := types.ConversationRecord{ID: "result", Role: types.RoleToolResult, ToolName: "web_search", CallID: "c1", Output: long}
-	stage.Upstream <- types.Event{Kind: types.EventConversationRecordChanged, Payload: result}
+	stage.Upstream <- types.EventConversationRecordChanged{ConversationRecord: result}
 	for _, conn := range []*websocket.Conn{first, second} {
 		records := read(conn)
 		if len(records) != 1 || records[0].ID != "result" || records[0].CallID != "c1" || records[0].Output != long {

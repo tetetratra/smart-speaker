@@ -5,14 +5,6 @@ import (
 	"time"
 )
 
-const (
-	EventResponseText EventKind = 100 + iota
-	EventGenerationChanged
-	EventAudioFrame
-	EventAudioSent
-	EventRealtimeStatus
-)
-
 // ResponseText はAPI応答の差分。識別子は接続更新後も別応答と混ざらない。
 type ResponseText struct {
 	GenerationID GenerationID
@@ -47,25 +39,25 @@ type RealtimeStatus struct {
 
 // EventGeneration は応答出力の世代だけを取り出す。履歴・ツール結果は破棄対象にしない。
 func EventGeneration(e Event) (uint64, bool) {
-	switch p := e.Payload.(type) {
-	case ResponseText:
+	switch p := e.(type) {
+	case EventResponseText:
 		return uint64(p.GenerationID), true
-	case ToolRequest:
+	case EventToolRequest:
 		return uint64(p.GenerationID), true
-	case TimelineItem:
+	case EventTimelineItem:
 		return uint64(p.GenerationID), true
-	case PlayableSpeech:
+	case EventPlayableSpeech:
 		return uint64(p.GenerationID), true
-	case AudioFrame:
+	case EventAudioFrame:
 		return uint64(p.GenerationID), true
-	case AgentTimelineEnd:
+	case EventAudioSent:
+		return uint64(p.GenerationID), true
+	case EventAgentTimelineEnd:
 		return uint64(p.GenerationID), true
 	default:
 		return 0, false
 	}
 }
-
-const EventLocalWakeUtterance EventKind = 120
 
 // LocalWakeUtteranceはローカルの認識・呼びかけ判定を通過した1回の発話。
 type LocalWakeUtterance struct {
@@ -75,8 +67,6 @@ type LocalWakeUtterance struct {
 	// WakeOnlyは呼びかけだけで依頼の本文がない発話。起きていることを短く伝える応答にする。
 	WakeOnly bool
 }
-
-const EventWakeTranscription EventKind = 121
 
 // WakeTranscriptionの結果の種類。
 const (

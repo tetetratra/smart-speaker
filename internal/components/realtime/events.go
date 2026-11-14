@@ -105,12 +105,12 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		change.ItemID = e.ItemID
 		s.userGenerations[e.ItemID] = change.GenerationID
 		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, e.ItemID), Role: types.RoleUser, GenerationID: change.GenerationID, CreatedAt: time.Now(), Source: "audio", Text: "[文字起こし未完了の音声発話]"})
-		s.emit(ctx, types.Event{Kind: types.EventGenerationChanged, Payload: change})
-		s.emit(ctx, types.Event{Kind: types.EventSpeechStart, Payload: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
+		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
+		s.emit(ctx, types.EventSpeechStart{SpeechEvent: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
 	case "input_audio_buffer.speech_stopped":
 		s.speaking = false
 		s.lastActivity = time.Now()
-		s.emit(ctx, types.Event{Kind: types.EventSpeechEnd, Payload: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
+		s.emit(ctx, types.EventSpeechEnd{SpeechEvent: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
 	case "input_audio_buffer.committed":
 		if s.awaitingInputCommit == e.ItemID {
 			s.awaitingInputCommit = ""
@@ -147,7 +147,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			delete(s.externalPending, id)
 			delete(s.externalRecords, id)
 		}
-		s.emit(ctx, types.Event{Kind: types.EventConversationSignal, Payload: types.ConversationRecordsUsed{IDs: used}})
+		s.emit(ctx, types.EventConversationRecordsUsed{IDs: used})
 		s.externalRequested = nil
 		order := s.externalOrder[:0]
 		for _, id := range s.externalOrder {
@@ -171,7 +171,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		r.items[e.ItemID] = true
 		item.generated += e.Delta
 		s.saveAssistant(ctx, e.ItemID, item)
-		s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
+		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
 	case "response.output_text.done":
 		r := s.responses[e.ResponseID]
 		if r == nil {
@@ -183,9 +183,9 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 				item.generated = e.Text
 				s.saveAssistant(ctx, e.ItemID, item)
 			}
-			s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleAgent, Text: item.generated, GenerationID: r.generation, ResponseID: e.ResponseID, Final: true}})
+			s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleAgent, Text: item.generated, GenerationID: r.generation, ResponseID: e.ResponseID, Final: true}})
 		}
-		s.emit(ctx, types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
+		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
 	case "response.function_call_arguments.done":
 		r := s.responses[e.ResponseID]
 		if r == nil {
@@ -204,7 +204,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.waitForUser(ctx, req)
 			return
 		}
-		s.emit(ctx, types.Event{Kind: types.EventToolRequest, Payload: req})
+		s.emit(ctx, types.EventToolRequest{ToolRequest: req})
 	case "response.done":
 		if s.active == e.Response.ID {
 			s.active = ""
@@ -307,7 +307,7 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 	c.finished = true
 	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: realtimeSource, CreatedAt: time.Now(),
 		ToolName: result.Name, CallID: result.ToolCallID, Output: string(result.Output)})
-	s.emit(ctx, types.Event{Kind: types.EventRealtimeOutput, Payload: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
+	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
 	if c.epoch != s.epoch || s.transport == nil {
 		if s.ready && s.transport != nil {
 			s.sendResultContext(result)

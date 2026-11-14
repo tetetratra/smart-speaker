@@ -59,7 +59,7 @@ func newGate(t *testing.T, required bool) *gateRig {
 func (r *gateRig) sink(t *testing.T, connected bool) {
 	t.Helper()
 	select {
-	case r.node.Upstream <- types.Event{Kind: types.EventRTCPeerOutputSink, Payload: types.RTCPeerOutputSink{PeerID: "a", Connected: connected}}:
+	case r.node.Upstream <- types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{PeerID: "a", Connected: connected}}:
 	case <-r.ctx.Done():
 		t.Fatal(r.ctx.Err())
 	}
@@ -86,7 +86,7 @@ func (r *gateRig) frameAt(t *testing.T, amplitude uint16) {
 		binary.LittleEndian.PutUint16(pcm[i:], amplitude)
 	}
 	select {
-	case r.node.Upstream <- types.Event{Kind: types.EventRTCPeerAudioFrame, Payload: types.RTCPeerAudioFrame{PeerID: "a", PCM: pcm, SampleRate: 8000, Channels: 1}}:
+	case r.node.Upstream <- types.EventRTCPeerAudioFrame{RTCPeerAudioFrame: types.RTCPeerAudioFrame{PeerID: "a", PCM: pcm, SampleRate: 8000, Channels: 1}}:
 	case <-r.ctx.Done():
 		t.Fatal(r.ctx.Err())
 	}
@@ -120,7 +120,7 @@ func TestDisabledPassesAudioWithoutSTT(t *testing.T) {
 	go r.frame(t, true)
 	select {
 	case e := <-r.node.Downstream:
-		if e.Kind != types.EventRTCPeerAudioFrame {
+		if !types.Is[types.EventRTCPeerAudioFrame](e) {
 			t.Fatal(e)
 		}
 	case <-r.ctx.Done():
@@ -138,8 +138,9 @@ func (r *gateRig) transcribed(t *testing.T) types.WakeTranscription {
 	t.Helper()
 	select {
 	case e := <-r.node.Downstream:
-		p, ok := e.Payload.(types.WakeTranscription)
-		if !ok || e.Kind != types.EventWakeTranscription || p.PeerID != "a" {
+		pEvent, ok := e.(types.EventWakeTranscription)
+		p := pEvent.WakeTranscription
+		if !ok || !types.Is[types.EventWakeTranscription](e) || p.PeerID != "a" {
 			t.Fatal(e)
 		}
 		return p
@@ -157,7 +158,8 @@ func (r *gateRig) wake(t *testing.T, text string) types.LocalWakeUtterance {
 	}
 	select {
 	case e := <-r.node.Downstream:
-		p, ok := e.Payload.(types.LocalWakeUtterance)
+		pEvent, ok := e.(types.EventLocalWakeUtterance)
+		p := pEvent.LocalWakeUtterance
 		if !ok || p.Text != text || p.Confidence != 0.9 {
 			t.Fatal(e)
 		}
@@ -197,7 +199,7 @@ func TestUtterancesAreGatedUntilWakeAndThenPassRawAudio(t *testing.T) {
 	go r.frame(t, true)
 	select {
 	case e := <-r.node.Downstream:
-		if e.Kind != types.EventRTCPeerAudioFrame {
+		if !types.Is[types.EventRTCPeerAudioFrame](e) {
 			t.Fatal(e)
 		}
 	case <-r.ctx.Done():

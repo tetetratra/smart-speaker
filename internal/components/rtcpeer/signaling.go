@@ -73,7 +73,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 			c.Port,
 		)
 		init := c.ToJSON()
-		s.emit(types.Event{Kind: types.EventRTCSignal, Payload: types.RTCSignal{
+		s.emit(types.EventRTCSignal{RTCSignal: types.RTCSignal{
 			Type: "webrtc.ice",
 			Candidate: &types.RTCIceCandidate{
 				Candidate:     init.Candidate,
@@ -136,7 +136,7 @@ func (s *stage) handleOffer(sig types.RTCSignal) {
 		log.Printf("rtcpeer: set local desc error: %v", err)
 		return
 	}
-	s.emit(types.Event{Kind: types.EventRTCSignal, Payload: types.RTCSignal{
+	s.emit(types.EventRTCSignal{RTCSignal: types.RTCSignal{
 		Type:     "webrtc.answer",
 		SDP:      answer.SDP,
 		ClientID: clientID,
@@ -334,13 +334,10 @@ func (s *stage) resetAllPeersLocked() {
 }
 
 func (s *stage) emitPeerOutputSink(peerID string, writer types.RTCPeerOutputWriter, opusChannels int, connected bool) {
-	s.emit(types.Event{
-		Kind: types.EventRTCPeerOutputSink,
-		Payload: types.RTCPeerOutputSink{
-			PeerID:       peerID,
-			Writer:       writer,
-			OpusChannels: opusChannels,
-			Connected:    connected,
-		},
-	})
+	s.emit(types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{
+		PeerID:       peerID,
+		Writer:       writer,
+		OpusChannels: opusChannels,
+		Connected:    connected,
+	}})
 }

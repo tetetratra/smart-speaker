@@ -91,14 +91,9 @@ func (s *stage) consume() {
 			if !ok {
 				return
 			}
-			if evt.Kind != types.EventRTCSignal {
-				continue
+			if event, ok := evt.(types.EventRTCSignal); ok {
+				s.handleSignal(event.RTCSignal)
 			}
-			sig, ok := evt.Payload.(types.RTCSignal)
-			if !ok {
-				continue
-			}
-			s.handleSignal(sig)
 		}
 	}
 }

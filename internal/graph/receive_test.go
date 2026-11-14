@@ -15,19 +15,19 @@ func TestFilterChecksAfterBlockedHandoff(t *testing.T) {
 	store := generation.NewStore()
 	store.Next()
 	generationfilter.Attach(st, store)
-	old := types.Event{Payload: types.TimelineItem{GenerationID: 1}}
+	old := types.EventTimelineItem{TimelineItem: types.TimelineItem{GenerationID: 1}}
 	started := make(chan struct{})
 	go func() {
 		close(started)
 		st.Upstream <- old
-		st.Upstream <- types.Event{Payload: types.TimelineItem{GenerationID: 2}}
+		st.Upstream <- types.EventTimelineItem{TimelineItem: types.TimelineItem{GenerationID: 2}}
 	}()
 	<-started
 	store.Next()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	e, ok := st.Receive(ctx)
-	if !ok || e.Payload.(types.TimelineItem).GenerationID != 2 {
+	if !ok || e.(types.EventTimelineItem).TimelineItem.GenerationID != 2 {
 		t.Fatal(e, ok)
 	}
 }
@@ -40,12 +40,12 @@ func TestBlockedAudioDestinationDoesNotBlockControlDelivery(t *testing.T) {
 	control := &graph.Stage{Name: "control", Upstream: make(chan types.Event), Run: func(context.Context) {}}
 	g := graph.New()
 	a, b, c := g.AddNode(source), g.AddNode(audio), g.AddNode(control)
-	g.ConnectKinds(a, b, types.EventResponseText)
-	g.ConnectKinds(a, c, types.EventGenerationChanged)
+	g.Connect(a, b, types.EventResponseText{})
+	g.Connect(a, c, types.EventGenerationChanged{})
 	done := make(chan struct{})
 	go func() { _ = g.Run(ctx); close(done) }()
-	source.Downstream <- types.Event{Kind: types.EventResponseText, Payload: types.ResponseText{GenerationID: 1, Text: "待機する音声"}}
-	source.Downstream <- types.Event{Kind: types.EventGenerationChanged, Payload: types.GenerationChanged{GenerationID: 2}}
+	source.Downstream <- types.EventResponseText{ResponseText: types.ResponseText{GenerationID: 1, Text: "待機する音声"}}
+	source.Downstream <- types.EventGenerationChanged{GenerationChanged: types.GenerationChanged{GenerationID: 2}}
 	select {
 	case <-control.Upstream:
 	case <-time.After(time.Second):

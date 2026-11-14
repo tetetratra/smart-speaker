@@ -28,9 +28,9 @@ func TestOutputDropsOldFramesImmediatelyBeforeWriting(t *testing.T) {
 	generationfilter.Attach(node, store)
 	go node.Run(ctx)
 	samples := make(chan media.Sample, 10)
-	node.Upstream <- types.Event{Payload: types.RTCPeerOutputSink{PeerID: "peer", Writer: channelWriter{samples}, Connected: true}}
+	node.Upstream <- types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{PeerID: "peer", Writer: channelWriter{samples}, Connected: true}}
 	frame := types.AudioFrame{ItemID: "old", GenerationID: 1, SampleRate: 24000, Audio: base64.StdEncoding.EncodeToString(make([]byte, 960))}
-	node.Upstream <- types.Event{Kind: types.EventAudioFrame, Payload: frame}
+	node.Upstream <- types.EventAudioFrame{AudioFrame: frame}
 	select {
 	case <-samples:
 	case <-ctx.Done():
@@ -39,13 +39,13 @@ func TestOutputDropsOldFramesImmediatelyBeforeWriting(t *testing.T) {
 	// 履歴通知の受け取り待ち中に割り込み、その後届く旧世代を拒否する。
 	store.Next()
 	<-node.Downstream
-	node.Upstream <- types.Event{Kind: types.EventAudioFrame, Payload: frame}
+	node.Upstream <- types.EventAudioFrame{AudioFrame: frame}
 	frame.GenerationID = 2
 	frame.ItemID = "new"
-	node.Upstream <- types.Event{Kind: types.EventAudioFrame, Payload: frame}
+	node.Upstream <- types.EventAudioFrame{AudioFrame: frame}
 	select {
 	case e := <-node.Downstream:
-		if e.Kind != types.EventAudioSent || e.Payload.(types.AudioFrame).ItemID != "new" {
+		if !types.Is[types.EventAudioSent](e) || e.(types.EventAudioSent).AudioFrame.ItemID != "new" {
 			t.Fatal("旧世代を送信した", e)
 		}
 	case <-ctx.Done():

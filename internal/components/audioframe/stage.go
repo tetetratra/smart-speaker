@@ -18,7 +18,7 @@ func NewStage() *graph.Stage {
 			select {
 			case <-ctx.Done():
 				return false
-			case st.Downstream <- types.Event{Kind: types.EventAudioFrame, Payload: p}:
+			case st.Downstream <- types.EventAudioFrame{AudioFrame: p}:
 				return true
 			}
 		}
@@ -27,12 +27,14 @@ func NewStage() *graph.Stage {
 			if !ok {
 				return
 			}
-			switch p := e.Payload.(type) {
-			case types.AgentTimelineEnd:
+			switch ev := e.(type) {
+			case types.EventAgentTimelineEnd:
+				p := ev.AgentTimelineEnd
 				if !emit(types.AudioFrame{GenerationID: p.GenerationID, ItemID: p.ItemID, End: true}) {
 					return
 				}
-			case types.PlayableSpeech:
+			case types.EventPlayableSpeech:
+				p := ev.PlayableSpeech
 				pcm, err := base64.StdEncoding.DecodeString(p.Audio)
 				if err != nil || len(pcm)%2 != 0 {
 					log.Printf("audioframe: invalid PCM")

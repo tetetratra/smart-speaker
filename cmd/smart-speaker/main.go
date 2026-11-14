@@ -300,34 +300,35 @@ func wireGraph(g *graph.Graph, s appStages) {
 	}
 	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
 	manager := add(s.manager)
-	connectKinds(g, rt, manager, types.EventConversationInput, types.EventConversationSignal)
-	connectKinds(g, manager, rt, types.EventConversationInput, types.EventConversationSignal)
-	connectKinds(g, manager, chat, types.EventConversationRecordChanged)
+	connect(g, rt, manager, types.EventConversationInput{}, types.EventConversationHistorySync{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
+	connect(g, manager, rt, types.EventConversationInput{}, types.EventConversationHistorySync{})
+	connect(g, manager, chat, types.EventConversationRecordChanged{})
 	output := add(s.output)
-	connectKinds(g, peer, output, types.EventRTCPeerOutputSink)
-	connectKinds(g, chat, output, types.EventRTCSignal)
+	connect(g, peer, output, types.EventRTCPeerOutputSink{})
+	connect(g, chat, output, types.EventRTCSignal{})
 	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
-	connectKinds(g, chat, peer, types.EventRTCSignal)
-	connectKinds(g, peer, chat, types.EventRTCSignal)
+	connect(g, chat, peer, types.EventRTCSignal{})
+	connect(g, peer, chat, types.EventRTCSignal{})
 	wake := add(s.wakegate)
-	connectKinds(g, peer, wake, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink)
-	connectKinds(g, wake, rt, types.EventRTCPeerAudioFrame, types.EventRTCPeerOutputSink, types.EventLocalWakeUtterance)
-	connectKinds(g, wake, chat, types.EventWakeTranscription)
-	connectKinds(g, rt, segment, types.EventResponseText)
-	connectKinds(g, segment, ttsNode, types.EventTimelineItem, types.EventAgentTimelineEnd)
-	connectKinds(g, ttsNode, frame, types.EventPlayableSpeech, types.EventAgentTimelineEnd)
-	connectKinds(g, frame, pace, types.EventAudioFrame)
-	connectKinds(g, pace, output, types.EventAudioFrame)
-	connectKinds(g, output, chat, types.EventAudioSent)
-	connectKinds(g, output, rt, types.EventAudioSent)
-	connectKinds(g, rt, chat, types.EventGenerationChanged, types.EventRealtimeOutput, types.EventSpeechStart, types.EventSpeechEnd, types.EventRealtimeStatus)
-	connectKinds(g, rt, tool, types.EventToolRequest)
-	connectKinds(g, tool, rt, types.EventConversationCommitRequest)
+	connect(g, peer, wake, types.EventRTCPeerAudioFrame{}, types.EventRTCPeerOutputSink{})
+	connect(g, wake, rt, types.EventRTCPeerAudioFrame{}, types.EventRTCPeerOutputSink{}, types.EventLocalWakeUtterance{})
+	connect(g, wake, chat, types.EventWakeTranscription{})
+	connect(g, rt, segment, types.EventResponseText{})
+	connect(g, segment, ttsNode, types.EventTimelineItem{}, types.EventAgentTimelineEnd{})
+	connect(g, ttsNode, frame, types.EventPlayableSpeech{}, types.EventAgentTimelineEnd{})
+	connect(g, frame, pace, types.EventAudioFrame{})
+	connect(g, pace, output, types.EventAudioFrame{})
+	connect(g, output, chat, types.EventAudioSent{})
+	connect(g, output, rt, types.EventAudioSent{})
+	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventRealtimeOutput{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
+	connect(g, rt, tool, types.EventToolRequest{})
+	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }
 
-func connectKinds(g *graph.Graph, from, to *graph.Node, kinds ...types.EventKind) {
+// connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。
+func connect(g *graph.Graph, from, to *graph.Node, events ...types.Event) {
 	if from == nil || to == nil {
 		return
 	}
-	g.ConnectKinds(from, to, kinds...)
+	g.Connect(from, to, events...)
 }

@@ -47,12 +47,12 @@ func TestStagePassesThroughNonSpeechTimelineItemsAndAgentTimelineEnd(t *testing.
 	// speech 以外の item は音声化せず、そのまま下流へ流す。
 	otherItem := types.TimelineItem{Kind: "other", Text: "読み上げない"}
 	go func() {
-		stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: otherItem}
-		stage.Upstream <- types.Event{Kind: types.EventAgentTimelineEnd}
+		stage.Upstream <- types.EventTimelineItem{TimelineItem: otherItem}
+		stage.Upstream <- types.EventAgentTimelineEnd{}
 	}()
 
-	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventTimelineItem, Payload: otherItem})
-	assertEvent(t, stage.Downstream, types.Event{Kind: types.EventAgentTimelineEnd})
+	assertEvent(t, stage.Downstream, types.EventTimelineItem{TimelineItem: otherItem})
+	assertEvent(t, stage.Downstream, types.EventAgentTimelineEnd{})
 	if len(synth.Calls()) != 0 {
 		t.Fatalf("expected no synthesize calls, got %v", synth.Calls())
 	}
@@ -76,15 +76,16 @@ func TestStageEmitsPlayableSpeech(t *testing.T) {
 		GenerationID: 1,
 		SequenceID:   "2",
 	}
-	stage.Upstream <- types.Event{Kind: types.EventTimelineItem, Payload: item}
+	stage.Upstream <- types.EventTimelineItem{TimelineItem: item}
 
 	evt := receiveEvent(t, stage.Downstream)
-	if evt.Kind != types.EventPlayableSpeech {
-		t.Fatalf("event kind = %s, want %s", evt.Kind, types.EventPlayableSpeech)
+	if !types.Is[types.EventPlayableSpeech](evt) {
+		t.Fatalf("event = %s, want EventPlayableSpeech", types.EventName(evt))
 	}
-	playable, ok := evt.Payload.(types.PlayableSpeech)
+	playableEvent, ok := evt.(types.EventPlayableSpeech)
+	playable := playableEvent.PlayableSpeech
 	if !ok {
-		t.Fatalf("payload type = %T, want types.PlayableSpeech", evt.Payload)
+		t.Fatalf("payload type = %T, want types.PlayableSpeech", evt)
 	}
 	if playable.Audio != base64.StdEncoding.EncodeToString(pcm) {
 		t.Fatalf("audio = %q, want encoded pcm", playable.Audio)
@@ -111,10 +112,7 @@ func TestStageDropsBlankSpeech(t *testing.T) {
 	go stage.Run(ctx)
 	defer stage.Close()
 
-	stage.Upstream <- types.Event{
-		Kind:    types.EventTimelineItem,
-		Payload: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: " \n\t "},
-	}
+	stage.Upstream <- types.EventTimelineItem{TimelineItem: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: " \n\t "}}
 
 	assertNoEvent(t, stage.Downstream)
 	if len(synth.Calls()) != 0 {
@@ -133,10 +131,7 @@ func TestStageDropsSpeechWhenSynthesisFails(t *testing.T) {
 	go stage.Run(ctx)
 	defer stage.Close()
 
-	stage.Upstream <- types.Event{
-		Kind:    types.EventTimelineItem,
-		Payload: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "こんにちは"},
-	}
+	stage.Upstream <- types.EventTimelineItem{TimelineItem: types.TimelineItem{Kind: types.TimelineKindSpeech, Text: "こんにちは"}}
 
 	assertNoEvent(t, stage.Downstream)
 	if len(synth.Calls()) != 1 {
@@ -160,7 +155,7 @@ func receiveEvent(t *testing.T, events <-chan types.Event) types.Event {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
 	}
-	return types.Event{}
+	return nil
 }
 
 func assertNoEvent(t *testing.T, events <-chan types.Event) {

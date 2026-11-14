@@ -41,6 +41,6 @@ func TestLatePeerCallbackAfterShutdownIsIgnored(t *testing.T) {
 	cancel()
 	s.consume()
 	for i := 0; i < 100; i++ {
-		s.emit(types.Event{Kind: types.EventRTCPeerOutputSink})
+		s.emit(types.EventRTCPeerOutputSink{})
 	}
 }

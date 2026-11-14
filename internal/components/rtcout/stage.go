@@ -45,12 +45,15 @@ func (s *stage) run(ctx context.Context) {
 		if !ok {
 			return
 		}
-		switch p := e.Payload.(type) {
-		case types.RTCPeerOutputSink:
+		switch ev := e.(type) {
+		case types.EventRTCPeerOutputSink:
+			p := ev.RTCPeerOutputSink
 			s.handlePeerOutputSink(p)
-		case types.RTCSignal:
+		case types.EventRTCSignal:
+			p := ev.RTCSignal
 			s.handleVolume(p)
-		case types.AudioFrame:
+		case types.EventAudioFrame:
+			p := ev.AudioFrame
 			if !s.sendFrame(p) {
 				continue
 			}
@@ -58,7 +61,7 @@ func (s *stage) run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case s.node.Downstream <- types.Event{Kind: types.EventAudioSent, Payload: p}:
+			case s.node.Downstream <- types.EventAudioSent{AudioFrame: p}:
 			}
 		}
 	}

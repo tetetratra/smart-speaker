@@ -65,13 +65,11 @@ func (s *toolCaller) run(parent context.Context) {
 			if !ok {
 				return
 			}
-			if evt.Kind != types.EventToolRequest {
-				continue
-			}
-			req, ok := evt.Payload.(types.ToolRequest)
+			event, ok := evt.(types.EventToolRequest)
 			if !ok {
 				continue
 			}
+			req := event.ToolRequest
 			s.taskGroup.Add(1)
 			go func() {
 				defer s.taskGroup.Done()
@@ -103,7 +101,7 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 		s.mu.Unlock()
 	}
 	sent := *result // 送り直しのたびに別の値を渡し、受け手どうしで共有しない。
-	s.emit(types.Event{Kind: types.EventConversationCommitRequest, Payload: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
+	s.emit(types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
 }
 
 func (s *toolCaller) close() error {
