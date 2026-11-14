@@ -11,14 +11,13 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 )
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
-	registerLocationAPI(mux, &userlocation.Store{})
+	registerLocationAPI(mux, services.UserLocation)
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	registerAutomationsAPI(mux, services.Automations)

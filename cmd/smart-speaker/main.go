@@ -30,6 +30,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
@@ -64,7 +65,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{UserLocation: &userlocation.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	inbound := make(chan types.InboundMessage, 100)
 	services.Inbound = inbound
 	// 会話の外からの差し込み（予約ジョブ・Claude Codeの通知・Web検索の結果）を、会話管理へ送る。応答依頼か情報追加かは会話管理の入口で変換する。
@@ -251,6 +252,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
+		UserLocation:     services.UserLocation,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
 		ClaudeCode:       services.ClaudeCode,

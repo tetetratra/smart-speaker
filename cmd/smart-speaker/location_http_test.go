@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,8 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 	newServer := func() *http.Server {
 		cfg := app.Config{APIKey: "test-key", WebDistDir: t.TempDir()}
 		cfg.Memory.Model = "test-model"
-		server, chat, err := buildHTTPServer(cfg, nil, runtimeServices{})
+		services := runtimeServices{UserLocation: &userlocation.Store{}}
+		server, chat, err := buildHTTPServer(cfg, nil, services)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,5 +127,52 @@ func TestLocationAPIRejectsUnsupportedMethods(t *testing.T) {
 				t.Fatalf("非対応メソッドで現在地が変更された: %#v", got)
 			}
 		})
+	}
+}
+
+func TestLocationToolReadsHTTPUpdates(t *testing.T) {
+	cfg := app.Config{WebDistDir: t.TempDir()}
+	services := runtimeServices{UserLocation: &userlocation.Store{}}
+	definitions, handlers := buildToolRegistry(cfg, nil, services)
+	found := false
+	for _, definition := range definitions {
+		if definition.(map[string]any)["name"] == "get_current_location" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("現在地ツールの定義がありません")
+	}
+	handler := handlers["get_current_location"]
+	if handler == nil {
+		t.Fatal("現在地ツールが登録されていません")
+	}
+	server, chat, err := buildHTTPServer(cfg, nil, services)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeHTTPServer(server); closeStages(chat) })
+	check := func(want string) {
+		t.Helper()
+		result, err := handler.Run(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != want {
+			t.Fatalf("取得結果 = %s、期待値 = %s", raw, want)
+		}
+	}
+	check(`{"location":null}`)
+	for _, place := range []string{"自宅", "会社"} {
+		rec := httptest.NewRecorder()
+		server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("保存失敗: %s", rec.Body.String())
+		}
+		check(`{"location":` + strings.TrimSpace(rec.Body.String()) + `}`)
 	}
 }
