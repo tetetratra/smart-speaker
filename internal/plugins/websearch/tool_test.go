@@ -24,7 +24,7 @@ func (f *fakeSearchClient) Search(_ context.Context, query string) (string, erro
 }
 
 func TestDefinitionAcceptsOnlyQuery(t *testing.T) {
-	tool := New(Config{Client: &fakeSearchClient{}})
+	tool := NewTool(Config{Client: &fakeSearchClient{}})
 	def := tool.Definition()
 	params, ok := def["parameters"].(map[string]any)
 	if !ok {
@@ -47,7 +47,7 @@ func TestDefinitionAcceptsOnlyQuery(t *testing.T) {
 
 func TestRunReturnsResultOnly(t *testing.T) {
 	client := &fakeSearchClient{resp: "検索結果です"}
-	tool := New(Config{Client: client})
+	tool := NewTool(Config{Client: client})
 	out, err := tool.Run(context.Background(), map[string]any{"query": "  OpenAI web search  "})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -64,7 +64,7 @@ func TestRunReturnsResultOnly(t *testing.T) {
 }
 
 func TestRunRejectsEmptyQuery(t *testing.T) {
-	tool := New(Config{Client: &fakeSearchClient{}})
+	tool := NewTool(Config{Client: &fakeSearchClient{}})
 	_, err := tool.Run(context.Background(), map[string]any{"query": "   "})
 	if err == nil || !strings.Contains(err.Error(), "query is required") {
 		t.Fatalf("err = %v, want query is required", err)
@@ -72,7 +72,7 @@ func TestRunRejectsEmptyQuery(t *testing.T) {
 }
 
 func TestRunRejectsUnsupportedArgument(t *testing.T) {
-	tool := New(Config{Client: &fakeSearchClient{}})
+	tool := NewTool(Config{Client: &fakeSearchClient{}})
 	_, err := tool.Run(context.Background(), map[string]any{"query": "OpenAI", "context": "不要"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported argument: context") {
 		t.Fatalf("err = %v, want unsupported argument", err)
@@ -104,7 +104,7 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 			heading = "[Web検索の失敗]"
 		}
 		delivered := make(chan types.ConversationInput, 1)
-		tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
+		tool := NewTool(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
 			delivered <- prompt
 			return nil
 		}})
@@ -135,7 +135,7 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 func TestCanceledSearchDeliversNothing(t *testing.T) {
 	client := &blockingSearchClient{release: make(chan struct{})}
 	delivered := make(chan types.ConversationInput, 1)
-	tool := New(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
+	tool := NewTool(Config{Client: client, Deliver: func(_ context.Context, prompt types.ConversationInput) error {
 		delivered <- prompt
 		return nil
 	}})
@@ -159,7 +159,7 @@ func TestHistoryOnlySearchSurvivesCallerCancellation(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	client := &blockingSearchClient{release: make(chan struct{}), resp: "後から届く結果"}
 	delivered := make(chan types.ConversationInput, 1)
-	tool := New(Config{Client: client, AppContext: appCtx, Deliver: func(_ context.Context, p types.ConversationInput) error { delivered <- p; return nil }})
+	tool := NewTool(Config{Client: client, AppContext: appCtx, Deliver: func(_ context.Context, p types.ConversationInput) error { delivered <- p; return nil }})
 	result, err := tool.Run(execution.WithDeliveryContext(caller, raw), map[string]any{"query": "調べもの"})
 	if err != nil || result["status"] != "started" || result["instructions"] != nil {
 		t.Fatal(result, err)

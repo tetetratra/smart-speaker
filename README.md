@@ -125,7 +125,7 @@ flowchart LR
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
     rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
-    webSearchTool("web_search<br/>Web検索ツール")
+    webSearchTool("【Web検索】<br/>web_search")
     scheduler["automation<br/>予約ジョブ"]
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
@@ -173,7 +173,7 @@ flowchart LR
     gateway["gateway<br/>グラフの外との境目"]
 
     subgraph toolset["ツール"]
-        webSearchTool["web_search<br/>Web検索"]
+        webSearchTool["【Web検索】<br/>web_search"]
         claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携（agentbridge.Service）"]
         calendarTool["google_calendar_list<br/>google_calendar_create<br/>google_calendar_update<br/>Googleカレンダー"]
         switchBotTool["【SwitchBot】<br/>hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene"]

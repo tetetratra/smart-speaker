@@ -33,6 +33,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/plugins/websearch"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -74,7 +75,8 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig,
+		OpenAI: plugin.OpenAIConfig{APIKey: cfg.APIKey, ResponsesModel: cfg.ResponsesModel}})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -260,14 +262,11 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 
 func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
-		WakeMode:         services.WakeMode,
-		Automations:      services.Automations,
-		Memory:           memoryStore,
-		ClaudeCode:       services.ClaudeCode,
-		OpenAIAPIKey:     cfg.APIKey,
-		OpenAIModel:      cfg.ResponsesModel,
-		WebSearchDeliver: services.Deliver,
-		PluginTools:      plugin.Tools(services.Plugins),
+		WakeMode:    services.WakeMode,
+		Automations: services.Automations,
+		Memory:      memoryStore,
+		ClaudeCode:  services.ClaudeCode,
+		PluginTools: plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
 }
@@ -329,6 +328,7 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 		userlocation.New(deps),
 		playbackvolume.New(deps),
 		switchBot,
+		websearch.New(deps),
 	}, nil
 }
 

@@ -21,6 +21,15 @@ type Deps struct {
 	Deliver func(context.Context, types.ConversationInput) error
 	// Config は、config.yaml の plugins.<name> の中身を v に読み込む。プラグインは DecodeConfig から使う。
 	Config func(name string, v any) error
+	// OpenAI は、本体と共用する OpenAI の設定。
+	OpenAI OpenAIConfig
+}
+
+// OpenAIConfig は、本体と共用する OpenAI の設定。
+type OpenAIConfig struct {
+	APIKey string
+	// ResponsesModel は Responses API で使うモデル（config.yaml の openai.responses_model）。
+	ResponsesModel string
 }
 
 // DecodeConfig は、config.yaml の plugins.<name> の中身を v に読み込む。
