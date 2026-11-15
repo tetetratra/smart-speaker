@@ -434,10 +434,10 @@ func (s *stage) hasPendingOutput() bool {
 const realtimeSource = "realtime"
 
 // recordTool は、モデルが呼んだツールの呼び出しと結果を、結果が出たときに1件の記録にする。
-// ID には呼び出したときの接続のエポックを付ける。ツールの実行はユーザーがまだ知らないので、画面に出す。
-func (s *stage) recordTool(ctx context.Context, callID string, c *call, output string) {
+// ID には呼び出したときの接続のエポックを付ける。userAlreadyKnows が false なら画面にも出る。
+func (s *stage) recordTool(ctx context.Context, callID string, c *call, output string, userAlreadyKnows bool) {
 	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/tool/%s", c.epoch, callID), Role: types.RoleTool, Text: c.name + ": " + c.arguments + " → " + output,
-		GenerationID: c.generation, Source: c.name, CreatedAt: time.Now(), Title: c.title, CallID: callID, Arguments: c.arguments, Output: output, Error: types.OutputError(output)}, false)
+		GenerationID: c.generation, Source: c.name, CreatedAt: time.Now(), Title: c.title, CallID: callID, Arguments: c.arguments, Output: output, Error: types.OutputError(output)}, userAlreadyKnows)
 }
 
 func (s *stage) toolTitle(name string, arguments json.RawMessage) string {
