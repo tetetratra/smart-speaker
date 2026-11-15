@@ -60,7 +60,8 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	if s.seen[event.EventID] {
 		return nil
 	}
-	prompt := types.ConversationRecord{ID: "bridge/" + event.EventID, Source: "agent/claude-code/" + event.Type, Title: event.Title}
+	// Claude Code の通知は、呼び出し元（予約ジョブからか）によらず background にする。
+	prompt := types.ConversationRecord{ID: "bridge/" + event.EventID, Role: types.RoleBackground, Source: "agent/claude-code/" + event.Type, Title: event.Title}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()
@@ -78,9 +79,14 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	case EventCompleted, EventFailed:
 		s.forgetTask(event.TaskID)
 		prompt.Text = resultText(event)
+		if event.Type == EventFailed {
+			prompt.Error = event.Error
+			if prompt.Error == "" {
+				prompt.Error = "Claude Codeの作業が失敗しました"
+			}
+		}
 	}
 	if types.HistoryOnly(event.Context) {
-		prompt.Role = types.RoleToolResult
 		prompt.Text = "[過去のClaude Codeの通知]\n" + dataNotice + "\n" + encode(event)
 	}
 	if err := s.deliver(ctx, types.ExternalInput(prompt, event.Context)); err != nil {

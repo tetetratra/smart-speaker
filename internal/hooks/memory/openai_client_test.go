@@ -125,8 +125,8 @@ func TestOpenAIClientCreateOperationsSendsOnlyConversationTurns(t *testing.T) {
 	}
 	_, err = client.CreateOperations(context.Background(), []types.ConversationRecord{
 		{Role: types.RoleUser, Text: "予定を教えて"},
-		{Role: types.RoleToolCall, Text: `{"name":"calendar_list"}`},
-		{Role: types.RoleToolResult, Text: `{"calendar":"primary","timezone":"Asia/Tokyo"}`},
+		{Role: types.RoleTool, Text: `{"name":"calendar_list"}`},
+		{Role: types.RoleBackground, Text: `{"calendar":"primary","timezone":"Asia/Tokyo"}`},
 		{Role: types.RoleSystem, Text: "(system: ユーザーに状況を尋ねてください)"},
 		{Role: types.RoleAgent, Text: "今日は予定がありません"},
 	}, nil)
@@ -160,7 +160,7 @@ func TestConversationTurnsFormatsCreatedAtInJapanTime(t *testing.T) {
 func TestOpenAIClientCreateOperationsSkipsWithoutConversationTurns(t *testing.T) {
 	client := &OpenAIClient{apiKey: "test-key", model: "test-model", endpoint: "http://127.0.0.1:1", client: &http.Client{}}
 	got, err := client.CreateOperations(context.Background(), []types.ConversationRecord{
-		{Role: types.RoleToolResult, Text: `{"ok":true}`},
+		{Role: types.RoleBackground, Text: `{"ok":true}`},
 		{Role: types.RoleUser, Text: "   "},
 	}, nil)
 	if err != nil {

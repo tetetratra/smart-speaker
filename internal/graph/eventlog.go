@@ -117,7 +117,6 @@ func formatSpeechEventDetail(speech types.SpeechEvent) string {
 
 func formatCommitRequestDetail(req types.ConversationCommitRequest) string {
 	parts := []string{
-		fmt.Sprintf("role=%s", req.Role),
 		fmt.Sprintf("text=%s", quoteText(req.Text)),
 		fmt.Sprintf("generation=%d", req.GenerationID),
 	}

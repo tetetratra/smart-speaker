@@ -197,8 +197,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		// 捨てると結果のない呼び出しが会話に残り、モデルが「実行中」とみなして再実行しなくなるため。
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
 		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, name: e.Name, arguments: e.Arguments, title: s.toolTitle(e.Name, req.Arguments)}
-		// 履歴には結果が出たときに呼び出しと合わせて1件だけ記録する。画面の吹き出しには呼び出しをすぐ出す。
-		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleToolCall, Text: e.Name + ": " + e.Arguments, GenerationID: r.generation, Source: e.Name, ResponseID: "call/" + e.CallID, Final: true}})
+		// 履歴には結果が出たときに呼び出しと合わせて1件だけ記録する。
 		if e.Name == waitToolName {
 			s.waitForUser(ctx, req)
 			return
@@ -213,18 +212,20 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.disconnect(ctx, fmt.Errorf("Realtime API: %s (%s)", e.Error.Message, e.Error.Code))
 	}
 }
+
 // interruptedText は、モデルの発話がユーザーに遮られたことを履歴に残す記録の本文。
 const interruptedText = "[直前の発話は途中でユーザーに遮られました]"
 
 // recordInterruption は、世代 generation の応答に送り終えていない文章があれば、遮られたことを1件記録する。
 // ユーザーが話し始めて世代が切り替わった直後に呼ぶ。ユーザーの発話の記録より前に並ぶよう、ここで記録する。
+// 遮ったのはユーザー自身なので、画面には出さない。
 func (s *stage) recordInterruption(ctx context.Context, generation types.GenerationID) {
 	for _, id := range s.itemOrder {
 		item := s.items[id]
 		if item == nil || item.generation != generation || !s.pendingOutput[id] || sameSpokenText(item.generated, item.sent) {
 			continue
 		}
-		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s/interrupted", s.epoch, id), Role: types.RoleSystem, Text: interruptedText, GenerationID: generation, Source: realtimeSource, CreatedAt: time.Now()})
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s/interrupted", s.epoch, id), Role: types.RoleSystem, Text: interruptedText, GenerationID: generation, Source: realtimeSource, CreatedAt: time.Now()}, true)
 		return
 	}
 }
@@ -245,7 +246,7 @@ func (s *stage) sent(ctx context.Context, frame types.AudioFrame) {
 	}
 	if frame.Final {
 		item.sent += frame.Text
-		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, frame.SegmentID), Role: types.RoleAgent, Text: frame.Text, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now()})
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, frame.SegmentID), Role: types.RoleAgent, Text: frame.Text, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now()}, true)
 	}
 }
 func (s *stage) maybeRespond(ctx context.Context) {

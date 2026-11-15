@@ -33,7 +33,10 @@ func (s *stage) startInbound(ctx context.Context) bool {
 		s.lastActivity = time.Now()
 	}
 	s.addContext(input)
-	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
+	// 吹き出しに出すのはユーザーの発話だけ。外から届いた入力はホワイトボードに出る。
+	if record.Role == types.RoleUser {
+		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
+	}
 	s.wantResponse = true
 	s.maybeRespond(ctx)
 	return true

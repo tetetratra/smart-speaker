@@ -230,6 +230,7 @@ func recordMessage(record types.ConversationRecord) map[string]any {
 		"call_id":    record.CallID,
 		"arguments":  record.Arguments,
 		"output":     record.Output,
+		"error":      record.Error,
 		"created_at": record.CreatedAt,
 	}
 }

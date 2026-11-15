@@ -25,7 +25,7 @@ func testStage(t *testing.T) *stage {
 func TestRecordsOnlyUpdateHistory(t *testing.T) {
 	s := testStage(t)
 	for _, id := range []string{"speech", "reply"} {
-		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleUser, Text: id}, ModelHandling: types.ModelHandlingAlreadyKnown}})
+		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleUser, Text: id}, ModelAlreadyKnows: true, UserAlreadyKnows: true}})
 	}
 	// 記録は足すだけで、届いた順に並ぶ。
 	records := s.history.Snapshot()
@@ -43,17 +43,15 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 	for _, quiet := range []bool{false, true} {
 		s := testStage(t)
 		raw := json.RawMessage(`{"automation_id":"job"}`)
-		want := types.ModelHandlingAddAndRespond
 		if quiet {
 			raw = json.RawMessage(`{"delivery":"history_only","automation_id":"job"}`)
-			want = types.ModelHandlingAddToContext
 		}
-		e := types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "result", Source: "tool/web_search", Title: "天気", Text: "検索結果"}, raw)}
+		e := types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "result", Role: types.RoleBackground, Source: "tool/web_search", Title: "天気", Text: "検索結果"}, raw)}
 		s.handle(context.Background(), e)
 		s.handle(context.Background(), e)
 		forwarded := nextForwarded(s)
 		records := s.history.Snapshot()
-		if !types.Is[types.EventConversationInput](forwarded) || forwarded.(types.EventConversationInput).ConversationInput.ModelHandling != want || len(records) != 1 || records[0].Text != "検索結果" {
+		if !types.Is[types.EventConversationInput](forwarded) || forwarded.(types.EventConversationInput).ConversationInput.ModelShouldRespond == quiet || len(records) != 1 || records[0].Text != "検索結果" {
 			t.Fatal(forwarded, records)
 		}
 		metadata := records[0].Metadata["context"].(string)
@@ -139,15 +137,17 @@ func nextForwarded(s *stage) types.Event {
 	}
 }
 
-func TestOnlyNonDialogueRecordsAreSentToScreen(t *testing.T) {
+// 画面に出すかどうかは Role ではなく UserAlreadyKnows で決める。
+func TestOnlyRecordsUserDoesNotKnowAreSentToScreen(t *testing.T) {
 	s := testStage(t)
-	for _, record := range []types.ConversationRecord{
-		{ID: "user", Role: types.RoleUser, Text: "こんにちは"},
-		{ID: "agent", Role: types.RoleAgent, Text: "はい"},
-		{ID: "call", Role: types.RoleToolCall, ToolName: "set_whiteboard", CallID: "c1"},
-		{ID: "result", Role: types.RoleToolResult, ToolName: "set_whiteboard", CallID: "c1"},
+	for _, input := range []types.ConversationInput{
+		{Record: types.ConversationRecord{ID: "user", Role: types.RoleUser, Text: "こんにちは"}, UserAlreadyKnows: true},
+		{Record: types.ConversationRecord{ID: "agent", Role: types.RoleAgent, Text: "はい"}, UserAlreadyKnows: true},
+		{Record: types.ConversationRecord{ID: "interrupted", Role: types.RoleSystem, Text: "遮られた"}, UserAlreadyKnows: true},
+		{Record: types.ConversationRecord{ID: "tool", Role: types.RoleTool, ToolName: "set_whiteboard", CallID: "c1"}},
 	} {
-		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelHandling: types.ModelHandlingAlreadyKnown}})
+		input.ModelAlreadyKnows = true
+		s.handle(context.Background(), types.EventConversationInput{ConversationInput: input})
 	}
 	var sent []string
 	for len(s.node.Downstream) > 0 {
@@ -157,7 +157,7 @@ func TestOnlyNonDialogueRecordsAreSentToScreen(t *testing.T) {
 		}
 		sent = append(sent, e.(types.EventConversationRecordAdded).ConversationRecord.ID)
 	}
-	if strings.Join(sent, ",") != "call,result" {
+	if strings.Join(sent, ",") != "tool" {
 		t.Fatal(sent)
 	}
 	if len(s.history.Snapshot()) != 4 {

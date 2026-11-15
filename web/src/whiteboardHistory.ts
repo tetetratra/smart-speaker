@@ -1,21 +1,24 @@
 type ToolEntry = {
   kind: 'tool'
   id: string
+  role: string
   call_id: string
   name: string
   title?: string | null
   arguments: string
   output: string
-  status: 'succeeded' | 'failed'
+  error?: string
   started_at: string
 }
 type InboundEntry = {
   kind: 'inbound'
   id: string
+  role: string
   source: string
   name: string
   title?: string | null
   text: string
+  error?: string
   started_at: string
 }
 export type HistoryEntry = ToolEntry | InboundEntry
@@ -32,6 +35,7 @@ export type WhiteboardRecord = {
   call_id?: string
   arguments?: string
   output?: string
+  error?: string
   created_at: string
 }
 
@@ -43,27 +47,27 @@ export function mergeRecords(current: Map<string, WhiteboardRecord>, records: Wh
 }
 
 // historyEntries は記録から表示用の履歴を組み立てる。
-// ツールの記録は呼び出しと結果を1件で持つので、出力に error があれば失敗、なければ成功とする。
-// それ以外の記録（後から届いた結果や通知）は、差し込みとして出す。
+// ツールの記録（tool）は呼び出しと結果を1件で持つので、引数と出力を出す。
+// それ以外の記録（後から届いた結果や通知）は、本文を出す。
 export function historyEntries(records: Iterable<WhiteboardRecord>): HistoryEntry[] {
-  return [...records].map((record): HistoryEntry => record.role === 'tool_call' ? {
-    kind: 'tool', id: record.id, call_id: record.call_id ?? '', name: record.tool_name || record.source,
+  return [...records].map((record): HistoryEntry => record.role === 'tool' ? {
+    kind: 'tool', id: record.id, role: record.role, call_id: record.call_id ?? '', name: record.tool_name || record.source,
     title: record.title, arguments: record.arguments ?? '', output: record.output ?? '',
-    status: failed(record.output) ? 'failed' : 'succeeded', started_at: record.created_at,
+    error: record.error || undefined, started_at: record.created_at,
   } : {
-    kind: 'inbound', id: record.id, source: record.source, name: record.tool_name || record.source,
-    title: record.title, text: record.text, started_at: record.created_at,
+    kind: 'inbound', id: record.id, role: record.role, source: record.source, name: record.tool_name || record.source,
+    title: record.title, text: record.text, error: record.error || undefined, started_at: record.created_at,
   })
 }
 
-function failed(output?: string) {
-  try {
-    const value = JSON.parse(output ?? '')
-    if (value === null) return false
-    return typeof value !== 'object' || Array.isArray(value) || value.error != null
-  } catch {
-    return true
-  }
+export type EntryTone = 'tool' | 'background' | 'system' | 'failed'
+
+// entryTone は項目の色を決める。error があれば Role によらず失敗（赤）、
+// なければ Role ごとに tool は青、background は緑、system（ほかの Role も）はオレンジにする。
+export function entryTone(entry: HistoryEntry): EntryTone {
+  if (entry.error) return 'failed'
+  if (entry.role === 'tool' || entry.role === 'background') return entry.role
+  return 'system'
 }
 export type BoardEvent =
   | { id: string; kind: 'board'; content: string }
@@ -73,7 +77,7 @@ export type BoardEvent =
 export function whiteboardEvents(tools: HistoryEntry[]): BoardEvent[] {
   return [...tools].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at)).flatMap(entry => {
     const events: BoardEvent[] = [{ id: `tool-${entry.id}`, kind: 'history', entry, timestamp: Date.parse(entry.started_at) }]
-    if (entry.kind !== 'tool' || entry.status !== 'succeeded') return events
+    if (entry.kind !== 'tool' || entry.error) return events
     switch (entry.name) {
       case 'set_whiteboard': {
         try {

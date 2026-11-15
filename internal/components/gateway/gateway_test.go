@@ -14,7 +14,7 @@ func TestDeliverFlowsAsEventsInOrder(t *testing.T) {
 	defer cancel()
 	g := New()
 	for _, id := range []string{"first", "second"} {
-		if err := g.Deliver(ctx, types.ConversationInput{Record: types.ConversationRecord{ID: id}, ModelHandling: types.ModelHandlingAddToContext}); err != nil {
+		if err := g.Deliver(ctx, types.ConversationInput{Record: types.ConversationRecord{ID: id}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -23,7 +23,7 @@ func TestDeliverFlowsAsEventsInOrder(t *testing.T) {
 		select {
 		case e := <-g.Stage().Downstream:
 			input, ok := e.(types.EventConversationInput)
-			if !ok || input.Record.ID != want || input.ModelHandling != types.ModelHandlingAddToContext {
+			if !ok || input.Record.ID != want || input.ModelShouldRespond {
 				t.Fatal(e)
 			}
 		case <-ctx.Done():

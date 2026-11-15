@@ -182,7 +182,7 @@ func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
 	var request types.Event
 	for len(s.node.Downstream) > 0 {
 		e := <-s.node.Downstream
-		if types.Is[types.EventConversationInput](e) && e.(types.EventConversationInput).ConversationInput.ModelHandling == types.ModelHandlingAddAndRespond {
+		if types.Is[types.EventConversationInput](e) && e.(types.EventConversationInput).ConversationInput.ModelShouldRespond {
 			request = e
 		}
 	}

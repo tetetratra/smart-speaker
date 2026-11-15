@@ -401,16 +401,10 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "test", GenerationID: 1, Output: json.RawMessage(`{"ok":true}`)}
 	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
 	r.wait("conversation.item.create")
-	for {
-		e := r.event(types.EventRealtimeOutput{})
-		if e.(types.EventRealtimeOutput).OutputLine.Role == types.RoleToolResult {
-			break
-		}
-	}
 	records := r.records()
 	found := false
 	for _, rec := range records {
-		if rec.Role == types.RoleToolCall && rec.Output == `{"ok":true}` {
+		if rec.Role == types.RoleTool && rec.Output == `{"ok":true}` {
 			found = true
 		}
 	}
@@ -716,7 +710,7 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
 	// 結果が出るまでは記録しない。
 	for _, record := range r.records() {
-		if record.Role == types.RoleToolCall || record.Role == types.RoleToolResult {
+		if record.Role == types.RoleTool || record.Role == types.RoleBackground {
 			t.Fatal("結果が出る前にツールを記録しました", record)
 		}
 	}
@@ -725,14 +719,14 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var tools []types.ConversationRecord
 		for _, record := range r.records() {
-			if record.Role == types.RoleToolCall || record.Role == types.RoleToolResult {
+			if record.Role == types.RoleTool || record.Role == types.RoleBackground {
 				tools = append(tools, record)
 			}
 		}
 		if len(tools) > 0 {
 			// 呼び出しと結果を1件で持つ。
 			call := tools[0]
-			if len(tools) != 1 || call.Role != types.RoleToolCall || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" ||
+			if len(tools) != 1 || call.Role != types.RoleTool || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" ||
 				call.Arguments != `{"content":"メモ"}` || call.Output != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
 				t.Fatal(tools)
 			}

@@ -45,7 +45,7 @@ func TestScriptExamplesRunWithDocumentedToolResults(t *testing.T) {
 				output, _ := json.Marshal(result)
 				return types.ToolResultRecord{Output: output}
 			}, func(_ context.Context, message types.ConversationInput) error {
-				if message.ModelHandling != types.ModelHandlingAddToContext {
+				if message.ModelShouldRespond {
 					reminders++
 				}
 				return nil

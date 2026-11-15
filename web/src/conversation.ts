@@ -1,5 +1,5 @@
 export interface ConversationMessage {
-  type: string
+  type: 'user' | 'agent'
   text: string
   generationId?: number
 }
@@ -11,7 +11,7 @@ interface PlaybackSpeech {
 
 // 入力文字起こしは応答より遅れて届くことがあるため、到着順ではなく同じ世代で組にする。
 export function conversationBubble(messages: readonly ConversationMessage[], playback?: PlaybackSpeech) {
-  const speech = messages.filter(message => message.type === 'user' || message.type === 'agent')
+  const speech = messages
   let generation: number | undefined = playback?.generationId
   for (const message of speech) {
     if (Number.isSafeInteger(message.generationId)) {

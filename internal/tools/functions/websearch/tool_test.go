@@ -117,6 +117,10 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 		close(client.release)
 		select {
 		case prompt := <-delivered:
+			// 失敗したときだけ Error を埋める。Role は成功・失敗によらず background。
+			if prompt.Record.Role != types.RoleBackground || (prompt.Record.Error != "") != failure {
+				t.Fatal("Role か Error が違います", prompt.Record)
+			}
 			if prompt.Record.Source != "tool/web_search" || prompt.Record.Title != "明日の天気" || !strings.HasPrefix(prompt.Record.Text, heading) || !strings.Contains(prompt.Record.Text, "明日の天気") {
 				t.Fatal(prompt)
 			}
@@ -164,7 +168,7 @@ func TestHistoryOnlySearchSurvivesCallerCancellation(t *testing.T) {
 	close(client.release)
 	select {
 	case prompt := <-delivered:
-		if prompt.Record.ID == "" || prompt.ModelHandling != types.ModelHandlingAddToContext || prompt.Record.Metadata["context"] != `{"automation_id":"job-1","future":[1,true]}` || !strings.Contains(prompt.Record.Text, "後から届く結果") || strings.Contains(prompt.Record.Text, resultInstructions) {
+		if prompt.Record.ID == "" || prompt.ModelShouldRespond || prompt.Record.Metadata["context"] != `{"automation_id":"job-1","future":[1,true]}` || !strings.Contains(prompt.Record.Text, "後から届く結果") || strings.Contains(prompt.Record.Text, resultInstructions) {
 			t.Fatal(prompt)
 		}
 	case <-time.After(time.Second):

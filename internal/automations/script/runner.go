@@ -83,7 +83,7 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 			return
 		}
 		text := "[予約ジョブ失敗: " + name + "] " + runErr.Error()
-		_ = publish(parent, types.ConversationRecord{ID: "end", Role: types.RoleSystem, Title: name, Text: text}, metadata)
+		_ = publish(parent, types.ConversationRecord{ID: "end", Role: types.RoleSystem, Title: name, Text: text, Error: runErr.Error()}, metadata)
 	}()
 	program, err := Compile(source)
 	if err != nil {
@@ -151,8 +151,8 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 		}
 		historyRaw, _ := json.Marshal(historyOut)
 		// 呼び出しと結果は、結果が出たときに1件の記録にする。
-		if err := publish(parent, types.ConversationRecord{ID: "tool/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw) + " → " + string(historyRaw),
-			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw), Output: string(historyRaw)}, meta); err != nil {
+		if err := publish(parent, types.ConversationRecord{ID: "tool/" + callID, Role: types.RoleTool, Text: name + ": " + string(raw) + " → " + string(historyRaw),
+			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw), Output: string(historyRaw), Error: types.OutputError(string(historyRaw))}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
 		check()
@@ -168,7 +168,7 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 			panic(vm.NewGoError(fmt.Errorf("通知の送信経路がありません")))
 		}
 		reminderContext, _ := json.Marshal(map[string]string{"automation_id": id, "run_id": runID})
-		prompt := types.ConversationRecord{ID: uuid.NewString(), Source: Source, Title: name, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
+		prompt := types.ConversationRecord{ID: uuid.NewString(), Role: types.RoleSystem, Source: Source, Title: name, Text: "[アプリの予約ジョブ: " + name + "]\n予定時刻になりました。次の指示を今すぐ実行してください。指示に時刻や「〜後に」などの表現が含まれていても、それは予約時の表現なので、新しい予約の登録や予約内容の復唱はしないでください。\n指示: " + text}
 		if err := r.deliver(ctx, types.ExternalInput(prompt, reminderContext)); err != nil {
 			if deliveryErr == nil {
 				deliveryErr = err
