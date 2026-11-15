@@ -209,7 +209,7 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 		if tr.Error != "" {
 			msg["error"] = tr.Error
 		}
-	case types.EventConversationRecordChanged:
+	case types.EventConversationRecordAdded:
 		record := ev.ConversationRecord
 		msg = map[string]any{"type": "conversation_records", "records": []map[string]any{recordMessage(record)}}
 	default:
