@@ -68,7 +68,9 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 		}
 		raw, _ := json.Marshal(meta)
 		record.ID = runID + "/" + record.ID
-		record.Source = Source
+		if record.Source == "" {
+			record.Source = Source
+		}
 		err := r.deliver(ctx, types.ExternalInput(record, raw))
 		if err != nil && deliveryErr == nil {
 			deliveryErr = err
@@ -152,7 +154,7 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 		historyRaw, _ := json.Marshal(historyOut)
 		// 呼び出しと結果は、結果が出たときに1件の記録にする。
 		if err := publish(parent, types.ConversationRecord{ID: "tool/" + callID, Role: types.RoleTool, Text: name + ": " + string(raw) + " → " + string(historyRaw),
-			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw), Output: string(historyRaw), Error: types.OutputError(string(historyRaw))}, meta); err != nil {
+			Source: name, Title: r.toolTitle(name, raw), CallID: callID, Arguments: string(raw), Output: string(historyRaw), Error: types.OutputError(string(historyRaw))}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
 		check()

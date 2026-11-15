@@ -33,8 +33,9 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, message := range messages {
-		// ツールの呼び出しと結果のタイトルはツールが決めるので、予約の名前は通知にだけ付ける。
-		if message.Record.Source != Source || (message.Record.ToolName == "" && message.Record.Title != "室温") {
+		// ツールの記録の Source はツール名、タイトルはツールが決める。予約の名前は通知にだけ付ける。
+		isTool := message.Record.Role == types.RoleTool
+		if (isTool && message.Record.Source != "read") || (!isTool && (message.Record.Source != Source || message.Record.Title != "室温")) {
 			t.Fatal("予約の名前とタイトルが引き継がれていません", message)
 		}
 		var metadata map[string]string
@@ -46,7 +47,7 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	if calls != 1 || len(messages) != 2 {
 		t.Fatal(calls, messages)
 	}
-	if tool := messages[0].Record; tool.Role != types.RoleTool || tool.ToolName != "read" || tool.CallID == "" || tool.Arguments != `{"count":2}` || tool.Output != `{"value":3}` {
+	if tool := messages[0].Record; tool.Role != types.RoleTool || tool.Source != "read" || tool.CallID == "" || tool.Arguments != `{"count":2}` || tool.Output != `{"value":3}` {
 		t.Fatal("ツールの表示用の項目がありません", messages)
 	}
 	if !messages[1].ModelShouldRespond || !strings.Contains(messages[1].Record.Text, "値は3") {

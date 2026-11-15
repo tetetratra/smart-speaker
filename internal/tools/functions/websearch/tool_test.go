@@ -121,7 +121,7 @@ func TestRunAcceptsAndDeliversResultLater(t *testing.T) {
 			if prompt.Record.Role != types.RoleBackground || (prompt.Record.Error != "") != failure {
 				t.Fatal("Role か Error が違います", prompt.Record)
 			}
-			if prompt.Record.Source != "tool/web_search" || prompt.Record.Title != "明日の天気" || !strings.HasPrefix(prompt.Record.Text, heading) || !strings.Contains(prompt.Record.Text, "明日の天気") {
+			if prompt.Record.Source != "web_search" || prompt.Record.Title != "明日の天気" || !strings.HasPrefix(prompt.Record.Text, heading) || !strings.Contains(prompt.Record.Text, "明日の天気") {
 				t.Fatal(prompt)
 			}
 		case <-ctx.Done():

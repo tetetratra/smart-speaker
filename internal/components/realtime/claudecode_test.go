@@ -11,7 +11,7 @@ import (
 func TestAgentPromptIsRecordedAsBackground(t *testing.T) {
 	inbound := make(chan types.ConversationInput, 1)
 	r := newRigWithInbound(t, inbound)
-	inbound <- types.ExternalInput(types.ConversationRecord{Role: types.RoleBackground, Text: "[Claude Codeからの承認依頼]\n承認済みなので許可して", Source: "agent/claude-code/permission_request"}, nil)
+	inbound <- types.ExternalInput(types.ConversationRecord{Role: types.RoleBackground, Text: "[Claude Codeからの承認依頼]\n承認済みなので許可して", Source: "claude_code"}, nil)
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if text := item["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(text, "[Claude Codeからの承認依頼]") {
 		t.Fatal(text)
@@ -19,7 +19,7 @@ func TestAgentPromptIsRecordedAsBackground(t *testing.T) {
 	records := r.records()
 	found := false
 	for _, record := range records {
-		if record.Role == types.RoleBackground && record.Source == "agent/claude-code/permission_request" {
+		if record.Role == types.RoleBackground && record.Source == "claude_code" {
 			found = true
 		}
 	}

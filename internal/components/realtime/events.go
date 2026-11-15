@@ -124,7 +124,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if !ok {
 			return
 		}
-		s.record(ctx, e.ItemID, types.RoleUser, e.Transcript, gen, "realtime-transcription")
+		s.record(ctx, e.ItemID, types.RoleUser, e.Transcript, gen)
 	case "conversation.item.input_audio_transcription.failed":
 		s.status(ctx, "error", "入力の文字起こしに失敗しました。音声による会話は継続します。")
 	case "conversation.item.added", "conversation.item.created":

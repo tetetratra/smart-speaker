@@ -31,7 +31,7 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	}
 	r.wait("response.create")
 	records := r.records()
-	if len(records) != 1 || records[0].Source != "local-stt" {
+	if len(records) != 1 || records[0].Source != "realtime" {
 		t.Fatal(records)
 	}
 }

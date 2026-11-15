@@ -46,7 +46,7 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 		if quiet {
 			raw = json.RawMessage(`{"delivery":"history_only","automation_id":"job"}`)
 		}
-		e := types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "result", Role: types.RoleBackground, Source: "tool/web_search", Title: "天気", Text: "検索結果"}, raw)}
+		e := types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "result", Role: types.RoleBackground, Source: "web_search", Title: "天気", Text: "検索結果"}, raw)}
 		s.handle(context.Background(), e)
 		s.handle(context.Background(), e)
 		forwarded := nextForwarded(s)
@@ -144,7 +144,7 @@ func TestOnlyRecordsUserDoesNotKnowAreSentToScreen(t *testing.T) {
 		{Record: types.ConversationRecord{ID: "user", Role: types.RoleUser, Text: "こんにちは"}, UserAlreadyKnows: true},
 		{Record: types.ConversationRecord{ID: "agent", Role: types.RoleAgent, Text: "はい"}, UserAlreadyKnows: true},
 		{Record: types.ConversationRecord{ID: "interrupted", Role: types.RoleSystem, Text: "遮られた"}, UserAlreadyKnows: true},
-		{Record: types.ConversationRecord{ID: "tool", Role: types.RoleTool, ToolName: "set_whiteboard", CallID: "c1"}},
+		{Record: types.ConversationRecord{ID: "tool", Role: types.RoleTool, Source: "set_whiteboard", CallID: "c1"}},
 	} {
 		input.ModelAlreadyKnows = true
 		s.handle(context.Background(), types.EventConversationInput{ConversationInput: input})

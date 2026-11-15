@@ -226,7 +226,6 @@ func recordMessage(record types.ConversationRecord) map[string]any {
 		"source":     record.Source,
 		"title":      record.Title,
 		"external":   record.External,
-		"tool_name":  record.ToolName,
 		"call_id":    record.CallID,
 		"arguments":  record.Arguments,
 		"output":     record.Output,
