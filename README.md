@@ -166,7 +166,7 @@ flowchart LR
 
     subgraph toolset["ツール"]
         webSearchTool["web_search<br/>Web検索"]
-        claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携"]
+        claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携（agentbridge.Service）"]
         calendarTool["google_calendar_list<br/>google_calendar_create<br/>google_calendar_update<br/>Googleカレンダー"]
         switchBotTool["hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene<br/>SwitchBot"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
@@ -195,8 +195,10 @@ flowchart LR
     scheduler -->|"スクリプトからのツール呼び出し"| toolset
 
     webSearchTool <==>|"HTTPS<br/>Web検索"| openaiResponses
+    webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
     claudeCodeTool <==>|"HTTP<br/>依頼・承認・取消・参照"| agentBridge
-    agentBridge -->|"HTTP・Deliver<br/>Claude Codeの通知"| gateway
+    agentBridge -->|"HTTP<br/>Claude Codeの通知"| claudeCodeTool
+    claudeCodeTool -->|"Deliver<br/>Claude Codeの通知"| gateway
     calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
     calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
     calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
