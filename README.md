@@ -123,6 +123,7 @@ flowchart LR
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
     rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
+    webSearchTool("web_search<br/>Web検索ツール")
     scheduler("予約ジョブ実行<br/>automations")
     gateway["gateway<br/>グラフの外との境目"]
     chat["wschat<br/>画面連携"]
@@ -139,8 +140,10 @@ flowchart LR
     manager --->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{ModelShouldRespond: true, UserAlreadyKnows: true}<br/>ユーザーのテキスト入力<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
-    scheduler -->|"Deliver<br/>予約ジョブの実行結果・Web検索の結果"| gateway
-    tool -->|"Deliver<br/>Web検索の結果"| gateway
+    scheduler -->|"Deliver<br/>remind・ツールの呼び出しと結果・スクリプトの失敗"| gateway
+    tool -->|"呼び出し<br/>受け付けだけ返る"| webSearchTool
+    scheduler -->|"スクリプトからの呼び出し"| webSearchTool
+    webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
     gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼"| manager
     rt -->|"EventConversationIdle<br/>予約ジョブのきっかけ"| gateway
     gateway -->|"購読<br/>schedule.event が一致するジョブを動かす"| scheduler
