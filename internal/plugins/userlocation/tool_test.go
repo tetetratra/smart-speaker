@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 )
 
 func TestToolReadsLatestRecord(t *testing.T) {
-	store := &userlocation.Store{}
+	store := &Store{}
 	tool := &Tool{Store: store}
-	check := func(want *userlocation.Record) {
+	check := func(want *Record) {
 		t.Helper()
 		result, err := tool.Run(context.Background(), nil)
 		if err != nil {
@@ -22,7 +20,7 @@ func TestToolReadsLatestRecord(t *testing.T) {
 			t.Fatal(err)
 		}
 		var decoded struct {
-			Location *userlocation.Record `json:"location"`
+			Location *Record `json:"location"`
 		}
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			t.Fatal(err)
@@ -45,5 +43,13 @@ func TestToolReadsLatestRecord(t *testing.T) {
 	}
 	if store.Snapshot().Place != "会社" {
 		t.Fatal("保存先が変更されました")
+	}
+}
+
+func TestToolDefinitionTakesNoArguments(t *testing.T) {
+	def := (&Tool{Store: &Store{}}).Definition()
+	params := def["parameters"].(map[string]any)
+	if def["name"] != "get_current_location" || params["additionalProperties"] != false || len(params["properties"].(map[string]any)) != 0 || len(params["required"].([]string)) != 0 {
+		t.Fatalf("引数なしの定義ではありません: %#v", def)
 	}
 }

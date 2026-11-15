@@ -1,4 +1,4 @@
-package main
+package userlocation
 
 import (
 	"context"
@@ -11,18 +11,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const maxLocationRequestBytes = 4 * 1024
 
-// userLocationSource は、場所の変化の記録の Source。予約ジョブの schedule.source に指定できる。
-const userLocationSource = "user_location"
-
 // registerLocationAPI は位置情報 API を登録する。deliver が nil でなければ、場所が変わったときに
 // その記録を購読可能な記録として会話へ届ける（main では gateway の Deliver）。
-func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store, deliver func(context.Context, types.ConversationInput) error) {
+func registerLocationAPI(mux *http.ServeMux, store *Store, deliver func(context.Context, types.ConversationInput) error) {
 	mux.HandleFunc("/api/location", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		switch r.Method {
@@ -75,7 +71,7 @@ func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store, deliver 
 // AIは文脈に入れるだけで、その場では話さない（帰宅後の会話で「お仕事お疲れ様」などと言えるようにするため）。
 // ホワイトボードには出す。
 // サーバー起動後の最初の1件は、前の場所がないので previous_place を nil（JSON では null）にする。
-func locationChangedInput(current userlocation.Record, previous *userlocation.Record) types.ConversationInput {
+func locationChangedInput(current Record, previous *Record) types.ConversationInput {
 	text := "ユーザーの居場所が「" + current.Place + "」になりました。"
 	var previousPlace any
 	if previous != nil {
@@ -85,7 +81,7 @@ func locationChangedInput(current userlocation.Record, previous *userlocation.Re
 	record := types.ConversationRecord{
 		ID:        "location/" + uuid.NewString(),
 		Role:      types.RoleSystem,
-		Source:    userLocationSource,
+		Source:    Source,
 		Title:     current.Place,
 		Text:      text,
 		Metadata:  map[string]any{"place": current.Place, "previous_place": previousPlace},
@@ -93,4 +89,12 @@ func locationChangedInput(current userlocation.Record, previous *userlocation.Re
 		External:  true,
 	}
 	return types.ConversationInput{Record: record, Subscribable: true}
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("位置情報: 応答を書き出せません: %v", err)
+	}
 }

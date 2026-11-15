@@ -1,11 +1,12 @@
 package registry
 
 import (
+	"context"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"path/filepath"
 	"testing"
 
+	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
 
@@ -207,18 +208,28 @@ func definitionByName(r *Registry, name string) (map[string]any, bool) {
 	return nil, false
 }
 
-func TestRegistryUserLocation(t *testing.T) {
-	reg := New(Config{UserLocation: &userlocation.Store{}})
-	assertRegistered(t, reg, "get_current_location")
-	def, ok := definitionByName(reg, "get_current_location")
-	if !ok {
-		t.Fatal("現在地ツールの定義がありません")
+// プラグインのツールは、定義を持つものだけ登録する。
+func TestRegistryPluginTools(t *testing.T) {
+	reg := New(Config{PluginTools: []tools.Handler{definedTool{name: "plugin_tool"}, undefinedTool{}}})
+	assertRegistered(t, reg, "plugin_tool")
+	if _, ok := reg.Handlers()["undefined_tool"]; ok {
+		t.Fatal("定義のないツールが登録されました")
 	}
-	params := def["parameters"].(map[string]any)
-	if params["additionalProperties"] != false || len(params["properties"].(map[string]any)) != 0 || len(params["required"].([]string)) != 0 {
-		t.Fatalf("引数なしの定義ではありません: %#v", params)
-	}
-	if _, ok := New(Config{}).Handlers()["get_current_location"]; ok {
-		t.Fatal("保存先なしで登録されました")
-	}
+}
+
+type undefinedTool struct{}
+
+func (undefinedTool) Name() string { return "undefined_tool" }
+func (undefinedTool) Run(context.Context, map[string]any) (map[string]any, error) {
+	return nil, nil
+}
+
+type definedTool struct{ name string }
+
+func (t definedTool) Name() string { return t.name }
+func (definedTool) Run(context.Context, map[string]any) (map[string]any, error) {
+	return nil, nil
+}
+func (t definedTool) Definition() map[string]any {
+	return map[string]any{"type": "function", "name": t.name}
 }

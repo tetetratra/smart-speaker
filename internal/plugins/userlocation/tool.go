@@ -3,12 +3,11 @@ package userlocation
 import (
 	"context"
 	"fmt"
-
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 )
 
+// Tool は、最後に受け取った場所を返す AI ツール get_current_location。
 type Tool struct {
-	Store *userlocation.Store
+	Store *Store
 }
 
 func (t *Tool) Name() string { return "get_current_location" }
