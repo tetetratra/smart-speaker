@@ -19,6 +19,17 @@ type Deps struct {
 	AppContext context.Context
 	// Deliver は、gateway を通して会話へ記録を1件入れる。
 	Deliver func(context.Context, types.ConversationInput) error
+	// Config は、config.yaml の plugins.<name> の中身を v に読み込む。プラグインは DecodeConfig から使う。
+	Config func(name string, v any) error
+}
+
+// DecodeConfig は、config.yaml の plugins.<name> の中身を v に読み込む。
+// name にはプラグインの名前（Name() と同じ）を渡す。書かれていなければ v を変えずに nil を返す。
+func (d Deps) DecodeConfig(name string, v any) error {
+	if d.Config == nil {
+		return nil
+	}
+	return d.Config(name, v)
 }
 
 // Plugin は、本体に組み込む機能。
@@ -45,6 +56,22 @@ type InstructionProvider interface {
 // Source と、その記録の説明（予約ジョブのツール説明と画面に出す）を返す。
 type SourceProvider interface {
 	SubscribableSources() map[string]string
+}
+
+// UnknownNames は、names のうち、どのプラグインの名前にも当たらないものを返す。
+// config.yaml の plugins の下の書き間違いを見つけるのに使う。
+func UnknownNames(plugins []Plugin, names []string) []string {
+	known := map[string]bool{}
+	for _, p := range plugins {
+		known[p.Name()] = true
+	}
+	var unknown []string
+	for _, name := range names {
+		if !known[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	return unknown
 }
 
 // Tools は、プラグインのツールを並び順のまま集める。

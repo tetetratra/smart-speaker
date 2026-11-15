@@ -74,7 +74,10 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver})
+	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
+		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
+	}
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
 		return services.Runner.RunWithEvent(ctx, delivery.ID, delivery.Name, delivery.Script, delivery.Event)
 	})

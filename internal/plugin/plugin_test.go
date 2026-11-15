@@ -58,3 +58,22 @@ func TestCollectors(t *testing.T) {
 		t.Fatalf("Sources = %#v", got)
 	}
 }
+
+func TestUnknownNames(t *testing.T) {
+	got := UnknownNames([]Plugin{emptyPlugin{}, fullPlugin{}}, []string{"empty", "fulll", "full", "other"})
+	if len(got) != 2 || got[0] != "fulll" || got[1] != "other" {
+		t.Fatalf("UnknownNames = %v", got)
+	}
+}
+
+func TestDecodeConfigWithoutConfig(t *testing.T) {
+	v := "既定値"
+	if err := (Deps{}).DecodeConfig("full", &v); err != nil || v != "既定値" {
+		t.Fatalf("v = %q, err = %v", v, err)
+	}
+	var gotName string
+	deps := Deps{Config: func(name string, _ any) error { gotName = name; return nil }}
+	if err := deps.DecodeConfig("full", &v); err != nil || gotName != "full" {
+		t.Fatalf("name = %q, err = %v", gotName, err)
+	}
+}

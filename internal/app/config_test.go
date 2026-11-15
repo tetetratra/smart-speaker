@@ -333,3 +333,43 @@ func TestBuildConfigRejectsOutOfRangeWakeEnergyThreshold(t *testing.T) {
 		t.Errorf("WakeEnergyThreshold = %v, err = %v", cfg.WakeEnergyThreshold, err)
 	}
 }
+
+func TestPluginConfigs(t *testing.T) {
+	cfg := mustLoadFromYAML(t, "plugins:\n  sample:\n    url: http://example.test\n    count: 2\n  other: {}\n", minimalEnv)
+	if got := cfg.PluginConfigNames(); !reflect.DeepEqual(got, []string{"other", "sample"}) {
+		t.Fatalf("PluginConfigNames = %v", got)
+	}
+	var sample struct {
+		URL   string `yaml:"url"`
+		Count int    `yaml:"count"`
+	}
+	if err := cfg.DecodePluginConfig("sample", &sample); err != nil {
+		t.Fatal(err)
+	}
+	if sample.URL != "http://example.test" || sample.Count != 2 {
+		t.Fatalf("sample = %+v", sample)
+	}
+
+	// 書かれていないプラグインは、値を変えずにエラーにしない。
+	missing := struct {
+		URL string `yaml:"url"`
+	}{URL: "既定値"}
+	if err := cfg.DecodePluginConfig("missing", &missing); err != nil || missing.URL != "既定値" {
+		t.Fatalf("missing = %+v, err = %v", missing, err)
+	}
+
+	// プラグインの設定の中の未知のキーや型の誤りは、エラーにする。
+	var wrong struct {
+		URL string `yaml:"url"`
+	}
+	if err := cfg.DecodePluginConfig("sample", &wrong); err == nil {
+		t.Fatal("未知のキーでエラーになりません")
+	}
+	var wrongType struct {
+		URL   string `yaml:"url"`
+		Count bool   `yaml:"count"`
+	}
+	if err := cfg.DecodePluginConfig("sample", &wrongType); err == nil {
+		t.Fatal("型の誤りでエラーになりません")
+	}
+}
