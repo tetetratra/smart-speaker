@@ -10,7 +10,6 @@ import (
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
-	"strings"
 
 	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools"
