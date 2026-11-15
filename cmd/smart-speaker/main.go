@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -27,18 +28,19 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
+	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
+	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/plugins/websearch"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -52,10 +54,6 @@ func main() {
 	setLocalTimeZone()
 
 	cfg := app.LoadConfig()
-	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
-
-	ensureGoogleCalendarToken()
-
 	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		log.Fatalf("failed to init memory store: %v", err)
@@ -69,12 +67,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig, DataDir: filepath.Dir(cfg.Memory.StorePath),
+		OpenAI: plugin.OpenAIConfig{APIKey: cfg.APIKey, ResponsesModel: cfg.ResponsesModel}})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -130,13 +129,6 @@ func setLocalTimeZone() {
 		return
 	}
 	time.Local = loc
-}
-
-func ensureGoogleCalendarToken() {
-	if _, err := oauthgooglecalendar.LoadToken(); err == nil {
-		return
-	}
-	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
 }
 
 func closeStages(stages ...*graph.Stage) {
@@ -258,44 +250,13 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 }
 
 func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
-	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
-	var scenes []switchbot.Scene
-	if switchBotClient != nil {
-		scenes = loadSwitchBotScenes(switchBotClient)
-	}
-
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
-		WakeMode:         services.WakeMode,
-		PlaybackVolume:   services.PlaybackVolume,
-		Automations:      services.Automations,
-		Memory:           memoryStore,
-		SwitchBotClient:  switchBotClient,
-		SwitchBotScenes:  scenes,
-		OpenAIAPIKey:     cfg.APIKey,
-		OpenAIModel:      cfg.ResponsesModel,
-		WebSearchDeliver: services.Deliver,
-		PluginTools:      plugin.Tools(services.Plugins),
+		WakeMode:    services.WakeMode,
+		Automations: services.Automations,
+		Memory:      memoryStore,
+		PluginTools: plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
-}
-
-func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
-	if strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(cfg.Secret) == "" {
-		log.Println("switchbot: token or secret not set; switchbot tools disabled")
-		return nil
-	}
-	return switchbot.NewSwitchbotClient(cfg.Token, cfg.Secret, cfg.DeviceMap)
-}
-
-func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	scenes, err := client.ListScenes(ctx)
-	if err != nil {
-		log.Printf("switchbot: failed to list scenes; switchbot_execute_scene disabled: %v", err)
-		return nil
-	}
-	return scenes
 }
 
 func wireGraph(g *graph.Graph, s appStages) {
@@ -338,12 +299,24 @@ func wireGraph(g *graph.Graph, s appStages) {
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
 func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
+	switchBot, err := switchbot.New(deps)
+	if err != nil {
+		return nil, err
+	}
+	calendar, err := googlecalendar.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	claudeCode, err := claudecode.New(deps)
 	if err != nil {
 		return nil, err
 	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
+		playbackvolume.New(deps),
+		switchBot,
+		websearch.New(deps),
+		calendar,
 		claudeCode,
 	}, nil
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
@@ -25,9 +24,7 @@ type runtimeServices struct {
 	ToolSchemas  []any
 	ToolHandlers map[string]tools.Handler
 	WakeMode     *wakemode.Store
-	// PlaybackVolume は全端末で共通の再生音量。画面とツールの両方が変える。
-	PlaybackVolume *playbackvolume.Store
-	Automations    *automations.Service
+	Automations  *automations.Service
 	// AutomationStage は予約ジョブのコンポーネント。nil ならグラフに載せない。
 	AutomationStage *automation.Stage
 	// Gateway はグラフの外とグラフの境目。nil なら buildStages で作る。

@@ -57,7 +57,7 @@ memory:
   # model: "gpt-5.6-luna"
 
   # メモリの保存先。既定: "data/memories.json"
-  # wake.store_path、automations.store_path、google_calendar.token_path の既定値は、このファイルと同じディレクトリになります。
+  # wake.store_path、automations.store_path、plugins.googlecalendar.token_path の既定値は、このファイルと同じディレクトリになります。
   # store_path: "data/memories.json"
 
   # 会話を長期メモリ化するまでの経過時間（時間）。30分以上空いた位置で区切った会話の塊ごとに、最後の記録からこの時間がたったら、conversation.idle_timeout_seconds 黙ったときにメモリ化します。既定: 24
@@ -121,21 +121,6 @@ wake:
   # 呼びかけ後に、呼びかけなしで話せる時間（秒）。最後の発話から数えます。0より大きい値。既定: 300
   # conversation_timeout_seconds: 300
 
-switchbot:
-  # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
-  # device_map:
-  #   hub2: "XXXXXXXXXXXX"
-
-google_calendar:
-  # OAuth のコールバックURL。既定: "http://localhost:8081/oauth/google/callback"
-  # redirect_url: "http://localhost:8081/oauth/google/callback"
-
-  # OAuth のスコープ。既定: "https://www.googleapis.com/auth/calendar.events"
-  # scope: "https://www.googleapis.com/auth/calendar.events"
-
-  # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
-  # token_path: "data/google_oauth_token.json"
-
 # プラグインの設定。プラグインの名前（internal/plugins/<名前>）ごとに書きます。
 # 組み込まれていないプラグインの名前を書くと、起動時にエラーになります。
 # シークレットは、ここではなく環境変数で渡します（各プラグインの説明を参照）。
@@ -145,3 +130,22 @@ plugins:
   claudecode:
     # 手元のMacで動く agent-bridge（services/agent-bridge）のURL。既定: なし（Claude Code連携は無効）
     # url: "http://100.x.y.z:8787"
+
+  # Google カレンダー。OAuth クライアントの ID とシークレットはシークレットなので、
+  # 環境変数 GOOGLE_CLIENT_ID・GOOGLE_CLIENT_SECRET で渡します。両方があるときだけ有効になります。
+  googlecalendar:
+    # OAuth のコールバックURL。既定: "http://localhost:8081/oauth/google/callback"
+    # redirect_url: "http://localhost:8081/oauth/google/callback"
+
+    # OAuth のスコープ。既定: "https://www.googleapis.com/auth/calendar.events"
+    # scope: "https://www.googleapis.com/auth/calendar.events"
+
+    # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
+    # token_path: "data/google_oauth_token.json"
+
+  # SwitchBot。トークンとシークレットはシークレットなので、環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡します。
+  # 両方があるときだけ有効になります。
+  switchbot:
+    # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
+    # device_map:
+    #   hub2: "XXXXXXXXXXXX"

@@ -19,7 +19,7 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 	plugins, err := buildPlugins(plugin.Deps{Deliver: func(_ context.Context, input types.ConversationInput) error {
 		delivered = append(delivered, input)
 		return nil
-	}})
+	}, OpenAI: plugin.OpenAIConfig{APIKey: "key", ResponsesModel: "model"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +35,12 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 	}
 	if !found || handlers["get_current_location"] == nil {
 		t.Fatal("現在地のツールが登録されていません")
+	}
+	if handlers["web_search"] == nil {
+		t.Fatal("Web検索のツールが登録されていません")
+	}
+	if handlers["set_playback_volume"] == nil {
+		t.Fatal("再生音量のツールが登録されていません")
 	}
 
 	server, chat, err := buildHTTPServer(cfg, nil, services)

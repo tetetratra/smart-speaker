@@ -89,8 +89,8 @@ curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"ホワイトボ
 ### Google Calendar
 
 1. Google Cloud で OAuth クライアントを作り、`GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` を設定します。
-2. コールバック URL を、OAuth クライアントの承認済みリダイレクト URI に登録します。既定は `http://localhost:8081/oauth/google/callback` で、変える場合は `config.yaml` の `google_calendar.redirect_url` に書きます。
-3. サーバーを起動し、`http://localhost:8081/oauth/google/start` を開いて認可します。トークンは `google_calendar.token_path`（既定は `memory.store_path` と同じディレクトリの `google_oauth_token.json`）に保存されます。
+2. コールバック URL を、OAuth クライアントの承認済みリダイレクト URI に登録します。既定は `http://localhost:8081/oauth/google/callback` で、変える場合は `config.yaml` の `plugins.googlecalendar.redirect_url` に書きます。
+3. サーバーを起動し、`http://localhost:8081/oauth/google/start` を開いて認可します。トークンは `plugins.googlecalendar.token_path`（既定は `memory.store_path` と同じディレクトリの `google_oauth_token.json`）に保存されます。
 
 Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS を求めます。
 本番サーバーで認可するときは、`ssh -L 8081:localhost:8081 <user>@<本番サーバー>` でポートを転送してから、手元のブラウザで `http://localhost:8081/oauth/google/start` を開きます。
@@ -98,7 +98,7 @@ Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS �
 ### SwitchBot
 
 1. SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。
-2. 温湿度を取る場合は、`config.yaml` の `switchbot.device_map` に `hub2` のデバイス ID を書きます。デバイス ID は `scripts/switchbot_deviceids.rb` で一覧できます。
+2. 温湿度を取る場合は、`config.yaml` の `plugins.switchbot.device_map` に `hub2` のデバイス ID を書きます。デバイス ID は `scripts/switchbot_deviceids.rb` で一覧できます。
 
 シーンは起動時に SwitchBot から取得します。シーンを足したら、サーバーを再起動します。
 
