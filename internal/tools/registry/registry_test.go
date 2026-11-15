@@ -7,80 +7,14 @@ import (
 	"testing"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
 
-func TestRegistrySwitchBotTools(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
-	reg := New(Config{
-		SwitchBotClient: client,
-		SwitchBotScenes: []switchbot.Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}},
-	})
-
-	if _, ok := definitionByName(reg, "switchbot_execute_scene"); !ok {
-		t.Fatal("switchbot_execute_scene should be registered")
-	}
-	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
-		if _, ok := definitionByName(reg, name); !ok {
-			t.Fatalf("%s should be registered", name)
-		}
-	}
-	if _, ok := definitionByName(reg, "hub2_get_environment"); ok {
-		t.Fatal("hub2_get_environment should not be registered")
-	}
-	if _, ok := definitionByName(reg, "set_whiteboard"); !ok {
-		t.Fatal("set_whiteboard should be registered")
-	}
-	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
-		t.Fatal("set_whiteboard handler should be registered")
-	}
-	if _, ok := definitionByName(reg, "write_diary"); ok {
-		t.Fatal("write_diary should not be registered")
-	}
-	if _, ok := reg.Handlers()["write_diary"]; ok {
-		t.Fatal("write_diary handler should not be registered")
-	}
-	for _, name := range []string{"aircon_control", "light_control", "blind_control", "switchbot_control_device"} {
-		if _, ok := definitionByName(reg, name); ok {
-			t.Fatalf("%s should not be registered", name)
-		}
-	}
-	assertRegistered(t, reg, "switchbot_execute_scene")
-	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
-		assertRegistered(t, reg, name)
-	}
-	assertRegistered(t, reg, "set_whiteboard")
-	assertRegistered(t, reg, "google_calendar_list")
-	assertRegistered(t, reg, "google_calendar_create")
-	assertRegistered(t, reg, "google_calendar_update")
-}
-
-func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
-	reg := New(Config{SwitchBotClient: client})
-
-	if _, ok := definitionByName(reg, "switchbot_execute_scene"); ok {
-		t.Fatal("switchbot_execute_scene should not be registered")
-	}
-	for _, name := range []string{"hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
-		if _, ok := definitionByName(reg, name); !ok {
-			t.Fatalf("%s should be registered", name)
-		}
-	}
-	if _, ok := definitionByName(reg, "hub2_get_environment"); ok {
-		t.Fatal("hub2_get_environment should not be registered")
-	}
-}
-
-func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
+func TestRegistryRegistersCoreTools(t *testing.T) {
 	reg := New(Config{})
 
-	for _, name := range []string{"switchbot_execute_scene", "hub2_get_temperature", "hub2_get_humidity", "hub2_get_light_level"} {
-		if _, ok := definitionByName(reg, name); ok {
-			t.Fatalf("%s should not be registered", name)
-		}
+	for _, name := range []string{"write_diary", "aircon_control", "light_control", "blind_control", "switchbot_control_device"} {
 		if _, ok := reg.Handlers()[name]; ok {
-			t.Fatalf("%s handler should not be registered", name)
+			t.Fatalf("%s should not be registered", name)
 		}
 	}
 	if _, ok := definitionByName(reg, "set_whiteboard"); !ok {
@@ -114,8 +48,7 @@ func TestRegistryDefinitionsForRealtimeIncludesSetWhiteboard(t *testing.T) {
 }
 
 func TestRegistryOmitsSetVolumeTool(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
-	reg := New(Config{SwitchBotClient: client})
+	reg := New(Config{})
 
 	if _, ok := definitionByName(reg, "set_volume"); ok {
 		t.Fatal("set_volume should not be registered")
@@ -126,8 +59,7 @@ func TestRegistryOmitsSetVolumeTool(t *testing.T) {
 }
 
 func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
-	client := switchbot.NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
-	reg := New(Config{SwitchBotClient: client})
+	reg := New(Config{})
 
 	if _, ok := definitionByName(reg, "schedule_timer"); ok {
 		t.Fatal("schedule_timer should not be registered")

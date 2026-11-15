@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// サーバーの internal/states/playbackvolume と同じ段階・同じ既定値にする。
+// サーバーの internal/plugins/playbackvolume と同じ段階・同じ既定値にする。
 export const playbackVolumeLevels = ['mute', 'quiet', 'low', 'normal', 'boost'] as const
 export type PlaybackVolumeLevel = typeof playbackVolumeLevels[number]
 export const defaultPlaybackVolumeLevel: PlaybackVolumeLevel = 'boost'
+
+// 段階ごとに音声へ掛ける倍率。
+export const playbackVolumeGains: Record<PlaybackVolumeLevel, number> = {
+  mute: 0,
+  quiet: 0.3,
+  low: 0.6,
+  normal: 1.0,
+  boost: 1.5,
+}
 
 function isPlaybackVolumeLevel(value: unknown): value is PlaybackVolumeLevel {
   return playbackVolumeLevels.includes(value as PlaybackVolumeLevel)

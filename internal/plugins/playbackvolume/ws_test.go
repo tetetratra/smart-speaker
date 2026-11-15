@@ -1,4 +1,4 @@
-package wschat
+package playbackvolume
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"nhooyr.io/websocket"
 )
 
@@ -17,9 +16,9 @@ import (
 func TestPlaybackVolumeSync(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	store := &playbackvolume.Store{}
+	store := &Store{}
 	mux := http.NewServeMux()
-	RegisterPlaybackVolume(mux, store)
+	registerWebSocket(mux, store)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	connect := func() *websocket.Conn {

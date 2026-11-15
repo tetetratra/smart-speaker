@@ -121,11 +121,6 @@ wake:
   # 呼びかけ後に、呼びかけなしで話せる時間（秒）。最後の発話から数えます。0より大きい値。既定: 300
   # conversation_timeout_seconds: 300
 
-switchbot:
-  # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
-  # device_map:
-  #   hub2: "XXXXXXXXXXXX"
-
 google_calendar:
   # OAuth のコールバックURL。既定: "http://localhost:8081/oauth/google/callback"
   # redirect_url: "http://localhost:8081/oauth/google/callback"
@@ -145,3 +140,9 @@ agent_bridge:
 # 組み込まれていないプラグインの名前を書くと、起動時にエラーになります。
 # シークレットは、ここではなく環境変数で渡します（各プラグインの説明を参照）。
 plugins:
+  # SwitchBot。トークンとシークレットはシークレットなので、環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡します。
+  # 両方があるときだけ有効になります。
+  switchbot:
+    # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
+    # device_map:
+    #   hub2: "XXXXXXXXXXXX"

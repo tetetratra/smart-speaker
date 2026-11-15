@@ -1,4 +1,4 @@
-package wschat
+package playbackvolume
 
 import (
 	"context"
@@ -6,13 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"nhooyr.io/websocket"
 )
 
-// RegisterPlaybackVolumeは音声接続とは独立して、全端末で共通の再生音量の同期と変更を扱う。
+// registerWebSocketは音声接続とは独立して、全端末で共通の再生音量の同期と変更を扱う。
 // 接続時と変更時に現在の音量を送り、画面からの変更も全端末へ配る。
-func RegisterPlaybackVolume(mux *http.ServeMux, store *playbackvolume.Store) {
+func registerWebSocket(mux *http.ServeMux, store *Store) {
 	mux.HandleFunc("/ws/playback-volume", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {

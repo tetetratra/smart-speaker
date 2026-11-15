@@ -5,19 +5,16 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
-	volumetool "github.com/tetetratra/smart-speaker/internal/tools/functions/playbackvolume"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
 	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
@@ -33,18 +30,12 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
-	AppContext         context.Context
-	WakeMode           *wakemode.Store
-	PlaybackVolume     *playbackvolume.Store
-	Automations        *automations.Service
-	Memory             *memorystate.Store
-	ClaudeCode         *agentbridge.Service
-	SwitchBotToken     string
-	SwitchBotSecret    string
-	SwitchBotDeviceMap map[string]string
-	SwitchBotClient    *switchbot.Client
-	SwitchBotScenes    []switchbot.Scene
-	CalendarClient     *calendarapi.Client
+	AppContext     context.Context
+	WakeMode       *wakemode.Store
+	Automations    *automations.Service
+	Memory         *memorystate.Store
+	ClaudeCode     *agentbridge.Service
+	CalendarClient *calendarapi.Client
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -53,12 +44,6 @@ type Config struct {
 func New(cfg Config) *Registry {
 	var entries []entry
 
-	switchBotClient := cfg.SwitchBotClient
-	if switchBotClient == nil && strings.TrimSpace(cfg.SwitchBotToken) != "" && strings.TrimSpace(cfg.SwitchBotSecret) != "" {
-		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	}
-	hub2Tools := switchbot.NewHub2ToolsWithClient(switchBotClient)
-	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
 	calendarClient := cfg.CalendarClient
 	if calendarClient == nil {
 		calendarClient = calendarapi.NewClient(calendarapi.Config{})
@@ -72,10 +57,6 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
-	}
-	if cfg.PlaybackVolume != nil {
-		t := &volumetool.Tool{Store: cfg.PlaybackVolume}
-		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {
@@ -105,16 +86,6 @@ func New(cfg Config) *Registry {
 		if dp, ok := t.(tools.DefinitionProvider); ok {
 			toolEntries = append(toolEntries, entry{def: dp.Definition(), handler: t})
 		}
-	}
-	if len(hub2Tools) > 0 {
-		hub2Entries := make([]entry, 0, len(hub2Tools))
-		for _, hub2Tool := range hub2Tools {
-			hub2Entries = append(hub2Entries, entry{def: hub2Tool.Definition(), handler: hub2Tool})
-		}
-		toolEntries = append(hub2Entries, toolEntries...)
-	}
-	if sceneTool != nil {
-		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
 	}
 	for _, e := range toolEntries {
 		entries = append(entries, e)
