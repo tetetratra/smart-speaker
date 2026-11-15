@@ -43,7 +43,7 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 		}
 		switch {
 		case collection && r.Method == http.MethodGet:
-			writeJSON(w, 200, map[string]any{"jobs": service.List(), "events": automationEventList(service)})
+			writeJSON(w, 200, map[string]any{"jobs": service.List(), "sources": automationSourceList(service)})
 		case collection && r.Method == http.MethodPost:
 			var spec automations.Spec
 			if !decode(&spec) {
@@ -85,18 +85,18 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 	mux.HandleFunc("/api/jobs/", handler)
 }
 
-// automationEvent は、画面の予約の編集で schedule.event に選べるイベント。
-type automationEvent struct {
+// automationSource は、画面の予約の編集で schedule.source に選べる記録の Source。
+type automationSource struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// automationEventList は、schedule.event に指定できるイベントを名前順に並べて返す。
-func automationEventList(service *automations.Service) []automationEvent {
-	events := service.Events()
-	list := make([]automationEvent, 0, len(events))
-	for name, description := range events {
-		list = append(list, automationEvent{Name: name, Description: description})
+// automationSourceList は、schedule.source に指定できる記録の Source を名前順に並べて返す。
+func automationSourceList(service *automations.Service) []automationSource {
+	sources := service.Sources()
+	list := make([]automationSource, 0, len(sources))
+	for name, description := range sources {
+		list = append(list, automationSource{Name: name, Description: description})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	return list

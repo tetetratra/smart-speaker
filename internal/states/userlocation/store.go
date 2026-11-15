@@ -17,13 +17,15 @@ type Store struct {
 	current *Record
 }
 
-func (s *Store) Update(place string) Record {
+// Update は現在地を place にし、更新後の値と更新前の値（未設定なら nil）を返す。
+func (s *Store) Update(place string) (current Record, previous *Record) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	record := Record{Place: place, UpdatedAt: time.Now()}
-	s.current = &record
-	return record
+	previous = s.current
+	current = Record{Place: place, UpdatedAt: time.Now()}
+	s.current = &current
+	return current, previous
 }
 
 func (s *Store) Snapshot() *Record {

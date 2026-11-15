@@ -4,7 +4,7 @@ package types
 // 接続・無操作・応答への利用を知らせる進行の合図は、合図ごとのイベントで運ぶ。
 
 // ConversationInput は保存する記録と、モデルとユーザーがその記録をもう知っているかを持つ。
-// 3つの bool は処理の分岐にだけ使い、履歴には保存しない。
+// bool は処理の分岐にだけ使い、履歴には保存しない。
 type ConversationInput struct {
 	Record ConversationRecord
 	// ModelAlreadyKnows は、モデルがもう知っている（文脈に足さず、記録だけする）ことを表す。
@@ -14,6 +14,9 @@ type ConversationInput struct {
 	ModelShouldRespond bool
 	// UserAlreadyKnows は、ユーザーがもう知っている（画面に出さない）ことを表す。
 	UserAlreadyKnows bool
+	// Subscribable は、予約ジョブが購読できる記録であることを表す。会話管理が記録したあと、予約ジョブへも流す。
+	// 立てるのは記録を作って送る側だけ。予約ジョブの実行結果には立てない（自分の結果で発火し続けないように）。
+	Subscribable bool
 }
 
 // EventConversationInput は会話の中身を運ぶ。

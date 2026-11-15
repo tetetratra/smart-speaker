@@ -11,6 +11,7 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestLocationAPIThroughHTTPServer(t *testing.T) {
@@ -99,9 +100,9 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var store userlocation.Store
-			initial := store.Update("home")
+			initial, _ := store.Update("home")
 			mux := http.NewServeMux()
-			registerLocationAPI(mux, &store)
+			registerLocationAPI(mux, &store, nil)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(tt.body)))
 			if rec.Code != tt.status {
@@ -116,9 +117,9 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 
 func TestLocationAPIRejectsUnsupportedMethods(t *testing.T) {
 	var store userlocation.Store
-	initial := store.Update("home")
+	initial, _ := store.Update("home")
 	mux := http.NewServeMux()
-	registerLocationAPI(mux, &store)
+	registerLocationAPI(mux, &store, nil)
 	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead, http.MethodOptions} {
 		t.Run(method, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -177,5 +178,52 @@ func TestLocationToolReadsHTTPUpdates(t *testing.T) {
 			t.Fatalf("保存失敗: %s", rec.Body.String())
 		}
 		check(`{"location":` + strings.TrimSpace(rec.Body.String()) + `}`)
+	}
+}
+
+// 場所が変わったときだけ、購読可能な記録として会話へ届ける。起動後の最初の1件は前の場所がないので変化として扱う。
+func TestLocationAPIDeliversOnlyChanges(t *testing.T) {
+	var store userlocation.Store
+	var got []types.ConversationInput
+	mux := http.NewServeMux()
+	registerLocationAPI(mux, &store, func(_ context.Context, input types.ConversationInput) error {
+		got = append(got, input)
+		return nil
+	})
+	for _, place := range []string{"自宅", "自宅", "会社", "会社", "自宅"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("保存失敗: %s", rec.Body.String())
+		}
+	}
+	want := []struct {
+		previous any
+		place    string
+		text     string
+	}{
+		{nil, "自宅", "ユーザーの居場所が「自宅」になりました。"},
+		{"自宅", "会社", "ユーザーの居場所が「自宅」から「会社」に変わりました。"},
+		{"会社", "自宅", "ユーザーの居場所が「会社」から「自宅」に変わりました。"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("届いた件数 = %d、期待値 = %d: %#v", len(got), len(want), got)
+	}
+	for i, input := range got {
+		r := input.Record
+		if !input.Subscribable || input.ModelShouldRespond || input.ModelAlreadyKnows || !input.UserAlreadyKnows {
+			t.Fatalf("%d件目のフラグが不正: %#v", i, input)
+		}
+		if r.Source != userLocationSource || r.Role != types.RoleSystem || r.Text != want[i].text || r.CreatedAt.IsZero() ||
+			r.Metadata["place"] != want[i].place || r.Metadata["previous_place"] != want[i].previous {
+			t.Fatalf("%d件目の記録が不正: %#v", i, r)
+		}
+	}
+}
+
+// 位置情報APIが送る記録の Source は、予約ジョブで指定できる一覧に載っている。
+func TestLocationSourceIsSubscribable(t *testing.T) {
+	if _, ok := automationSources[userLocationSource]; !ok {
+		t.Fatalf("%s が automationSources にありません", userLocationSource)
 	}
 }

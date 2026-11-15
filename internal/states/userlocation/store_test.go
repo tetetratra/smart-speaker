@@ -14,7 +14,7 @@ func TestStoreUpdatesLatestLocation(t *testing.T) {
 	}
 	for _, place := range []string{"home", "会社", "会社"} {
 		before := time.Now().UTC()
-		record := store.Update(place)
+		record, _ := store.Update(place)
 		after := time.Now().UTC()
 		if record.Place != place || record.UpdatedAt.Before(before) || record.UpdatedAt.After(after) {
 			t.Fatalf("更新結果が場所と受信時刻に一致しない: %#v", record)

@@ -73,15 +73,15 @@ func (t *Tool) Definition() map[string]any {
 		description += fmt.Sprintf("\n\nscriptの記述例（時刻と頻度はscheduleに指定）:\n例1: ツールを直接呼び、発話せず画面へ残す。\n%s\n\n例2: AIに応答させるリマインダー。\n%s\n\n例3: Hub2が利用可能な場合、温度取得と画面表示の複数ツールを使い、28℃以上のときだけリマインダーで知らせる。temperatureは文字列なのでNumberで数値へ変換する。\n%s", directScriptExample, remindScriptExample, temperatureScriptExample)
 
 		scheduleProps := map[string]any{"after_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 31536000}, "at": map[string]any{"type": "string", "description": "例: 2026-11-10T08:00:00+09:00"}, "cron": map[string]any{"type": "string", "description": "例: 平日8時は0 8 * * 1-5"}, "timezone": map[string]any{"type": "string"}}
-		if events := t.events(); len(events) > 0 {
-			names := make([]string, 0, len(events))
-			lines := make([]string, 0, len(events))
-			for _, name := range sortedKeys(events) {
+		if sources := t.sources(); len(sources) > 0 {
+			names := make([]string, 0, len(sources))
+			lines := make([]string, 0, len(sources))
+			for _, name := range sortedKeys(sources) {
 				names = append(names, name)
-				lines = append(lines, name+": "+events[name])
+				lines = append(lines, name+": "+sources[name])
 			}
-			scheduleProps["event"] = map[string]any{"type": "string", "enum": names}
-			description += "\n\nscheduleにeventを指定すると、時刻ではなくそのイベントが起きるたびに実行され、実行後も削除されません。スクリプトではevent変数でイベントの中身（JSONのオブジェクト）を読めるので、条件の絞り込みはスクリプトの中で書きます。指定できるイベント:\n" + strings.Join(lines, "\n")
+			scheduleProps["source"] = map[string]any{"type": "string", "enum": names}
+			description += "\n\nscheduleにsourceを指定すると、時刻ではなくその種類の記録が会話に届くたびに実行され、実行後も削除されません。スクリプトではevent変数で届いた記録（source・title・text・metadata・created_atを持つオブジェクト）を読めるので、条件の絞り込みはスクリプトの中で書きます。指定できるsource:\n" + strings.Join(lines, "\n")
 		}
 		props = map[string]any{"name": map[string]any{"type": "string", "description": "予約の内容を表す短い名前。時刻・頻度は含めない。例: 室温を知らせる"}, "script": map[string]any{"type": "string", "description": "予定時刻に実行するJavaScript。ツール説明の3例を参考にtoolcallとremindを使う。ツール名を直接JSの関数として呼ばない。時刻や頻度はscheduleに指定する。"}, "schedule": map[string]any{"type": "object", "properties": scheduleProps, "additionalProperties": false}}
 		required = []string{"name", "script", "schedule"}
@@ -101,11 +101,11 @@ func (t *Tool) Definition() map[string]any {
 
 var _ tools.Handler = (*Tool)(nil)
 
-func (t *Tool) events() map[string]string {
+func (t *Tool) sources() map[string]string {
 	if t.Service == nil {
 		return nil
 	}
-	return t.Service.Events()
+	return t.Service.Sources()
 }
 
 func sortedKeys(m map[string]string) []string {
