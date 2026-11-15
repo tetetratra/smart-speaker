@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )

@@ -2,13 +2,11 @@ package registry
 
 import (
 	"context"
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
-	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	volumetool "github.com/tetetratra/smart-speaker/internal/tools/functions/playbackvolume"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
@@ -39,7 +37,6 @@ type Config struct {
 	PlaybackVolume     *playbackvolume.Store
 	Automations        *automations.Service
 	Memory             *memorystate.Store
-	ClaudeCode         *agentbridge.Service
 	SwitchBotToken     string
 	SwitchBotSecret    string
 	SwitchBotDeviceMap map[string]string
@@ -102,12 +99,7 @@ func New(cfg Config) *Registry {
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
-	if cfg.ClaudeCode != nil {
-		for _, operation := range claudecodetool.Operations {
-			t := &claudecodetool.Tool{Service: cfg.ClaudeCode, Operation: operation}
-			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
-		}
-	}
+
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
 	}

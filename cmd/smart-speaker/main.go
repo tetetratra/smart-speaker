@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
@@ -30,6 +29,7 @@ import (
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
@@ -74,7 +74,10 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	if err != nil {
+		log.Fatal(err)
+	}
 	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
 		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
 	}
@@ -88,7 +91,6 @@ func main() {
 	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず会話管理へ送る。
 	// Runner はコンポーネントより先に作るので、コンポーネントだけ先に作って送り口を渡す。
 	services.AutomationStage = automation.New(services.Automations)
-	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, services.Deliver)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
 		log.Fatal(err)
@@ -267,7 +269,6 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		PlaybackVolume:   services.PlaybackVolume,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
-		ClaudeCode:       services.ClaudeCode,
 		SwitchBotClient:  switchBotClient,
 		SwitchBotScenes:  scenes,
 		OpenAIAPIKey:     cfg.APIKey,
@@ -276,15 +277,6 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		PluginTools:      plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
-}
-
-// newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
-func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver agentbridge.Deliver) *agentbridge.Service {
-	if cfg.URL == "" || cfg.Token == "" {
-		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
-		return nil
-	}
-	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), deliver)
 }
 
 func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
@@ -345,10 +337,15 @@ func wireGraph(g *graph.Graph, s appStages) {
 }
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
-func buildPlugins(deps plugin.Deps) []plugin.Plugin {
+func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
+	claudeCode, err := claudecode.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
-	}
+		claudeCode,
+	}, nil
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。

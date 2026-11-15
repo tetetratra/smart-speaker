@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 

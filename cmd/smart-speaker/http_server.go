@@ -25,7 +25,6 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 		wschat.RegisterPlaybackVolume(mux, services.PlaybackVolume)
 	}
 	registerAutomationsAPI(mux, services.Automations)
-	registerAgentEventsAPI(mux, services.ClaudeCode, cfg.AgentBridge.Token)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
 	plugin.RegisterHTTP(services.Plugins, mux)
