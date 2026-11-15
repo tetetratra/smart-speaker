@@ -30,12 +30,12 @@ import (
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
@@ -69,7 +69,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
@@ -261,7 +261,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
-		PlaybackVolume:   services.PlaybackVolume,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
 		ClaudeCode:       services.ClaudeCode,
@@ -328,6 +327,7 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
+		playbackvolume.New(deps),
 		switchBot,
 	}, nil
 }

@@ -3,12 +3,10 @@ package playbackvolume
 import (
 	"context"
 	"testing"
-
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 )
 
 func TestSetPlaybackVolume(t *testing.T) {
-	store := &playbackvolume.Store{}
+	store := &Store{}
 	tool := &Tool{Store: store}
 	run := func(args map[string]any) (map[string]any, error) {
 		return tool.Run(context.Background(), args)

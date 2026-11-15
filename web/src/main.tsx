@@ -6,7 +6,8 @@ import { Whiteboard, type HistoryEntry } from './Whiteboard'
 import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
-import { defaultPlaybackVolumeLevel, playbackVolumeLevels, usePlaybackVolume, type PlaybackVolumeLevel } from './playbackVolume'
+import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume, type PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolume'
+import { PlaybackVolumeSlider } from './plugins/playbackvolume/PlaybackVolumeSlider'
 import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
@@ -35,14 +36,6 @@ const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const serverEventLogLimit = 1000
-
-const playbackVolumePresets: Record<PlaybackVolumeLevel, { label: string; gain: number }> = {
-  mute: { label: '0倍', gain: 0 },
-  quiet: { label: '0.3倍', gain: 0.3 },
-  low: { label: '0.6倍', gain: 0.6 },
-  normal: { label: '1倍', gain: 1.0 },
-  boost: { label: '1.5倍', gain: 1.5 },
-}
 
 const liveRootStyle = `
   :root {
@@ -662,7 +655,7 @@ function App() {
   const adminLogRef = useRef<HTMLDivElement | null>(null)
   const shouldFollowAdminLogRef = useRef(true)
   const audioReceiverRef = useRef<AudioReceiver | null>(null)
-  const playbackGainRef = useRef(playbackVolumePresets[defaultPlaybackVolumeLevel].gain)
+  const playbackGainRef = useRef(playbackVolumeGains[defaultPlaybackVolumeLevel])
 
   const wsChatRef = useRef<ReturnType<typeof createWS> | null>(null)
   const openConnectionRef = useRef<((isAutoReconnect: boolean) => Promise<void>) | null>(null)
@@ -702,7 +695,7 @@ function App() {
     })
   }, [nextMessageId, updateAdminLogFollow])
 
-  const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
+  const playbackGain = playbackVolumeGains[playbackVolumeLevel]
 
   const stopRemoteAudioGraph = useCallback(() => {
     audioReceiverRef.current?.close()
@@ -710,9 +703,9 @@ function App() {
   }, [])
 
   useEffect(() => {
-    playbackGainRef.current = selectedPlaybackVolume.gain
-    audioReceiverRef.current?.volume(selectedPlaybackVolume.gain)
-  }, [selectedPlaybackVolume.gain])
+    playbackGainRef.current = playbackGain
+    audioReceiverRef.current?.volume(playbackGain)
+  }, [playbackGain])
 
   const handleRTCSignal = useCallback(async (raw: any) => {
     const peer = peerRef.current
@@ -977,7 +970,7 @@ function App() {
     } finally {
       setBusy(false)
     }
-  }, [appendMessage, busy, clearReconnectTimer, connected, handleChatMessage, resetConversationBubble, scheduleReconnect, selectedPlaybackVolume.gain, startRTC, stopRTC])
+  }, [appendMessage, busy, clearReconnectTimer, connected, handleChatMessage, resetConversationBubble, scheduleReconnect, playbackGain, startRTC, stopRTC])
 
   openConnectionRef.current = openConnection
 
@@ -1703,8 +1696,6 @@ function LiveView(props: LiveViewProps) {
     void connect()
   }, [connected, connect, disconnect])
   const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
-  const playbackVolumeIndex = playbackVolumeLevels.indexOf(playbackVolumeLevel)
-  const selectedPlaybackVolume = playbackVolumePresets[playbackVolumeLevel]
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1754,19 +1745,7 @@ function LiveView(props: LiveViewProps) {
                 </div>
               </div>
               <TTSControl visible={props.visible} />
-              <div className="live-playback-slider-row">
-                <span className="live-playback-slider-label">再生音量</span>
-                <input
-                  className="live-volume-slider"
-                  type="range"
-                  min={0}
-                  max={playbackVolumeLevels.length - 1}
-                  step={1}
-                  value={playbackVolumeIndex}
-                  aria-label="再生音量"
-                  onChange={(event) => onPlaybackVolumeChange(playbackVolumeLevels[Number(event.currentTarget.value)])}
-                />
-              </div>
+              <PlaybackVolumeSlider level={playbackVolumeLevel} onChange={onPlaybackVolumeChange} />
             </div>
             <div className="live-character-area">
               <div className="live-volume-control" aria-label="キャラクターエリア" />
