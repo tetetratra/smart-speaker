@@ -23,6 +23,15 @@ type Deps struct {
 	Config func(name string, v any) error
 	// DataDir は、状態を保存するファイルの既定の置き場所（memory.store_path と同じディレクトリ）。
 	DataDir string
+	// OpenAI は、本体と共用する OpenAI の設定。
+	OpenAI OpenAIConfig
+}
+
+// OpenAIConfig は、本体と共用する OpenAI の設定。
+type OpenAIConfig struct {
+	APIKey string
+	// ResponsesModel は Responses API で使うモデル（config.yaml の openai.responses_model）。
+	ResponsesModel string
 }
 
 // DecodeConfig は、config.yaml の plugins.<name> の中身を v に読み込む。

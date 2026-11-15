@@ -55,7 +55,7 @@ type Tool struct {
 	deliver    Deliver
 }
 
-func New(cfg Config) *Tool {
+func NewTool(cfg Config) *Tool {
 	client := cfg.Client
 	if client == nil {
 		client = NewClient(ClientConfig{

@@ -1,5 +1,3 @@
-// Package playbackvolumeは、接続中の全端末で共通の再生音量を保持する。
-// 永続化はせず、サーバーを再起動すると既定値に戻る。
 package playbackvolume
 
 import "sync"
@@ -10,7 +8,8 @@ var Levels = []string{"mute", "quiet", "low", "normal", "boost"}
 // Defaultは起動直後の音量。画面の既定値と揃える。
 const Default = "boost"
 
-// Storeはゼロ値で既定の音量を持つ。
+// Storeは接続中の全端末で共通の再生音量を持つ。ゼロ値で既定の音量になる。
+// 永続化はせず、サーバーを再起動すると既定値に戻る。
 type Store struct {
 	mu          sync.Mutex
 	level       string

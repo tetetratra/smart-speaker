@@ -125,7 +125,7 @@ flowchart LR
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
     rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
-    webSearchTool("web_search<br/>Web検索ツール")
+    webSearchTool("【Web検索】<br/>web_search")
     scheduler["automation<br/>予約ジョブ"]
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
@@ -173,13 +173,13 @@ flowchart LR
     gateway["gateway<br/>グラフの外との境目"]
 
     subgraph toolset["ツール"]
-        webSearchTool["web_search<br/>Web検索"]
+        webSearchTool["【Web検索】<br/>web_search"]
         claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携（agentbridge.Service）"]
         calendarTool["【Googleカレンダー】<br/>google_calendar_list<br/>google_calendar_create<br/>google_calendar_update"]
-        switchBotTool["hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene<br/>SwitchBot"]
+        switchBotTool["【SwitchBot】<br/>hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
-        volumeTool["set_playback_volume<br/>全端末の再生音量"]
+        volumeTool["【再生音量】<br/>set_playback_volume"]
         automationTool["register_job<br/>list_jobs<br/>update_job<br/>delete_job<br/>予約"]
         whiteboardTool["set_whiteboard<br/>ホワイトボード表示"]
         locationTool["【現在地】<br/>get_current_location"]
@@ -194,7 +194,7 @@ flowchart LR
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]
-    volumeStore[("playbackvolume<br/>全端末の再生音量（メモリのみ）")]
+    volumeStore[("【再生音量】<br/>playbackvolume<br/>全端末の再生音量（メモリのみ）")]
     automationStore[("automations<br/>予約ジョブ")]
     locationStore[("【現在地】<br/>userlocation<br/>ユーザーの居場所")]
     browser{{"ブラウザ<br/>web/"}}

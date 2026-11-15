@@ -150,15 +150,14 @@ wake:
   min_similarity: 0.7
   energy_threshold: 0.003
   conversation_timeout_seconds: 120
-switchbot:
-  device_map:
-    hub2: hub-device
+plugins:
+  switchbot:
+    device_map:
+      hub2: hub-device
 `
 	env := map[string]string{
 		"OPENAI_API_KEY":     "openai",
 		"ELEVENLABS_API_KEY": "eleven",
-		"SWITCHBOT_TOKEN":    "token",
-		"SWITCHBOT_SECRET":   "secret",
 	}
 	cfg := mustLoadFromYAML(t, content, env)
 
@@ -180,8 +179,6 @@ switchbot:
 		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_flash_v2_5"},
 		"WakeModeStorePath":          {cfg.WakeModeStorePath, "/tmp/wake.json"},
 		"LocalSTTEndpoint":           {cfg.LocalSTTEndpoint, "http://localhost:8000/transcribe"},
-		"SwitchBot.Token":            {cfg.SwitchBot.Token, "token"},
-		"SwitchBot.Secret":           {cfg.SwitchBot.Secret, "secret"},
 	}
 	for name, c := range checks {
 		if c[0] != c[1] {
@@ -203,8 +200,8 @@ switchbot:
 	if want := []string{"192.168.0.100", "100.64.0.1"}; !reflect.DeepEqual(cfg.RTCIceAdvertiseIPs, want) {
 		t.Errorf("RTCIceAdvertiseIPs = %#v, want %#v", cfg.RTCIceAdvertiseIPs, want)
 	}
-	if want := map[string]string{"hub2": "hub-device"}; !reflect.DeepEqual(cfg.SwitchBot.DeviceMap, want) {
-		t.Errorf("SwitchBot.DeviceMap = %#v", cfg.SwitchBot.DeviceMap)
+	if want := map[string]string{"hub2": "hub-device"}; !reflect.DeepEqual(switchBotDeviceMap(t, cfg), want) {
+		t.Errorf("plugins.switchbot.device_map = %#v", switchBotDeviceMap(t, cfg))
 	}
 	if cfg.WakeEnergyThreshold != 0.003 {
 		t.Errorf("WakeEnergyThreshold = %v, want 0.003", cfg.WakeEnergyThreshold)
@@ -266,7 +263,7 @@ func TestConfigSampleYAMLIsLoadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.sample.yaml（全項目有効）: %v", err)
 	}
-	if cfg.Voicevox.SpeedScale == nil || len(cfg.RTCIceAdvertiseIPs) != 1 || len(cfg.SwitchBot.DeviceMap) != 1 {
+	if cfg.Voicevox.SpeedScale == nil || len(cfg.RTCIceAdvertiseIPs) != 1 || len(switchBotDeviceMap(t, cfg)) != 1 {
 		t.Fatalf("コメントアウトされた項目が有効になっていません: %+v", cfg)
 	}
 }
@@ -358,4 +355,16 @@ func TestPluginConfigs(t *testing.T) {
 	if err := cfg.DecodePluginConfig("sample", &wrongType); err == nil {
 		t.Fatal("型の誤りでエラーになりません")
 	}
+}
+
+// switchBotDeviceMap は、config.yaml の plugins.switchbot.device_map を読む。
+func switchBotDeviceMap(t *testing.T, cfg Config) map[string]string {
+	t.Helper()
+	var v struct {
+		DeviceMap map[string]string `yaml:"device_map"`
+	}
+	if err := cfg.DecodePluginConfig("switchbot", &v); err != nil {
+		t.Fatal(err)
+	}
+	return v.DeviceMap
 }

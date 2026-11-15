@@ -39,7 +39,6 @@ type Config struct {
 	TTSProvider                string
 	ElevenLabs                 ElevenLabsConfig
 	Voicevox                   VoicevoxConfig
-	SwitchBot                  SwitchBotConfig
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
@@ -92,12 +91,6 @@ type MemoryConfig struct {
 	HistoryMaxBytes int
 }
 
-type SwitchBotConfig struct {
-	Token     string
-	Secret    string
-	DeviceMap map[string]string
-}
-
 type ElevenLabsConfig struct {
 	APIKey  string
 	VoiceID string
@@ -140,7 +133,7 @@ var legacyEnvVars = map[string]string{
 	"WAKE_MAX_PREFIX":                     "wake.max_prefix",
 	"WAKE_MIN_CONFIDENCE":                 "wake.min_confidence",
 	"WAKE_MIN_SIMILARITY":                 "wake.min_similarity",
-	"SWITCHBOT_DEVICE_MAP":                "switchbot.device_map",
+	"SWITCHBOT_DEVICE_MAP":                "plugins.switchbot.device_map",
 	"GOOGLE_REDIRECT_URL":                 "plugins.googlecalendar.redirect_url",
 	"GOOGLE_OAUTH_SCOPE":                  "plugins.googlecalendar.scope",
 	"GOOGLE_OAUTH_TOKEN_PATH":             "plugins.googlecalendar.token_path",
@@ -241,9 +234,6 @@ type configFile struct {
 		// ConversationTimeoutSecondsは、呼びかけ後に呼びかけなしで話せる時間（秒）。
 		ConversationTimeoutSeconds *int `yaml:"conversation_timeout_seconds"`
 	} `yaml:"wake"`
-	SwitchBot struct {
-		DeviceMap map[string]string `yaml:"device_map"`
-	} `yaml:"switchbot"`
 	AgentBridge struct {
 		URL string `yaml:"url"`
 	} `yaml:"agent_bridge"`
@@ -342,11 +332,6 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 			Endpoint:   stringOr(file.TTS.Voicevox.Endpoint, "http://voicevox:50021"),
 			SpeakerID:  intOr(file.TTS.Voicevox.SpeakerID, 1),
 			SpeedScale: positiveFloat(file.TTS.Voicevox.SpeedScale),
-		},
-		SwitchBot: SwitchBotConfig{
-			Token:     env("SWITCHBOT_TOKEN"),
-			Secret:    env("SWITCHBOT_SECRET"),
-			DeviceMap: file.SwitchBot.DeviceMap,
 		},
 		RTCIceAdvertiseIPs: iceIPs,
 		WSAddr:             stringOr(file.Server.WSAddr, ":8081"),
