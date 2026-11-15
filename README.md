@@ -175,7 +175,7 @@ flowchart LR
     subgraph toolset["ツール"]
         webSearchTool["web_search<br/>Web検索"]
         claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携（agentbridge.Service）"]
-        calendarTool["google_calendar_list<br/>google_calendar_create<br/>google_calendar_update<br/>Googleカレンダー"]
+        calendarTool["【Googleカレンダー】<br/>google_calendar_list<br/>google_calendar_create<br/>google_calendar_update"]
         switchBotTool["hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene<br/>SwitchBot"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
@@ -190,7 +190,7 @@ flowchart LR
     agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
     googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
     googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
-    googleTokenStore[("google_oauth_token.json<br/>Googleの認証トークン")]
+    googleTokenStore[("【Googleカレンダー】<br/>google_oauth_token.json<br/>Googleの認証トークン")]
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]

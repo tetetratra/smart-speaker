@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar/calendarapi"
 )
 
 type stubClient struct {

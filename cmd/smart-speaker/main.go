@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -28,8 +29,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
@@ -52,10 +53,6 @@ func main() {
 	setLocalTimeZone()
 
 	cfg := app.LoadConfig()
-	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
-
-	ensureGoogleCalendarToken()
-
 	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		log.Fatalf("failed to init memory store: %v", err)
@@ -74,7 +71,10 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig, DataDir: filepath.Dir(cfg.Memory.StorePath)})
+	if err != nil {
+		log.Fatal(err)
+	}
 	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
 		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
 	}
@@ -128,13 +128,6 @@ func setLocalTimeZone() {
 		return
 	}
 	time.Local = loc
-}
-
-func ensureGoogleCalendarToken() {
-	if _, err := oauthgooglecalendar.LoadToken(); err == nil {
-		return
-	}
-	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
 }
 
 func closeStages(stages ...*graph.Stage) {
@@ -345,10 +338,15 @@ func wireGraph(g *graph.Graph, s appStages) {
 }
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
-func buildPlugins(deps plugin.Deps) []plugin.Plugin {
+func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
+	calendar, err := googlecalendar.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
-	}
+		calendar,
+	}, nil
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。

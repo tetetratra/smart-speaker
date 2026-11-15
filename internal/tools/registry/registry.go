@@ -14,9 +14,7 @@ import (
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
-	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
@@ -45,7 +43,6 @@ type Config struct {
 	SwitchBotDeviceMap map[string]string
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
-	CalendarClient     *calendarapi.Client
 	OpenAIAPIKey       string
 	OpenAIModel        string
 	WebSearchClient    websearch.SearchClient
@@ -65,20 +62,10 @@ func New(cfg Config) *Registry {
 	}
 	hub2Tools := switchbot.NewHub2ToolsWithClient(switchBotClient)
 	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
-	calendarClient := cfg.CalendarClient
-	if calendarClient == nil {
-		calendarClient = calendarapi.NewClient(calendarapi.Config{})
-	}
-	googleCalendarList := googlecalendar.NewList(calendarClient)
-	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
-	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
 	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
-		{def: googleCalendarList.Definition(), handler: googleCalendarList},
-		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
-		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
 	}
 	if cfg.PlaybackVolume != nil {
 		t := &volumetool.Tool{Store: cfg.PlaybackVolume}

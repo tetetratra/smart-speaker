@@ -50,9 +50,6 @@ func TestRegistrySwitchBotTools(t *testing.T) {
 		assertRegistered(t, reg, name)
 	}
 	assertRegistered(t, reg, "set_whiteboard")
-	assertRegistered(t, reg, "google_calendar_list")
-	assertRegistered(t, reg, "google_calendar_create")
-	assertRegistered(t, reg, "google_calendar_update")
 }
 
 func TestRegistryOmitsSceneToolWithoutScenes(t *testing.T) {
@@ -85,14 +82,6 @@ func TestRegistryOmitsSwitchBotToolsWithoutCredentials(t *testing.T) {
 	}
 	if _, ok := definitionByName(reg, "set_whiteboard"); !ok {
 		t.Fatal("set_whiteboard should be registered")
-	}
-	for _, name := range []string{"google_calendar_list", "google_calendar_create", "google_calendar_update"} {
-		if _, ok := definitionByName(reg, name); !ok {
-			t.Fatalf("%s should be registered", name)
-		}
-		if _, ok := reg.Handlers()[name]; !ok {
-			t.Fatalf("%s handler should be registered", name)
-		}
 	}
 }
 

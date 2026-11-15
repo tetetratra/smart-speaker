@@ -16,10 +16,14 @@ import (
 // main で組み込んだプラグインのツール・HTTP・購読できる記録が、本体に届く。
 func TestPluginsAreWiredIntoApp(t *testing.T) {
 	var delivered []types.ConversationInput
-	services := runtimeServices{Plugins: buildPlugins(plugin.Deps{Deliver: func(_ context.Context, input types.ConversationInput) error {
+	plugins, err := buildPlugins(plugin.Deps{Deliver: func(_ context.Context, input types.ConversationInput) error {
 		delivered = append(delivered, input)
 		return nil
-	}})}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := runtimeServices{Plugins: plugins}
 	cfg := app.Config{WebDistDir: t.TempDir()}
 
 	definitions, handlers := buildToolRegistry(cfg, nil, services)
