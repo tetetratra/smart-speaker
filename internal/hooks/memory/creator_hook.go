@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -19,14 +20,34 @@ import (
 // メモリの保存の失敗（ディスクI/O）も含むが、その記憶はメモリ上には残るため区別しない。
 var errPartiallyApplied = errors.New("memory operations partially applied")
 
+const (
+	// DefaultMemorizeAfter は、会話をメモリ化するまでの既定の経過時間。
+	DefaultMemorizeAfter = 24 * time.Hour
+	// DefaultMaxHistoryBytes は、経過時間によらずメモリ化を始める履歴の大きさの既定値。
+	DefaultMaxHistoryBytes = 40000
+	// chunkGap は、会話の塊を区切る記録の間隔。メモリ化を始める無操作時間の既定値と同じにする。
+	chunkGap = 30 * time.Minute
+	// NoticeSource は、メモリ化したことを履歴に残す記録の Source。
+	NoticeSource = "memorize"
+)
+
 type CreatorHookConfig struct {
 	OperationCreator operationCreator
 	Memory           memoryWriter
+	// MemorizeAfter は、最後の記録からこの時間がたった塊をメモリ化する。0 以下なら既定値。
+	MemorizeAfter time.Duration
+	// MaxHistoryBytes は、履歴がこれを超えたら新しい塊もメモリ化する。0 以下なら既定値。
+	MaxHistoryBytes int
+	// Now は今の日時。テストで差し替える。
+	Now func() time.Time
 }
 
 type CreatorHook struct {
 	operationCreator operationCreator
 	memory           memoryWriter
+	memorizeAfter    time.Duration
+	maxHistoryBytes  int
+	now              func() time.Time
 }
 
 type operationCreator interface {
@@ -47,42 +68,52 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 	if cfg.Memory == nil {
 		return nil, fmt.Errorf("memory creator hook: memory is required")
 	}
-	return &CreatorHook{
+	h := &CreatorHook{
 		operationCreator: cfg.OperationCreator,
 		memory:           cfg.Memory,
-	}, nil
+		memorizeAfter:    cfg.MemorizeAfter,
+		maxHistoryBytes:  cfg.MaxHistoryBytes,
+		now:              cfg.Now,
+	}
+	if h.memorizeAfter <= 0 {
+		h.memorizeAfter = DefaultMemorizeAfter
+	}
+	if h.maxHistoryBytes <= 0 {
+		h.maxHistoryBytes = DefaultMaxHistoryBytes
+	}
+	if h.now == nil {
+		h.now = time.Now
+	}
+	return h, nil
 }
 
-// MemorizeOld は、接続時に復元する文脈からあふれた古い記録を長期メモリにする。
-// 文脈に入る範囲は接続時の復元と同じ予算で決め、まだ応答に使っていない外部記録（keep）は対象にしない。
+// MemorizeOld は、古い会話を塊の単位で長期メモリにする。
+// まだ応答に使っていない外部記録（keep）は対象にしない。
 // 抽出に成功した記録だけを履歴から消し、失敗したら次の発火で再試行できるよう残す。
 func (h *CreatorHook) MemorizeOld(ctx context.Context, history *conversationhistory.Store, keep map[string]bool) {
-	messages, err := memoryContextMessages(h.memory.Snapshot())
-	if err != nil {
-		log.Printf("古い履歴のメモリ化: 長期メモリを読めないため見送ります: %v", err)
-		return
-	}
-	memory := ""
-	for _, m := range messages {
-		memory += m.Content + "\n"
-	}
 	var records []types.ConversationRecord
 	for _, record := range history.Snapshot() {
 		if !keep[record.ID] {
 			records = append(records, record)
 		}
 	}
-	old := records[:len(records)-len(conversation.TrimHistory(records, memory, 0))]
+	old := h.selectOld(records)
 	if len(old) == 0 {
 		return
 	}
 	ids := make([]string, len(old))
+	// メモリ化したことを知らせる記録は、それ自体をメモリにしない。時間がたてば履歴から消すだけにする。
+	var targets []types.ConversationRecord
 	for i, record := range old {
 		ids[i] = record.ID
+		if record.Source != NoticeSource {
+			targets = append(targets, record)
+		}
 	}
+	until := old[len(old)-1].CreatedAt
 	log.Printf("古い履歴のメモリ化を開始します: %d件", len(old))
 	go func() {
-		err := h.ExecRecords(ctx, old)
+		err := h.ExecRecords(ctx, targets)
 		if errors.Is(err, errPartiallyApplied) {
 			// 抽出自体は済んでいるため、再試行で追加を重複させないよう履歴は消す。
 			log.Printf("古い履歴のメモリ化: %v", err)
@@ -94,8 +125,60 @@ func (h *CreatorHook) MemorizeOld(ctx context.Context, history *conversationhist
 			log.Printf("古い履歴のメモリ化: 履歴の削除: %v", err)
 			return
 		}
+		if len(targets) > 0 {
+			if err := history.Append(h.notice(until)); err != nil {
+				log.Printf("古い履歴のメモリ化: メモリ化した記録の保存: %v", err)
+			}
+		}
 		log.Printf("古い履歴のメモリ化が完了しました: %d件", len(old))
 	}()
+}
+
+// selectOld は、メモリ化する記録を古いほうから塊の単位で選ぶ。
+// 最後の記録から memorizeAfter がたった塊を選び、それでも残りが maxHistoryBytes を超えるなら、超えなくなるまで次の塊も選ぶ。
+func (h *CreatorHook) selectOld(records []types.ConversationRecord) []types.ConversationRecord {
+	chunks := splitChunks(records)
+	deadline := h.now().Add(-h.memorizeAfter)
+	n := 0
+	for n < len(chunks) && !chunks[n][len(chunks[n])-1].CreatedAt.After(deadline) {
+		n++
+	}
+	selected := 0
+	for _, chunk := range chunks[:n] {
+		selected += len(chunk)
+	}
+	for n < len(chunks) && conversation.HistoryBytes(records[selected:]) > h.maxHistoryBytes {
+		selected += len(chunks[n])
+		n++
+	}
+	return records[:selected]
+}
+
+// splitChunks は、記録の間隔が chunkGap 以上空いた位置で履歴を区切る。最後の塊は最新の記録まで。
+func splitChunks(records []types.ConversationRecord) [][]types.ConversationRecord {
+	var chunks [][]types.ConversationRecord
+	start := 0
+	for i := 1; i < len(records); i++ {
+		if records[i].CreatedAt.Sub(records[i-1].CreatedAt) >= chunkGap {
+			chunks = append(chunks, records[start:i])
+			start = i
+		}
+	}
+	if start < len(records) {
+		chunks = append(chunks, records[start:])
+	}
+	return chunks
+}
+
+// notice は、until までの会話をメモリ化したことを知らせる記録を作る。
+func (h *CreatorHook) notice(until time.Time) types.ConversationRecord {
+	return types.ConversationRecord{
+		ID:        "memorize/" + uuid.NewString(),
+		Role:      types.RoleSystem,
+		Source:    NoticeSource,
+		Text:      until.In(japanLocation).Format("1月2日 15:04") + " までの会話を長期メモリにしました。",
+		CreatedAt: h.now(),
+	}
 }
 
 // ExecRecords は取り出した時点で固定した記録を対象にする。

@@ -151,7 +151,7 @@ flowchart LR
     webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
     locationAPI -->|"Deliver<br/>居場所の変化"| gateway
     gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{UserAlreadyKnows: true, Subscribable: true}<br/>居場所の変化"| manager
-    manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
+    manager <-.->|"記録、無操作が続いたときに<br/>時間がたった・大きくなりすぎた古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"古い会話からの抽出結果"| memoryStore

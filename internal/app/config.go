@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	"github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 )
@@ -56,6 +57,10 @@ type AgentBridgeConfig struct {
 type MemoryConfig struct {
 	Model     string
 	StorePath string
+	// MemorizeAfter は、会話を長期メモリにするまでの経過時間。
+	MemorizeAfter time.Duration
+	// HistoryMaxBytes は、経過時間によらず古い会話から長期メモリにし始める履歴の大きさ。
+	HistoryMaxBytes int
 }
 
 type SwitchBotConfig struct {
@@ -175,8 +180,10 @@ type configFile struct {
 		IdleTimeoutSeconds *int `yaml:"idle_timeout_seconds"`
 	} `yaml:"conversation"`
 	Memory struct {
-		Model     string `yaml:"model"`
-		StorePath string `yaml:"store_path"`
+		Model              string `yaml:"model"`
+		StorePath          string `yaml:"store_path"`
+		MemorizeAfterHours *int   `yaml:"memorize_after_hours"`
+		HistoryMaxBytes    *int   `yaml:"history_max_bytes"`
 	} `yaml:"memory"`
 	Automations struct {
 		StorePath string `yaml:"store_path"`
@@ -253,6 +260,9 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		// 長期メモリの抽出は、古くなった記憶の削除で日付を比べる。gpt-5.4-nano では判断が安定しなかったため、別の既定値にする。
 		Model:     stringOr(file.Memory.Model, "gpt-5.6-luna"),
 		StorePath: stringOr(file.Memory.StorePath, "data/memories.json"),
+		// 0 以下は、メモリ化の側で既定値にする。
+		MemorizeAfter:   time.Duration(intOr(file.Memory.MemorizeAfterHours, int(memoryhook.DefaultMemorizeAfter/time.Hour))) * time.Hour,
+		HistoryMaxBytes: intOr(file.Memory.HistoryMaxBytes, memoryhook.DefaultMaxHistoryBytes),
 	}
 	dataDir := filepath.Dir(memoryCfg.StorePath)
 

@@ -243,12 +243,11 @@ func (s *stage) restore(ctx context.Context, sync types.EventConversationHistory
 			records = append(records, record)
 		}
 	}
-	records = conversation.TrimHistory(records, memory, 0)
 	ids := make([]string, 0, len(records))
 	for _, record := range records {
 		ids = append(ids, record.ID)
 	}
-	restore := conversation.RestoreContext(records, memory, 0)
+	restore := conversation.RestoreContext(records, memory)
 	epoch := s.epoch
 	go func() {
 		t, err := dial(ctx, s.cfg, epoch)

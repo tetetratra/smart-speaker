@@ -183,6 +183,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
 		OperationCreator: memoryOperationCreator,
 		Memory:           memoryStore,
+		MemorizeAfter:    cfg.Memory.MemorizeAfter,
+		MaxHistoryBytes:  cfg.Memory.HistoryMaxBytes,
 	})
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)

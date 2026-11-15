@@ -107,10 +107,11 @@ func TestConnectedAdditionIsImmediateAndDoesNotRequestResponse(t *testing.T) {
 	}
 }
 
-func TestReconnectDoesNotReplayTrimmedContext(t *testing.T) {
+// 接続時は履歴を切り詰めずに復元し、応答待ちの依頼だけを通常入力として1回送る。
+func TestReconnectRestoresAllHistoryAndSendsPendingRequestOnce(t *testing.T) {
 	inbound := make(chan types.ConversationInput, 3)
 	r := createRig(t, "__offline__", inbound)
-	inbound <- types.ExternalInput(types.ConversationRecord{ID: "old", Text: strings.Repeat("古い外部情報", 5000)}, json.RawMessage(`{"delivery":"history_only"}`))
+	inbound <- types.ExternalInput(types.ConversationRecord{ID: "old", Text: "古い外部情報"}, json.RawMessage(`{"delivery":"history_only"}`))
 	inbound <- types.ExternalInput(types.ConversationRecord{ID: "recent", Text: "直近の結果"}, json.RawMessage(`{"delivery":"history_only"}`))
 	inbound <- types.ExternalInput(types.ConversationRecord{ID: "request", Text: "短く答えて"}, nil)
 	select {
@@ -122,12 +123,12 @@ func TestReconnectDoesNotReplayTrimmedContext(t *testing.T) {
 	r.send(map[string]any{"type": "session.updated"})
 	restored := r.wait("conversation.item.create")["item"].(map[string]any)
 	instructions := restored["content"].([]any)[0].(map[string]any)["text"].(string)
-	if strings.Contains(instructions, "古い外部情報") || !strings.Contains(instructions, "直近の結果") {
+	if !strings.Contains(instructions, "古い外部情報") || !strings.Contains(instructions, "直近の結果") || strings.Contains(instructions, "短く答えて") {
 		t.Fatal("復元範囲が不正")
 	}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	if got := item["content"].([]any)[0].(map[string]any)["text"]; got != "短く答えて" {
-		t.Fatal("復元で除いた情報を追加送信しました")
+		t.Fatal("復元した情報を追加送信しました")
 	}
 	r.wait("response.create")
 }
