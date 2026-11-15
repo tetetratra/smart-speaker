@@ -109,7 +109,7 @@ Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS �
 
 ### Claude Code
 
-Mac で [agent-bridge](../services/agent-bridge/README.md) を常駐させ、サーバーには `config.yaml` の `agent_bridge.url` と環境変数 `AGENT_BRIDGE_TOKEN` を設定します。
+Mac で [agent-bridge](../services/agent-bridge/README.md) を常駐させ、サーバーには `config.yaml` の `plugins.claudecode.url` と環境変数 `AGENT_BRIDGE_TOKEN` を設定します。
 
 ### 現在地 API
 

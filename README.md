@@ -174,7 +174,7 @@ flowchart LR
 
     subgraph toolset["ツール"]
         webSearchTool["【Web検索】<br/>web_search"]
-        claudeCodeTool["ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>Claude Code連携（agentbridge.Service）"]
+        claudeCodeTool["【Claude Code】<br/>ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>（agentbridge.Service）"]
         calendarTool["【Googleカレンダー】<br/>google_calendar_list<br/>google_calendar_create<br/>google_calendar_update"]
         switchBotTool["【SwitchBot】<br/>hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]

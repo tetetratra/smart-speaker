@@ -5,7 +5,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/automation"
 	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
@@ -35,6 +34,4 @@ type runtimeServices struct {
 	TTS     *tts.Selector
 	// History は会話履歴。会話管理が記録し、realtime と画面連携が直接読む。nil なら buildStages で作る。
 	History *conversationhistory.Store
-	// ClaudeCode はブリッジの設定がないときnil。ツールも通知の受付も無効になる。
-	ClaudeCode *agentbridge.Service
 }

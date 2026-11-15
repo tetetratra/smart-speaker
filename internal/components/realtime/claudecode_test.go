@@ -27,12 +27,3 @@ func TestAgentPromptIsRecordedAsBackground(t *testing.T) {
 		t.Fatal(records)
 	}
 }
-
-func TestClaudeCodeInstructionsOnlyWithTool(t *testing.T) {
-	if got := withClaudeCodeInstructions("base", []any{map[string]any{"name": "web_search"}}); got != "base" {
-		t.Fatal(got)
-	}
-	if got := withClaudeCodeInstructions("base", []any{map[string]any{"name": "ask_claude_code"}}); !strings.Contains(got, "Claude Codeの利用方針") {
-		t.Fatal(got)
-	}
-}

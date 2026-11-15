@@ -42,7 +42,6 @@ type Config struct {
 	RTCIceAdvertiseIPs         []string
 	WSAddr                     string
 	WebDistDir                 string
-	AgentBridge                AgentBridgeConfig
 	// pluginConfigs は config.yaml の plugins の下の、プラグインの名前ごとの設定。中身はプラグインが読む。
 	pluginConfigs map[string]yaml.Node
 }
@@ -74,12 +73,6 @@ func (c Config) PluginConfigNames() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// AgentBridgeConfig は手元のMacで動く agent-bridge への接続設定。どちらかが空ならClaude Code連携を無効にする。
-type AgentBridgeConfig struct {
-	URL   string
-	Token string
 }
 
 type MemoryConfig struct {
@@ -234,9 +227,6 @@ type configFile struct {
 		// ConversationTimeoutSecondsは、呼びかけ後に呼びかけなしで話せる時間（秒）。
 		ConversationTimeoutSeconds *int `yaml:"conversation_timeout_seconds"`
 	} `yaml:"wake"`
-	AgentBridge struct {
-		URL string `yaml:"url"`
-	} `yaml:"agent_bridge"`
 	// Plugins はプラグインの名前ごとの設定。中身はプラグインが自分で読む（Config.DecodePluginConfig）。
 	Plugins map[string]yaml.Node `yaml:"plugins"`
 }
@@ -336,11 +326,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		RTCIceAdvertiseIPs: iceIPs,
 		WSAddr:             stringOr(file.Server.WSAddr, ":8081"),
 		WebDistDir:         stringOr(file.Server.WebDistDir, "web/dist"),
-		AgentBridge: AgentBridgeConfig{
-			URL:   strings.TrimSpace(file.AgentBridge.URL),
-			Token: env("AGENT_BRIDGE_TOKEN"),
-		},
-		pluginConfigs: file.Plugins,
+		pluginConfigs:      file.Plugins,
 	}, nil
 }
 

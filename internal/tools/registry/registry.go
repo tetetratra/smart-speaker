@@ -2,12 +2,10 @@ package registry
 
 import (
 	"context"
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
-	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 
@@ -31,7 +29,6 @@ type Config struct {
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
 	Memory      *memorystate.Store
-	ClaudeCode  *agentbridge.Service
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -62,12 +59,7 @@ func New(cfg Config) *Registry {
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
-	if cfg.ClaudeCode != nil {
-		for _, operation := range claudecodetool.Operations {
-			t := &claudecodetool.Tool{Service: cfg.ClaudeCode, Operation: operation}
-			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
-		}
-	}
+
 	for _, t := range cfg.PluginTools {
 		if dp, ok := t.(tools.DefinitionProvider); ok {
 			toolEntries = append(toolEntries, entry{def: dp.Definition(), handler: t})

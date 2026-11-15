@@ -1,4 +1,4 @@
-package main
+package claudecode
 
 import (
 	"crypto/subtle"
@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode/agentbridge"
 )
 
 // registerAgentEventsAPI は、手元のMacの agent-bridge から承認依頼・完了・失敗の通知を受け取る。

@@ -1,4 +1,4 @@
-package main
+package claudecode
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 

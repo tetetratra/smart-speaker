@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
@@ -30,6 +29,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
 	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
@@ -90,7 +90,6 @@ func main() {
 	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず会話管理へ送る。
 	// Runner はコンポーネントより先に作るので、コンポーネントだけ先に作って送り口を渡す。
 	services.AutomationStage = automation.New(services.Automations)
-	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, services.Deliver)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
 		log.Fatal(err)
@@ -255,19 +254,9 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		WakeMode:    services.WakeMode,
 		Automations: services.Automations,
 		Memory:      memoryStore,
-		ClaudeCode:  services.ClaudeCode,
 		PluginTools: plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
-}
-
-// newClaudeCodeService はブリッジの設定があるときだけ、Claude Code連携を有効にする。
-func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver agentbridge.Deliver) *agentbridge.Service {
-	if cfg.URL == "" || cfg.Token == "" {
-		log.Println("agent-bridge: agent_bridge.url in config.yaml or AGENT_BRIDGE_TOKEN not set; claude code tools disabled")
-		return nil
-	}
-	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), deliver)
 }
 
 func wireGraph(g *graph.Graph, s appStages) {
@@ -318,12 +307,17 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 	if err != nil {
 		return nil, err
 	}
+	claudeCode, err := claudecode.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
 		playbackvolume.New(deps),
 		switchBot,
 		websearch.New(deps),
 		calendar,
+		claudeCode,
 	}, nil
 }
 
