@@ -45,12 +45,12 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		before := time.Now().UTC()
+		before := time.Now()
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(string(body)+" \n"))
 		req.Header.Set("Content-Type", "application/json")
 		server.Handler.ServeHTTP(rec, req)
-		after := time.Now().UTC()
+		after := time.Now()
 		if rec.Code != http.StatusOK {
 			t.Fatalf("POSTの応答が不正: status=%d body=%s", rec.Code, rec.Body.String())
 		}
@@ -58,7 +58,10 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if got.Place != place || got.UpdatedAt.Before(before) || got.UpdatedAt.After(after) || !strings.Contains(rec.Body.String(), "Z\"") {
+		// 更新日時はサーバーのタイムゾーン（本番ではAsia/Tokyo）の時差付きで返す。
+		_, gotOffset := got.UpdatedAt.Zone()
+		_, wantOffset := before.Zone()
+		if got.Place != place || got.UpdatedAt.Before(before) || got.UpdatedAt.After(after) || gotOffset != wantOffset {
 			t.Fatalf("POSTの保存値が不正: %#v", got)
 		}
 		if fetched := get(server).Body.String(); fetched != rec.Body.String() {
