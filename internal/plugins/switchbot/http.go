@@ -1,17 +1,17 @@
-package main
+package switchbot
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"net/http"
 	"path"
 	"strings"
 	"time"
-
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 )
 
 type switchBotSceneClient interface {
-	ListScenes(context.Context) ([]switchbot.Scene, error)
+	ListScenes(context.Context) ([]Scene, error)
 	ExecuteScene(context.Context, string) (map[string]any, error)
 }
 
@@ -88,4 +88,12 @@ func handleSwitchBotSceneExecute(w http.ResponseWriter, r *http.Request, client 
 		return
 	}
 	writeJSON(w, http.StatusOK, switchBotSceneExecuteResponse{Result: result})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("switchbot: 応答を書き出せません: %v", err)
+	}
 }
