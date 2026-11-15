@@ -10,6 +10,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/plugin"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 )
 
@@ -17,7 +18,6 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	mux := http.NewServeMux()
 	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
-	registerLocationAPI(mux, services.UserLocation, services.Deliver)
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)
@@ -28,6 +28,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	registerAgentEventsAPI(mux, services.ClaudeCode, cfg.AgentBridge.Token)
 	registerWebUI(mux, cfg.WebDistDir)
 	oauthgooglecalendar.RegisterHTTPHandlers(mux)
+	plugin.RegisterHTTP(services.Plugins, mux)
 	server := &http.Server{
 		Addr:    cfg.WSAddr,
 		Handler: mux,

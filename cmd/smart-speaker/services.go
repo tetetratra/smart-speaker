@@ -9,9 +9,9 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
+	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
@@ -19,7 +19,8 @@ import (
 
 // runtimeServices はHTTP APIと会話処理で共有する状態をまとめる。
 type runtimeServices struct {
-	UserLocation *userlocation.Store
+	// Plugins は本体に組み込むプラグイン。ツール・HTTP・指示文・購読できる記録をここから集める。
+	Plugins      []plugin.Plugin
 	AppContext   context.Context
 	Runner       *script.Runner
 	ToolSchemas  []any

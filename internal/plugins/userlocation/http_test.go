@@ -1,4 +1,4 @@
-package main
+package userlocation
 
 import (
 	"context"
@@ -9,30 +9,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/app"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-func TestLocationAPIThroughHTTPServer(t *testing.T) {
-	newServer := func() *http.Server {
-		cfg := app.Config{APIKey: "test-key", WebDistDir: t.TempDir()}
-		cfg.Memory.Model = "test-model"
-		services := runtimeServices{UserLocation: &userlocation.Store{}}
-		server, chat, err := buildHTTPServer(cfg, nil, services)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			closeHTTPServer(server)
-			closeStages(chat)
-		})
-		return server
+func TestLocationAPI(t *testing.T) {
+	newServer := func() *http.ServeMux {
+		mux := http.NewServeMux()
+		New(plugin.Deps{}).RegisterHTTP(mux)
+		return mux
 	}
 	server := newServer()
-	get := func(server *http.Server) *httptest.ResponseRecorder {
+	get := func(server *http.ServeMux) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/location", nil))
+		server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/location", nil))
 		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" || rec.Header().Get("Cache-Control") != "no-store" {
 			t.Fatalf("GETの応答が不正: status=%d header=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
 		}
@@ -50,12 +40,12 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(string(body)+" \n"))
 		req.Header.Set("Content-Type", "application/json")
-		server.Handler.ServeHTTP(rec, req)
+		server.ServeHTTP(rec, req)
 		after := time.Now()
 		if rec.Code != http.StatusOK {
 			t.Fatalf("POSTの応答が不正: status=%d body=%s", rec.Code, rec.Body.String())
 		}
-		var got userlocation.Record
+		var got Record
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +60,7 @@ func TestLocationAPIThroughHTTPServer(t *testing.T) {
 		}
 	}
 	if got := strings.TrimSpace(get(newServer()).Body.String()); got != "null" {
-		t.Fatalf("サーバー再構築後の値 = %s、期待値はnull", got)
+		t.Fatalf("プラグイン再作成後の値 = %s、期待値はnull", got)
 	}
 }
 
@@ -99,7 +89,7 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var store userlocation.Store
+			var store Store
 			initial, _ := store.Update("home")
 			mux := http.NewServeMux()
 			registerLocationAPI(mux, &store, nil)
@@ -116,7 +106,7 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 }
 
 func TestLocationAPIRejectsUnsupportedMethods(t *testing.T) {
-	var store userlocation.Store
+	var store Store
 	initial, _ := store.Update("home")
 	mux := http.NewServeMux()
 	registerLocationAPI(mux, &store, nil)
@@ -135,27 +125,14 @@ func TestLocationAPIRejectsUnsupportedMethods(t *testing.T) {
 }
 
 func TestLocationToolReadsHTTPUpdates(t *testing.T) {
-	cfg := app.Config{WebDistDir: t.TempDir()}
-	services := runtimeServices{UserLocation: &userlocation.Store{}}
-	definitions, handlers := buildToolRegistry(cfg, nil, services)
-	found := false
-	for _, definition := range definitions {
-		if definition.(map[string]any)["name"] == "get_current_location" {
-			found = true
-		}
+	p := New(plugin.Deps{})
+	mux := http.NewServeMux()
+	p.RegisterHTTP(mux)
+	tools := p.Tools()
+	if len(tools) != 1 || tools[0].Name() != "get_current_location" {
+		t.Fatalf("ツールが不正: %#v", tools)
 	}
-	if !found {
-		t.Fatal("現在地ツールの定義がありません")
-	}
-	handler := handlers["get_current_location"]
-	if handler == nil {
-		t.Fatal("現在地ツールが登録されていません")
-	}
-	server, chat, err := buildHTTPServer(cfg, nil, services)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { closeHTTPServer(server); closeStages(chat) })
+	handler := tools[0]
 	check := func(want string) {
 		t.Helper()
 		result, err := handler.Run(context.Background(), nil)
@@ -173,7 +150,7 @@ func TestLocationToolReadsHTTPUpdates(t *testing.T) {
 	check(`{"location":null}`)
 	for _, place := range []string{"自宅", "会社"} {
 		rec := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("保存失敗: %s", rec.Body.String())
 		}
@@ -183,13 +160,12 @@ func TestLocationToolReadsHTTPUpdates(t *testing.T) {
 
 // 場所が変わったときだけ、購読可能な記録として会話へ届ける。起動後の最初の1件は前の場所がないので変化として扱う。
 func TestLocationAPIDeliversOnlyChanges(t *testing.T) {
-	var store userlocation.Store
 	var got []types.ConversationInput
 	mux := http.NewServeMux()
-	registerLocationAPI(mux, &store, func(_ context.Context, input types.ConversationInput) error {
+	New(plugin.Deps{Deliver: func(_ context.Context, input types.ConversationInput) error {
 		got = append(got, input)
 		return nil
-	})
+	}}).RegisterHTTP(mux)
 	for _, place := range []string{"自宅", "自宅", "会社", "会社", "自宅"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
@@ -214,16 +190,16 @@ func TestLocationAPIDeliversOnlyChanges(t *testing.T) {
 		if !input.Subscribable || input.ModelShouldRespond || input.ModelAlreadyKnows || input.UserAlreadyKnows {
 			t.Fatalf("%d件目のフラグが不正: %#v", i, input)
 		}
-		if r.Source != userLocationSource || r.Role != types.RoleSystem || r.Text != want[i].text || r.CreatedAt.IsZero() ||
+		if r.Source != Source || r.Role != types.RoleSystem || r.Text != want[i].text || r.CreatedAt.IsZero() ||
 			r.Metadata["place"] != want[i].place || r.Metadata["previous_place"] != want[i].previous {
 			t.Fatalf("%d件目の記録が不正: %#v", i, r)
 		}
 	}
 }
 
-// 位置情報APIが送る記録の Source は、予約ジョブで指定できる一覧に載っている。
+// 位置情報APIが送る記録の Source は、購読できる記録として宣言している。
 func TestLocationSourceIsSubscribable(t *testing.T) {
-	if _, ok := automationSources[userLocationSource]; !ok {
-		t.Fatalf("%s が automationSources にありません", userLocationSource)
+	if _, ok := New(plugin.Deps{}).SubscribableSources()[Source]; !ok {
+		t.Fatalf("%s が購読できる記録にありません", Source)
 	}
 }

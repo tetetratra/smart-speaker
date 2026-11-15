@@ -6,13 +6,11 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	volumetool "github.com/tetetratra/smart-speaker/internal/tools/functions/playbackvolume"
-	locationtool "github.com/tetetratra/smart-speaker/internal/tools/functions/userlocation"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
@@ -36,7 +34,6 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
-	UserLocation       *userlocation.Store
 	AppContext         context.Context
 	WakeMode           *wakemode.Store
 	PlaybackVolume     *playbackvolume.Store
@@ -54,6 +51,8 @@ type Config struct {
 	WebSearchClient    websearch.SearchClient
 	// WebSearchDeliver があれば、web_search は結果を後から会話へ届ける。
 	WebSearchDeliver websearch.Deliver
+	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
+	PluginTools []tools.Handler
 }
 
 // New は利用可能なツールをまとめて登録します。
@@ -80,10 +79,6 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
-	}
-	if cfg.UserLocation != nil {
-		t := &locationtool.Tool{Store: cfg.UserLocation}
-		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.PlaybackVolume != nil {
 		t := &volumetool.Tool{Store: cfg.PlaybackVolume}
@@ -115,6 +110,11 @@ func New(cfg Config) *Registry {
 	}
 	if webSearchTool != nil {
 		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
+	}
+	for _, t := range cfg.PluginTools {
+		if dp, ok := t.(tools.DefinitionProvider); ok {
+			toolEntries = append(toolEntries, entry{def: dp.Definition(), handler: t})
+		}
 	}
 	if len(hub2Tools) > 0 {
 		hub2Entries := make([]entry, 0, len(hub2Tools))

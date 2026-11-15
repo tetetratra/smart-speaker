@@ -29,11 +29,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
-	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
@@ -68,18 +69,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{UserLocation: &userlocation.Store{}, PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
 	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
+	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver})
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
 		return services.Runner.RunWithEvent(ctx, delivery.ID, delivery.Name, delivery.Script, delivery.Event)
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	services.Automations.SetSources(automationSources)
+	services.Automations.SetSources(plugin.Sources(services.Plugins))
 	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず会話管理へ送る。
 	// Runner はコンポーネントより先に作るので、コンポーネントだけ先に作って送り口を渡す。
 	services.AutomationStage = automation.New(services.Automations)
@@ -198,7 +200,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  cfg.SystemPrompt, Generation: generationStore, Tools: toolSchemas,
+		Instructions:  plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
 		ToolTitle:   execution.New(toolHandlers).Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
@@ -259,7 +261,6 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
-		UserLocation:     services.UserLocation,
 		PlaybackVolume:   services.PlaybackVolume,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
@@ -269,6 +270,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 		OpenAIAPIKey:     cfg.APIKey,
 		OpenAIModel:      cfg.ResponsesModel,
 		WebSearchDeliver: services.Deliver,
+		PluginTools:      plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
 }
@@ -339,10 +341,11 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }
 
-// automationSources は、予約ジョブの schedule.source に指定できる記録の Source と説明。
-// ここに足すときは、その Source の記録を送る側で ConversationInput.Subscribable を立てる。
-var automationSources = map[string]string{
-	userLocationSource: "位置情報APIで受け取った場所が変わった（event.metadata.place に新しい場所、event.metadata.previous_place に前の場所。サーバー起動後の最初の1件は null）",
+// buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
+func buildPlugins(deps plugin.Deps) []plugin.Plugin {
+	return []plugin.Plugin{
+		userlocation.New(deps),
+	}
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。

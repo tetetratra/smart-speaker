@@ -41,6 +41,7 @@ docker compose up --build
 | `cmd/smart-speaker` | サーバーの起動処理と HTTP API |
 | `cmd/local-verify-realtime` | 外部 API を使わずに動かす確認用のサーバー |
 | `internal/` | 会話処理（`components/realtime` など）、ツール（`tools/`）、状態の保存（`states/`） |
+| `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（ツール・HTTP・状態などを1つのディレクトリにまとめた機能） |
 | `web/` | ブラウザの画面（React） |
 | `services/local-stt` | 呼びかけ判定に使うローカルの文字起こし（faster-whisper） |
 | `services/agent-bridge` | Claude Code 連携のブリッジ |
@@ -49,6 +50,7 @@ docker compose up --build
 ## コンポーネントとデータの流れ
 
 細い実線はイベントと、gateway とグラフの外との受け渡し（Deliver）、太線は外部との通信、点線はストアの読み書きを表します。
+名前の上の【】は、その部品が属するプラグインです。
 
 ### 音声の流れ
 
@@ -127,7 +129,7 @@ flowchart LR
     scheduler["automation<br/>予約ジョブ"]
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
-    locationAPI("位置情報API<br/>POST /api/location")
+    locationAPI("【現在地】<br/>位置情報API<br/>POST /api/location")
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
 
@@ -180,7 +182,7 @@ flowchart LR
         volumeTool["set_playback_volume<br/>全端末の再生音量"]
         automationTool["register_job<br/>list_jobs<br/>update_job<br/>delete_job<br/>予約"]
         whiteboardTool["set_whiteboard<br/>ホワイトボード表示"]
-        locationTool["get_current_location<br/>現在地"]
+        locationTool["【現在地】<br/>get_current_location"]
     end
 
 
@@ -194,7 +196,7 @@ flowchart LR
     wakeModeStore[("wakemode<br/>呼びかけモード")]
     volumeStore[("playbackvolume<br/>全端末の再生音量（メモリのみ）")]
     automationStore[("automations<br/>予約ジョブ")]
-    locationStore[("userlocation<br/>ユーザーの居場所")]
+    locationStore[("【現在地】<br/>userlocation<br/>ユーザーの居場所")]
     browser{{"ブラウザ<br/>web/"}}
 
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
