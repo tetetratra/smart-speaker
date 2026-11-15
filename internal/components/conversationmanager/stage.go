@@ -1,4 +1,5 @@
-// Package conversationmanager は会話の記録と外部入力を集約する。外部入力は gateway からイベントとして届く。
+// Package conversationmanager は会話の記録と外部入力を集約する。外部入力は gateway から、予約ジョブの実行結果は予約ジョブのコンポーネントから、イベントとして届く。
+// 会話に入れた記録（EventConversationInput）は realtime と予約ジョブのコンポーネントへ流し、予約ジョブ側は購読可能な記録だけを扱う。
 package conversationmanager
 
 import (

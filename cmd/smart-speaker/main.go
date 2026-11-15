@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
+	"github.com/tetetratra/smart-speaker/internal/components/automation"
 	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
 	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
@@ -69,7 +69,7 @@ func main() {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
 	services := runtimeServices{UserLocation: &userlocation.Store{}, PlaybackVolume: &playbackvolume.Store{}, AppContext: ctx, TTS: ttsSelector, History: historyStore}
-	// 会話の外からの入力（予約ジョブ・Claude Codeの通知・Web検索の結果）は、gateway を通ってグラフへ入る。
+	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
@@ -79,7 +79,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	subscribeAutomationEvents(services.Gateway, services.Automations)
+	services.Automations.SetSources(automationSources)
+	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず会話管理へ送る。
+	// Runner はコンポーネントより先に作るので、コンポーネントだけ先に作って送り口を渡す。
+	services.AutomationStage = automation.New(services.Automations)
 	services.ClaudeCode = newClaudeCodeService(cfg.AgentBridge, services.Deliver)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
 	if err != nil {
@@ -87,7 +90,7 @@ func main() {
 	}
 	services.ToolSchemas, services.ToolHandlers = buildToolRegistry(cfg, memoryStore, services)
 	executor := execution.New(services.ToolHandlers)
-	services.Runner = script.New(executor.Execute, services.Deliver).WithTitle(executor.Title)
+	services.Runner = script.New(executor.Execute, services.AutomationStage.Deliver).WithTitle(executor.Title)
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
 		log.Fatal(err)
@@ -105,9 +108,6 @@ func main() {
 
 	wireGraph(g, stages)
 	runHTTPServer(server)
-	schedulerDone := make(chan struct{})
-	go func() { defer close(schedulerDone); services.Automations.Run(ctx) }()
-	defer func() { cancel(); <-schedulerDone }()
 
 	log.Printf("main ctx err: %v", ctx.Err())
 
@@ -141,11 +141,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output, gateway *graph.Stage
+	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output, gateway, automation *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output, s.gateway}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output, s.gateway, s.automation}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -208,6 +208,9 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 		gw = gateway.New()
 	}
 	stages.gateway = gw.Stage()
+	if services.AutomationStage != nil {
+		stages.automation = services.AutomationStage.Stage()
+	}
 	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore,
 		OnIdle: func(ctx context.Context, keep map[string]bool) {
 			memoryCreatorHook.MemorizeOld(ctx, historyStore, keep)
@@ -309,9 +312,9 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, manager, rt, types.EventConversationInput{}, types.EventConversationHistorySync{})
 	gw := add(s.gateway)
 	connect(g, gw, manager, types.EventConversationInput{})
-	for _, event := range automationEvents {
-		connect(g, rt, gw, event.event)
-	}
+	automation := add(s.automation)
+	connect(g, manager, automation, types.EventConversationInput{})
+	connect(g, automation, manager, types.EventConversationInput{})
 	connect(g, manager, chat, types.EventConversationRecordAdded{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})
@@ -334,36 +337,10 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }
 
-// automationEvents は、予約ジョブの schedule.event に指定できるイベント。
-// ここに足したイベントは、realtime から gateway へ配線され、予約ジョブ実行へ渡る。
-var automationEvents = []struct {
-	event       types.Event
-	description string
-}{
-	{types.EventConversationIdle{}, "会話が落ち着いた状態で無操作が続いた"},
-}
-
-// subscribeAutomationEvents は、gateway に届いたイベントで動く予約ジョブを、届いた順に1つずつ動かす。
-func subscribeAutomationEvents(gw *gateway.Gateway, service *automations.Service) {
-	events := make(map[string]string, len(automationEvents))
-	for _, e := range automationEvents {
-		events[types.EventName(e.event)] = e.description
-	}
-	service.SetEvents(events)
-	gw.Subscribe(func(ctx context.Context, e types.Event) {
-		name := types.EventName(e)
-		if _, ok := events[name]; !ok {
-			return
-		}
-		payload, err := json.Marshal(e)
-		if err != nil {
-			log.Printf("予約ジョブ: イベントの中身を JSON にできません event=%s: %v", name, err)
-			return
-		}
-		if err := service.HandleEvent(ctx, name, payload, time.Now()); err != nil {
-			log.Printf("予約ジョブ: イベントで動くジョブの実行 event=%s: %v", name, err)
-		}
-	})
+// automationSources は、予約ジョブの schedule.source に指定できる記録の Source と説明。
+// ここに足すときは、その Source の記録を送る側で ConversationInput.Subscribable を立てる。
+var automationSources = map[string]string{
+	userLocationSource: "位置情報APIで受け取った場所が変わった（event.metadata.place に新しい場所、event.metadata.previous_place に前の場所。サーバー起動後の最初の1件は null）",
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。

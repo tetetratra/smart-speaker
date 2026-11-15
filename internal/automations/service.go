@@ -30,7 +30,7 @@ type Job struct {
 }
 type Delivery struct {
 	ID, Name, Script string
-	// Event はイベントで動いたときの、イベントの中身（JSON）。時刻で動いたときは空。
+	// Event は記録で動いたときの、記録の中身（JSON）。スクリプトの event 変数に渡す。時刻で動いたときは空。
 	Event json.RawMessage
 }
 type Service struct {
@@ -38,47 +38,47 @@ type Service struct {
 	path    string
 	jobs    map[string]Job
 	deliver func(context.Context, Delivery) error
-	// events は schedule.event に指定できるイベントの名前と説明。main が gateway へ配線したものと揃える。
-	events map[string]string
+	// sources は schedule.source に指定できる記録の Source と説明。main が購読可能な記録を送る側と揃える。
+	sources map[string]string
 }
 
-// SetEvents は schedule.event に指定できるイベントを設定する。
-func (s *Service) SetEvents(events map[string]string) {
+// SetSources は schedule.source に指定できる記録の Source を設定する。
+func (s *Service) SetSources(sources map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = make(map[string]string, len(events))
-	for name, description := range events {
-		s.events[name] = description
+	s.sources = make(map[string]string, len(sources))
+	for name, description := range sources {
+		s.sources[name] = description
 	}
 }
 
-// Events は schedule.event に指定できるイベントの名前と説明を返す。
-func (s *Service) Events() map[string]string {
+// Sources は schedule.source に指定できる記録の Source と説明を返す。
+func (s *Service) Sources() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	events := make(map[string]string, len(s.events))
-	for name, description := range s.events {
-		events[name] = description
+	sources := make(map[string]string, len(s.sources))
+	for name, description := range s.sources {
+		sources[name] = description
 	}
-	return events
+	return sources
 }
 
-// checkEvent は、登録・更新するジョブのイベントが購読できるものかを確かめる。
-// 読み込み時は確かめない（配線を減らしても、既存のジョブが読めなくならないように）。
-func (s *Service) checkEvent(spec Spec) error {
-	if spec.Schedule.Event == "" {
+// checkSource は、登録・更新するジョブの Source が購読できるものかを確かめる。
+// 読み込み時は確かめない（一覧を減らしても、既存のジョブが読めなくならないように）。
+func (s *Service) checkSource(spec Spec) error {
+	if spec.Schedule.Source == "" {
 		return nil
 	}
-	events := s.Events()
-	if _, ok := events[spec.Schedule.Event]; ok {
+	sources := s.Sources()
+	if _, ok := sources[spec.Schedule.Source]; ok {
 		return nil
 	}
-	names := make([]string, 0, len(events))
-	for name := range events {
+	names := make([]string, 0, len(sources))
+	for name := range sources {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return fmt.Errorf("購読できないイベントです（指定できるもの: %s）", strings.Join(names, "、"))
+	return fmt.Errorf("購読できないsourceです（指定できるもの: %s）", strings.Join(names, "、"))
 }
 
 func New(path string, deliver func(context.Context, Delivery) error) (*Service, error) {
@@ -181,7 +181,7 @@ func (s *Service) Create(spec Spec, now time.Time) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	if err := s.checkEvent(spec); err != nil {
+	if err := s.checkSource(spec); err != nil {
 		return Job{}, err
 	}
 	next, _ := spec.Schedule.next(now, false)
@@ -203,7 +203,7 @@ func (s *Service) Update(id string, spec Spec, now time.Time) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	if err := s.checkEvent(spec); err != nil {
+	if err := s.checkSource(spec); err != nil {
 		return Job{}, err
 	}
 	next, _ := spec.Schedule.next(now, false)
@@ -298,13 +298,13 @@ func (s *Service) RunDue(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// HandleEvent は、届いたイベントで動くジョブ（schedule.event が name のもの）を順に動かす。
-// payload はスクリプトの event 変数に渡すイベントの中身。
-func (s *Service) HandleEvent(ctx context.Context, name string, payload json.RawMessage, now time.Time) error {
+// HandleRecord は、届いた購読可能な記録で動くジョブ（schedule.source が source のもの）を順に動かす。
+// payload はスクリプトの event 変数に渡す記録の中身。
+func (s *Service) HandleRecord(ctx context.Context, source string, payload json.RawMessage, now time.Time) error {
 	s.mu.Lock()
 	var matched []Job
 	for _, job := range s.listLocked() {
-		if job.Schedule.Event != name {
+		if job.Schedule.Source != source {
 			continue
 		}
 		job.LastRunAt = now

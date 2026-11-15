@@ -48,7 +48,7 @@ docker compose up --build
 
 ## コンポーネントとデータの流れ
 
-細い実線はイベントと、gateway とグラフの外との受け渡し（Deliver・購読）、太線は外部との通信、点線はストアの読み書きを表します。
+細い実線はイベントと、gateway とグラフの外との受け渡し（Deliver）、太線は外部との通信、点線はストアの読み書きを表します。
 
 ### 音声の流れ
 
@@ -124,8 +124,10 @@ flowchart LR
     rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
     webSearchTool("web_search<br/>Web検索ツール")
-    scheduler("予約ジョブ実行<br/>automations")
+    scheduler["automation<br/>予約ジョブ"]
+    runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
+    locationAPI("位置情報API<br/>POST /api/location")
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
 
@@ -140,13 +142,15 @@ flowchart LR
     manager --->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{ModelShouldRespond: true, UserAlreadyKnows: true}<br/>ユーザーのテキスト入力<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
-    scheduler -->|"Deliver<br/>remind・ツールの呼び出しと結果・スクリプトの失敗"| gateway
+    manager -->|"EventConversationInput{Subscribable: true}<br/>購読可能な記録（schedule.source が一致するジョブを動かす）<br/>※会話に入れた記録はすべて流れ、購読可能なものだけを使う"| scheduler
+    scheduler -->|"ジョブのスクリプトを実行"| runner
+    runner -->|"remind・ツールの呼び出しと結果・スクリプトの失敗"| scheduler
+    scheduler -->|"EventConversationInput{ModelShouldRespond: true}<br/>remind<br/>EventConversationInput{}<br/>スクリプトから呼んだツールの記録・スクリプトの失敗"| manager
     tool -->|"呼び出し<br/>受け付けだけ返る"| webSearchTool
-    scheduler -->|"スクリプトからの呼び出し"| webSearchTool
+    runner -->|"スクリプトからの呼び出し"| webSearchTool
     webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
-    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼"| manager
-    rt -->|"EventConversationIdle<br/>予約ジョブのきっかけ"| gateway
-    gateway -->|"購読<br/>schedule.event が一致するジョブを動かす"| scheduler
+    locationAPI -->|"Deliver<br/>居場所の変化"| gateway
+    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{UserAlreadyKnows: true, Subscribable: true}<br/>居場所の変化"| manager
     manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
@@ -160,8 +164,10 @@ flowchart LR
 
 ```mermaid
 flowchart LR
+    rt["realtime<br/>Realtime連携"]
     tool["toolcaller<br/>ツール実行"]
-    scheduler("予約ジョブ実行<br/>automations")
+    scheduler["automation<br/>予約ジョブ"]
+    runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
 
     subgraph toolset["ツール"]
@@ -191,8 +197,11 @@ flowchart LR
     locationStore[("userlocation<br/>ユーザーの居場所")]
     browser{{"ブラウザ<br/>web/"}}
 
+    rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
+    tool -->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     tool -->|"ツール呼び出し"| toolset
-    scheduler -->|"スクリプトからのツール呼び出し"| toolset
+    scheduler -->|"ジョブのスクリプトを実行"| runner
+    runner -->|"スクリプトからのツール呼び出し"| toolset
 
     webSearchTool <==>|"HTTPS<br/>Web検索"| openaiResponses
     webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway

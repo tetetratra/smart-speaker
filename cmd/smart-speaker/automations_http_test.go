@@ -50,21 +50,21 @@ func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 	}
 }
 
-func TestJobsAPIListsEvents(t *testing.T) {
+func TestJobsAPIListsSources(t *testing.T) {
 	service, _ := automations.New(filepath.Join(t.TempDir(), "jobs.json"), nil)
-	service.SetEvents(map[string]string{"EventB": "Bの説明", "EventA": "Aの説明"})
+	service.SetSources(map[string]string{"source_b": "Bの説明", "source_a": "Aの説明"})
 	mux := http.NewServeMux()
 	registerAutomationsAPI(mux, service)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/jobs", nil))
 	var data struct {
-		Events []automationEvent `json:"events"`
+		Sources []automationSource `json:"sources"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
 		t.Fatal(err)
 	}
-	want := []automationEvent{{"EventA", "Aの説明"}, {"EventB", "Bの説明"}}
-	if len(data.Events) != len(want) || data.Events[0] != want[0] || data.Events[1] != want[1] {
-		t.Fatalf("events = %+v, want %+v", data.Events, want)
+	want := []automationSource{{"source_a", "Aの説明"}, {"source_b", "Bの説明"}}
+	if len(data.Sources) != len(want) || data.Sources[0] != want[0] || data.Sources[1] != want[1] {
+		t.Fatalf("sources = %+v, want %+v", data.Sources, want)
 	}
 }

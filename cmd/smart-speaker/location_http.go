@@ -1,18 +1,28 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const maxLocationRequestBytes = 4 * 1024
 
-func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store) {
+// userLocationSource は、場所の変化の記録の Source。予約ジョブの schedule.source に指定できる。
+const userLocationSource = "user_location"
+
+// registerLocationAPI は位置情報 API を登録する。deliver が nil でなければ、場所が変わったときに
+// その記録を購読可能な記録として会話へ届ける（main では gateway の Deliver）。
+func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store, deliver func(context.Context, types.ConversationInput) error) {
 	mux.HandleFunc("/api/location", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		switch r.Method {
@@ -47,10 +57,40 @@ func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store) {
 				http.Error(w, "placeには空でない文字列を指定してください", http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, http.StatusOK, store.Update(req.Place))
+			current, previous := store.Update(req.Place)
+			if deliver != nil && (previous == nil || previous.Place != current.Place) {
+				if err := deliver(r.Context(), locationChangedInput(current, previous)); err != nil {
+					log.Printf("位置情報: 場所の変化を会話へ届けられません: %v", err)
+				}
+			}
+			writeJSON(w, http.StatusOK, current)
 		default:
 			w.Header().Set("Allow", "GET, POST")
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+}
+
+// locationChangedInput は、場所の変化を会話へ届ける記録を作る。
+// AIは文脈に入れるだけで、その場では話さない（帰宅後の会話で「お仕事お疲れ様」などと言えるようにするため）。
+// ユーザー自身は居場所を知っているので、ホワイトボードには出さない。
+// サーバー起動後の最初の1件は、前の場所がないので previous_place を nil（JSON では null）にする。
+func locationChangedInput(current userlocation.Record, previous *userlocation.Record) types.ConversationInput {
+	text := "ユーザーの居場所が「" + current.Place + "」になりました。"
+	var previousPlace any
+	if previous != nil {
+		text = "ユーザーの居場所が「" + previous.Place + "」から「" + current.Place + "」に変わりました。"
+		previousPlace = previous.Place
+	}
+	record := types.ConversationRecord{
+		ID:        "location/" + uuid.NewString(),
+		Role:      types.RoleSystem,
+		Source:    userLocationSource,
+		Title:     current.Place,
+		Text:      text,
+		Metadata:  map[string]any{"place": current.Place, "previous_place": previousPlace},
+		CreatedAt: current.UpdatedAt.In(time.Local),
+		External:  true,
+	}
+	return types.ConversationInput{Record: record, UserAlreadyKnows: true, Subscribable: true}
 }

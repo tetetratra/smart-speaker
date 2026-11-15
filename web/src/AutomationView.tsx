@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
-type JobSpec = { name: string; script: string; schedule: { cron?: string; at?: string; after_seconds?: number; event?: string; timezone?: string } }
-type AutomationEvent = { name: string; description: string }
+type JobSpec = { name: string; script: string; schedule: { cron?: string; at?: string; after_seconds?: number; source?: string; timezone?: string } }
+type AutomationSource = { name: string; description: string }
 type Job = JobSpec & { id: string; next_run_at?: string; last_run_at?: string; last_status: string; last_error?: string }
 
 const weekdays = ['日', '月', '火', '水', '木', '金', '土']
@@ -24,9 +24,9 @@ const describeCron = (cron: string) => {
   if (/^[0-7](,[0-7])*$/.test(dow)) return `毎週${dow.split(',').map(day => weekdays[Number(day) % 7]).join('・')} ${time}`
   return cron
 }
-const describeSchedule = (job: Job) => job.schedule.cron ? describeCron(job.schedule.cron) : job.schedule.event ? `イベント: ${job.schedule.event}` : job.schedule.at ? formatDateTime(job.schedule.at) : ''
+const describeSchedule = (job: Job) => job.schedule.cron ? describeCron(job.schedule.cron) : job.schedule.source ? `記録: ${job.schedule.source}` : job.schedule.at ? formatDateTime(job.schedule.at) : ''
 // scheduleKind は編集画面で選ぶ予約の種類。
-const scheduleKind = (schedule: JobSpec['schedule']) => schedule.cron !== undefined ? 'cron' : schedule.event !== undefined ? 'event' : 'at'
+const scheduleKind = (schedule: JobSpec['schedule']) => schedule.cron !== undefined ? 'cron' : schedule.source !== undefined ? 'source' : 'at'
 
 const automationStyle = `
   .jobs-view { display:flex; flex-direction:column; gap:10px; height:100dvh; overflow:auto; padding:12px; background:var(--live-bg); color:var(--live-text); box-sizing:border-box; }
@@ -58,7 +58,7 @@ const automationStyle = `
 
 export function AutomationView({ visible, backendURL, goApp }: { visible: boolean; backendURL: URL; goApp: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([])
-  const [events, setEvents] = useState<AutomationEvent[]>([])
+  const [sources, setSources] = useState<AutomationSource[]>([])
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   const [pending, setPending] = useState(false)
@@ -73,8 +73,8 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
       try {
         const response = await fetch(new URL('/api/jobs', backendURL), { signal: controller.signal, cache: 'no-store' })
         if (!response.ok) throw new Error('予約ジョブを取得できませんでした')
-        const data = await response.json() as { jobs: Job[]; events: AutomationEvent[] }
-        if (!controller.signal.aborted) { setJobs(data.jobs); setEvents(data.events); setError('') }
+        const data = await response.json() as { jobs: Job[]; sources: AutomationSource[] }
+        if (!controller.signal.aborted) { setJobs(data.jobs); setSources(data.sources); setError('') }
       } catch (err) { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '取得に失敗しました') }
       finally { loading = false }
     }
@@ -108,11 +108,11 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
       {editor && <form className="job-card job-editor" onSubmit={event => { event.preventDefault(); void mutate(editor.id ? 'PUT' : 'POST', editor.id, editor.spec) }}>
         <label>名前<input required value={editor.spec.name} onChange={event => patchSpec({ name: event.currentTarget.value })} /></label>
         <label>スクリプト<textarea style={{ fontFamily: 'monospace' }} required rows={6} value={editor.spec.script} onChange={event => patchSpec({ script: event.currentTarget.value })} /></label>
-        <label>予約の種類<select value={scheduleKind(editor.spec.schedule)} onChange={event => { const kind = event.currentTarget.value; patchSpec({ schedule: kind === 'cron' ? { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' } : kind === 'event' ? { event: events[0]?.name ?? '' } : { at: '' } }) }}><option value="cron">繰り返し（cron）</option><option value="at">日時指定（1回）</option><option value="event">イベント</option></select></label>
-        {scheduleKind(editor.spec.schedule) === 'event' ? <label>イベント<select required value={editor.spec.schedule.event ?? ''} onChange={event => patchSpec({ schedule: { event: event.currentTarget.value } })}>
+        <label>予約の種類<select value={scheduleKind(editor.spec.schedule)} onChange={event => { const kind = event.currentTarget.value; patchSpec({ schedule: kind === 'cron' ? { cron: '0 8 * * 1-5', timezone: 'Asia/Tokyo' } : kind === 'source' ? { source: sources[0]?.name ?? '' } : { at: '' } }) }}><option value="cron">繰り返し（cron）</option><option value="at">日時指定（1回）</option><option value="source">記録が届いたとき</option></select></label>
+        {scheduleKind(editor.spec.schedule) === 'source' ? <label>記録の種類<select required value={editor.spec.schedule.source ?? ''} onChange={event => patchSpec({ schedule: { source: event.currentTarget.value } })}>
           <option value="" disabled>選んでください</option>
-          {events.map(e => <option key={e.name} value={e.name}>{e.description}（{e.name}）</option>)}
-          {editor.spec.schedule.event && !events.some(e => e.name === editor.spec.schedule.event) && <option value={editor.spec.schedule.event}>使えないイベント（{editor.spec.schedule.event}）</option>}
+          {sources.map(e => <option key={e.name} value={e.name}>{e.description}（{e.name}）</option>)}
+          {editor.spec.schedule.source && !sources.some(e => e.name === editor.spec.schedule.source) && <option value={editor.spec.schedule.source}>使えない記録の種類（{editor.spec.schedule.source}）</option>}
         </select></label> : editor.spec.schedule.cron !== undefined ? <>
           <label>cron（分 時 日 月 曜日）<input required value={editor.spec.schedule.cron} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, cron: event.currentTarget.value } })} /></label>
           <label>タイムゾーン<input required value={editor.spec.schedule.timezone ?? 'Asia/Tokyo'} onChange={event => patchSpec({ schedule: { ...editor.spec.schedule, timezone: event.currentTarget.value } })} /></label>

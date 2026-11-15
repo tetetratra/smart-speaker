@@ -14,7 +14,7 @@ const (
 	RoleTool = "tool"
 	// RoleBackground は、頼んだ処理（Web 検索、Claude Code など）から、あとで届く結果や知らせ。
 	RoleBackground = "background"
-	// RoleSystem は、アプリ自身からの知らせ（予約ジョブの remind・失敗、発話が遮られた記録など）。
+	// RoleSystem は、アプリ自身からの知らせ（予約ジョブの remind・失敗、発話が遮られた記録、居場所の変化など）。
 	RoleSystem = "system"
 )
 

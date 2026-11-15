@@ -168,7 +168,7 @@ func TestScriptValidationRejectsSyntaxAndOldFormat(t *testing.T) {
 	}
 }
 
-func TestEventJobRunsOnMatchingEventAndRemains(t *testing.T) {
+func TestSourceJobRunsOnMatchingRecordAndRemains(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	var deliveries []Delivery
 	service, err := New(path, func(_ context.Context, d Delivery) error { deliveries = append(deliveries, d); return nil })
@@ -176,27 +176,27 @@ func TestEventJobRunsOnMatchingEventAndRemains(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := stamp("2026-11-06T08:00:00+09:00")
-	if _, err := service.Create(Spec{Name: "落ち着いたら", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle"}}, now); err == nil {
-		t.Fatal("購読できないイベントを受理しました")
+	if _, err := service.Create(Spec{Name: "帰宅したら", Script: `remind("x")`, Schedule: Schedule{Source: "user_location"}}, now); err == nil {
+		t.Fatal("購読できないsourceを受理しました")
 	}
-	service.SetEvents(map[string]string{"EventConversationIdle": "無操作が続いた"})
-	job, err := service.Create(Spec{Name: "落ち着いたら", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle"}}, now)
+	service.SetSources(map[string]string{"user_location": "場所が変わった"})
+	job, err := service.Create(Spec{Name: "帰宅したら", Script: `remind("x")`, Schedule: Schedule{Source: "user_location"}}, now)
 	if err != nil || !job.NextRunAt.IsZero() {
 		t.Fatal(job, err)
 	}
-	if _, err := service.Create(Spec{Name: "二重指定", Script: `remind("x")`, Schedule: Schedule{Event: "EventConversationIdle", Cron: "0 8 * * *"}}, now); err == nil {
-		t.Fatal("eventとcronの二重指定を受理しました")
+	if _, err := service.Create(Spec{Name: "二重指定", Script: `remind("x")`, Schedule: Schedule{Source: "user_location", Cron: "0 8 * * *"}}, now); err == nil {
+		t.Fatal("sourceとcronの二重指定を受理しました")
 	}
 	// 時刻では動かない。
 	if err := service.RunDue(context.Background(), now.Add(24*time.Hour)); err != nil || len(deliveries) != 0 {
 		t.Fatal(deliveries, err)
 	}
-	// 別のイベントでは動かない。
-	if err := service.HandleEvent(context.Background(), "EventOther", nil, now); err != nil || len(deliveries) != 0 {
+	// 別の Source の記録では動かない。
+	if err := service.HandleRecord(context.Background(), "web_search", nil, now); err != nil || len(deliveries) != 0 {
 		t.Fatal(deliveries, err)
 	}
 	for i := range 2 {
-		if err := service.HandleEvent(context.Background(), "EventConversationIdle", []byte(`{"n":1}`), now.Add(time.Duration(i)*time.Minute)); err != nil {
+		if err := service.HandleRecord(context.Background(), "user_location", []byte(`{"n":1}`), now.Add(time.Duration(i)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -209,7 +209,7 @@ func TestEventJobRunsOnMatchingEventAndRemains(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs := reloaded.List()
-	if len(jobs) != 1 || jobs[0].LastStatus != "succeeded" || jobs[0].Schedule.Event != "EventConversationIdle" {
+	if len(jobs) != 1 || jobs[0].LastStatus != "succeeded" || jobs[0].Schedule.Source != "user_location" {
 		t.Fatal(jobs)
 	}
 }

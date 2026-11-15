@@ -17,7 +17,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	mux := http.NewServeMux()
 	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
-	registerLocationAPI(mux, services.UserLocation)
+	registerLocationAPI(mux, services.UserLocation, services.Deliver)
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)

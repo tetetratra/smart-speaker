@@ -12,8 +12,8 @@ type Schedule struct {
 	AfterSeconds int64     `json:"after_seconds,omitempty"`
 	At           time.Time `json:"at,omitzero"`
 	Cron         string    `json:"cron,omitempty"`
-	// Event はこのイベント（型名、例: EventConversationIdle）が届くたびに動かす。時刻では動かさない。
-	Event    string `json:"event,omitempty"`
+	// Source は、この Source（例: user_location）の購読可能な記録が会話に届くたびに動かす。時刻では動かさない。
+	Source   string `json:"source,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
 }
 
@@ -34,14 +34,14 @@ func (s Schedule) next(now time.Time, creating bool) (time.Time, error) {
 	if s.Cron != "" {
 		count++
 	}
-	if s.Event != "" {
+	if s.Source != "" {
 		count++
 	}
 	if count != 1 {
-		return time.Time{}, fmt.Errorf("after_seconds・at・cron・eventのいずれか1つを指定してください")
+		return time.Time{}, fmt.Errorf("after_seconds・at・cron・sourceのいずれか1つを指定してください")
 	}
-	if s.Event != "" {
-		// イベントで動くジョブには次回の日時がない。
+	if s.Source != "" {
+		// 記録で動くジョブには次回の日時がない。
 		return time.Time{}, nil
 	}
 	if s.AfterSeconds != 0 {
