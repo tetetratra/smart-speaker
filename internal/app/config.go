@@ -46,6 +46,37 @@ type Config struct {
 	WSAddr                     string
 	WebDistDir                 string
 	AgentBridge                AgentBridgeConfig
+	// pluginConfigs は config.yaml の plugins の下の、プラグインの名前ごとの設定。中身はプラグインが読む。
+	pluginConfigs map[string]yaml.Node
+}
+
+// DecodePluginConfig は、config.yaml の plugins.<name> の中身を v に読み込む。
+// 書かれていなければ v を変えずに nil を返す。書き間違いに気づけるよう、未知のキーや型の誤りはエラーにする。
+func (c Config) DecodePluginConfig(name string, v any) error {
+	node, ok := c.pluginConfigs[name]
+	if !ok {
+		return nil
+	}
+	data, err := yaml.Marshal(&node)
+	if err != nil {
+		return fmt.Errorf("config: plugins.%s: %w", name, err)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(v); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("config: plugins.%s: %w", name, err)
+	}
+	return nil
+}
+
+// PluginConfigNames は、config.yaml の plugins の下に書かれた名前を名前順に返す。
+func (c Config) PluginConfigNames() []string {
+	names := make([]string, 0, len(c.pluginConfigs))
+	for name := range c.pluginConfigs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // AgentBridgeConfig は手元のMacで動く agent-bridge への接続設定。どちらかが空ならClaude Code連携を無効にする。
@@ -223,6 +254,8 @@ type configFile struct {
 	AgentBridge struct {
 		URL string `yaml:"url"`
 	} `yaml:"agent_bridge"`
+	// Plugins はプラグインの名前ごとの設定。中身はプラグインが自分で読む（Config.DecodePluginConfig）。
+	Plugins map[string]yaml.Node `yaml:"plugins"`
 }
 
 // readConfigFileは設定ファイルを読む。ファイルが無い場合は全項目を既定値にする。
@@ -336,6 +369,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 			URL:   strings.TrimSpace(file.AgentBridge.URL),
 			Token: env("AGENT_BRIDGE_TOKEN"),
 		},
+		pluginConfigs: file.Plugins,
 	}, nil
 }
 

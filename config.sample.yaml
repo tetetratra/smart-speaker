@@ -140,3 +140,8 @@ agent_bridge:
   # 手元のMacで動く agent-bridge（services/agent-bridge）のURL。既定: なし（Claude Code連携は無効）
   # 共有トークンはシークレットなので、環境変数 AGENT_BRIDGE_TOKEN で渡します。URLとトークンの両方があるときだけ有効になります。
   # url: "http://100.x.y.z:8787"
+
+# プラグインの設定。プラグインの名前（internal/plugins/<名前>）ごとに書きます。
+# 組み込まれていないプラグインの名前を書くと、起動時にエラーになります。
+# シークレットは、ここではなく環境変数で渡します（各プラグインの説明を参照）。
+plugins:
