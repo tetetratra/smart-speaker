@@ -103,7 +103,7 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 
 type TTSSelection = {
   provider: string
-  providers: { id: string; label: string; available: boolean }[]
+  providers: { id: string; label: string; available: boolean; credit?: string }[]
 }
 
 function TTSControl({ visible, backendURL }: { visible: boolean; backendURL: URL }) {
@@ -136,6 +136,8 @@ function TTSControl({ visible, backendURL }: { visible: boolean; backendURL: URL
     void request()
     return () => { requestID.current++ }
   }, [request, visible])
+  // VOICEVOX などの利用規約が求めるクレジット表記。選択中のTTSのものだけ出す
+  const credit = selection?.providers.find((provider) => provider.id === selection.provider)?.credit
   return (
     <div style={{ display: 'grid', gap: 4, fontSize: 12, minWidth: 0 }}>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
@@ -155,6 +157,7 @@ function TTSControl({ visible, backendURL }: { visible: boolean; backendURL: URL
         </select>
         {error && <button className="live-admin-btn" onClick={() => void request()} disabled={pending}>再取得</button>}
       </label>
+      {credit && <span style={{ color: 'var(--live-muted)' }}>{credit}</span>}
       {error && <span role="alert">{error}</span>}
     </div>
   )

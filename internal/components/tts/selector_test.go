@@ -80,3 +80,29 @@ func TestSelectorRejectsUnconfiguredProviderWithoutChangingSelection(t *testing.
 		}
 	}
 }
+
+func TestSelectorSnapshotIncludesVoicevoxCredit(t *testing.T) {
+	cases := []struct {
+		speakerName string
+		want        string
+	}{
+		{"ずんだもん", "VOICEVOX:ずんだもん"},
+		{" 四国めたん ", "VOICEVOX:四国めたん"},
+		{"", "VOICEVOX"},
+	}
+	for _, c := range cases {
+		selector, err := NewSelector(Config{Voicevox: VoicevoxConfig{Endpoint: "http://localhost:50021", SpeakerName: c.speakerName}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, option := range selector.Snapshot().Providers {
+			want := ""
+			if option.ID == ProviderVoicevox {
+				want = c.want
+			}
+			if option.Credit != want {
+				t.Errorf("speakerName=%q: %s credit = %q, want %q", c.speakerName, option.ID, option.Credit, want)
+			}
+		}
+	}
+}

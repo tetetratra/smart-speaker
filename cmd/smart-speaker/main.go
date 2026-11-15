@@ -151,7 +151,7 @@ func ttsConfig(cfg app.Config) tts.Config {
 	return tts.Config{
 		Provider:   cfg.TTSProvider,
 		ElevenLabs: tts.ElevenLabsConfig{APIKey: cfg.ElevenLabs.APIKey, Voice: cfg.ElevenLabs.VoiceID, Model: cfg.ElevenLabs.Model},
-		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeedScale: cfg.Voicevox.SpeedScale},
+		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeakerName: cfg.Voicevox.SpeakerName, SpeedScale: cfg.Voicevox.SpeedScale},
 	}
 }
 
