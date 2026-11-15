@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -28,8 +29,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
@@ -53,10 +54,6 @@ func main() {
 	setLocalTimeZone()
 
 	cfg := app.LoadConfig()
-	oauthgooglecalendar.Configure(cfg.GoogleCalendar)
-
-	ensureGoogleCalendarToken()
-
 	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		log.Fatalf("failed to init memory store: %v", err)
@@ -75,7 +72,7 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig,
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig, DataDir: filepath.Dir(cfg.Memory.StorePath),
 		OpenAI: plugin.OpenAIConfig{APIKey: cfg.APIKey, ResponsesModel: cfg.ResponsesModel}})
 	if err != nil {
 		log.Fatal(err)
@@ -133,13 +130,6 @@ func setLocalTimeZone() {
 		return
 	}
 	time.Local = loc
-}
-
-func ensureGoogleCalendarToken() {
-	if _, err := oauthgooglecalendar.LoadToken(); err == nil {
-		return
-	}
-	log.Println("google oauth token not found. open /oauth/google/start to authenticate")
 }
 
 func closeStages(stages ...*graph.Stage) {
@@ -324,11 +314,16 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 	if err != nil {
 		return nil, err
 	}
+	calendar, err := googlecalendar.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
 		playbackvolume.New(deps),
 		switchBot,
 		websearch.New(deps),
+		calendar,
 	}, nil
 }
 

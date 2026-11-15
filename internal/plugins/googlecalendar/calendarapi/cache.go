@@ -1,4 +1,4 @@
-package googlecalendar
+package calendarapi
 
 import (
 	"sync"

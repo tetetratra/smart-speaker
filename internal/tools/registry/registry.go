@@ -11,9 +11,7 @@ import (
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 
-	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
@@ -29,12 +27,11 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
-	AppContext     context.Context
-	WakeMode       *wakemode.Store
-	Automations    *automations.Service
-	Memory         *memorystate.Store
-	ClaudeCode     *agentbridge.Service
-	CalendarClient *calendarapi.Client
+	AppContext  context.Context
+	WakeMode    *wakemode.Store
+	Automations *automations.Service
+	Memory      *memorystate.Store
+	ClaudeCode  *agentbridge.Service
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -43,19 +40,9 @@ type Config struct {
 func New(cfg Config) *Registry {
 	var entries []entry
 
-	calendarClient := cfg.CalendarClient
-	if calendarClient == nil {
-		calendarClient = calendarapi.NewClient(calendarapi.Config{})
-	}
-	googleCalendarList := googlecalendar.NewList(calendarClient)
-	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
-	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
-		{def: googleCalendarList.Definition(), handler: googleCalendarList},
-		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
-		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {

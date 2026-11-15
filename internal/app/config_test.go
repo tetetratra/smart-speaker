@@ -80,9 +80,6 @@ func TestBuildConfigDefaults(t *testing.T) {
 		"TTSProvider":                {cfg.TTSProvider, "voicevox"},
 		"Voicevox.Endpoint":          {cfg.Voicevox.Endpoint, "http://voicevox:50021"},
 		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_v3"},
-		"GoogleCalendar.RedirectURL": {cfg.GoogleCalendar.RedirectURL, "http://localhost:8081/oauth/google/callback"},
-		"GoogleCalendar.Scope":       {cfg.GoogleCalendar.Scopes[0], "https://www.googleapis.com/auth/calendar.events"},
-		"GoogleCalendar.TokenPath":   {cfg.GoogleCalendar.TokenPath, "data/google_oauth_token.json"},
 		"WSAddr":                     {cfg.WSAddr, ":8081"},
 		"WebDistDir":                 {cfg.WebDistDir, "web/dist"},
 	}
@@ -157,16 +154,10 @@ plugins:
   switchbot:
     device_map:
       hub2: hub-device
-google_calendar:
-  redirect_url: http://example.test/callback
-  scope: https://www.googleapis.com/auth/calendar.readonly
-  token_path: /tmp/token.json
 `
 	env := map[string]string{
-		"OPENAI_API_KEY":       "openai",
-		"ELEVENLABS_API_KEY":   "eleven",
-		"GOOGLE_CLIENT_ID":     "client-id",
-		"GOOGLE_CLIENT_SECRET": "client-secret",
+		"OPENAI_API_KEY":     "openai",
+		"ELEVENLABS_API_KEY": "eleven",
 	}
 	cfg := mustLoadFromYAML(t, content, env)
 
@@ -188,11 +179,6 @@ google_calendar:
 		"ElevenLabs.Model":           {cfg.ElevenLabs.Model, "eleven_flash_v2_5"},
 		"WakeModeStorePath":          {cfg.WakeModeStorePath, "/tmp/wake.json"},
 		"LocalSTTEndpoint":           {cfg.LocalSTTEndpoint, "http://localhost:8000/transcribe"},
-		"GoogleCalendar.ClientID":    {cfg.GoogleCalendar.ClientID, "client-id"},
-		"GoogleCalendar.Secret":      {cfg.GoogleCalendar.ClientSecret, "client-secret"},
-		"GoogleCalendar.RedirectURL": {cfg.GoogleCalendar.RedirectURL, "http://example.test/callback"},
-		"GoogleCalendar.Scope":       {cfg.GoogleCalendar.Scopes[0], "https://www.googleapis.com/auth/calendar.readonly"},
-		"GoogleCalendar.TokenPath":   {cfg.GoogleCalendar.TokenPath, "/tmp/token.json"},
 	}
 	for name, c := range checks {
 		if c[0] != c[1] {
@@ -228,8 +214,8 @@ google_calendar:
 
 func TestBuildConfigDerivesStorePathsFromMemoryStorePath(t *testing.T) {
 	cfg := mustLoadFromYAML(t, "memory:\n  store_path: /app/data/memories.json\n", minimalEnv)
-	if cfg.WakeModeStorePath != "/app/data/wake-mode.json" || cfg.AutomationStorePath != "/app/data/automations.json" || cfg.GoogleCalendar.TokenPath != "/app/data/google_oauth_token.json" {
-		t.Fatalf("store paths = %q, %q, %q", cfg.WakeModeStorePath, cfg.AutomationStorePath, cfg.GoogleCalendar.TokenPath)
+	if cfg.WakeModeStorePath != "/app/data/wake-mode.json" || cfg.AutomationStorePath != "/app/data/automations.json" {
+		t.Fatalf("store paths = %q, %q", cfg.WakeModeStorePath, cfg.AutomationStorePath)
 	}
 }
 

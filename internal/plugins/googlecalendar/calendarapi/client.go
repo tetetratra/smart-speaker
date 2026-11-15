@@ -1,4 +1,4 @@
-package googlecalendar
+package calendarapi
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
+	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar/googleoauth"
 )
 
 const (
@@ -48,7 +48,7 @@ func NewClient(cfg Config) *Client {
 	}
 	accessToken := cfg.AccessToken
 	if accessToken == nil {
-		accessToken = oauthgooglecalendar.AccessToken
+		accessToken = googleoauth.AccessToken
 	}
 	listCacheTTL := cfg.ListCacheTTL
 	if listCacheTTL <= 0 {
