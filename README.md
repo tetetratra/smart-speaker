@@ -171,6 +171,7 @@ flowchart LR
         volumeTool["set_playback_volume<br/>全端末の再生音量"]
         automationTool["register_job<br/>list_jobs<br/>update_job<br/>delete_job<br/>予約"]
         whiteboardTool["set_whiteboard<br/>ホワイトボード表示"]
+        locationTool["get_current_location<br/>現在地"]
     end
 
 
@@ -202,7 +203,6 @@ flowchart LR
     volumeTool <-.->|"切替"| volumeStore
     volumeStore <==>|"WebSocket<br/>/ws/playback-volume<br/>接続時・変更時の配信、画面からの変更"| browser
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
-    %% 居場所はツールにする予定で、まだどこからも使われていない。位置だけをそろえる見えない線。
-    whiteboardTool ~~~ locationStore
+    locationTool -.->|"最後に受信した場所・更新日時の参照"| locationStore
     whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
 ```
