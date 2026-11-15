@@ -27,14 +27,16 @@ type ConversationRecord struct {
 	Role         string
 	Text         string
 	GenerationID GenerationID
+	// Source は記録の中身を作った機能。ツールの記録ならツール名、それ以外は automation・web_search・claude_code・realtime など。
+	// ツール名に合わせて、スネークケースの1語にする。
 	Source       string
 	Metadata     map[string]any
 	CreatedAt    time.Time
 	// 以下は画面の表示用。Text はモデル向けに今の形のまま残し、同じ内容を重ねて持つ。
 	// 古い履歴ファイルには無い項目なので、空なら保存しない。
+	// Title は何についての記録か（予定の件名、検索のクエリ、予約ジョブの名前など）。件名がなければ空。
 	Title     string `json:",omitempty"`
 	External  bool   `json:",omitempty"`
-	ToolName  string `json:",omitempty"`
 	CallID    string `json:",omitempty"`
 	Arguments string `json:",omitempty"`
 	Output    string `json:",omitempty"`

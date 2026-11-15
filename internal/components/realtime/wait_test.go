@@ -46,7 +46,7 @@ observe:
 	}
 	results := 0
 	for _, record := range r.records() {
-		if record.ToolName == waitToolName && record.Role == types.RoleTool && record.Output != "" {
+		if record.Source == waitToolName && record.Role == types.RoleTool && record.Output != "" {
 			results++
 		}
 	}

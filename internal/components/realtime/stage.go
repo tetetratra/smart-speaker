@@ -18,7 +18,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -345,10 +344,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		s.localWake(ctx, e.LocalWakeUtterance)
 	case types.EventLLMRequest:
 		p := e.LLMRequest
-		source := "text"
-		if strings.HasPrefix(p.RequestID, "local-wake/") {
-			source = "local-stt"
-		}
 		id := "text/" + uuid.NewString()
 		// ユーザーの割り込みは会話管理から戻るのを待たず、旧音声を失効させる。
 		previous := s.cfg.Generation.Current()
@@ -357,7 +352,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 			s.recordInterruption(ctx, previous)
 		}
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
-		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: source, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
+		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: realtimeSource, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
 		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true, UserAlreadyKnows: true}})
 
 	}
@@ -419,14 +414,10 @@ func (s *stage) pendingTools() bool {
 	}
 	return false
 }
-func (s *stage) record(ctx context.Context, id, role, text string, gen types.GenerationID, source string) {
-	s.recordWithMetadata(ctx, id, role, text, gen, source, nil)
-}
-
-func (s *stage) recordWithMetadata(ctx context.Context, id, role, text string, gen types.GenerationID, source string, metadata map[string]any) {
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: source, Metadata: metadata, CreatedAt: time.Now()}, true)
+func (s *stage) record(ctx context.Context, id, role, text string, gen types.GenerationID) {
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: realtimeSource, CreatedAt: time.Now()}, true)
 	if text != "" {
-		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: role, Text: text, GenerationID: gen, Source: source, ResponseID: id, Final: true}})
+		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: role, Text: text, GenerationID: gen, Source: realtimeSource, ResponseID: id, Final: true}})
 	}
 }
 
@@ -439,14 +430,14 @@ func (s *stage) hasPendingOutput() bool {
 	return false
 }
 
-// realtimeSource は、モデルの応答とモデルが呼んだツールの記録の出どころ。
+// realtimeSource は、ユーザーの発話・モデルの応答など、realtime が中身を作った記録の Source。
 const realtimeSource = "realtime"
 
 // recordTool は、モデルが呼んだツールの呼び出しと結果を、結果が出たときに1件の記録にする。
 // ID には呼び出したときの接続のエポックを付ける。ツールの実行はユーザーがまだ知らないので、画面に出す。
 func (s *stage) recordTool(ctx context.Context, callID string, c *call, output string) {
 	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/tool/%s", c.epoch, callID), Role: types.RoleTool, Text: c.name + ": " + c.arguments + " → " + output,
-		GenerationID: c.generation, Source: realtimeSource, CreatedAt: time.Now(), Title: c.title, ToolName: c.name, CallID: callID, Arguments: c.arguments, Output: output, Error: types.OutputError(output)}, false)
+		GenerationID: c.generation, Source: c.name, CreatedAt: time.Now(), Title: c.title, CallID: callID, Arguments: c.arguments, Output: output, Error: types.OutputError(output)}, false)
 }
 
 func (s *stage) toolTitle(name string, arguments json.RawMessage) string {

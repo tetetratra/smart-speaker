@@ -61,7 +61,8 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 		return nil
 	}
 	// Claude Code の通知は、呼び出し元（予約ジョブからか）によらず background にする。
-	prompt := types.ConversationRecord{ID: "bridge/" + event.EventID, Role: types.RoleBackground, Source: "agent/claude-code/" + event.Type, Title: event.Title}
+	// 通知の種類（承認の依頼・完了・失敗）は本文と Error で分かるので、Source には含めない。
+	prompt := types.ConversationRecord{ID: "bridge/" + event.EventID, Role: types.RoleBackground, Source: source, Title: event.Title}
 	switch event.Type {
 	case EventPermissionRequest:
 		s.mu.Lock()
@@ -79,6 +80,8 @@ func (s *Service) HandleEvent(ctx context.Context, event Event) error {
 	case EventCompleted, EventFailed:
 		s.forgetTask(event.TaskID)
 		prompt.Text = resultText(event)
+		// 完了・失敗の通知は、何の作業だったかが分かるよう、依頼文を件名にする。
+		prompt.Title = clip(event.Request, maxTitle)
 		if event.Type == EventFailed {
 			prompt.Error = event.Error
 			if prompt.Error == "" {
@@ -229,6 +232,12 @@ func encode(value any) string {
 	data, _ := json.Marshal(value)
 	return string(data)
 }
+
+// source は Claude Code の通知の記録の Source。
+const source = "claude_code"
+
+// maxTitle は、完了・失敗の通知の件名にする依頼文の長さの上限（文字数）。
+const maxTitle = 60
 
 func clip(text string, max int) string {
 	text = strings.TrimSpace(text)

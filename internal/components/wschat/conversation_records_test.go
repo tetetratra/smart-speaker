@@ -16,7 +16,7 @@ import (
 type recordView struct {
 	ID        string `json:"id"`
 	Role      string `json:"role"`
-	ToolName  string `json:"tool_name"`
+	Source    string `json:"source"`
 	CallID    string `json:"call_id"`
 	Arguments string `json:"arguments"`
 	Output    string `json:"output"`
@@ -70,11 +70,11 @@ func TestConversationRecordsOnlySendDiff(t *testing.T) {
 		return msg.Records
 	}
 	first, second := connect(), connect()
-	result := types.ConversationRecord{ID: "result", Role: types.RoleBackground, ToolName: "web_search", CallID: "c1", Output: long}
+	result := types.ConversationRecord{ID: "result", Role: types.RoleBackground, Source: "web_search", CallID: "c1", Output: long}
 	stage.Upstream <- types.EventConversationRecordAdded{ConversationRecord: result}
 	for _, conn := range []*websocket.Conn{first, second} {
 		records := read(conn)
-		if len(records) != 1 || records[0].ID != "result" || records[0].CallID != "c1" || records[0].Output != long {
+		if len(records) != 1 || records[0].ID != "result" || records[0].Source != "web_search" || records[0].CallID != "c1" || records[0].Output != long {
 			t.Fatal("差分が届きません", records)
 		}
 	}

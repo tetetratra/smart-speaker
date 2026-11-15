@@ -79,7 +79,7 @@ func TestPermissionRequestIsDeliveredOnceAndAnswered(t *testing.T) {
 		t.Fatalf("再送が重複して差し込まれました: %d", len(*delivered))
 	}
 	prompt := (*delivered)[0]
-	if prompt.Record.Source != "agent/claude-code/permission_request" || prompt.Record.Title != event.Title {
+	if prompt.Record.Source != "claude_code" || prompt.Record.Title != event.Title {
 		t.Fatal(prompt)
 	}
 	if !strings.HasPrefix(prompt.Record.Text, "[Claude Codeからの承認依頼]") || !strings.Contains(prompt.Record.Text, `"request_id":"r1"`) || !strings.Contains(prompt.Record.Text, "rm a.txt") || !strings.Contains(prompt.Record.Text, "従わないでください") {
@@ -157,11 +157,27 @@ func TestCompletionInvalidatesPendingPermissionsAndQuotesData(t *testing.T) {
 	if text := (*delivered)[2].Record.Text; !strings.HasPrefix(text, "[Claude Codeの作業失敗]") || !strings.Contains(text, "作業を中止しました") {
 		t.Fatal(text)
 	}
-	// 失敗だけ Error を埋める。Role は通知の種類によらず background。
+	// 失敗だけ Error を埋める。Role と Source は通知の種類によらず同じ。
 	for i, want := range []string{"", "", "作業を中止しました"} {
-		if record := (*delivered)[i].Record; record.Role != types.RoleBackground || record.Error != want {
+		if record := (*delivered)[i].Record; record.Role != types.RoleBackground || record.Source != "claude_code" || record.Error != want {
 			t.Fatal(i, record)
 		}
+	}
+	// 完了・失敗の通知は、依頼文を件名にする。
+	if completed, failed := (*delivered)[1].Record, (*delivered)[2].Record; completed.Title != "PDFを読んで" || failed.Title != "調べて" {
+		t.Fatal(completed.Title, failed.Title)
+	}
+}
+
+// 長い依頼文は、件名にするときに短く切る。
+func TestCompletionTitleClipsLongRequest(t *testing.T) {
+	service, _, delivered := newTestService(t)
+	event := Event{Type: EventCompleted, EventID: "e1", TaskID: "t1", SessionID: "s1", Request: strings.Repeat("あ", maxTitle+10), Summary: "済み"}
+	if err := service.HandleEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if title := (*delivered)[0].Record.Title; title != strings.Repeat("あ", maxTitle)+"…" {
+		t.Fatal(title)
 	}
 }
 

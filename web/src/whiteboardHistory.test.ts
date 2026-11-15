@@ -45,8 +45,8 @@ const record = (id: string, overrides: Partial<WhiteboardRecord> = {}): Whiteboa
 
 test('ツールの記録は呼び出しと結果を1件で持ち、記録の error で成功・失敗を決める', () => {
   const records = [
-    record('tool-a', { tool_name: 'set_whiteboard', call_id: 'a', title: 'メモ', arguments: '{"content":"本文"}', output: '{"content":"本文"}' }),
-    record('tool-b', { tool_name: 'web_search', call_id: 'b', output: '{"error":"失敗"}', error: '失敗' }),
+    record('tool-a', { source: 'set_whiteboard', call_id: 'a', title: 'メモ', arguments: '{"content":"本文"}', output: '{"content":"本文"}' }),
+    record('tool-b', { source: 'web_search', call_id: 'b', output: '{"error":"失敗"}', error: '失敗' }),
   ]
   const entries = historyEntries(records)
   assert.deepEqual(entries.map(entry => entry.kind === 'tool' && [entry.id, entryTone(entry)]), [
@@ -57,13 +57,13 @@ test('ツールの記録は呼び出しと結果を1件で持ち、記録の err
   assert.deepEqual(whiteboardEvents(entries).map(event => event.id), ['tool-tool-a', 'board-tool-a', 'tool-tool-b'])
 })
 
-test('後から届いた結果や通知は差し込みとして出す', () => {
+test('後から届いた結果や通知は差し込みとして出し、見出しの名前は source をそのまま出す', () => {
   const entries = historyEntries([
-    record('search', { role: 'background', source: 'tool/web_search', title: '天気', text: '検索結果', external: true }),
-    record('notice', { role: 'system', source: 'agent/claude-code/stop', title: '完了', text: '通知' }),
+    record('search', { role: 'background', source: 'web_search', title: '天気', text: '検索結果', external: true }),
+    record('notice', { role: 'background', source: 'claude_code', title: 'READMEを直して', text: '通知' }),
   ])
   assert.deepEqual(entries.map(entry => [entry.kind, entry.name, entry.title]), [
-    ['inbound', 'tool/web_search', '天気'], ['inbound', 'agent/claude-code/stop', '完了'],
+    ['inbound', 'web_search', '天気'], ['inbound', 'claude_code', 'READMEを直して'],
   ])
 })
 

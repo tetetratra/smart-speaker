@@ -726,7 +726,7 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 		if len(tools) > 0 {
 			// 呼び出しと結果を1件で持つ。
 			call := tools[0]
-			if len(tools) != 1 || call.Role != types.RoleTool || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" ||
+			if len(tools) != 1 || call.Role != types.RoleTool || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "set_whiteboard" || call.CallID != "call1" ||
 				call.Arguments != `{"content":"メモ"}` || call.Output != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
 				t.Fatal(tools)
 			}

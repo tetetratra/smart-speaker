@@ -14,7 +14,6 @@ type InboundEntry = {
   kind: 'inbound'
   id: string
   role: string
-  source: string
   name: string
   title?: string | null
   text: string
@@ -31,7 +30,6 @@ export type WhiteboardRecord = {
   source: string
   title?: string
   external?: boolean
-  tool_name?: string
   call_id?: string
   arguments?: string
   output?: string
@@ -49,13 +47,14 @@ export function mergeRecords(current: Map<string, WhiteboardRecord>, records: Wh
 // historyEntries は記録から表示用の履歴を組み立てる。
 // ツールの記録（tool）は呼び出しと結果を1件で持つので、引数と出力を出す。
 // それ以外の記録（後から届いた結果や通知）は、本文を出す。
+// 見出しの名前は、ツールかどうかによらず記録の source（中身を作った機能）をそのまま出す。
 export function historyEntries(records: Iterable<WhiteboardRecord>): HistoryEntry[] {
   return [...records].map((record): HistoryEntry => record.role === 'tool' ? {
-    kind: 'tool', id: record.id, role: record.role, call_id: record.call_id ?? '', name: record.tool_name || record.source,
+    kind: 'tool', id: record.id, role: record.role, call_id: record.call_id ?? '', name: record.source,
     title: record.title, arguments: record.arguments ?? '', output: record.output ?? '',
     error: record.error || undefined, started_at: record.created_at,
   } : {
-    kind: 'inbound', id: record.id, role: record.role, source: record.source, name: record.tool_name || record.source,
+    kind: 'inbound', id: record.id, role: record.role, name: record.source,
     title: record.title, text: record.text, error: record.error || undefined, started_at: record.created_at,
   })
 }

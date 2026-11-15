@@ -113,7 +113,7 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
               </summary>
               <div className="live-tool-entry-body">
                 {entry.kind === 'inbound' ? <>
-                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}<br />出どころ: {entry.source}{entry.error && <><br />失敗: {entry.error}</>}</p>
+                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}<br />出どころ: {entry.name}{entry.error && <><br />失敗: {entry.error}</>}</p>
                   <h3>モデルに渡した本文</h3>
                   <pre>{entry.text}</pre>
                 </> : <>
