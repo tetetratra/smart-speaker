@@ -98,8 +98,8 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
           }
           const entry = event.entry
           const title = entry.title?.trim()
-          // 実行中は緑（call）、結果が返ったら青（result）、失敗なら赤で表示する
-          const state = entry.kind === 'inbound' ? 'inbound' : entry.status === 'running' ? 'call' : entry.status === 'failed' ? 'result failed' : 'result'
+          // ツールは成功なら青（result）、失敗なら赤で表示する
+          const state = entry.kind === 'inbound' ? 'inbound' : entry.status === 'failed' ? 'result failed' : 'result'
           return (
             <details key={event.id} className="live-board-event live-tool-entry" onToggle={event => {
               if (event.currentTarget.open) follow.current = false
@@ -121,7 +121,7 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
                   <h3>引数</h3>
                   <pre>{prettyJSON(entry.arguments)}</pre>
                   <h3>レスポンス</h3>
-                  <pre>{entry.status === 'running' ? '結果を待っています…' : prettyJSON(entry.output)}</pre>
+                  <pre>{prettyJSON(entry.output)}</pre>
                 </>}
               </div>
             </details>

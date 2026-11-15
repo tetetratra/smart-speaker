@@ -42,18 +42,18 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 			t.Fatal("予約の識別情報が引き継がれていません", message)
 		}
 	}
-	// 成功したときは終了の通知を送らないので、ツールの呼び出しと結果、remind の3件になる。
-	if calls != 1 || len(messages) != 3 {
+	// 成功したときは終了の通知を送らないので、ツールの記録（呼び出しと結果で1件）と remind の2件になる。
+	if calls != 1 || len(messages) != 2 {
 		t.Fatal(calls, messages)
 	}
-	if call, result := messages[0], messages[1]; call.Record.ToolName != "read" || call.Record.CallID == "" || call.Record.Arguments != `{"count":2}` || result.Record.CallID != call.Record.CallID || strings.Contains(result.Record.Output, "instructions") {
+	if tool := messages[0].Record; tool.Role != types.RoleToolCall || tool.ToolName != "read" || tool.CallID == "" || tool.Arguments != `{"count":2}` || tool.Output != `{"value":3}` {
 		t.Fatal("ツールの表示用の項目がありません", messages)
 	}
-	if messages[0].Record.Role != types.RoleToolCall || messages[1].Record.Role != types.RoleToolResult || messages[2].ModelHandling == types.ModelHandlingAddToContext || !strings.Contains(messages[2].Record.Text, "値は3") {
+	if messages[1].ModelHandling == types.ModelHandlingAddToContext || !strings.Contains(messages[1].Record.Text, "値は3") {
 		t.Fatal(messages)
 	}
-	if strings.Contains(messages[1].Record.Text, "instructions") {
-		t.Fatal("通知用指示が履歴に残りました", messages[1])
+	if strings.Contains(messages[0].Record.Text, "instructions") {
+		t.Fatal("通知用指示が履歴に残りました", messages[0])
 	}
 }
 
@@ -142,7 +142,8 @@ func TestCaughtDeliveryFailureStillFailsRun(t *testing.T) {
 			if err := r.Run(context.Background(), "id", "予約", source); err == nil {
 				t.Fatal("catchで受付失敗が成功になりました")
 			}
-			if calls != 0 {
+			// 記録はツールの結果が出てから送るので、最初のツールは実行される。受付に失敗したあとの次のツールは実行しない。
+			if calls > 1 {
 				t.Fatal("受付失敗後にツールを実行しました")
 			}
 		})
@@ -168,7 +169,7 @@ func TestSuccessfulRunSendsNoEndNotification(t *testing.T) {
 		}
 		notifications++
 	}
-	if notifications != 0 || len(messages) != 2 {
+	if notifications != 0 || len(messages) != 1 {
 		t.Fatalf("予約の通知が%d件あります: %v", notifications, messages)
 	}
 }

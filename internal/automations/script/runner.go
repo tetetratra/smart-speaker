@@ -132,10 +132,6 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 		}
 		callID := uuid.NewString()
 		meta := map[string]string{"delivery": "history_only", "automation_id": id, "run_id": runID, "call_id": callID, "tool_name": name}
-		if err := publish(ctx, types.ConversationRecord{ID: "call/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw),
-			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw)}, meta); err != nil {
-			panic(vm.NewGoError(err))
-		}
 		deliveryContext, _ := json.Marshal(meta)
 		req := types.ToolRequest{ToolCallID: callID, Name: name, Arguments: raw}
 		result := types.ToolResultRecord{ToolCallID: callID, Name: name, Output: json.RawMessage(`{"error":"ツールの実行経路がありません"}`)}
@@ -154,8 +150,9 @@ func (r *Runner) RunWithEvent(parent context.Context, id, name, source string, e
 			}
 		}
 		historyRaw, _ := json.Marshal(historyOut)
-		if err := publish(parent, types.ConversationRecord{ID: "result/" + callID, Role: types.RoleToolResult, Text: name + ": " + string(historyRaw),
-			ToolName: name, CallID: callID, Output: string(historyRaw)}, meta); err != nil {
+		// 呼び出しと結果は、結果が出たときに1件の記録にする。
+		if err := publish(parent, types.ConversationRecord{ID: "tool/" + callID, Role: types.RoleToolCall, Text: name + ": " + string(raw) + " → " + string(historyRaw),
+			Title: r.toolTitle(name, raw), ToolName: name, CallID: callID, Arguments: string(raw), Output: string(historyRaw)}, meta); err != nil {
 			panic(vm.NewGoError(err))
 		}
 		check()

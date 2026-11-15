@@ -25,10 +25,6 @@ func TrimHistory(records []types.ConversationRecord, memory string, maxBytes int
 		total -= len(parts[start])
 		start++
 	}
-	// 結果だけを残すと対応する呼び出しを復元できないため、孤立した先頭の結果も外す。
-	for start < len(records) && records[start].Role == types.RoleToolResult {
-		start++
-	}
 	return records[start:]
 }
 

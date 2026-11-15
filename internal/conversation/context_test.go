@@ -17,14 +17,6 @@ func TestRestoreKeepsRecentRecordsAndMemoryWithoutChangingHistory(t *testing.T) 
 	}
 }
 
-func TestRestoreOmitsOrphanToolResult(t *testing.T) {
-	records := []types.ConversationRecord{{Role: types.RoleToolCall, Text: strings.Repeat("呼び出し", 100)}, {Role: types.RoleToolResult, Text: "結果"}, {Role: types.RoleUser, Text: "次の依頼"}}
-	got := RestoreContext(records, "", 300)
-	if strings.Contains(got, "結果") || !strings.Contains(got, "次の依頼") {
-		t.Fatal(got)
-	}
-}
-
 func TestRestoreDoesNotIncludeUnspokenGeneratedText(t *testing.T) {
 	got := RestoreContext([]types.ConversationRecord{{Role: types.RoleAgent, Text: "実際に話した", Metadata: map[string]any{"generated_text": "まだ話していない"}}}, "", 0)
 	if !strings.Contains(got, "実際に話した") || strings.Contains(got, "まだ話していない") {

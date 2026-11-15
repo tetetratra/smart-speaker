@@ -6,9 +6,8 @@ type ToolEntry = {
   title?: string | null
   arguments: string
   output: string
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'succeeded' | 'failed'
   started_at: string
-  finished_at?: string
 }
 type InboundEntry = {
   kind: 'inbound'
@@ -36,7 +35,7 @@ export type WhiteboardRecord = {
   created_at: string
 }
 
-// mergeRecords は接続後に届いた差分を ID で上書きする。
+// mergeRecords は接続後に届いた記録を足す。同じ ID が届いても重複させない。
 export function mergeRecords(current: Map<string, WhiteboardRecord>, records: WhiteboardRecord[]): Map<string, WhiteboardRecord> {
   const next = new Map(current)
   for (const record of records) next.set(record.id, record)
@@ -44,33 +43,17 @@ export function mergeRecords(current: Map<string, WhiteboardRecord>, records: Wh
 }
 
 // historyEntries は記録から表示用の履歴を組み立てる。
-// ツールの呼び出しに同じ call_id の結果が付けば完了（出力に error があれば失敗）、まだなら実行中とする。
-// 呼び出しと対にならない結果や通知は、差し込みとして出す。
+// ツールの記録は呼び出しと結果を1件で持つので、出力に error があれば失敗、なければ成功とする。
+// それ以外の記録（後から届いた結果や通知）は、差し込みとして出す。
 export function historyEntries(records: Iterable<WhiteboardRecord>): HistoryEntry[] {
-  const list = [...records]
-  const results = new Map<string, WhiteboardRecord>()
-  for (const record of list) {
-    if (record.role === 'tool_result' && record.call_id) results.set(record.call_id, record)
-  }
-  const calls = new Set(list.filter(record => record.role === 'tool_call' && record.call_id).map(record => record.call_id))
-  const entries: HistoryEntry[] = []
-  for (const record of list) {
-    if (record.role === 'tool_call') {
-      const result = record.call_id ? results.get(record.call_id) : undefined
-      entries.push({
-        kind: 'tool', id: record.id, call_id: record.call_id ?? '', name: record.tool_name || record.source,
-        title: record.title, arguments: record.arguments ?? '', output: result?.output ?? '',
-        status: result ? (failed(result.output) ? 'failed' : 'succeeded') : 'running',
-        started_at: record.created_at, finished_at: result?.created_at,
-      })
-    } else if (record.role !== 'tool_result' || !record.call_id || !calls.has(record.call_id)) {
-      entries.push({
-        kind: 'inbound', id: record.id, source: record.source, name: record.tool_name || record.source,
-        title: record.title, text: record.text, started_at: record.created_at,
-      })
-    }
-  }
-  return entries
+  return [...records].map((record): HistoryEntry => record.role === 'tool_call' ? {
+    kind: 'tool', id: record.id, call_id: record.call_id ?? '', name: record.tool_name || record.source,
+    title: record.title, arguments: record.arguments ?? '', output: record.output ?? '',
+    status: failed(record.output) ? 'failed' : 'succeeded', started_at: record.created_at,
+  } : {
+    kind: 'inbound', id: record.id, source: record.source, name: record.tool_name || record.source,
+    title: record.title, text: record.text, started_at: record.created_at,
+  })
 }
 
 function failed(output?: string) {
