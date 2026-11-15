@@ -355,3 +355,21 @@ func switchBotDeviceMap(t *testing.T, cfg Config) map[string]string {
 	}
 	return v.DeviceMap
 }
+
+func TestLoadVoicevoxSpeakerName(t *testing.T) {
+	cases := []struct {
+		yaml string
+		want string
+	}{
+		{"", "ずんだもん"},
+		{"tts:\n  voicevox:\n    speaker_id: 2\n", ""},
+		{"tts:\n  voicevox:\n    speaker_id: 2\n    speaker_name: \" 四国めたん \"\n", "四国めたん"},
+		{"tts:\n  voicevox:\n    speaker_name: 春日部つむぎ\n", "春日部つむぎ"},
+	}
+	for _, c := range cases {
+		cfg := mustLoadFromYAML(t, c.yaml, minimalEnv)
+		if cfg.Voicevox.SpeakerName != c.want {
+			t.Errorf("yaml=%q: SpeakerName = %q, want %q", c.yaml, cfg.Voicevox.SpeakerName, c.want)
+		}
+	}
+}

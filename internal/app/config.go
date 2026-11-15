@@ -91,9 +91,10 @@ type ElevenLabsConfig struct {
 }
 
 type VoicevoxConfig struct {
-	Endpoint   string
-	SpeakerID  int
-	SpeedScale *float64
+	Endpoint    string
+	SpeakerID   int
+	SpeakerName string
+	SpeedScale  *float64
 }
 
 // DefaultConfigPathは設定ファイルの既定の場所。作業ディレクトリからの相対パス。
@@ -206,9 +207,10 @@ type configFile struct {
 	TTS struct {
 		Provider string `yaml:"provider"`
 		Voicevox struct {
-			Endpoint   string   `yaml:"endpoint"`
-			SpeakerID  *int     `yaml:"speaker_id"`
-			SpeedScale *float64 `yaml:"speed_scale"`
+			Endpoint    string   `yaml:"endpoint"`
+			SpeakerID   *int     `yaml:"speaker_id"`
+			SpeakerName string   `yaml:"speaker_name"`
+			SpeedScale  *float64 `yaml:"speed_scale"`
 		} `yaml:"voicevox"`
 		ElevenLabs struct {
 			VoiceID string `yaml:"voice_id"`
@@ -319,9 +321,10 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 			Model:   elevenLabsModel,
 		},
 		Voicevox: VoicevoxConfig{
-			Endpoint:   stringOr(file.TTS.Voicevox.Endpoint, "http://voicevox:50021"),
-			SpeakerID:  intOr(file.TTS.Voicevox.SpeakerID, 1),
-			SpeedScale: positiveFloat(file.TTS.Voicevox.SpeedScale),
+			Endpoint:    stringOr(file.TTS.Voicevox.Endpoint, "http://voicevox:50021"),
+			SpeakerID:   intOr(file.TTS.Voicevox.SpeakerID, 1),
+			SpeakerName: voicevoxSpeakerName(file.TTS.Voicevox.SpeakerName, file.TTS.Voicevox.SpeakerID),
+			SpeedScale:  positiveFloat(file.TTS.Voicevox.SpeedScale),
 		},
 		RTCIceAdvertiseIPs: iceIPs,
 		WSAddr:             stringOr(file.Server.WSAddr, ":8081"),
@@ -417,4 +420,15 @@ func joinPrompts(mainPrompt, localPrompt string) string {
 	mainPrompt = strings.TrimRight(mainPrompt, "\n")
 	localPrompt = strings.TrimLeft(localPrompt, "\n")
 	return mainPrompt + "\n\n" + localPrompt
+}
+
+// voicevoxSpeakerNameは、クレジット表記に使う話者名を決める。
+// 既定のスタイルID 1 はずんだもんなので、speaker_id も省略されたときだけ「ずんだもん」を補う。
+// speaker_id だけ変えた場合に別の話者名を表示しないよう、そのときは空のままにする。
+func voicevoxSpeakerName(name string, speakerID *int) string {
+	name = strings.TrimSpace(name)
+	if name == "" && speakerID == nil {
+		return "ずんだもん"
+	}
+	return name
 }
