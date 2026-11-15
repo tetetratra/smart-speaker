@@ -21,7 +21,7 @@ func (s *Store) Update(place string) Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	record := Record{Place: place, UpdatedAt: time.Now().UTC()}
+	record := Record{Place: place, UpdatedAt: time.Now()}
 	s.current = &record
 	return record
 }
