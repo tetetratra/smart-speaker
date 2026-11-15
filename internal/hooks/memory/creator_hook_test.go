@@ -385,7 +385,7 @@ func newTestHistory(t *testing.T, ids ...string) *conversationhistory.Store {
 	}
 	// 1件で予算の半分強を使い、直近の1件だけが文脈に残るようにする。
 	for _, id := range ids {
-		if err := history.Upsert(types.ConversationRecord{ID: id, Role: types.RoleUser, Text: strings.Repeat("あ", 5000)}); err != nil {
+		if err := history.Append(types.ConversationRecord{ID: id, Role: types.RoleUser, Text: strings.Repeat("あ", 5000)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -425,7 +425,7 @@ func TestMemorizeOldExtractsOnlyOverflowedRecordsAndRemovesThemAfterSuccess(t *t
 		t.Fatal(creator.records)
 	}
 	// 抽出の最中に届いた記録は、完了後の削除で消さない。
-	if err := history.Upsert(types.ConversationRecord{ID: "new", Text: "次の会話"}); err != nil {
+	if err := history.Append(types.ConversationRecord{ID: "new", Text: "次の会話"}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)

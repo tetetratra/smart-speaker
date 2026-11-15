@@ -47,6 +47,8 @@ type call struct {
 	epoch      uint64
 	generation types.GenerationID
 	finished   bool
+	// 以下は結果と合わせて履歴に記録する、呼び出しの内容。
+	name, arguments, title string
 }
 type stage struct {
 	wakeModeRequired, wakeGated               bool
@@ -349,7 +351,11 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		id := "text/" + uuid.NewString()
 		// ユーザーの割り込みは会話管理から戻るのを待たず、旧音声を失効させる。
-		change, _ := s.controller.Start(id)
+		previous := s.cfg.Generation.Current()
+		change, ok := s.controller.Start(id)
+		if ok {
+			s.recordInterruption(ctx, previous)
+		}
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: source, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
 		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelHandling: types.ModelHandlingAddAndRespond}})
@@ -436,15 +442,12 @@ func (s *stage) hasPendingOutput() bool {
 // realtimeSource は、モデルの応答とモデルが呼んだツールの記録の出どころ。
 const realtimeSource = "realtime"
 
-// recordTool は、モデルが呼んだツールの呼び出しと結果を記録する。ID には接続のエポックを付ける。
-// 吹き出しの経路には、これまでどおりツール名を出どころとして送る。
-func (s *stage) recordTool(ctx context.Context, record types.ConversationRecord) {
-	id := record.ID
-	record.ID = fmt.Sprintf("%d/%s", s.epoch, id)
-	record.Source = realtimeSource
-	record.CreatedAt = time.Now()
-	s.saveRecord(ctx, record)
-	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: record.Role, Text: record.Text, GenerationID: record.GenerationID, Source: record.ToolName, ResponseID: id, Final: true}})
+// recordTool は、モデルが呼んだツールの呼び出しと結果を、結果が出たときに1件の記録にする。
+// ID には呼び出したときの接続のエポックを付ける。吹き出しの経路には、ツール名を出どころとして結果を送る。
+func (s *stage) recordTool(ctx context.Context, callID string, c *call, output string) {
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/tool/%s", c.epoch, callID), Role: types.RoleToolCall, Text: c.name + ": " + c.arguments + " → " + output,
+		GenerationID: c.generation, Source: realtimeSource, CreatedAt: time.Now(), Title: c.title, ToolName: c.name, CallID: callID, Arguments: c.arguments, Output: output})
+	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleToolResult, Text: output, GenerationID: c.generation, Source: c.name, ResponseID: "result/" + callID, Final: true}})
 }
 
 func (s *stage) toolTitle(name string, arguments json.RawMessage) string {

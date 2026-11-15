@@ -66,21 +66,15 @@ func cloneRecord(record types.ConversationRecord) types.ConversationRecord {
 	return record
 }
 
-// Upsert は遅れて届く文字起こしや送信実績を、元の発話位置へ反映する。
-func (s *Store) Upsert(record types.ConversationRecord) error {
+// Append は記録を末尾に足す。記録は足すだけで、あとから書き換えない。
+func (s *Store) Append(record types.ConversationRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i := range s.records {
-		if s.records[i].ID == record.ID {
-			s.records[i] = cloneRecord(record)
-			return s.saveLocked()
-		}
-	}
 	s.records = append(s.records, cloneRecord(record))
 	return s.saveLocked()
 }
 
-// Remove はメモリ化を終えた記録だけを消す。その間に追加・更新された別の記録は残す。
+// Remove はメモリ化を終えた記録だけを消す。その間に追加された別の記録は残す。
 func (s *Store) Remove(ids []string) error {
 	remove := make(map[string]bool, len(ids))
 	for _, id := range ids {

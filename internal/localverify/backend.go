@@ -21,7 +21,12 @@ type Backend struct {
 	conn       *websocket.Conn
 	count      int
 	text, user string
+	// whiteboard は、次の応答でモデルがホワイトボードの更新を呼ぶときの本文。呼んだら空に戻す。
+	whiteboard string
 }
+
+// whiteboardPrefix で始まる発話には、モデルがツール（set_whiteboard）を呼ぶ応答を返す。
+const whiteboardPrefix = "ホワイトボード:"
 
 func New(ctx context.Context) (*Backend, http.Handler) {
 	b := &Backend{ctx: ctx}
@@ -61,6 +66,10 @@ func (b *Backend) Say(text string) error {
 	}
 	b.count++
 	b.text = text
+	b.whiteboard = ""
+	if content, ok := strings.CutPrefix(text, whiteboardPrefix); ok {
+		b.whiteboard = strings.TrimSpace(content)
+	}
 	b.user = fmt.Sprintf("user%d", b.count)
 	for _, event := range []any{
 		map[string]any{"type": "input_audio_buffer.speech_started", "item_id": b.user},
@@ -123,13 +132,25 @@ func (b *Backend) realtime(w http.ResponseWriter, r *http.Request) {
 			responseID, itemID := fmt.Sprintf("response%d", b.count), fmt.Sprintf("assistant%d", b.count)
 			metadata := m["response"].(map[string]any)["metadata"]
 			text := "確認しました。\n" + b.text + "。続けて話してください。"
-			for _, event := range []any{
+			events := []any{
 				map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "metadata": metadata}},
 				map[string]any{"type": "conversation.item.added", "previous_item_id": b.user, "item": map[string]any{"id": itemID}},
 				map[string]any{"type": "response.output_text.delta", "response_id": responseID, "item_id": itemID, "delta": text},
 				map[string]any{"type": "response.output_text.done", "response_id": responseID, "item_id": itemID, "text": text},
 				map[string]any{"type": "response.done", "response": map[string]any{"id": responseID, "status": "completed"}},
-			} {
+			}
+			// ホワイトボードの依頼には、まずツールを呼ぶ応答を返す。結果が届いたあとの応答で、ふつうに話す。
+			if b.whiteboard != "" {
+				responseID += "-tool"
+				arguments, _ := json.Marshal(map[string]string{"content": b.whiteboard})
+				b.whiteboard = ""
+				events = []any{
+					map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "metadata": metadata}},
+					map[string]any{"type": "response.function_call_arguments.done", "response_id": responseID, "call_id": "call_" + responseID, "name": "set_whiteboard", "arguments": string(arguments)},
+					map[string]any{"type": "response.done", "response": map[string]any{"id": responseID, "status": "completed"}},
+				}
+			}
+			for _, event := range events {
 				if err = b.send(event); err != nil {
 					break
 				}

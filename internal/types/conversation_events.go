@@ -35,12 +35,12 @@ type EventConversationIdle struct{}
 // EventConversationRecordsUsed は応答開始時点で参照した外部記録を通知する。
 type EventConversationRecordsUsed struct{ IDs []string }
 
-// EventConversationRecordChanged は、会話管理が保存した記録を画面へ知らせる。
+// EventConversationRecordAdded は、会話管理が保存した記録を画面へ知らせる。
 // 世代を持たないので、世代フィルタに捨てられない（EventGeneration に加えないこと）。
-type EventConversationRecordChanged struct{ ConversationRecord }
+type EventConversationRecordAdded struct{ ConversationRecord }
 
-func (EventConversationInput) isEvent()         {}
-func (EventConversationHistorySync) isEvent()   {}
-func (EventConversationIdle) isEvent()          {}
-func (EventConversationRecordsUsed) isEvent()   {}
-func (EventConversationRecordChanged) isEvent() {}
+func (EventConversationInput) isEvent()       {}
+func (EventConversationHistorySync) isEvent() {}
+func (EventConversationIdle) isEvent()        {}
+func (EventConversationRecordsUsed) isEvent() {}
+func (EventConversationRecordAdded) isEvent() {}

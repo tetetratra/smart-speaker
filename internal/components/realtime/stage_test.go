@@ -293,9 +293,65 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 			break
 		}
 	}
-	records := r.records()
-	if records[0].Text != "おはよう" || records[1].Role != types.RoleAgent {
-		t.Fatal(records)
+	// 応答は読み上げの区切りを送り終えたときに記録するので、文字起こしの後ろに並ぶ。
+	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "assistant1", SegmentID: "s1", Final: true, Text: "こんにちは。"}}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		records := r.records()
+		if len(records) == 2 {
+			if records[0].Role != types.RoleUser || records[0].Text != "おはよう" || records[1].Role != types.RoleAgent || records[1].Text != "こんにちは。" {
+				t.Fatal(records)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("記録が揃いません", r.records())
+}
+
+// 応答は区切りごとに記録し、送り終える前にユーザーが話し始めたら、遮られたことを1件記録する。
+func TestInterruptedResponseKeepsSentSegmentsAndRecordsInterruption(t *testing.T) {
+	r := newRig(t)
+	r.utterance("user1")
+	req := r.wait("response.create")
+	r.response("r1", "a1", "一文目。二文目。", req["response"].(map[string]any)["metadata"])
+	r.event(types.EventResponseText{})
+	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", SegmentID: "s1", Final: true, Text: "一文目。"}}
+	r.waitRecord("1/s1")
+	r.utterance("user2")
+	r.wait("conversation.item.delete")
+	// ユーザーが続けて話しても、遮られた記録は1件だけにする。
+	r.utterance("user3")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var got []string
+		for _, record := range r.records() {
+			got = append(got, record.Role+":"+record.Text)
+		}
+		want := []string{types.RoleAgent + ":一文目。", types.RoleSystem + ":" + interruptedText}
+		if len(got) == len(want) && got[0] == want[0] && got[1] == want[1] {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("記録が想定と違います", r.records())
+}
+
+// 全文を送り終えた応答のあとに話し始めても、遮られたとは記録しない。
+func TestFullySentResponseIsNotRecordedAsInterrupted(t *testing.T) {
+	r := newRig(t)
+	r.utterance("user1")
+	req := r.wait("response.create")
+	r.response("r1", "a1", "こんにちは。", req["response"].(map[string]any)["metadata"])
+	r.event(types.EventResponseText{})
+	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", SegmentID: "s1", Final: true, Text: "こんにちは。"}}
+	r.waitRecord("1/s1")
+	r.utterance("user2")
+	r.wait("response.create")
+	for _, record := range r.records() {
+		if record.Role == types.RoleSystem {
+			t.Fatal("全文を送り終えたのに遮られたと記録しました", r.records())
+		}
 	}
 }
 func TestRepairCompletesBeforeNextResponse(t *testing.T) {
@@ -354,7 +410,7 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	records := r.records()
 	found := false
 	for _, rec := range records {
-		if rec.Role == types.RoleToolResult {
+		if rec.Role == types.RoleToolCall && rec.Output == `{"ok":true}` {
 			found = true
 		}
 	}
@@ -622,6 +678,21 @@ func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
 }
 
 // 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
+// waitRecord は、ID の記録が保存されるまで待つ。
+func (r *rig) waitRecord(id string) {
+	r.t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, record := range r.records() {
+			if record.ID == id {
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	r.t.Fatal("記録が保存されません", id, r.records())
+}
+
 func (r *rig) records() []types.ConversationRecord {
 	done := make(chan struct{})
 	r.managerQueue.Push(types.EventConversationHistorySync{Done: done})
@@ -643,30 +714,31 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
 	r.event(types.EventToolRequest{})
 	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
+	// 結果が出るまでは記録しない。
+	for _, record := range r.records() {
+		if record.Role == types.RoleToolCall || record.Role == types.RoleToolResult {
+			t.Fatal("結果が出る前にツールを記録しました", record)
+		}
+	}
 	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		var call, result *types.ConversationRecord
+		var tools []types.ConversationRecord
 		for _, record := range r.records() {
-			record := record
-			switch record.Role {
-			case types.RoleToolCall:
-				call = &record
-			case types.RoleToolResult:
-				result = &record
+			if record.Role == types.RoleToolCall || record.Role == types.RoleToolResult {
+				tools = append(tools, record)
 			}
 		}
-		if call != nil && result != nil {
-			// Text はモデル向けに今の形のまま残し、表示用の項目を別に持つ。
-			if call.Text != `set_whiteboard: {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" || call.Arguments != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
-				t.Fatal(*call)
-			}
-			if result.Source != "realtime" || result.ToolName != "set_whiteboard" || result.CallID != "call1" || result.Output != `{"content":"メモ"}` {
-				t.Fatal(*result)
+		if len(tools) > 0 {
+			// 呼び出しと結果を1件で持つ。
+			call := tools[0]
+			if len(tools) != 1 || call.Role != types.RoleToolCall || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "realtime" || call.ToolName != "set_whiteboard" || call.CallID != "call1" ||
+				call.Arguments != `{"content":"メモ"}` || call.Output != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
+				t.Fatal(tools)
 			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("ツールの記録が揃いません", r.records())
+	t.Fatal("ツールの記録がありません", r.records())
 }

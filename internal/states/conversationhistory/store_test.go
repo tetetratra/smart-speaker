@@ -17,10 +17,10 @@ func newTestStore(t *testing.T) (*Store, string) {
 	return store, path
 }
 
-func TestStoreUpsertAndSnapshot(t *testing.T) {
+func TestStoreAppendAndSnapshot(t *testing.T) {
 	store, _ := newTestStore(t)
-	store.Upsert(types.ConversationRecord{ID: "1", Role: types.RoleUser, Text: "こんにちは", Metadata: map[string]any{"k": "v"}})
-	store.Upsert(types.ConversationRecord{ID: "2", Role: types.RoleAgent, Text: "はい"})
+	store.Append(types.ConversationRecord{ID: "1", Role: types.RoleUser, Text: "こんにちは", Metadata: map[string]any{"k": "v"}})
+	store.Append(types.ConversationRecord{ID: "2", Role: types.RoleAgent, Text: "はい"})
 
 	snapshot := store.Snapshot()
 	if len(snapshot) != 2 {
@@ -36,17 +36,12 @@ func TestStoreUpsertAndSnapshot(t *testing.T) {
 	if again[0].Metadata["k"] != "v" {
 		t.Fatalf("metadata changed through snapshot: %v", again[0].Metadata["k"])
 	}
-
-	store.Upsert(types.ConversationRecord{ID: "1", Role: types.RoleUser, Text: "こんにちは！"})
-	if got := store.Snapshot(); len(got) != 2 || got[0].Text != "こんにちは！" {
-		t.Fatalf("Upsert did not replace the record in place: %#v", got)
-	}
 }
 
 func TestStoreKeepsRecordsAcrossRestartAndRemovesOnlyGivenIDs(t *testing.T) {
 	store, path := newTestStore(t)
 	for _, id := range []string{"1", "2", "3"} {
-		if err := store.Upsert(types.ConversationRecord{ID: id, Text: "発言" + id}); err != nil {
+		if err := store.Append(types.ConversationRecord{ID: id, Text: "発言" + id}); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -55,9 +55,6 @@ const liveRootStyle = `
     --ui-accent-text: #ffffff;
     --ui-accent-soft: #dbeafe;
     --ui-accent-soft-text: #1d4ed8;
-    --ui-tool-call-bg: #f0fdf4;
-    --ui-tool-call-line: #d1fae5;
-    --ui-tool-call-text: #15803d;
     --ui-tool-done-bg: #eff6ff;
     --ui-tool-done-line: #dbeafe;
     --ui-tool-done-text: #1d4ed8;
@@ -105,9 +102,6 @@ const liveRootStyle = `
       --ui-accent-text: #ffffff;
       --ui-accent-soft: #1e3558;
       --ui-accent-soft-text: #bfdbfe;
-      --ui-tool-call-bg: #121f19;
-      --ui-tool-call-line: #1f3a2a;
-      --ui-tool-call-text: #a7d8b8;
       --ui-tool-done-bg: #131a26;
       --ui-tool-done-line: #22324a;
       --ui-tool-done-text: #b4cdf0;
@@ -204,11 +198,6 @@ const liveRootStyle = `
     line-height: 1.2;
     font-weight: 700;
     transition: background-color 0.3s, border-color 0.3s, color 0.3s;
-  }
-  .live-tool-toast.call {
-    background: var(--ui-tool-call-bg);
-    border-color: var(--ui-tool-call-line);
-    color: var(--ui-tool-call-text);
   }
   .live-tool-toast.result {
     background: var(--ui-tool-done-bg);

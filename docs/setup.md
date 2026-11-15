@@ -76,6 +76,12 @@ curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"最初の会話
 curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"割り込み後の会話"}'
 ```
 
+「ホワイトボード:」で始まる発話を送ると、モデルがツール（`set_whiteboard`）を呼ぶ応答を返します。ツールの経路を確かめるときに使います。
+
+```sh
+curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"ホワイトボード:今日の予定"}'
+```
+
 ## 外部サービス連携の設定
 
 設定していない連携は、そのツールを登録せずに起動します。

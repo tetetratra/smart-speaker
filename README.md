@@ -148,7 +148,7 @@ flowchart LR
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"古い会話からの抽出結果"| memoryStore
-    manager -->|"EventConversationRecordChanged<br/>会話でない記録の追加・更新"| chat
+    manager -->|"EventConversationRecordAdded<br/>会話でない記録の追加"| chat
     chat ==>|"WebSocket<br/>ホワイトボード用の記録の差分"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```

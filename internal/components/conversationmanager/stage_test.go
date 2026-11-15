@@ -24,11 +24,12 @@ func testStage(t *testing.T) *stage {
 
 func TestRecordsOnlyUpdateHistory(t *testing.T) {
 	s := testStage(t)
-	for _, text := range []string{"仮の文字起こし", "確定した文字起こし"} {
-		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: "speech", Role: types.RoleUser, Text: text}, ModelHandling: types.ModelHandlingAlreadyKnown}})
+	for _, id := range []string{"speech", "reply"} {
+		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleUser, Text: id}, ModelHandling: types.ModelHandlingAlreadyKnown}})
 	}
+	// 記録は足すだけで、届いた順に並ぶ。
 	records := s.history.Snapshot()
-	if len(records) != 1 || records[0].Text != "確定した文字起こし" {
+	if len(records) != 2 || records[0].ID != "speech" || records[1].ID != "reply" {
 		t.Fatal(records)
 	}
 	select {
@@ -63,7 +64,7 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 			t.Fatal("表示用のタイトルと外部からの入力の印を記録に持つ必要があります", records[0])
 		}
 		for len(s.node.Downstream) > 0 {
-			if e := <-s.node.Downstream; !types.Is[types.EventConversationRecordChanged](e) {
+			if e := <-s.node.Downstream; !types.Is[types.EventConversationRecordAdded](e) {
 				t.Fatal("再送を二度配信しました", e)
 			}
 		}
@@ -132,7 +133,7 @@ func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {
 // nextForwarded は、画面への記録の通知を飛ばして、realtime へ渡すイベントを取り出す。
 func nextForwarded(s *stage) types.Event {
 	for {
-		if e := <-s.node.Downstream; !types.Is[types.EventConversationRecordChanged](e) {
+		if e := <-s.node.Downstream; !types.Is[types.EventConversationRecordAdded](e) {
 			return e
 		}
 	}
@@ -151,10 +152,10 @@ func TestOnlyNonDialogueRecordsAreSentToScreen(t *testing.T) {
 	var sent []string
 	for len(s.node.Downstream) > 0 {
 		e := <-s.node.Downstream
-		if !types.Is[types.EventConversationRecordChanged](e) {
+		if !types.Is[types.EventConversationRecordAdded](e) {
 			t.Fatal(e)
 		}
-		sent = append(sent, e.(types.EventConversationRecordChanged).ConversationRecord.ID)
+		sent = append(sent, e.(types.EventConversationRecordAdded).ConversationRecord.ID)
 	}
 	if strings.Join(sent, ",") != "call,result" {
 		t.Fatal(sent)

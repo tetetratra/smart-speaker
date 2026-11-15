@@ -312,7 +312,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	for _, event := range automationEvents {
 		connect(g, rt, gw, event.event)
 	}
-	connect(g, manager, chat, types.EventConversationRecordChanged{})
+	connect(g, manager, chat, types.EventConversationRecordAdded{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})
 	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
