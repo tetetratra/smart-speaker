@@ -19,7 +19,7 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 	services := runtimeServices{Plugins: buildPlugins(plugin.Deps{Deliver: func(_ context.Context, input types.ConversationInput) error {
 		delivered = append(delivered, input)
 		return nil
-	}})}
+	}, OpenAI: plugin.OpenAIConfig{APIKey: "key", ResponsesModel: "model"}})}
 	cfg := app.Config{WebDistDir: t.TempDir()}
 
 	definitions, handlers := buildToolRegistry(cfg, nil, services)
@@ -31,6 +31,9 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 	}
 	if !found || handlers["get_current_location"] == nil {
 		t.Fatal("現在地のツールが登録されていません")
+	}
+	if handlers["web_search"] == nil {
+		t.Fatal("Web検索のツールが登録されていません")
 	}
 
 	server, chat, err := buildHTTPServer(cfg, nil, services)

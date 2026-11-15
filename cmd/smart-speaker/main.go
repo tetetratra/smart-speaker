@@ -31,6 +31,7 @@ import (
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/plugins/websearch"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -74,7 +75,8 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig,
+		OpenAI: plugin.OpenAIConfig{APIKey: cfg.APIKey, ResponsesModel: cfg.ResponsesModel}})
 	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
 		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
 	}
@@ -263,17 +265,14 @@ func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services 
 	}
 
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
-		WakeMode:         services.WakeMode,
-		PlaybackVolume:   services.PlaybackVolume,
-		Automations:      services.Automations,
-		Memory:           memoryStore,
-		ClaudeCode:       services.ClaudeCode,
-		SwitchBotClient:  switchBotClient,
-		SwitchBotScenes:  scenes,
-		OpenAIAPIKey:     cfg.APIKey,
-		OpenAIModel:      cfg.ResponsesModel,
-		WebSearchDeliver: services.Deliver,
-		PluginTools:      plugin.Tools(services.Plugins),
+		WakeMode:        services.WakeMode,
+		PlaybackVolume:  services.PlaybackVolume,
+		Automations:     services.Automations,
+		Memory:          memoryStore,
+		ClaudeCode:      services.ClaudeCode,
+		SwitchBotClient: switchBotClient,
+		SwitchBotScenes: scenes,
+		PluginTools:     plugin.Tools(services.Plugins),
 	})
 	return reg.DefinitionsForRealtime(), reg.Handlers()
 }
@@ -348,6 +347,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 func buildPlugins(deps plugin.Deps) []plugin.Plugin {
 	return []plugin.Plugin{
 		userlocation.New(deps),
+		websearch.New(deps),
 	}
 }
 

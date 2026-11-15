@@ -18,7 +18,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
@@ -46,11 +45,6 @@ type Config struct {
 	SwitchBotClient    *switchbot.Client
 	SwitchBotScenes    []switchbot.Scene
 	CalendarClient     *calendarapi.Client
-	OpenAIAPIKey       string
-	OpenAIModel        string
-	WebSearchClient    websearch.SearchClient
-	// WebSearchDeliver があれば、web_search は結果を後から会話へ届ける。
-	WebSearchDeliver websearch.Deliver
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -73,7 +67,6 @@ func New(cfg Config) *Registry {
 	googleCalendarCreate := googlecalendar.NewCreate(calendarClient)
 	googleCalendarUpdate := googlecalendar.NewUpdate(calendarClient)
 	whiteboardTool := whiteboard.New()
-	webSearchTool := newWebSearchTool(cfg)
 	toolEntries := []entry{
 		{def: whiteboardTool.Definition(), handler: whiteboardTool},
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
@@ -108,9 +101,6 @@ func New(cfg Config) *Registry {
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
-	if webSearchTool != nil {
-		toolEntries = append(toolEntries, entry{def: webSearchTool.Definition(), handler: webSearchTool})
-	}
 	for _, t := range cfg.PluginTools {
 		if dp, ok := t.(tools.DefinitionProvider); ok {
 			toolEntries = append(toolEntries, entry{def: dp.Definition(), handler: t})
@@ -131,21 +121,6 @@ func New(cfg Config) *Registry {
 	}
 
 	return &Registry{entries: entries}
-}
-
-func newWebSearchTool(cfg Config) *websearch.Tool {
-	if cfg.WebSearchClient != nil {
-		return websearch.New(websearch.Config{Client: cfg.WebSearchClient, Deliver: cfg.WebSearchDeliver, AppContext: cfg.AppContext})
-	}
-	if strings.TrimSpace(cfg.OpenAIAPIKey) == "" || strings.TrimSpace(cfg.OpenAIModel) == "" {
-		return nil
-	}
-	return websearch.New(websearch.Config{
-		AppContext: cfg.AppContext,
-		APIKey:     cfg.OpenAIAPIKey,
-		Model:      cfg.OpenAIModel,
-		Deliver:    cfg.WebSearchDeliver,
-	})
 }
 
 // Handlers はtoolcaller向けのname->handlerマップを返します。
