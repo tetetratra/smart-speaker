@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -42,7 +43,7 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 		}
 		switch {
 		case collection && r.Method == http.MethodGet:
-			writeJSON(w, 200, map[string]any{"jobs": service.List()})
+			writeJSON(w, 200, map[string]any{"jobs": service.List(), "events": automationEventList(service)})
 		case collection && r.Method == http.MethodPost:
 			var spec automations.Spec
 			if !decode(&spec) {
@@ -82,4 +83,21 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 	}
 	mux.HandleFunc("/api/jobs", handler)
 	mux.HandleFunc("/api/jobs/", handler)
+}
+
+// automationEvent は、画面の予約の編集で schedule.event に選べるイベント。
+type automationEvent struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// automationEventList は、schedule.event に指定できるイベントを名前順に並べて返す。
+func automationEventList(service *automations.Service) []automationEvent {
+	events := service.Events()
+	list := make([]automationEvent, 0, len(events))
+	for name, description := range events {
+		list = append(list, automationEvent{Name: name, Description: description})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
 }
