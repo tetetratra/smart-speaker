@@ -11,6 +11,7 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func TestLocationAPIThroughHTTPServer(t *testing.T) {
@@ -99,9 +100,9 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var store userlocation.Store
-			initial := store.Update("home")
+			initial, _ := store.Update("home")
 			mux := http.NewServeMux()
-			registerLocationAPI(mux, &store)
+			registerLocationAPI(mux, &store, nil)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(tt.body)))
 			if rec.Code != tt.status {
@@ -116,9 +117,9 @@ func TestLocationAPIRejectsInvalidRequestsWithoutChangingState(t *testing.T) {
 
 func TestLocationAPIRejectsUnsupportedMethods(t *testing.T) {
 	var store userlocation.Store
-	initial := store.Update("home")
+	initial, _ := store.Update("home")
 	mux := http.NewServeMux()
-	registerLocationAPI(mux, &store)
+	registerLocationAPI(mux, &store, nil)
 	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead, http.MethodOptions} {
 		t.Run(method, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -177,5 +178,49 @@ func TestLocationToolReadsHTTPUpdates(t *testing.T) {
 			t.Fatalf("保存失敗: %s", rec.Body.String())
 		}
 		check(`{"location":` + strings.TrimSpace(rec.Body.String()) + `}`)
+	}
+}
+
+// 場所が変わったときだけ EventUserLocationChanged を流す。起動後の最初の1件は直前の場所がないので変化として扱う。
+func TestLocationAPIPublishesOnlyChanges(t *testing.T) {
+	var store userlocation.Store
+	var got []types.EventUserLocationChanged
+	mux := http.NewServeMux()
+	registerLocationAPI(mux, &store, func(_ context.Context, e types.Event) error {
+		got = append(got, e.(types.EventUserLocationChanged))
+		return nil
+	})
+	for _, place := range []string{"自宅", "自宅", "会社", "会社", "自宅"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/location", strings.NewReader(`{"place":"`+place+`"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("保存失敗: %s", rec.Body.String())
+		}
+	}
+	type change struct{ previous, place string }
+	want := []change{{"<nil>", "自宅"}, {"自宅", "会社"}, {"会社", "自宅"}}
+	if len(got) != len(want) {
+		t.Fatalf("イベント数 = %d、期待値 = %d: %#v", len(got), len(want), got)
+	}
+	for i, e := range got {
+		previous := "<nil>"
+		if e.PreviousPlace != nil {
+			previous = *e.PreviousPlace
+		}
+		if (change{previous, e.Place}) != want[i] || e.UpdatedAt.IsZero() {
+			t.Fatalf("%d件目のイベントが不正: %#v", i, e)
+		}
+	}
+	// 予約ジョブの event 変数に渡す JSON の形
+	raw, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["place"] != "自宅" || fields["previous_place"] != nil || fields["updated_at"] == nil {
+		t.Fatalf("JSON が不正: %s", raw)
 	}
 }

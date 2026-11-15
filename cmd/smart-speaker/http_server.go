@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -11,13 +12,18 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
 	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
 	registerSwitchBotSceneAPI(mux, buildSwitchBotClient(cfg.SwitchBot))
-	registerLocationAPI(mux, services.UserLocation)
+	var publish func(context.Context, types.Event) error
+	if services.Gateway != nil {
+		publish = services.Gateway.Publish
+	}
+	registerLocationAPI(mux, services.UserLocation, publish)
 	registerTTSAPI(mux, services.TTS)
 	registerWakeModeAPI(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)

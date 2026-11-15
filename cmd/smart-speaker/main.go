@@ -310,7 +310,9 @@ func wireGraph(g *graph.Graph, s appStages) {
 	gw := add(s.gateway)
 	connect(g, gw, manager, types.EventConversationInput{})
 	for _, event := range automationEvents {
-		connect(g, rt, gw, event.event)
+		if event.fromRealtime {
+			connect(g, rt, gw, event.event)
+		}
 	}
 	connect(g, manager, chat, types.EventConversationRecordAdded{})
 	output := add(s.output)
@@ -335,12 +337,15 @@ func wireGraph(g *graph.Graph, s appStages) {
 }
 
 // automationEvents は、予約ジョブの schedule.event に指定できるイベント。
-// ここに足したイベントは、realtime から gateway へ配線され、予約ジョブ実行へ渡る。
+// gateway に届いたこれらのイベントが予約ジョブ実行へ渡る。fromRealtime のものは realtime から gateway へ配線し、
+// それ以外はグラフの外の処理が gateway の Publish で流す。
 var automationEvents = []struct {
-	event       types.Event
-	description string
+	event        types.Event
+	description  string
+	fromRealtime bool
 }{
-	{types.EventConversationIdle{}, "会話が落ち着いた状態で無操作が続いた"},
+	{types.EventConversationIdle{}, "会話が落ち着いた状態で無操作が続いた", true},
+	{types.EventUserLocationChanged{}, "位置情報APIで受け取った場所が変わった（event.place, event.previous_place）", false},
 }
 
 // subscribeAutomationEvents は、gateway に届いたイベントで動く予約ジョブを、届いた順に1つずつ動かす。

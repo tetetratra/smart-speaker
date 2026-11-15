@@ -1,18 +1,23 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/tetetratra/smart-speaker/internal/states/userlocation"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 const maxLocationRequestBytes = 4 * 1024
 
-func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store) {
+// registerLocationAPI は位置情報 API を登録する。publish が nil でなければ、場所が変わったときに
+// EventUserLocationChanged を渡す（main では gateway の Publish）。
+func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store, publish func(context.Context, types.Event) error) {
 	mux.HandleFunc("/api/location", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		switch r.Method {
@@ -47,7 +52,17 @@ func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store) {
 				http.Error(w, "placeには空でない文字列を指定してください", http.StatusBadRequest)
 				return
 			}
-			writeJSON(w, http.StatusOK, store.Update(req.Place))
+			current, previous := store.Update(req.Place)
+			if publish != nil && (previous == nil || previous.Place != current.Place) {
+				event := types.EventUserLocationChanged{Place: current.Place, UpdatedAt: current.UpdatedAt}
+				if previous != nil {
+					event.PreviousPlace = &previous.Place
+				}
+				if err := publish(r.Context(), event); err != nil {
+					log.Printf("位置情報: 場所の変化をイベントとして流せません: %v", err)
+				}
+			}
+			writeJSON(w, http.StatusOK, current)
 		default:
 			w.Header().Set("Allow", "GET, POST")
 			w.WriteHeader(http.StatusMethodNotAllowed)

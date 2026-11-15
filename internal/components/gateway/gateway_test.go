@@ -61,3 +61,32 @@ func TestSubscribersReceiveEventsInOrder(t *testing.T) {
 		}
 	}
 }
+
+// Publish したイベントも、グラフから届いたイベントと同じく購読している処理へ届いた順に渡し、グラフへは流さない。
+func TestPublishReachesSubscribersInOrder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	g := New()
+	got := make(chan types.Event, 2)
+	g.Subscribe(func(_ context.Context, e types.Event) { got <- e })
+	go g.Stage().Run(ctx)
+	if err := g.Publish(ctx, types.EventUserLocationChanged{Place: "自宅"}); err != nil {
+		t.Fatal(err)
+	}
+	g.Stage().Upstream <- types.EventConversationIdle{}
+	for _, want := range []string{"EventUserLocationChanged", "EventConversationIdle"} {
+		select {
+		case e := <-got:
+			if types.EventName(e) != want {
+				t.Fatal(e)
+			}
+		case <-ctx.Done():
+			t.Fatal("イベントが届きません")
+		}
+	}
+	select {
+	case e := <-g.Stage().Downstream:
+		t.Fatalf("Publish したイベントがグラフへ流れました: %#v", e)
+	case <-time.After(50 * time.Millisecond):
+	}
+}

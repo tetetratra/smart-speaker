@@ -37,7 +37,7 @@ func TestToolReadsLatestRecord(t *testing.T) {
 	}
 	check(nil)
 	for _, place := range []string{"自宅", "会社"} {
-		record := store.Update(place)
+		record, _ := store.Update(place)
 		check(&record)
 	}
 	if _, err := tool.Run(context.Background(), map[string]any{"place": "別の場所"}); err == nil {
