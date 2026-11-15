@@ -1,9 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 // awakeは呼びかけ後の会話中で、最後の発話から設定された時間（既定5分）は呼びかけなしで話せる状態。
-type WakeMode = { required: boolean, awake?: boolean }
+export type WakeMode = { required: boolean, awake: boolean }
 
-export function WakeModeControl({ backendURL }: { backendURL: URL }) {
+export type WakeModeState = {
+  // サーバーとつながっていない間は undefined。
+  mode?: WakeMode
+  error: string
+  pending: boolean
+  save: (required: boolean) => void
+}
+
+// 呼びかけ設定をサーバーから購読する。メイン画面（キャラクターエリアの暗さ）と設定画面（トグル）で共有する。
+export function useWakeMode(backendURL: URL): WakeModeState {
   const [mode, setMode] = useState<WakeMode>()
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
@@ -54,15 +63,20 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
     }
   }, [backendURL])
 
-  const save = (required: boolean) => {
+  const save = useCallback((required: boolean) => {
     const socket = socketRef.current
     if (writing.current || !socket || socket.readyState !== WebSocket.OPEN) return
     writing.current = true
     setPending(true)
     setError('')
     socket.send(JSON.stringify({ type: 'set_wake_mode', required }))
-  }
+  }, [])
 
+  return { mode, error, pending, save }
+}
+
+export function WakeModeControl({ state }: { state: WakeModeState }) {
+  const { mode, error, pending, save } = state
   return (
     <div style={{ display: 'grid', gap: 4, minWidth: 0, fontSize: 12 }}>
       <button
@@ -71,9 +85,9 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
         aria-label="ウェイクアップワード必須"
         aria-checked={mode?.required ?? false}
         aria-busy={pending}
-        className={`live-control-btn ${mode?.required && mode.awake ? 'live-control-btn-awake' : ''}`}
+        className="live-control-btn"
         disabled={!mode || pending}
-        onClick={() => { if (mode) void save(!mode.required) }}
+        onClick={() => { if (mode) save(!mode.required) }}
       >
         <span className={`live-toggle-switch ${mode?.required ? 'on' : ''}`} aria-hidden="true" />
         呼びかけ
