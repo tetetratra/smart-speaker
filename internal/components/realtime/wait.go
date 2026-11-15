@@ -32,7 +32,8 @@ func (s *stage) waitForUser(ctx context.Context, req types.ToolRequest) {
 	c := s.calls[req.ToolCallID]
 	c.finished = true
 	const output = `{"waiting":true}`
-	s.recordTool(ctx, req.ToolCallID, c, output)
+	// 雑音などに返事をせず待っただけなので、ユーザーに見せる情報はなく、画面には出さない。
+	s.recordTool(ctx, req.ToolCallID, c, output, true)
 	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{
 		"type": "function_call_output", "call_id": req.ToolCallID, "output": output,
 	}})

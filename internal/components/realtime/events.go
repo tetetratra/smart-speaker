@@ -320,7 +320,8 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
-	s.recordTool(ctx, result.ToolCallID, c, string(result.Output))
+	// ツールの実行はユーザーがまだ知らないので、画面に出す。
+	s.recordTool(ctx, result.ToolCallID, c, string(result.Output), false)
 	if c.epoch != s.epoch || s.transport == nil {
 		if s.ready && s.transport != nil {
 			s.sendResultContext(result)

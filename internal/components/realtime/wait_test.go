@@ -31,6 +31,7 @@ func TestWaitStaysSilentSkipsWhiteboardAndAcceptsNextUser(t *testing.T) {
 	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "waiting", "call_id": "wait1", "name": waitToolName, "arguments": "{}"})
 	timer := time.NewTimer(80 * time.Millisecond)
 	defer timer.Stop()
+	recorded := false
 observe:
 	for {
 		select {
@@ -40,9 +41,19 @@ observe:
 			if types.Is[types.EventToolRequest](event) || types.Is[types.EventResponseText](event) {
 				t.Fatalf("待機がツール実行・発話・画面更新を起動しました: %v", event)
 			}
+			// 待機の記録は保存するが、ユーザーに見せる情報ではないので画面には出さない。
+			if input, ok := event.(types.EventConversationInput); ok && input.Record.Source == waitToolName {
+				if !input.UserAlreadyKnows {
+					t.Fatalf("待機の記録が画面に出ます: %v", input)
+				}
+				recorded = true
+			}
 		case <-timer.C:
 			break observe
 		}
+	}
+	if !recorded {
+		t.Fatal("待機の記録が会話管理へ送られていません")
 	}
 	results := 0
 	for _, record := range r.records() {
