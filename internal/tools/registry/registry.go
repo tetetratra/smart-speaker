@@ -17,7 +17,6 @@ import (
 	calendarapi "github.com/tetetratra/smart-speaker/internal/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/googlecalendar"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/websearch"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
@@ -34,21 +33,16 @@ type entry struct {
 
 // Config はツールの生成に必要な設定を持ちます。
 type Config struct {
-	AppContext         context.Context
-	WakeMode           *wakemode.Store
-	PlaybackVolume     *playbackvolume.Store
-	Automations        *automations.Service
-	Memory             *memorystate.Store
-	ClaudeCode         *agentbridge.Service
-	SwitchBotToken     string
-	SwitchBotSecret    string
-	SwitchBotDeviceMap map[string]string
-	SwitchBotClient    *switchbot.Client
-	SwitchBotScenes    []switchbot.Scene
-	CalendarClient     *calendarapi.Client
-	OpenAIAPIKey       string
-	OpenAIModel        string
-	WebSearchClient    websearch.SearchClient
+	AppContext      context.Context
+	WakeMode        *wakemode.Store
+	PlaybackVolume  *playbackvolume.Store
+	Automations     *automations.Service
+	Memory          *memorystate.Store
+	ClaudeCode      *agentbridge.Service
+	CalendarClient  *calendarapi.Client
+	OpenAIAPIKey    string
+	OpenAIModel     string
+	WebSearchClient websearch.SearchClient
 	// WebSearchDeliver があれば、web_search は結果を後から会話へ届ける。
 	WebSearchDeliver websearch.Deliver
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
@@ -59,12 +53,6 @@ type Config struct {
 func New(cfg Config) *Registry {
 	var entries []entry
 
-	switchBotClient := cfg.SwitchBotClient
-	if switchBotClient == nil && strings.TrimSpace(cfg.SwitchBotToken) != "" && strings.TrimSpace(cfg.SwitchBotSecret) != "" {
-		switchBotClient = switchbot.NewSwitchbotClient(cfg.SwitchBotToken, cfg.SwitchBotSecret, cfg.SwitchBotDeviceMap)
-	}
-	hub2Tools := switchbot.NewHub2ToolsWithClient(switchBotClient)
-	sceneTool := switchbot.NewScene(switchBotClient, cfg.SwitchBotScenes)
 	calendarClient := cfg.CalendarClient
 	if calendarClient == nil {
 		calendarClient = calendarapi.NewClient(calendarapi.Config{})
@@ -115,16 +103,6 @@ func New(cfg Config) *Registry {
 		if dp, ok := t.(tools.DefinitionProvider); ok {
 			toolEntries = append(toolEntries, entry{def: dp.Definition(), handler: t})
 		}
-	}
-	if len(hub2Tools) > 0 {
-		hub2Entries := make([]entry, 0, len(hub2Tools))
-		for _, hub2Tool := range hub2Tools {
-			hub2Entries = append(hub2Entries, entry{def: hub2Tool.Definition(), handler: hub2Tool})
-		}
-		toolEntries = append(hub2Entries, toolEntries...)
-	}
-	if sceneTool != nil {
-		toolEntries = append([]entry{{def: sceneTool.Definition(), handler: sceneTool}}, toolEntries...)
 	}
 	for _, e := range toolEntries {
 		entries = append(entries, e)

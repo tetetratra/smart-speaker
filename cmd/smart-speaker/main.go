@@ -30,6 +30,7 @@ import (
 	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	oauthgooglecalendar "github.com/tetetratra/smart-speaker/internal/oauth/googlecalendar"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
@@ -38,7 +39,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -74,7 +74,10 @@ func main() {
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
-	services.Plugins = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	services.Plugins, err = buildPlugins(plugin.Deps{AppContext: ctx, Deliver: services.Deliver, Config: cfg.DecodePluginConfig})
+	if err != nil {
+		log.Fatal(err)
+	}
 	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
 		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
 	}
@@ -256,20 +259,12 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 }
 
 func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
-	switchBotClient := buildSwitchBotClient(cfg.SwitchBot)
-	var scenes []switchbot.Scene
-	if switchBotClient != nil {
-		scenes = loadSwitchBotScenes(switchBotClient)
-	}
-
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:         services.WakeMode,
 		PlaybackVolume:   services.PlaybackVolume,
 		Automations:      services.Automations,
 		Memory:           memoryStore,
 		ClaudeCode:       services.ClaudeCode,
-		SwitchBotClient:  switchBotClient,
-		SwitchBotScenes:  scenes,
 		OpenAIAPIKey:     cfg.APIKey,
 		OpenAIModel:      cfg.ResponsesModel,
 		WebSearchDeliver: services.Deliver,
@@ -285,25 +280,6 @@ func newClaudeCodeService(cfg app.AgentBridgeConfig, deliver agentbridge.Deliver
 		return nil
 	}
 	return agentbridge.NewService(agentbridge.NewClient(cfg.URL, cfg.Token), deliver)
-}
-
-func buildSwitchBotClient(cfg app.SwitchBotConfig) *switchbot.Client {
-	if strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(cfg.Secret) == "" {
-		log.Println("switchbot: token or secret not set; switchbot tools disabled")
-		return nil
-	}
-	return switchbot.NewSwitchbotClient(cfg.Token, cfg.Secret, cfg.DeviceMap)
-}
-
-func loadSwitchBotScenes(client *switchbot.Client) []switchbot.Scene {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	scenes, err := client.ListScenes(ctx)
-	if err != nil {
-		log.Printf("switchbot: failed to list scenes; switchbot_execute_scene disabled: %v", err)
-		return nil
-	}
-	return scenes
 }
 
 func wireGraph(g *graph.Graph, s appStages) {
@@ -345,10 +321,15 @@ func wireGraph(g *graph.Graph, s appStages) {
 }
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
-func buildPlugins(deps plugin.Deps) []plugin.Plugin {
+func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
+	switchBot, err := switchbot.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
-	}
+		switchBot,
+	}, nil
 }
 
 // connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す。
