@@ -30,11 +30,10 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 	defer srv.Close()
 
 	client, err := NewOpenAIClient(OpenAIClientConfig{
-		APIKey:        "test-key",
-		Model:         "test-model",
-		Endpoint:      srv.URL,
-		HTTPClient:    srv.Client(),
-		MaxOperations: 3,
+		APIKey:     "test-key",
+		Model:      "test-model",
+		Endpoint:   srv.URL,
+		HTTPClient: srv.Client(),
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAIClient() error = %v", err)
@@ -97,7 +96,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 	}
 	schema, _ := json.Marshal(format["schema"])
 	schemaText := string(schema)
-	for _, want := range []string{`"operations"`, `"action"`, `"target_id"`, `"content"`, `"enum":["add","update","delete"]`, `"maxItems":3`, `"additionalProperties":false`} {
+	for _, want := range []string{`"operations"`, `"action"`, `"target_id"`, `"content"`, `"enum":["add","update","delete"]`, `"additionalProperties":false`} {
 		if !strings.Contains(schemaText, want) {
 			t.Fatalf("schema = %s, want it to contain %s", schemaText, want)
 		}
@@ -173,11 +172,10 @@ func TestOpenAIClientCreateOperationsSkipsWithoutConversationTurns(t *testing.T)
 
 func TestOpenAIClientCreateOperationsReturnsEmptyWithoutHistory(t *testing.T) {
 	client := &OpenAIClient{
-		apiKey:        "test-key",
-		model:         "test-model",
-		endpoint:      "http://127.0.0.1:1",
-		client:        &http.Client{},
-		maxOperations: DefaultMaxMemoryOperations,
+		apiKey:   "test-key",
+		model:    "test-model",
+		endpoint: "http://127.0.0.1:1",
+		client:   &http.Client{},
 	}
 	got, err := client.CreateOperations(context.Background(), nil, nil)
 	if err != nil {
@@ -223,11 +221,10 @@ func TestOpenAIClientCreateOperationsNormalizesOperations(t *testing.T) {
 	defer srv.Close()
 
 	client, err := NewOpenAIClient(OpenAIClientConfig{
-		APIKey:        "test-key",
-		Model:         "test-model",
-		Endpoint:      srv.URL,
-		HTTPClient:    srv.Client(),
-		MaxOperations: 1,
+		APIKey:     "test-key",
+		Model:      "test-model",
+		Endpoint:   srv.URL,
+		HTTPClient: srv.Client(),
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAIClient() error = %v", err)
@@ -236,11 +233,12 @@ func TestOpenAIClientCreateOperationsNormalizesOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOperations() error = %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("operations len = %d, want 1", len(got))
+	// 空の操作だけを捨て、件数では切り詰めない。
+	if len(got) != 2 {
+		t.Fatalf("operations len = %d, want 2", len(got))
 	}
-	if got[0].Content != "朝はコーヒー" {
-		t.Fatalf("Content = %q, want trimmed", got[0].Content)
+	if got[0].Content != "朝はコーヒー" || got[1].Content != "雨の日に頭痛が出やすい" {
+		t.Fatalf("operations = %#v, want trimmed", got)
 	}
 }
 
@@ -310,7 +308,7 @@ func TestNormalizeOperationsHandlesActions(t *testing.T) {
 		{Action: "delete", TargetID: "m-2", Content: "無視される"},
 		{Action: "unknown", Content: "不明"},
 		{Action: "", Content: "action省略は捨てる"},
-	}, 10)
+	})
 	want := []Operation{
 		{Action: OperationAdd, Content: "追加"},
 		{Action: OperationUpdate, TargetID: "m-1", Content: "更新"},

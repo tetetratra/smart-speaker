@@ -2,37 +2,26 @@ package conversation
 
 import (
 	"encoding/json"
-	"github.com/tetetratra/smart-speaker/internal/types"
 	"strings"
+
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// TrimHistory は接続復元に渡す履歴を古い記録から除く。
-// UTF-8のバイト数を保守的な予算として使う。既定値は他の指示・ツール用の余裕を残す。
-// ストアの履歴は変更せず、要約のためのAPIも呼ばない。
-func TrimHistory(records []types.ConversationRecord, memory string, maxBytes int) []types.ConversationRecord {
-	if maxBytes <= 0 {
-		maxBytes = 24000
+// HistoryBytes は、記録をモデルに渡す形にしたときの UTF-8 のバイト数を返す。
+// 古い履歴をメモリ化するかどうかの判定に使う。
+func HistoryBytes(records []types.ConversationRecord) int {
+	total := 0
+	for _, record := range records {
+		total += len(contextRecord(record)) + 1
 	}
-	parts := make([]string, len(records))
-	total := len(memory)
-	for i, record := range records {
-		raw := contextRecord(record)
-		parts[i] = string(raw) + "\n"
-		total += len(parts[i])
-	}
-	start := 0
-	for start < len(parts) && total > maxBytes {
-		total -= len(parts[start])
-		start++
-	}
-	return records[start:]
+	return total
 }
 
-func RestoreContext(records []types.ConversationRecord, memory string, maxBytes int) string {
+// RestoreContext は接続時に渡す文脈を作る。履歴はメモリ化で一定の大きさに保つので、ここでは切り詰めない。
+func RestoreContext(records []types.ConversationRecord, memory string) string {
 	var text strings.Builder
-	for _, record := range TrimHistory(records, memory, maxBytes) {
-		raw := contextRecord(record)
-		text.Write(raw)
+	for _, record := range records {
+		text.Write(contextRecord(record))
 		text.WriteByte('\n')
 	}
 	text.WriteString(memory)

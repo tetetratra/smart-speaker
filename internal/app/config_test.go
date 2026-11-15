@@ -97,6 +97,9 @@ func TestBuildConfigDefaults(t *testing.T) {
 	if cfg.ConversationIdleTimeout != 30*time.Minute {
 		t.Errorf("ConversationIdleTimeout = %s", cfg.ConversationIdleTimeout)
 	}
+	if cfg.Memory.MemorizeAfter != 24*time.Hour || cfg.Memory.HistoryMaxBytes != 40000 {
+		t.Errorf("Memory = %+v", cfg.Memory)
+	}
 	if len(cfg.RTCIceAdvertiseIPs) != 0 {
 		t.Errorf("RTCIceAdvertiseIPs = %#v", cfg.RTCIceAdvertiseIPs)
 	}
@@ -128,6 +131,8 @@ conversation:
 memory:
   model: gpt-memory
   store_path: /app/data/memories.json
+  memorize_after_hours: 48
+  history_max_bytes: 60000
 automations:
   store_path: /tmp/automations.json
 tts:
@@ -205,6 +210,9 @@ google_calendar:
 	}
 	if cfg.ConversationIdleTimeout != 0 {
 		t.Errorf("ConversationIdleTimeout = %s, want 0", cfg.ConversationIdleTimeout)
+	}
+	if cfg.Memory.MemorizeAfter != 48*time.Hour || cfg.Memory.HistoryMaxBytes != 60000 {
+		t.Errorf("Memory = %+v", cfg.Memory)
 	}
 	if want := []string{"192.168.0.100", "100.64.0.1"}; !reflect.DeepEqual(cfg.RTCIceAdvertiseIPs, want) {
 		t.Errorf("RTCIceAdvertiseIPs = %#v, want %#v", cfg.RTCIceAdvertiseIPs, want)

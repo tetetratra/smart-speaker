@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -377,29 +378,55 @@ func (f *fakeMemoryWriter) Delete(id string) error {
 	return nil
 }
 
-func newTestHistory(t *testing.T, ids ...string) *conversationhistory.Store {
+// testNow は、メモリ化のテストで「今」とする日時。
+var testNow = time.Date(2026, 11, 15, 12, 0, 0, 0, japanLocation)
+
+// at は、testNow から ago だけ前に作られた記録を作る。
+func at(id string, ago time.Duration) types.ConversationRecord {
+	return types.ConversationRecord{ID: id, Role: types.RoleUser, Text: "話した内容", CreatedAt: testNow.Add(-ago)}
+}
+
+func newTestHistory(t *testing.T, records ...types.ConversationRecord) *conversationhistory.Store {
 	t.Helper()
 	history, err := conversationhistory.NewStore(filepath.Join(t.TempDir(), "conversation_history.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 1件で予算の半分強を使い、直近の1件だけが文脈に残るようにする。
-	for _, id := range ids {
-		if err := history.Append(types.ConversationRecord{ID: id, Role: types.RoleUser, Text: strings.Repeat("あ", 5000)}); err != nil {
+	for _, record := range records {
+		if err := history.Append(record); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return history
 }
 
+func newMemorizeHook(t *testing.T, creator *fakeOperationCreator, maxHistoryBytes int) *CreatorHook {
+	t.Helper()
+	hook, err := NewCreatorHook(CreatorHookConfig{
+		OperationCreator: creator,
+		Memory:           &fakeMemoryWriter{},
+		MaxHistoryBytes:  maxHistoryBytes,
+		Now:              func() time.Time { return testNow },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hook
+}
+
+func historyIDs(history *conversationhistory.Store) []string {
+	var ids []string
+	for _, record := range history.Snapshot() {
+		ids = append(ids, record.ID)
+	}
+	return ids
+}
+
 func waitHistory(t *testing.T, history *conversationhistory.Store, want ...string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for {
-		var got []string
-		for _, record := range history.Snapshot() {
-			got = append(got, record.ID)
-		}
+		got := historyIDs(history)
 		if slices.Equal(got, want) {
 			return
 		}
@@ -410,37 +437,130 @@ func waitHistory(t *testing.T, history *conversationhistory.Store, want ...strin
 	}
 }
 
-func TestMemorizeOldExtractsOnlyOverflowedRecordsAndRemovesThemAfterSuccess(t *testing.T) {
-	history := newTestHistory(t, "unused", "old1", "old2", "recent")
+// waitNotice は、メモリ化が終わって知らせの記録が末尾に足されるまで待つ。
+func waitNotice(t *testing.T, history *conversationhistory.Store) []types.ConversationRecord {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		got := history.Snapshot()
+		if len(got) > 0 && got[len(got)-1].Source == NoticeSource {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("history = %v, want a notice at the end", recordIDs(got))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func recordIDs(records []types.ConversationRecord) []string {
+	var ids []string
+	for _, record := range records {
+		ids = append(ids, record.ID)
+	}
+	return ids
+}
+
+// 最後の記録から24時間たった塊だけを丸ごとメモリ化し、24時間の境目をまたぐ塊は残す。
+func TestMemorizeOldExtractsChunksOlderThanMemorizeAfter(t *testing.T) {
+	history := newTestHistory(t,
+		at("a1", 50*time.Hour), at("a2", 49*time.Hour), // 塊A: 24時間より前
+		at("b1", 24*time.Hour+10*time.Minute), at("b2", 23*time.Hour+50*time.Minute), // 塊B: 境目をまたぐ
+		at("c1", time.Hour),
+	)
+	done := make(chan struct{})
+	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
+	<-done
+	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2"}) {
+		t.Fatalf("extracted = %v, want [a1 a2]", got)
+	}
+	// 履歴から消したあと、メモリ化したことを末尾に記録する。
+	got := waitNotice(t, history)
+	if ids := recordIDs(got[:3]); !slices.Equal(ids, []string{"b1", "b2", "c1"}) {
+		t.Fatalf("history = %v", recordIDs(got))
+	}
+	notice := got[3]
+	if notice.Role != types.RoleSystem || notice.Source != NoticeSource || !notice.CreatedAt.Equal(testNow) {
+		t.Fatalf("notice = %#v", notice)
+	}
+	if want := "11月13日 11:00 までの会話を長期メモリにしました。"; notice.Text != want {
+		t.Fatalf("notice text = %q, want %q", notice.Text, want)
+	}
+}
+
+// 24時間たっていなくても、履歴がしきい値を超えるなら古い塊から足していき、超えなくなったら止める。
+func TestMemorizeOldExtractsNewerChunksWhileHistoryIsTooLarge(t *testing.T) {
+	history := newTestHistory(t,
+		at("a1", 5*time.Hour), at("a2", 5*time.Hour-time.Minute),
+		at("b1", 3*time.Hour),
+		at("c1", time.Hour),
+	)
+	size := conversation.HistoryBytes(history.Snapshot()[2:])
+	done := make(chan struct{})
+	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
+	// 塊Aを除けば収まる大きさにする。
+	newMemorizeHook(t, creator, size).MemorizeOld(context.Background(), history, nil)
+	<-done
+	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2"}) {
+		t.Fatalf("extracted = %v, want [a1 a2]", got)
+	}
+	waitNotice(t, history)
+}
+
+// 区切りがなく、最新の塊までしきい値を超えるなら、残りを全部メモリ化する。
+func TestMemorizeOldExtractsLastChunkWhenItAloneIsTooLarge(t *testing.T) {
+	history := newTestHistory(t, at("a1", 2*time.Hour), at("a2", time.Hour), at("a3", 31*time.Minute))
+	done := make(chan struct{})
+	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
+	newMemorizeHook(t, creator, 1).MemorizeOld(context.Background(), history, nil)
+	<-done
+	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2", "a3"}) {
+		t.Fatalf("extracted = %v, want all", got)
+	}
+	waitNotice(t, history)
+}
+
+// まだ応答に使っていない外部記録は対象にしない。抽出の最中に届いた記録も、完了後の削除で消さない。
+func TestMemorizeOldSkipsUnusedRecordsAndKeepsRecordsAddedDuringExtraction(t *testing.T) {
+	history := newTestHistory(t, at("unused", 49*time.Hour), at("old", 48*time.Hour), at("recent", time.Hour))
 	entered, release := make(chan struct{}), make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(entered); <-release }}
-	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hook.MemorizeOld(context.Background(), history, map[string]bool{"unused": true})
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, map[string]bool{"unused": true})
 	<-entered
-	if len(creator.records) != 2 || creator.records[0].ID != "old1" || creator.records[1].ID != "old2" {
+	if got := recordIDs(creator.records); !slices.Equal(got, []string{"old"}) {
 		close(release)
-		t.Fatal(creator.records)
+		t.Fatalf("extracted = %v, want [old]", got)
 	}
-	// 抽出の最中に届いた記録は、完了後の削除で消さない。
 	if err := history.Append(types.ConversationRecord{ID: "new", Text: "次の会話"}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)
-	waitHistory(t, history, "unused", "recent", "new")
+	if got := recordIDs(waitNotice(t, history)); len(got) != 4 || !slices.Equal(got[:3], []string{"unused", "recent", "new"}) {
+		t.Fatalf("history = %v", got)
+	}
+}
+
+// メモリ化したことを知らせる記録は、それ自体をメモリにしない。古くなったら消すだけで、新しい知らせも足さない。
+func TestMemorizeOldRemovesOldNoticesWithoutExtractingThem(t *testing.T) {
+	notice := at("memorize/1", 30*time.Hour)
+	notice.Role, notice.Source = types.RoleSystem, NoticeSource
+	history := newTestHistory(t, notice, at("recent", time.Hour))
+	creator := &fakeOperationCreator{}
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
+	waitHistory(t, history, "recent")
+	time.Sleep(50 * time.Millisecond)
+	waitHistory(t, history, "recent")
+	if creator.called {
+		t.Fatal("知らせの記録を抽出に渡しました")
+	}
 }
 
 func TestMemorizeOldKeepsRecordsWhenExtractionFails(t *testing.T) {
-	history := newTestHistory(t, "old", "recent")
+	history := newTestHistory(t, at("old", 48*time.Hour), at("recent", time.Hour))
 	done := make(chan struct{})
 	creator := &fakeOperationCreator{err: errors.New("抽出失敗"), onCreate: func() { close(done) }}
-	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hook.MemorizeOld(context.Background(), history, nil)
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
 	<-done
 	// 失敗後に消されないことを、少し待ってから確かめる。
 	time.Sleep(50 * time.Millisecond)
@@ -449,26 +569,28 @@ func TestMemorizeOldKeepsRecordsWhenExtractionFails(t *testing.T) {
 
 // 一部の操作を反映できなくても抽出は済んでいるため、再試行で追加を重複させないよう履歴を消す。
 func TestMemorizeOldRemovesRecordsWhenOperationsArePartiallyApplied(t *testing.T) {
-	history := newTestHistory(t, "old", "recent")
+	history := newTestHistory(t, at("old", 48*time.Hour), at("recent", time.Hour))
 	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationDelete, TargetID: "9"}}}
-	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
-	if err != nil {
-		t.Fatal(err)
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
+	if got := recordIDs(waitNotice(t, history)); len(got) != 2 || got[0] != "recent" {
+		t.Fatalf("history = %v", got)
 	}
-	hook.MemorizeOld(context.Background(), history, nil)
-	waitHistory(t, history, "recent")
 }
 
-func TestMemorizeOldDoesNothingWhenAllRecordsFitInContext(t *testing.T) {
-	history := newTestHistory(t, "recent")
+func TestMemorizeOldDoesNothingWhenRecordsAreRecentAndSmall(t *testing.T) {
+	history := newTestHistory(t, at("a", 23*time.Hour), at("b", time.Hour))
 	creator := &fakeOperationCreator{}
-	hook, err := NewCreatorHook(CreatorHookConfig{OperationCreator: creator, Memory: &fakeMemoryWriter{}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	// 対象がなければゴルーチンを起動せずに同期で返る。
-	hook.MemorizeOld(context.Background(), history, nil)
+	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
 	if creator.called {
-		t.Fatal("文脈に入る記録をメモリ化しました")
+		t.Fatal("新しい記録をメモリ化しました")
+	}
+}
+
+func TestSplitChunksSplitsAtGapsOfThirtyMinutes(t *testing.T) {
+	records := []types.ConversationRecord{at("a1", 3*time.Hour), at("a2", 2*time.Hour+31*time.Minute), at("b1", 2*time.Hour), at("b2", time.Hour+31*time.Minute)}
+	chunks := splitChunks(records)
+	if len(chunks) != 2 || !slices.Equal(recordIDs(chunks[0]), []string{"a1", "a2"}) || !slices.Equal(recordIDs(chunks[1]), []string{"b1", "b2"}) {
+		t.Fatalf("chunks = %v", chunks)
 	}
 }

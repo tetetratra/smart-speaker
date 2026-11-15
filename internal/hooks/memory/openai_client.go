@@ -14,25 +14,20 @@ import (
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
-const (
-	DefaultOpenAIEndpoint      = "https://api.openai.com/v1/responses"
-	DefaultMaxMemoryOperations = 5
-)
+const DefaultOpenAIEndpoint = "https://api.openai.com/v1/responses"
 
 type OpenAIClientConfig struct {
-	APIKey        string
-	Model         string
-	Endpoint      string
-	HTTPClient    *http.Client
-	MaxOperations int
+	APIKey     string
+	Model      string
+	Endpoint   string
+	HTTPClient *http.Client
 }
 
 type OpenAIClient struct {
-	apiKey        string
-	model         string
-	endpoint      string
-	client        *http.Client
-	maxOperations int
+	apiKey   string
+	model    string
+	endpoint string
+	client   *http.Client
 	// now は今の日時。古くなった記憶を判断する基準として渡す。テストで差し替える。
 	now func() time.Time
 }
@@ -81,17 +76,12 @@ func NewOpenAIClient(cfg OpenAIClientConfig) (*OpenAIClient, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
-	maxOperations := cfg.MaxOperations
-	if maxOperations <= 0 {
-		maxOperations = DefaultMaxMemoryOperations
-	}
 	return &OpenAIClient{
-		apiKey:        apiKey,
-		model:         model,
-		endpoint:      endpoint,
-		client:        httpClient,
-		maxOperations: maxOperations,
-		now:           time.Now,
+		apiKey:   apiKey,
+		model:    model,
+		endpoint: endpoint,
+		client:   httpClient,
+		now:      time.Now,
 	}, nil
 }
 
@@ -110,7 +100,7 @@ func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.Con
 			{"role": "system", "content": memoryOperationInstructions},
 			{"role": "user", "content": inputJSON},
 		},
-		"text": memoryOperationTextFormat(c.maxOperations),
+		"text": memoryOperationTextFormat(),
 	}
 	text, err := c.createStructuredText(ctx, payload)
 	if err != nil {
@@ -120,7 +110,7 @@ func (c *OpenAIClient) CreateOperations(ctx context.Context, records []types.Con
 	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
 		return nil, fmt.Errorf("memory openai: parse operations: %w", err)
 	}
-	return normalizeOperations(decoded.Operations, c.maxOperations), nil
+	return normalizeOperations(decoded.Operations), nil
 }
 
 func (c *OpenAIClient) createStructuredText(ctx context.Context, payload map[string]any) (string, error) {
@@ -257,24 +247,23 @@ func encodeOperationInput(now time.Time, conversation []conversationTurn, existi
 	return string(raw), nil
 }
 
-func memoryOperationTextFormat(maxOperations int) map[string]any {
+func memoryOperationTextFormat() map[string]any {
 	return map[string]any{
 		"format": map[string]any{
 			"type":   "json_schema",
 			"name":   "memory_operations",
 			"strict": true,
-			"schema": memoryOperationSchema(maxOperations),
+			"schema": memoryOperationSchema(),
 		},
 	}
 }
 
-func memoryOperationSchema(maxOperations int) map[string]any {
+func memoryOperationSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"operations": map[string]any{
-				"type":     "array",
-				"maxItems": maxOperations,
+				"type": "array",
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -346,11 +335,8 @@ func readOpenAIResponseBody(r io.Reader) (string, error) {
 	return "", fmt.Errorf("memory openai: response text is empty")
 }
 
-// normalizeOperations は action ごとの必須項目を満たさない操作を捨て、最大件数で切り詰める。
-func normalizeOperations(operations []Operation, maxOperations int) []Operation {
-	if maxOperations <= 0 {
-		maxOperations = DefaultMaxMemoryOperations
-	}
+// normalizeOperations は action ごとの必須項目を満たさない操作を捨てる。
+func normalizeOperations(operations []Operation) []Operation {
 	out := make([]Operation, 0, len(operations))
 	for _, operation := range operations {
 		action := strings.ToLower(strings.TrimSpace(operation.Action))
@@ -368,9 +354,6 @@ func normalizeOperations(operations []Operation, maxOperations int) []Operation 
 			continue
 		}
 		out = append(out, normalized)
-		if len(out) >= maxOperations {
-			break
-		}
 	}
 	return out
 }

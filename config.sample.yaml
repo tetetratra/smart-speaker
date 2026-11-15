@@ -49,7 +49,7 @@ openai:
     # endpoint: ""
 
 conversation:
-  # 文脈に入らなくなった古い会話履歴を長期メモリ化するまでの無操作時間（秒）。0 で無効。既定: 1800
+  # 古い会話履歴を長期メモリ化する無操作時間（秒）。この時間黙ったときに、memory.memorize_after_hours・memory.history_max_bytes の条件に当たる会話をメモリ化します。0 で無効。既定: 1800
   # idle_timeout_seconds: 1800
 
 memory:
@@ -59,6 +59,12 @@ memory:
   # メモリの保存先。既定: "data/memories.json"
   # wake.store_path、automations.store_path、google_calendar.token_path の既定値は、このファイルと同じディレクトリになります。
   # store_path: "data/memories.json"
+
+  # 会話を長期メモリ化するまでの経過時間（時間）。30分以上空いた位置で区切った会話の塊ごとに、最後の記録からこの時間がたったら、conversation.idle_timeout_seconds 黙ったときにメモリ化します。既定: 24
+  # memorize_after_hours: 24
+
+  # 会話履歴がこの大きさ（バイト）を超えたら、経過時間によらず古い塊からメモリ化します。接続時には履歴を切り詰めずに全部渡します。既定: 40000
+  # history_max_bytes: 40000
 
 automations:
   # 予約ジョブの保存先。既定: memory.store_path と同じディレクトリの "automations.json"
