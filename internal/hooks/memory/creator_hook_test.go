@@ -49,8 +49,12 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 	}}
 	hook := mustCreatorHook(t, &fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "横浜に引っ越した"}}}, creator, store)
 
-	if err := hook.Exec(context.Background()); err != nil {
-		t.Fatalf("Exec() error = %v", err)
+	applied, err := hook.ExecRecords(context.Background(), hook.history.records)
+	if err != nil {
+		t.Fatalf("ExecRecords() error = %v", err)
+	}
+	if want := (appliedCounts{added: 1, updated: 1, deleted: 1}); applied != want {
+		t.Fatalf("applied = %+v, want %+v", applied, want)
 	}
 	// LLM には長い store ID ではなく短い参照番号を渡す。
 	wantExisting := []ExistingMemory{{ID: "1", Content: "ユーザーは大岡山に住んでいる"}, {ID: "2", Content: "ユーザーは朝にコーヒーを飲む"}}
@@ -179,8 +183,13 @@ func TestCreatorHookDeletesInsteadOfUpdatingToDuplicateContent(t *testing.T) {
 		&fakeOperationCreator{operations: []Operation{{Action: OperationUpdate, TargetID: "2", Content: " ユーザーは大岡山に住んでいる "}}},
 		store,
 	)
-	if err := hook.Exec(context.Background()); err != nil {
-		t.Fatalf("Exec() error = %v", err)
+	applied, err := hook.ExecRecords(context.Background(), hook.history.records)
+	if err != nil {
+		t.Fatalf("ExecRecords() error = %v", err)
+	}
+	// 実際に行ったのは削除なので、削除として数える。
+	if want := (appliedCounts{deleted: 1}); applied != want {
+		t.Fatalf("applied = %+v, want %+v", applied, want)
 	}
 	if len(store.updates) != 0 || !reflect.DeepEqual(store.deletes, []string{"m-2"}) {
 		t.Fatalf("updates = %#v, deletes = %#v, want only delete m-2", store.updates, store.deletes)
@@ -258,6 +267,7 @@ func TestNewCreatorHookValidatesConfig(t *testing.T) {
 	}{
 		{name: "operation creator", cfg: CreatorHookConfig{}, want: "operation creator is required"},
 		{name: "memory", cfg: CreatorHookConfig{OperationCreator: &fakeOperationCreator{}}, want: "memory is required"},
+		{name: "deliver", cfg: CreatorHookConfig{OperationCreator: &fakeOperationCreator{}, Memory: &fakeMemoryWriter{}}, want: "deliver is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -276,7 +286,8 @@ type testHook struct {
 }
 
 func (h testHook) Exec(ctx context.Context) error {
-	return h.ExecRecords(ctx, h.history.records)
+	_, err := h.ExecRecords(ctx, h.history.records)
+	return err
 }
 
 // 古くなった記憶を見分けられるよう、保存済みメモリの更新日時を日本時間で渡す。
@@ -299,6 +310,7 @@ func mustCreatorHook(t *testing.T, history *fakeHistory, creator *fakeOperationC
 	hook, err := NewCreatorHook(CreatorHookConfig{
 		OperationCreator: creator,
 		Memory:           store,
+		Deliver:          func(context.Context, types.ConversationInput) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("NewCreatorHook() error = %v", err)
@@ -400,18 +412,29 @@ func newTestHistory(t *testing.T, records ...types.ConversationRecord) *conversa
 	return history
 }
 
-func newMemorizeHook(t *testing.T, creator *fakeOperationCreator, maxHistoryBytes int) *CreatorHook {
+// memorizeHook は、メモリ化したことを知らせる記録の送り先（notices）をテストから読めるようにした包み。
+type memorizeHook struct {
+	*CreatorHook
+	notices chan types.ConversationInput
+}
+
+func newMemorizeHook(t *testing.T, creator *fakeOperationCreator, maxHistoryBytes int) memorizeHook {
 	t.Helper()
+	notices := make(chan types.ConversationInput, 1)
 	hook, err := NewCreatorHook(CreatorHookConfig{
 		OperationCreator: creator,
 		Memory:           &fakeMemoryWriter{},
-		MaxHistoryBytes:  maxHistoryBytes,
-		Now:              func() time.Time { return testNow },
+		Deliver: func(_ context.Context, input types.ConversationInput) error {
+			notices <- input
+			return nil
+		},
+		MaxHistoryBytes: maxHistoryBytes,
+		Now:             func() time.Time { return testNow },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return hook
+	return memorizeHook{CreatorHook: hook, notices: notices}
 }
 
 func historyIDs(history *conversationhistory.Store) []string {
@@ -437,19 +460,15 @@ func waitHistory(t *testing.T, history *conversationhistory.Store, want ...strin
 	}
 }
 
-// waitNotice は、メモリ化が終わって知らせの記録が末尾に足されるまで待つ。
-func waitNotice(t *testing.T, history *conversationhistory.Store) []types.ConversationRecord {
+// waitNotice は、メモリ化が終わって知らせの記録が届くまで待つ。知らせは履歴から消したあとに届く。
+func (h memorizeHook) waitNotice(t *testing.T) types.ConversationInput {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for {
-		got := history.Snapshot()
-		if len(got) > 0 && got[len(got)-1].Source == NoticeSource {
-			return got
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("history = %v, want a notice at the end", recordIDs(got))
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case input := <-h.notices:
+		return input
+	case <-time.After(time.Second):
+		t.Fatal("メモリ化したことを知らせる記録が届きません")
+		return types.ConversationInput{}
 	}
 }
 
@@ -470,21 +489,26 @@ func TestMemorizeOldExtractsChunksOlderThanMemorizeAfter(t *testing.T) {
 	)
 	done := make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
-	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
+	creator.operations = []Operation{{Action: OperationAdd, Content: "ユーザーは寿司が好き"}, {Action: OperationAdd, Content: "ユーザーは猫を飼っている"}}
+	hook := newMemorizeHook(t, creator, 0)
+	hook.MemorizeOld(context.Background(), history, nil)
 	<-done
 	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2"}) {
 		t.Fatalf("extracted = %v, want [a1 a2]", got)
 	}
-	// 履歴から消したあと、メモリ化したことを末尾に記録する。
-	got := waitNotice(t, history)
-	if ids := recordIDs(got[:3]); !slices.Equal(ids, []string{"b1", "b2", "c1"}) {
-		t.Fatalf("history = %v", recordIDs(got))
+	// 履歴から消したあと、メモリ化したことを会話へ届ける。モデルには伝えず、画面にだけ出す。
+	input := hook.waitNotice(t)
+	if ids := historyIDs(history); !slices.Equal(ids, []string{"b1", "b2", "c1"}) {
+		t.Fatalf("history = %v", ids)
 	}
-	notice := got[3]
-	if notice.Role != types.RoleSystem || notice.Source != NoticeSource || !notice.CreatedAt.Equal(testNow) {
+	if !input.ModelAlreadyKnows || input.UserAlreadyKnows || input.ModelShouldRespond || input.Subscribable {
+		t.Fatalf("input = %#v", input)
+	}
+	notice := input.Record
+	if !strings.HasPrefix(notice.ID, "memorize/") || notice.Role != types.RoleSystem || notice.Source != NoticeSource || !notice.CreatedAt.Equal(testNow) {
 		t.Fatalf("notice = %#v", notice)
 	}
-	if want := "11月13日 11:00 までの会話を長期メモリにしました。"; notice.Text != want {
+	if want := "11月13日 11:00 までの会話を長期メモリにしました（追加2件・更新0件・削除0件）。"; notice.Text != want {
 		t.Fatalf("notice text = %q, want %q", notice.Text, want)
 	}
 }
@@ -500,12 +524,13 @@ func TestMemorizeOldExtractsNewerChunksWhileHistoryIsTooLarge(t *testing.T) {
 	done := make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
 	// 塊Aを除けば収まる大きさにする。
-	newMemorizeHook(t, creator, size).MemorizeOld(context.Background(), history, nil)
+	hook := newMemorizeHook(t, creator, size)
+	hook.MemorizeOld(context.Background(), history, nil)
 	<-done
 	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2"}) {
 		t.Fatalf("extracted = %v, want [a1 a2]", got)
 	}
-	waitNotice(t, history)
+	hook.waitNotice(t)
 }
 
 // 区切りがなく、最新の塊までしきい値を超えるなら、残りを全部メモリ化する。
@@ -513,12 +538,13 @@ func TestMemorizeOldExtractsLastChunkWhenItAloneIsTooLarge(t *testing.T) {
 	history := newTestHistory(t, at("a1", 2*time.Hour), at("a2", time.Hour), at("a3", 31*time.Minute))
 	done := make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(done) }}
-	newMemorizeHook(t, creator, 1).MemorizeOld(context.Background(), history, nil)
+	hook := newMemorizeHook(t, creator, 1)
+	hook.MemorizeOld(context.Background(), history, nil)
 	<-done
 	if got := recordIDs(creator.records); !slices.Equal(got, []string{"a1", "a2", "a3"}) {
 		t.Fatalf("extracted = %v, want all", got)
 	}
-	waitNotice(t, history)
+	hook.waitNotice(t)
 }
 
 // まだ応答に使っていない外部記録は対象にしない。抽出の最中に届いた記録も、完了後の削除で消さない。
@@ -526,7 +552,8 @@ func TestMemorizeOldSkipsUnusedRecordsAndKeepsRecordsAddedDuringExtraction(t *te
 	history := newTestHistory(t, at("unused", 49*time.Hour), at("old", 48*time.Hour), at("recent", time.Hour))
 	entered, release := make(chan struct{}), make(chan struct{})
 	creator := &fakeOperationCreator{onCreate: func() { close(entered); <-release }}
-	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, map[string]bool{"unused": true})
+	hook := newMemorizeHook(t, creator, 0)
+	hook.MemorizeOld(context.Background(), history, map[string]bool{"unused": true})
 	<-entered
 	if got := recordIDs(creator.records); !slices.Equal(got, []string{"old"}) {
 		close(release)
@@ -536,7 +563,8 @@ func TestMemorizeOldSkipsUnusedRecordsAndKeepsRecordsAddedDuringExtraction(t *te
 		t.Fatal(err)
 	}
 	close(release)
-	if got := recordIDs(waitNotice(t, history)); len(got) != 4 || !slices.Equal(got[:3], []string{"unused", "recent", "new"}) {
+	hook.waitNotice(t)
+	if got := historyIDs(history); !slices.Equal(got, []string{"unused", "recent", "new"}) {
 		t.Fatalf("history = %v", got)
 	}
 }
@@ -547,12 +575,15 @@ func TestMemorizeOldRemovesOldNoticesWithoutExtractingThem(t *testing.T) {
 	notice.Role, notice.Source = types.RoleSystem, NoticeSource
 	history := newTestHistory(t, notice, at("recent", time.Hour))
 	creator := &fakeOperationCreator{}
-	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
+	hook := newMemorizeHook(t, creator, 0)
+	hook.MemorizeOld(context.Background(), history, nil)
 	waitHistory(t, history, "recent")
 	time.Sleep(50 * time.Millisecond)
-	waitHistory(t, history, "recent")
 	if creator.called {
 		t.Fatal("知らせの記録を抽出に渡しました")
+	}
+	if len(hook.notices) > 0 {
+		t.Fatal("知らせだけを消したのに、新しい知らせを届けました")
 	}
 }
 
@@ -570,9 +601,14 @@ func TestMemorizeOldKeepsRecordsWhenExtractionFails(t *testing.T) {
 // 一部の操作を反映できなくても抽出は済んでいるため、再試行で追加を重複させないよう履歴を消す。
 func TestMemorizeOldRemovesRecordsWhenOperationsArePartiallyApplied(t *testing.T) {
 	history := newTestHistory(t, at("old", 48*time.Hour), at("recent", time.Hour))
-	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationDelete, TargetID: "9"}}}
-	newMemorizeHook(t, creator, 0).MemorizeOld(context.Background(), history, nil)
-	if got := recordIDs(waitNotice(t, history)); len(got) != 2 || got[0] != "recent" {
+	creator := &fakeOperationCreator{operations: []Operation{{Action: OperationDelete, TargetID: "9"}, {Action: OperationAdd, Content: "ユーザーは寿司が好き"}}}
+	hook := newMemorizeHook(t, creator, 0)
+	hook.MemorizeOld(context.Background(), history, nil)
+	// 件数は反映できた操作だけを数える。
+	if got, want := hook.waitNotice(t).Record.Text, "（追加1件・更新0件・削除0件）"; !strings.Contains(got, want) {
+		t.Fatalf("notice text = %q, want it to contain %q", got, want)
+	}
+	if got := historyIDs(history); !slices.Equal(got, []string{"recent"}) {
 		t.Fatalf("history = %v", got)
 	}
 }

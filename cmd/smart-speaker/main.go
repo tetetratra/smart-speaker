@@ -179,9 +179,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if err != nil {
 		return appStages{}, fmt.Errorf("failed to init memory operation creator: %w", err)
 	}
+	gw := services.Gateway
+	if gw == nil {
+		gw = gateway.New()
+	}
 	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
 		OperationCreator: memoryOperationCreator,
 		Memory:           memoryStore,
+		Deliver:          gw.Deliver,
 		MemorizeAfter:    cfg.Memory.MemorizeAfter,
 		MaxHistoryBytes:  cfg.Memory.HistoryMaxBytes,
 	})
@@ -203,10 +208,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	})
 	if err != nil {
 		return appStages{}, err
-	}
-	gw := services.Gateway
-	if gw == nil {
-		gw = gateway.New()
 	}
 	stages.gateway = gw.Stage()
 	if services.AutomationStage != nil {
