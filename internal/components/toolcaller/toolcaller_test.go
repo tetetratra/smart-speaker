@@ -51,9 +51,6 @@ func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
 		if !ok {
 			t.Fatalf("Payload type = %T, want ConversationCommitRequest", evt)
 		}
-		if req.Role != types.RoleToolResult {
-			t.Fatalf("Role = %q, want tool_result", req.Role)
-		}
 		if req.Source != "unknown" {
 			t.Fatalf("Source = %q, want unknown", req.Source)
 		}

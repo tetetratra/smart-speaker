@@ -99,7 +99,7 @@ flowchart LR
     pace -->|"EventAudioFrame<br/>音声フレーム"| output
     output -->|"EventAudioSent<br/>音声送信済み"| rt
     output -->|"EventAudioSent<br/>音声送信済み"| chat
-    rt -->|"EventGenerationChanged<br/>応答世代の変更<br/>EventRealtimeOutput<br/>会話内容の表示<br/>EventSpeechStart<br/>発話開始<br/>EventSpeechEnd<br/>発話終了<br/>EventRealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
+    rt -->|"EventGenerationChanged<br/>応答世代の変更<br/>EventRealtimeOutput<br/>ユーザーとモデルの発話の表示<br/>EventSpeechStart<br/>発話開始<br/>EventSpeechEnd<br/>発話終了<br/>EventRealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
     ttsNode <==>|"HTTPS<br/>音声合成"| elevenLabs
     ttsNode <==>|"HTTP<br/>音声合成"| voicevox
     rt <-.->|"世代の更新・判定"| generationStore
@@ -135,20 +135,20 @@ flowchart LR
     end
 
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"EventConversationInput{ModelHandling: AlreadyKnown}<br/>会話の記録<br/>EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
-    manager --->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
+    rt -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>会話の記録<br/>EventConversationInput{ModelShouldRespond: false}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
+    manager --->|"EventConversationInput{ModelShouldRespond: false}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     scheduler -->|"Deliver<br/>予約ジョブの実行結果・Web検索の結果"| gateway
     tool -->|"Deliver<br/>Web検索の結果"| gateway
-    gateway -->|"EventConversationInput{ModelHandling: AddToContext}<br/>会話への情報追加<br/>EventConversationInput{ModelHandling: AddAndRespond}<br/>会話への応答依頼"| manager
+    gateway -->|"EventConversationInput{ModelShouldRespond: false}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼"| manager
     rt -->|"EventConversationIdle<br/>予約ジョブのきっかけ"| gateway
     gateway -->|"購読<br/>schedule.event が一致するジョブを動かす"| scheduler
     manager <-.->|"記録、無操作が続いたときに<br/>文脈に入らなくなった古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"古い会話からの抽出結果"| memoryStore
-    manager -->|"EventConversationRecordAdded<br/>会話でない記録の追加"| chat
+    manager -->|"EventConversationRecordAdded<br/>ユーザーがまだ知らない記録の追加"| chat
     chat ==>|"WebSocket<br/>ホワイトボード用の記録の追加"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```

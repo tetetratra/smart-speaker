@@ -38,7 +38,7 @@ type RTCSignal struct {
 }
 
 // ChatMessage は LLM component 内で扱う正規化済み会話履歴です。
-// Role はアプリ内の user / agent / tool_call / tool_result を保持し、
+// Role はアプリ内の user / agent / system などを保持し、
 // Responses API の外部 role への変換は HTTP payload 作成直前に行います。
 type ChatMessage struct {
 	Role    string

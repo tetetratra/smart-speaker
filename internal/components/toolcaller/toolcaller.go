@@ -101,7 +101,7 @@ func (s *toolCaller) dispatchTool(req types.ToolRequest) {
 		s.mu.Unlock()
 	}
 	sent := *result // 送り直しのたびに別の値を渡し、受け手どうしで共有しない。
-	s.emit(types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{Role: types.RoleToolResult, GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
+	s.emit(types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{GenerationID: sent.GenerationID, Source: sent.Name, ToolResult: &sent}})
 }
 
 func (s *toolCaller) close() error {

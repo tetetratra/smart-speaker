@@ -124,7 +124,10 @@ func (t *Tool) searchAndDeliver(ctx context.Context, query string) {
 		text = "[過去のWeb検索の結果]\n" + dataNotice + "\n" + encode(data)
 	}
 	log.Printf("websearch: 完了 query=%q failed=%t elapsed=%s", query, err != nil, time.Since(started).Round(time.Millisecond))
-	prompt := types.ConversationRecord{ID: "websearch/" + uuid.NewString(), Source: source, Title: query, Text: text, Role: types.RoleToolResult}
+	prompt := types.ConversationRecord{ID: "websearch/" + uuid.NewString(), Source: source, Title: query, Text: text, Role: types.RoleBackground}
+	if err != nil {
+		prompt.Error = err.Error()
+	}
 	if err := t.deliver(ctx, types.ExternalInput(prompt, raw)); err != nil && ctx.Err() == nil {
 		log.Printf("websearch: 結果を会話へ届けられません query=%q: %v", query, err)
 	}

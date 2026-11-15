@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import type { PlaybackSpeech } from './audio'
 import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
-import { whiteboardEvents, type HistoryEntry } from './whiteboardHistory'
+import { entryTone, whiteboardEvents, type HistoryEntry } from './whiteboardHistory'
 export type { HistoryEntry } from './whiteboardHistory'
 
 function prettyJSON(value: string) {
@@ -81,7 +81,8 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
         .live-tool-entry > summary::marker { content: ''; }
         .live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }
         .live-tool-entry > summary.failed { background: var(--ui-danger-bg); border-color: var(--ui-danger-line); color: var(--ui-danger-text); }
-        .live-tool-entry > summary.inbound { background: #fff0df; border-color: #e6bd93; color: #75451f; }
+        .live-tool-entry > summary.background { background: #e8f6ea; border-color: #a7d7b0; color: #1f5f2c; }
+        .live-tool-entry > summary.system { background: #fff0df; border-color: #e6bd93; color: #75451f; }
         .live-tool-entry .live-tool-toast-tool { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
         .live-tool-entry-name { flex-shrink: 0; white-space: pre; }
         .live-tool-entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
@@ -98,13 +99,12 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
           }
           const entry = event.entry
           const title = entry.title?.trim()
-          // ツールは成功なら青（result）、失敗なら赤で表示する
-          const state = entry.kind === 'inbound' ? 'inbound' : entry.status === 'failed' ? 'result failed' : 'result'
+          const tone = entryTone(entry)
           return (
             <details key={event.id} className="live-board-event live-tool-entry" onToggle={event => {
               if (event.currentTarget.open) follow.current = false
             }}>
-              <summary className={`live-tool-toast ${state}`}>
+              <summary className={`live-tool-toast ${tone}`}>
                 <span className="live-tool-toast-tool">
                   <span className="live-tool-entry-name">{entry.name}{title && ': '}</span>
                   {title && <span className="live-tool-entry-title" title={entry.title!}>{title}</span>}
@@ -113,11 +113,11 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
               </summary>
               <div className="live-tool-entry-body">
                 {entry.kind === 'inbound' ? <>
-                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}<br />出どころ: {entry.source}</p>
+                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}<br />出どころ: {entry.source}{entry.error && <><br />失敗: {entry.error}</>}</p>
                   <h3>モデルに渡した本文</h3>
                   <pre>{entry.text}</pre>
                 </> : <>
-                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.status === 'failed' && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
+                  <p>{new Date(event.timestamp).toLocaleString('ja-JP')}{entry.error && '（失敗）'}<br />呼び出しID: {entry.call_id || '（なし）'}</p>
                   <h3>引数</h3>
                   <pre>{prettyJSON(entry.arguments)}</pre>
                   <h3>レスポンス</h3>

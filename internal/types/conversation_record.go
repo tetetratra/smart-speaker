@@ -6,12 +6,20 @@ import (
 )
 
 const (
-	RoleUser       = "user"
-	RoleAgent      = "agent"
-	RoleSystem     = "system"
-	RoleToolCall   = "tool_call"
-	RoleToolResult = "tool_result"
+	// RoleUser はユーザーの発話・入力。
+	RoleUser = "user"
+	// RoleAgent はモデルの発話。
+	RoleAgent = "agent"
+	// RoleTool は、実行し終えたツール1回分（呼び出しと結果）。
+	RoleTool = "tool"
+	// RoleBackground は、頼んだ処理（Web 検索、Claude Code など）から、あとで届く結果や知らせ。
+	RoleBackground = "background"
+	// RoleSystem は、アプリ自身からの知らせ（予約ジョブの remind・失敗、発話が遮られた記録など）。
+	RoleSystem = "system"
 )
+
+// Role は送り元の種類で決める。予約ジョブから呼ばれたか（history_only）では変えない。
+// 古い履歴ファイルには tool_call / tool_result の記録が残っているが、変換はしない。
 
 // ConversationRecord は LLM に渡す会話履歴の1件です。
 type ConversationRecord struct {
@@ -30,11 +38,8 @@ type ConversationRecord struct {
 	CallID    string `json:",omitempty"`
 	Arguments string `json:",omitempty"`
 	Output    string `json:",omitempty"`
-}
-
-// IsDialogue は、ユーザーとモデルの発話かどうかを返す。ツールや通知の記録は false。
-func (r ConversationRecord) IsDialogue() bool {
-	return r.Role == RoleUser || r.Role == RoleAgent
+	// Error は失敗の内容。空でなければ、Role によらず失敗として画面に出す。
+	Error string `json:",omitempty"`
 }
 
 // ToolResultRecord は tool 実行結果を履歴へ保存するための payload です。
@@ -47,7 +52,6 @@ type ToolResultRecord struct {
 
 // ConversationCommitRequest は会話履歴への保存要求です。
 type ConversationCommitRequest struct {
-	Role         string
 	Text         string
 	GenerationID GenerationID
 	Source       string

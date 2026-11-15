@@ -70,7 +70,7 @@ func TestConversationRecordsOnlySendDiff(t *testing.T) {
 		return msg.Records
 	}
 	first, second := connect(), connect()
-	result := types.ConversationRecord{ID: "result", Role: types.RoleToolResult, ToolName: "web_search", CallID: "c1", Output: long}
+	result := types.ConversationRecord{ID: "result", Role: types.RoleBackground, ToolName: "web_search", CallID: "c1", Output: long}
 	stage.Upstream <- types.EventConversationRecordAdded{ConversationRecord: result}
 	for _, conn := range []*websocket.Conn{first, second} {
 		records := read(conn)

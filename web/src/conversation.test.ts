@@ -10,12 +10,11 @@ test('返答全文を先に受信しても再生開始までは表示しない',
  assert.deepEqual(conversationBubble(messages),{user:'',assistant:'',visible:false})
  assert.deepEqual(conversationBubble([...messages,{type:'user',text:'おはよう',generationId:2}]),{user:'おはよう',assistant:'',visible:true})
 })
-test('遅れて届く旧世代の文字起こしやツール結果で現在の吹き出しを上書きしない', () => {
+test('遅れて届く旧世代の文字起こしで現在の吹き出しを上書きしない', () => {
  assert.deepEqual(conversationBubble([
   {type:'user',text:'昔の会話',generationId:1},
   {type:'agent',text:'昔の返答',generationId:1},
   {type:'user',text:'今の会話',generationId:2},
-  {type:'tool_result',text:'実行結果',generationId:99},
   {type:'user',text:'遅延した昔の文字起こし',generationId:1},
  ]),{user:'今の会話',assistant:'',visible:true})
  assert.equal(conversationBubble([]).visible,false)

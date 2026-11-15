@@ -157,6 +157,12 @@ func TestCompletionInvalidatesPendingPermissionsAndQuotesData(t *testing.T) {
 	if text := (*delivered)[2].Record.Text; !strings.HasPrefix(text, "[Claude Codeの作業失敗]") || !strings.Contains(text, "作業を中止しました") {
 		t.Fatal(text)
 	}
+	// 失敗だけ Error を埋める。Role は通知の種類によらず background。
+	for i, want := range []string{"", "", "作業を中止しました"} {
+		if record := (*delivered)[i].Record; record.Role != types.RoleBackground || record.Error != want {
+			t.Fatal(i, record)
+		}
+	}
 }
 
 func TestCompletionPassesReadAloudText(t *testing.T) {
@@ -259,7 +265,7 @@ func TestHistoryOnlyContextIsPreservedForAllBridgeEvents(t *testing.T) {
 				t.Fatal(*delivered)
 			}
 			prompt := (*delivered)[0]
-			if prompt.Record.ID != "bridge/event" || prompt.ModelHandling != types.ModelHandlingAddToContext || prompt.Record.Metadata["context"] != `{"future":{"items":[1,true]}}` || prompt.Record.Role != types.RoleToolResult || !strings.Contains(prompt.Record.Text, "過去のClaude Code") {
+			if prompt.Record.ID != "bridge/event" || prompt.ModelShouldRespond || prompt.Record.Metadata["context"] != `{"future":{"items":[1,true]}}` || prompt.Record.Role != types.RoleBackground || !strings.Contains(prompt.Record.Text, "過去のClaude Code") {
 				t.Fatal(prompt)
 			}
 			if strings.Contains(prompt.Record.Text, "ユーザーに尋ね") || strings.Contains(prompt.Record.Text, "短く伝えてください") {

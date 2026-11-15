@@ -11,7 +11,7 @@ import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './
 import { startBubbleAutoScroll } from './bubbleScroll'
 
 type ChatMessage =
-  | { id: number; type: 'user' | 'agent' | 'tool_call' | 'tool_result' | 'system'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
+  | { id: number; type: 'user' | 'agent'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
 type ServerEventLog = { id: number; line: string }
 type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
@@ -199,7 +199,7 @@ const liveRootStyle = `
     font-weight: 700;
     transition: background-color 0.3s, border-color 0.3s, color 0.3s;
   }
-  .live-tool-toast.result {
+  .live-tool-toast.tool {
     background: var(--ui-tool-done-bg);
     border-color: var(--ui-tool-done-line);
     color: var(--ui-tool-done-text);
@@ -802,12 +802,8 @@ function App() {
         case 'message': {
           const text = typeof raw.text === 'string' ? raw.text : ''
           if (!text) return
-          let role: ChatMessage['type'] = 'agent'
-          if (raw.role === 'user') role = 'user'
-          else if (raw.role === 'system') role = 'system'
-          else if (raw.role === 'agent') role = 'agent'
-          else if (raw.role === 'tool_call') role = 'tool_call'
-          else if (raw.role === 'tool_result') role = 'tool_result'
+          // サーバーは吹き出しに使うユーザーとモデルの発話だけを送る。
+          const role: ChatMessage['type'] = raw.role === 'user' ? 'user' : 'agent'
           if (role === 'user' && isCurrentGeneration) {
             setIsAiSpeaking(false)
             setSttStatus('完了')

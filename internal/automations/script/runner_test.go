@@ -46,10 +46,10 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 	if calls != 1 || len(messages) != 2 {
 		t.Fatal(calls, messages)
 	}
-	if tool := messages[0].Record; tool.Role != types.RoleToolCall || tool.ToolName != "read" || tool.CallID == "" || tool.Arguments != `{"count":2}` || tool.Output != `{"value":3}` {
+	if tool := messages[0].Record; tool.Role != types.RoleTool || tool.ToolName != "read" || tool.CallID == "" || tool.Arguments != `{"count":2}` || tool.Output != `{"value":3}` {
 		t.Fatal("ツールの表示用の項目がありません", messages)
 	}
-	if messages[1].ModelHandling == types.ModelHandlingAddToContext || !strings.Contains(messages[1].Record.Text, "値は3") {
+	if !messages[1].ModelShouldRespond || !strings.Contains(messages[1].Record.Text, "値は3") {
 		t.Fatal(messages)
 	}
 	if strings.Contains(messages[0].Record.Text, "instructions") {
@@ -58,17 +58,18 @@ func TestToolResultsAndRemindKeepFIFO(t *testing.T) {
 }
 
 func TestToolFailureReturnsErrorAndContinues(t *testing.T) {
-	var texts []string
+	var texts, errs []string
 	r := New(func(context.Context, types.ToolRequest) types.ToolResultRecord {
 		return types.ToolResultRecord{Output: json.RawMessage(`{"error":"失敗"}`)}
 	}, func(_ context.Context, m types.ConversationInput) error {
 		texts = append(texts, m.Record.Text)
+		errs = append(errs, m.Record.Error)
 		return nil
 	})
 	if err := r.Run(context.Background(), "id", "名前", `const x=toolcall("bad", {}); if(x.error) remind(x.error);`); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(texts, "\n"), "指示: 失敗") {
+	if !strings.Contains(strings.Join(texts, "\n"), "指示: 失敗") || errs[0] != "失敗" {
 		t.Fatal(texts)
 	}
 }
@@ -115,7 +116,7 @@ func TestSourceMapsAreDisabledForCompileAndEval(t *testing.T) {
 func TestRemindDeliveryFailureStopsScript(t *testing.T) {
 	count := 0
 	r := New(nil, func(_ context.Context, m types.ConversationInput) error {
-		if m.ModelHandling != types.ModelHandlingAddToContext {
+		if m.ModelShouldRespond {
 			count++
 			return errors.New("通知失敗")
 		}
@@ -134,7 +135,7 @@ func TestCaughtDeliveryFailureStillFailsRun(t *testing.T) {
 				calls++
 				return types.ToolResultRecord{Output: json.RawMessage(`{}`)}
 			}, func(_ context.Context, m types.ConversationInput) error {
-				if m.ModelHandling != types.ModelHandlingAddToContext || m.Record.Role == types.RoleToolCall {
+				if m.ModelShouldRespond || m.Record.Role == types.RoleTool {
 					return errors.New("受付失敗")
 				}
 				return nil
@@ -184,7 +185,7 @@ func TestScriptFailureIsNotifiedWithoutToolCalls(t *testing.T) {
 	if err := runner.Run(context.Background(), "job", "失敗確認", `const place = undefined; place.name;`); err == nil {
 		t.Fatal("例外を失敗として返していません")
 	}
-	if len(messages) != 1 || messages[0].Record.Role != types.RoleSystem || messages[0].ModelHandling != types.ModelHandlingAddToContext || !strings.HasPrefix(messages[0].Record.Text, "[予約ジョブ失敗: 失敗確認]") {
+	if len(messages) != 1 || messages[0].Record.Role != types.RoleSystem || messages[0].Record.Error == "" || messages[0].ModelShouldRespond || !strings.HasPrefix(messages[0].Record.Text, "[予約ジョブ失敗: 失敗確認]") {
 		t.Fatal(messages)
 	}
 }

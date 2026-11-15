@@ -55,8 +55,8 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e := e.(type) {
 	case types.EventConversationInput:
 		input := e.ConversationInput
-		if input.ModelHandling == types.ModelHandlingAlreadyKnown {
-			s.save(ctx, input.Record)
+		if input.ModelAlreadyKnows {
+			s.save(ctx, input)
 			return
 		}
 		if input.Record.ID == "" {
@@ -69,7 +69,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		if input.Record.CreatedAt.IsZero() {
 			input.Record.CreatedAt = time.Now()
 		}
-		s.save(ctx, input.Record)
+		s.save(ctx, input)
 		s.unused[input.Record.ID] = true
 		s.emit(ctx, types.EventConversationInput{ConversationInput: input})
 	case types.EventConversationHistorySync:
@@ -90,12 +90,12 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 }
 
 // 保存に失敗しても会話は続けられるので、記録はメモリ上に残してログだけ出す。
-// ホワイトボードに出す記録（会話でないもの）は、保存したあとで画面へ知らせる。
-func (s *stage) save(ctx context.Context, record types.ConversationRecord) {
-	if err := s.history.Append(record); err != nil {
+// ユーザーがまだ知らない記録は、保存したあとで画面へ知らせる（ホワイトボードに出す）。
+func (s *stage) save(ctx context.Context, input types.ConversationInput) {
+	if err := s.history.Append(input.Record); err != nil {
 		log.Printf("会話管理: 会話履歴の保存: %v", err)
 	}
-	if !record.IsDialogue() {
-		s.emit(ctx, types.EventConversationRecordAdded{ConversationRecord: record})
+	if !input.UserAlreadyKnows {
+		s.emit(ctx, types.EventConversationRecordAdded{ConversationRecord: input.Record})
 	}
 }
