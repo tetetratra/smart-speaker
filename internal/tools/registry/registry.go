@@ -5,12 +5,10 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/agentbridge"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 	claudecodetool "github.com/tetetratra/smart-speaker/internal/tools/functions/claudecode"
 	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
-	volumetool "github.com/tetetratra/smart-speaker/internal/tools/functions/playbackvolume"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 	"strings"
 
@@ -36,7 +34,6 @@ type entry struct {
 type Config struct {
 	AppContext         context.Context
 	WakeMode           *wakemode.Store
-	PlaybackVolume     *playbackvolume.Store
 	Automations        *automations.Service
 	Memory             *memorystate.Store
 	ClaudeCode         *agentbridge.Service
@@ -79,10 +76,6 @@ func New(cfg Config) *Registry {
 		{def: googleCalendarList.Definition(), handler: googleCalendarList},
 		{def: googleCalendarCreate.Definition(), handler: googleCalendarCreate},
 		{def: googleCalendarUpdate.Definition(), handler: googleCalendarUpdate},
-	}
-	if cfg.PlaybackVolume != nil {
-		t := &volumetool.Tool{Store: cfg.PlaybackVolume}
-		toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {

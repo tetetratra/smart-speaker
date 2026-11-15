@@ -32,6 +32,9 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 	if !found || handlers["get_current_location"] == nil {
 		t.Fatal("現在地のツールが登録されていません")
 	}
+	if handlers["set_playback_volume"] == nil {
+		t.Fatal("再生音量のツールが登録されていません")
+	}
 
 	server, chat, err := buildHTTPServer(cfg, nil, services)
 	if err != nil {

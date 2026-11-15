@@ -3,13 +3,11 @@ package playbackvolume
 import (
 	"context"
 	"fmt"
-
-	"github.com/tetetratra/smart-speaker/internal/states/playbackvolume"
 )
 
 // Toolは接続中の全端末の再生音量を一律に切り替える。
 type Tool struct {
-	Store *playbackvolume.Store
+	Store *Store
 }
 
 func (t *Tool) Name() string { return "set_playback_volume" }
@@ -38,7 +36,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 }
 
 func (t *Tool) Definition() map[string]any {
-	levels := append(append([]string{}, playbackvolume.Levels...), "up", "down")
+	levels := append(append([]string{}, Levels...), "up", "down")
 	return map[string]any{
 		"type": "function",
 		"name": t.Name(),
