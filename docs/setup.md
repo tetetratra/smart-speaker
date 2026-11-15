@@ -105,7 +105,7 @@ Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS �
 ### 読み上げの声
 
 - VOICEVOX の声は `tts.voicevox.speaker_id` で選びます。値はキャラクターではなくスタイルの ID で、VOICEVOX Engine の `GET /speakers` が返す各スタイルの `id` です。
-- ElevenLabs を使う場合は、`ELEVENLABS_API_KEY` と `tts.elevenlabs.voice_id` を設定します。画面の「読み上げ音声」で切り替えられます。
+- ElevenLabs を使う場合は、`ELEVENLABS_API_KEY` と `tts.elevenlabs.voice_id` を設定します。設定画面の「読み上げ音声」で切り替えられます。
 
 ### Claude Code
 
