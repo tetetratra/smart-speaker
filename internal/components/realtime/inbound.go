@@ -26,8 +26,7 @@ func (s *stage) startInbound(ctx context.Context) bool {
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record.GenerationID = change.GenerationID
 	}
-
-	s.saveRecord(ctx, record)
+	// 記録は会話管理が受け取った時点で保存しているので、ここでは保存し直さない。
 	// 定期的な外部入力で無操作の通知が止まり、古い履歴がメモリ化されないままにならないよう、
 	// 数え始めていないときだけ起点にする。ユーザーの発話があれば、そちらで数え直す。
 	if s.lastActivity.IsZero() {

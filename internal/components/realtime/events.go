@@ -98,13 +98,14 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.speaking = true
 		s.lastActivity = time.Now()
 		s.wantResponse = false
+		previous := s.cfg.Generation.Current()
 		change, ok := s.controller.Start(fmt.Sprintf("%d/%s", s.epoch, e.ItemID))
 		if !ok {
 			return
 		}
+		s.recordInterruption(ctx, previous)
 		change.ItemID = e.ItemID
 		s.userGenerations[e.ItemID] = change.GenerationID
-		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, e.ItemID), Role: types.RoleUser, GenerationID: change.GenerationID, CreatedAt: time.Now(), Source: "audio", Text: "[文字起こし未完了の音声発話]"})
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		s.emit(ctx, types.EventSpeechStart{SpeechEvent: types.SpeechEvent{Source: "realtime-vad", CapturedAt: time.Now()}})
 	case "input_audio_buffer.speech_stopped":
@@ -170,7 +171,6 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.pendingOutput[e.ItemID] = true
 		r.items[e.ItemID] = true
 		item.generated += e.Delta
-		s.saveAssistant(ctx, e.ItemID, item)
 		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
 	case "response.output_text.done":
 		r := s.responses[e.ResponseID]
@@ -181,7 +181,6 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if item != nil {
 			if e.Text != "" {
 				item.generated = e.Text
-				s.saveAssistant(ctx, e.ItemID, item)
 			}
 			s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleAgent, Text: item.generated, GenerationID: r.generation, ResponseID: e.ResponseID, Final: true}})
 		}
@@ -196,10 +195,10 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		}
 		// 引数の確定前にユーザーが話し始めて世代が進んでも、呼び出しは捨てずに実行する。
 		// 捨てると結果のない呼び出しが会話に残り、モデルが「実行中」とみなして再実行しなくなるため。
-		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation}
 		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
-		s.recordTool(ctx, types.ConversationRecord{ID: "call/" + e.CallID, Role: types.RoleToolCall, Text: e.Name + ": " + e.Arguments, GenerationID: r.generation,
-			Title: s.toolTitle(e.Name, req.Arguments), ToolName: e.Name, CallID: e.CallID, Arguments: e.Arguments})
+		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, name: e.Name, arguments: e.Arguments, title: s.toolTitle(e.Name, req.Arguments)}
+		// 履歴には結果が出たときに呼び出しと合わせて1件だけ記録する。画面の吹き出しには呼び出しをすぐ出す。
+		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleToolCall, Text: e.Name + ": " + e.Arguments, GenerationID: r.generation, Source: e.Name, ResponseID: "call/" + e.CallID, Final: true}})
 		if e.Name == waitToolName {
 			s.waitForUser(ctx, req)
 			return
@@ -214,9 +213,24 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.disconnect(ctx, fmt.Errorf("Realtime API: %s (%s)", e.Error.Message, e.Error.Code))
 	}
 }
-func (s *stage) saveAssistant(ctx context.Context, itemID string, item *assistantItem) {
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, itemID), Role: types.RoleAgent, Text: item.sent, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now(), Metadata: map[string]any{"generated_text": item.generated, "interrupted": !sameSpokenText(item.sent, item.generated)}})
+// interruptedText は、モデルの発話がユーザーに遮られたことを履歴に残す記録の本文。
+const interruptedText = "[直前の発話は途中でユーザーに遮られました]"
+
+// recordInterruption は、世代 generation の応答に送り終えていない文章があれば、遮られたことを1件記録する。
+// ユーザーが話し始めて世代が切り替わった直後に呼ぶ。ユーザーの発話の記録より前に並ぶよう、ここで記録する。
+func (s *stage) recordInterruption(ctx context.Context, generation types.GenerationID) {
+	for _, id := range s.itemOrder {
+		item := s.items[id]
+		if item == nil || item.generation != generation || !s.pendingOutput[id] || sameSpokenText(item.generated, item.sent) {
+			continue
+		}
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s/interrupted", s.epoch, id), Role: types.RoleSystem, Text: interruptedText, GenerationID: generation, Source: realtimeSource, CreatedAt: time.Now()})
+		return
+	}
 }
+
+// sent は読み上げの区切りを送り終えるたびに、その文章を1件の記録として足す。
+// 遮られた応答は、送り終えた区切りまでが履歴に残る。区切りの ID は応答と項目の ID を含むので、接続のエポックだけを足す。
 func (s *stage) sent(ctx context.Context, frame types.AudioFrame) {
 	if frame.End {
 		delete(s.pendingOutput, frame.ItemID)
@@ -231,7 +245,7 @@ func (s *stage) sent(ctx context.Context, frame types.AudioFrame) {
 	}
 	if frame.Final {
 		item.sent += frame.Text
-		s.saveAssistant(ctx, frame.ItemID, item)
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, frame.SegmentID), Role: types.RoleAgent, Text: frame.Text, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now()})
 	}
 }
 func (s *stage) maybeRespond(ctx context.Context) {
@@ -305,9 +319,7 @@ func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
 		return
 	}
 	c.finished = true
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/result/%s", c.epoch, result.ToolCallID), Role: types.RoleToolResult, Text: string(result.Output), GenerationID: c.generation, Source: realtimeSource, CreatedAt: time.Now(),
-		ToolName: result.Name, CallID: result.ToolCallID, Output: string(result.Output)})
-	s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleToolResult, Text: string(result.Output), Source: result.Name, GenerationID: c.generation, Final: true}})
+	s.recordTool(ctx, result.ToolCallID, c, string(result.Output))
 	if c.epoch != s.epoch || s.transport == nil {
 		if s.ready && s.transport != nil {
 			s.sendResultContext(result)
