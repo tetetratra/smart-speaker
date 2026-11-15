@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
@@ -34,6 +35,8 @@ const (
 type CreatorHookConfig struct {
 	OperationCreator operationCreator
 	Memory           memoryWriter
+	// Deliver は、メモリ化したことを知らせる記録を会話へ届ける。会話管理が保存してホワイトボードに出す。
+	Deliver gateway.Deliver
 	// MemorizeAfter は、最後の記録からこの時間がたった塊をメモリ化する。0 以下なら既定値。
 	MemorizeAfter time.Duration
 	// MaxHistoryBytes は、履歴がこれを超えたら新しい塊もメモリ化する。0 以下なら既定値。
@@ -45,6 +48,7 @@ type CreatorHookConfig struct {
 type CreatorHook struct {
 	operationCreator operationCreator
 	memory           memoryWriter
+	deliver          gateway.Deliver
 	memorizeAfter    time.Duration
 	maxHistoryBytes  int
 	now              func() time.Time
@@ -68,9 +72,13 @@ func NewCreatorHook(cfg CreatorHookConfig) (*CreatorHook, error) {
 	if cfg.Memory == nil {
 		return nil, fmt.Errorf("memory creator hook: memory is required")
 	}
+	if cfg.Deliver == nil {
+		return nil, fmt.Errorf("memory creator hook: deliver is required")
+	}
 	h := &CreatorHook{
 		operationCreator: cfg.OperationCreator,
 		memory:           cfg.Memory,
+		deliver:          cfg.Deliver,
 		memorizeAfter:    cfg.MemorizeAfter,
 		maxHistoryBytes:  cfg.MaxHistoryBytes,
 		now:              cfg.Now,
@@ -113,7 +121,7 @@ func (h *CreatorHook) MemorizeOld(ctx context.Context, history *conversationhist
 	until := old[len(old)-1].CreatedAt
 	log.Printf("古い履歴のメモリ化を開始します: %d件", len(old))
 	go func() {
-		err := h.ExecRecords(ctx, targets)
+		applied, err := h.ExecRecords(ctx, targets)
 		if errors.Is(err, errPartiallyApplied) {
 			// 抽出自体は済んでいるため、再試行で追加を重複させないよう履歴は消す。
 			log.Printf("古い履歴のメモリ化: %v", err)
@@ -126,8 +134,11 @@ func (h *CreatorHook) MemorizeOld(ctx context.Context, history *conversationhist
 			return
 		}
 		if len(targets) > 0 {
-			if err := history.Append(h.notice(until)); err != nil {
-				log.Printf("古い履歴のメモリ化: メモリ化した記録の保存: %v", err)
+			// モデルには伝えない。接続中のセッションはメモリ化した会話をまだ持っていて、
+			// この記録が要るのは古い会話が見えなくなる次の接続からで、そのときは履歴から渡る。
+			input := types.ConversationInput{Record: h.notice(until, applied), ModelAlreadyKnows: true}
+			if err := h.deliver(ctx, input); err != nil {
+				log.Printf("古い履歴のメモリ化: メモリ化した記録の送信: %v", err)
 			}
 		}
 		log.Printf("古い履歴のメモリ化が完了しました: %d件", len(old))
@@ -170,22 +181,27 @@ func splitChunks(records []types.ConversationRecord) [][]types.ConversationRecor
 	return chunks
 }
 
-// notice は、until までの会話をメモリ化したことを知らせる記録を作る。
-func (h *CreatorHook) notice(until time.Time) types.ConversationRecord {
+// notice は、until までの会話をメモリ化したことと、反映できた操作の件数を知らせる記録を作る。
+func (h *CreatorHook) notice(until time.Time, applied appliedCounts) types.ConversationRecord {
 	return types.ConversationRecord{
-		ID:        "memorize/" + uuid.NewString(),
-		Role:      types.RoleSystem,
-		Source:    NoticeSource,
-		Text:      until.In(japanLocation).Format("1月2日 15:04") + " までの会話を長期メモリにしました。",
+		ID:     "memorize/" + uuid.NewString(),
+		Role:   types.RoleSystem,
+		Source: NoticeSource,
+		Text: fmt.Sprintf("%s までの会話を長期メモリにしました（追加%d件・更新%d件・削除%d件）。",
+			until.In(japanLocation).Format("1月2日 15:04"), applied.added, applied.updated, applied.deleted),
 		CreatedAt: h.now(),
 	}
 }
 
+// appliedCounts は、メモリに反映できた操作の件数。
+type appliedCounts struct{ added, updated, deleted int }
+
 // ExecRecords は取り出した時点で固定した記録を対象にする。
-// 保存済みメモリを一緒に渡し、LLM が返した add / update / delete を順に適用する。
-func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.ConversationRecord) error {
+// 保存済みメモリを一緒に渡し、LLM が返した add / update / delete を順に適用して、反映できた件数を返す。
+func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.ConversationRecord) (appliedCounts, error) {
+	var applied appliedCounts
 	if len(records) == 0 {
-		return nil
+		return applied, nil
 	}
 	snapshot := h.memory.Snapshot()
 	// store の ID は長い数値なので、LLM が書き写し間違えないよう短い参照番号に置き換えて渡す。
@@ -202,7 +218,7 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 	}
 	operations, err := h.operationCreator.CreateOperations(ctx, records, existing)
 	if err != nil {
-		return err
+		return applied, err
 	}
 	var errs []error
 	var adds, updates, deletes []resolvedOperation
@@ -235,25 +251,28 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 		}
 	}
 	// delete を先に適用する。update / add の重複判定が、この後消える記憶を根拠にして両方を失うのを防ぐ。
-	for _, resolved := range deletes {
-		if err := h.modify(resolved); err != nil {
+	// update は重複を避けて delete になることがあるので、件数は実際に行った操作で数える。
+	for _, resolved := range append(deletes, updates...) {
+		action, err := h.modify(resolved)
+		if err != nil {
 			errs = append(errs, err)
-		}
-	}
-	for _, resolved := range updates {
-		if err := h.modify(resolved); err != nil {
-			errs = append(errs, err)
+		} else if action == OperationDelete {
+			applied.deleted++
+		} else {
+			applied.updated++
 		}
 	}
 	for _, resolved := range adds {
 		if err := h.add(resolved.Operation); err != nil {
 			errs = append(errs, err)
+		} else {
+			applied.added++
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: %w", errPartiallyApplied, errors.Join(errs...))
+		return applied, fmt.Errorf("%w: %w", errPartiallyApplied, errors.Join(errs...))
 	}
-	return nil
+	return applied, nil
 }
 
 // resolvedOperation は参照番号を抽出開始時点の記憶に解決した操作。
@@ -269,14 +288,14 @@ func (h *CreatorHook) add(operation Operation) error {
 	return nil
 }
 
-// modify は抽出開始時点の original を前提にした update / delete を適用する。
-func (h *CreatorHook) modify(resolved resolvedOperation) error {
+// modify は抽出開始時点の original を前提にした update / delete を適用し、実際に行った操作を返す。
+func (h *CreatorHook) modify(resolved resolvedOperation) (string, error) {
 	original, operation := resolved.original, resolved.Operation
 	current, others := splitRecord(h.memory.Snapshot(), original.ID)
 	// LLM の応答を待つ間に管理画面から編集・削除されていたら、手動の変更を優先して何もしない。
 	// 確認から書き込みまでの間はロックの外だが、その間隔は短く、LLM 待ちの数秒の競合を防げれば十分とする。
 	if current == nil || !current.UpdatedAt.Equal(original.UpdatedAt) {
-		return fmt.Errorf("%s memory %q: changed while creating operations", operation.Action, original.ID)
+		return "", fmt.Errorf("%s memory %q: changed while creating operations", operation.Action, original.ID)
 	}
 	action := operation.Action
 	// 更新後の本文が別の記憶と同じなら、重複を作らないよう対象を消すだけにする。
@@ -285,14 +304,14 @@ func (h *CreatorHook) modify(resolved resolvedOperation) error {
 	}
 	if action == OperationDelete {
 		if err := h.memory.Delete(original.ID); err != nil {
-			return fmt.Errorf("delete memory %q: %w", original.ID, err)
+			return "", fmt.Errorf("delete memory %q: %w", original.ID, err)
 		}
-		return nil
+		return action, nil
 	}
 	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content}); err != nil {
-		return fmt.Errorf("update memory %q: %w", original.ID, err)
+		return "", fmt.Errorf("update memory %q: %w", original.ID, err)
 	}
-	return nil
+	return action, nil
 }
 
 func splitRecord(records []memorystate.Record, id string) (*memorystate.Record, []memorystate.Record) {
