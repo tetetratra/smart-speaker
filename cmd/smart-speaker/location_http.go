@@ -73,7 +73,7 @@ func registerLocationAPI(mux *http.ServeMux, store *userlocation.Store, deliver 
 
 // locationChangedInput は、場所の変化を会話へ届ける記録を作る。
 // AIは文脈に入れるだけで、その場では話さない（帰宅後の会話で「お仕事お疲れ様」などと言えるようにするため）。
-// ユーザー自身は居場所を知っているので、ホワイトボードには出さない。
+// ホワイトボードには出す。
 // サーバー起動後の最初の1件は、前の場所がないので previous_place を nil（JSON では null）にする。
 func locationChangedInput(current userlocation.Record, previous *userlocation.Record) types.ConversationInput {
 	text := "ユーザーの居場所が「" + current.Place + "」になりました。"
@@ -92,5 +92,5 @@ func locationChangedInput(current userlocation.Record, previous *userlocation.Re
 		CreatedAt: current.UpdatedAt.In(time.Local),
 		External:  true,
 	}
-	return types.ConversationInput{Record: record, UserAlreadyKnows: true, Subscribable: true}
+	return types.ConversationInput{Record: record, Subscribable: true}
 }

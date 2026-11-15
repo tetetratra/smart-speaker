@@ -211,7 +211,7 @@ func TestLocationAPIDeliversOnlyChanges(t *testing.T) {
 	}
 	for i, input := range got {
 		r := input.Record
-		if !input.Subscribable || input.ModelShouldRespond || input.ModelAlreadyKnows || !input.UserAlreadyKnows {
+		if !input.Subscribable || input.ModelShouldRespond || input.ModelAlreadyKnows || input.UserAlreadyKnows {
 			t.Fatalf("%d件目のフラグが不正: %#v", i, input)
 		}
 		if r.Source != userLocationSource || r.Role != types.RoleSystem || r.Text != want[i].text || r.CreatedAt.IsZero() ||
