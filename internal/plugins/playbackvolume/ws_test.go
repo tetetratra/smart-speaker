@@ -45,15 +45,15 @@ func TestPlaybackVolumeSync(t *testing.T) {
 
 	first, second := connect(), connect()
 	for _, conn := range []*websocket.Conn{first, second} {
-		if got := read(conn); got != "boost" {
+		if got := read(conn); got != "low" {
 			t.Fatalf("初期値 = %s", got)
 		}
 	}
-	if err := first.Write(ctx, websocket.MessageText, []byte(`{"type":"set_playback_volume","level":"low"}`)); err != nil {
+	if err := first.Write(ctx, websocket.MessageText, []byte(`{"type":"set_playback_volume","level":"quiet"}`)); err != nil {
 		t.Fatal(err)
 	}
 	for _, conn := range []*websocket.Conn{first, second} {
-		if got := read(conn); got != "low" {
+		if got := read(conn); got != "quiet" {
 			t.Fatalf("画面からの変更が届かない: %s", got)
 		}
 	}
@@ -63,11 +63,11 @@ func TestPlaybackVolumeSync(t *testing.T) {
 	}
 	store.Step(1)
 	for _, conn := range []*websocket.Conn{first, second} {
-		if got := read(conn); got != "normal" {
+		if got := read(conn); got != "low" {
 			t.Fatalf("ツールからの変更が届かない: %s", got)
 		}
 	}
-	if got := read(connect()); got != "normal" {
+	if got := read(connect()); got != "low" {
 		t.Fatalf("後から開いた画面の初期値 = %s", got)
 	}
 }

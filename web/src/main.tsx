@@ -63,7 +63,7 @@ const liveRootStyle = `
     --live-toggle-bg: #e9e9e9;
     --live-toggle-on: #2f6fde;
     --live-toggle-knob: #ffffff;
-    --live-character-dim: #cfcfcf;
+    --live-character-dim: #e5e5e5;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -111,7 +111,7 @@ const liveRootStyle = `
       --live-toggle-bg: #303643;
       --live-toggle-on: #4f8cff;
       --live-toggle-knob: #f4f7fb;
-      --live-character-dim: #060709;
+      --live-character-dim: #0f1115;
     }
   }
   textarea, input, select {
