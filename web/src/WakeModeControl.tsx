@@ -9,6 +9,8 @@ export type WakeModeState = {
   error: string
   pending: boolean
   save: (required: boolean) => void
+  // 呼びかけをonにしたうえで、呼びかけなしで話せる会話中の状態にする。
+  wake: () => Promise<void>
 }
 
 // 呼びかけ設定をサーバーから購読する。メイン画面（キャラクターエリアの暗さ）と設定画面（トグル）で共有する。
@@ -18,6 +20,8 @@ export function useWakeMode(backendURL: URL): WakeModeState {
   const [pending, setPending] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const writing = useRef(false)
+  const modeRef = useRef<WakeMode>()
+  modeRef.current = mode
 
   useEffect(() => {
     let disposed = false
@@ -72,7 +76,27 @@ export function useWakeMode(backendURL: URL): WakeModeState {
     socket.send(JSON.stringify({ type: 'set_wake_mode', required }))
   }, [])
 
-  return { mode, error, pending, save }
+  // 呼びかけをonにすると会話中の状態が解除されるため、onにし終えてから会話中にする。
+  // 順番を保証するため、応答を待てるHTTPのAPIを使う。結果の状態はWebSocketで届く。
+  const wake = useCallback(async () => {
+    try {
+      if (!modeRef.current?.required) {
+        const response = await fetch(new URL('/api/wake-mode', backendURL), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ required: true }),
+          cache: 'no-store',
+        })
+        if (!response.ok) throw new Error(await response.text())
+      }
+      const response = await fetch(new URL('/api/wake-mode/wake', backendURL), { method: 'POST', cache: 'no-store' })
+      if (!response.ok) throw new Error(await response.text())
+    } catch {
+      setError('呼びかけ中にできませんでした')
+    }
+  }, [backendURL])
+
+  return { mode, error, pending, save, wake }
 }
 
 export function WakeModeControl({ state }: { state: WakeModeState }) {

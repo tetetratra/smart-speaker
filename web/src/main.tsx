@@ -595,6 +595,7 @@ type LiveViewProps = {
   playbackSpeech?: PlaybackSpeech
   toolEntries: HistoryEntry[]
   wakeMode?: WakeMode
+  wake: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => void
   goScenes: () => void
@@ -1216,6 +1217,7 @@ function App() {
           playbackSpeech={playbackSpeech}
           toolEntries={toolEntries}
           wakeMode={wakeMode.mode}
+          wake={wakeMode.wake}
           connect={connect}
           disconnect={disconnect}
           goScenes={() => setMode('scenes')}
@@ -1643,6 +1645,7 @@ function LiveView(props: LiveViewProps) {
     playbackSpeech,
     toolEntries,
     wakeMode,
+    wake,
     connect,
     disconnect,
     goScenes,
@@ -1666,6 +1669,18 @@ function LiveView(props: LiveViewProps) {
   }, [connected, connect, disconnect])
   // 呼びかけ状態が分からない間（呼びかけ設定の接続が切れている間）は、呼びかけ待ちとは扱わない。
   const isCharacterDim = !connected || (wakeMode?.required === true && !wakeMode.awake)
+  // 暗いとき（話しかけても反応しないとき）にタップすると、接続して呼びかけ中にし、すぐ話せるようにする。
+  const handleCharacterTap = useCallback(async () => {
+    if (!isCharacterDim) return
+    if (!connected) {
+      try {
+        await connect()
+      } catch {
+        return
+      }
+    }
+    await wake()
+  }, [isCharacterDim, connected, connect, wake])
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1702,7 +1717,13 @@ function LiveView(props: LiveViewProps) {
               </div>
             </div>
             <div className="live-character-area">
-              <div className={`live-volume-control${isCharacterDim ? ' live-character-dim' : ''}`} aria-label="キャラクターエリア" />
+              <div
+                className={`live-volume-control${isCharacterDim ? ' live-character-dim' : ''}`}
+                aria-label="キャラクターエリア"
+                role="button"
+                aria-disabled={!isCharacterDim}
+                onClick={() => void handleCharacterTap()}
+              />
             </div>
           </div>
         </div>
