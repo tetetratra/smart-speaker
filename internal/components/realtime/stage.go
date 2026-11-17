@@ -351,7 +351,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: realtimeSource, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
-		// テキスト入力も音声の発話と同じく、会話管理から画面に送られる（チャット欄に出る）。
+		// ローカルの呼びかけ判定を通った発話も、Realtime の発話と同じく会話管理から画面に送られる（チャット欄に出る）。
 		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true}})
 
 	}

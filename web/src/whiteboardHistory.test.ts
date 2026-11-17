@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { entryTone, historyEntries, mergeRecords, whiteboardEvents, type HistoryEntry, type WhiteboardRecord } from './whiteboardHistory.ts'
+import { entryTone, historyEntries, mergeRecords, splitRecords, whiteboardEvents, type HistoryEntry, type WhiteboardRecord } from './whiteboardHistory.ts'
 
 const tool = (id: string, overrides: Record<string, unknown> = {}): HistoryEntry => ({
   kind: 'tool', id, role: 'tool', call_id: id, name: 'set_whiteboard', arguments: '{}',
@@ -82,4 +82,11 @@ test('色は Role で決め、error があれば Role によらず赤にする',
     record('claude-failed', { role: 'background', text: '失敗', error: '中止' }),
   ])
   assert.deepEqual(entries.map(entryTone), ['tool', 'background', 'system', 'failed', 'failed'])
+})
+
+test('届いた記録を、チャット欄に出すユーザーの発話と、ホワイトボードに出すそれ以外に分ける', () => {
+  const record = (id: string, role: string, generation_id?: number): WhiteboardRecord => ({ id, role, text: `本文${id}`, source: 'realtime', generation_id, created_at: '2026-11-18T00:00:00.000Z' })
+  const { utterances, others } = splitRecords([record('1', 'user', 3), record('2', 'tool', 3), record('3', 'user', 0), record('4', 'background')])
+  assert.deepEqual(utterances, [{ text: '本文1', generationId: 3 }, { text: '本文3', generationId: undefined }])
+  assert.deepEqual(others.map(r => r.id), ['2', '4'])
 })

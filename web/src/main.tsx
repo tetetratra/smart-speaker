@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { Whiteboard, type HistoryEntry } from './Whiteboard'
-import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
+import { historyEntries, mergeRecords, splitRecords, type WhiteboardRecord } from './whiteboardHistory'
 import { useWakeMode, type WakeMode } from './WakeModeControl'
 import { SettingsView } from './SettingsView'
 import { AutomationView } from './AutomationView'
@@ -779,20 +779,17 @@ function App() {
         }
         case 'conversation_records': {
           if (!Array.isArray(raw.records)) break
-          // 画面に出す記録だけが届くので、どこに出すかを role で決める。ユーザーの発話はチャット欄、それ以外はホワイトボード。
-          const records = raw.records as WhiteboardRecord[]
-          for (const record of records) {
-            if (record.role !== 'user') continue
-            const recordGeneration = Number.isSafeInteger(record.generation_id) ? record.generation_id : undefined
-            if (recordGeneration !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, recordGeneration)
-            if (recordGeneration === undefined || recordGeneration === currentGenerationRef.current) {
+          // 画面に出す記録だけが届くので、どこに出すかだけを決める。
+          const { utterances, others } = splitRecords(raw.records as WhiteboardRecord[])
+          for (const { text, generationId } of utterances) {
+            if (generationId !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, generationId)
+            if (generationId === undefined || generationId === currentGenerationRef.current) {
               setIsAiSpeaking(false)
               setSttStatus('完了')
               setSpeechDetectStatus('待機中')
             }
-            appendMessage({ id: nextMessageId(), type: 'user', text: record.text, generationId: recordGeneration })
+            appendMessage({ id: nextMessageId(), type: 'user', text, generationId })
           }
-          const others = records.filter(record => record.role !== 'user')
           if (others.length > 0) setWhiteboardRecords(current => mergeRecords(current, others))
           break
         }

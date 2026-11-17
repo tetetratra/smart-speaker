@@ -79,9 +79,17 @@ func stageNames(stages []*Stage) []string {
 	return names
 }
 
+// formatRecordDetail は記録の要約を返す。ツールの結果などは長いので、本文は先頭だけ出す。
 func formatRecordDetail(record types.ConversationRecord) string {
-	return fmt.Sprintf("role=%s, source=%s, text=%s, chars=%d", record.Role, record.Source, quoteText(record.Text), utf8.RuneCountInString(record.Text))
+	text := []rune(record.Text)
+	head := string(text)
+	if len(text) > recordDetailChars {
+		head = string(text[:recordDetailChars]) + "…"
+	}
+	return fmt.Sprintf("role=%s, source=%s, text=%s, chars=%d", record.Role, record.Source, quoteText(head), len(text))
 }
+
+const recordDetailChars = 40
 
 func formatToolRequestDetail(req types.ToolRequest) string {
 	args := string(req.Arguments)

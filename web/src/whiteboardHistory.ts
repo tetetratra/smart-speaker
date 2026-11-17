@@ -38,6 +38,22 @@ export type WhiteboardRecord = {
   created_at: string
 }
 
+// splitRecords は画面に届いた記録を、どこに出すかで分ける。ユーザーの発話はチャット欄、それ以外はホワイトボードに出す。
+// 世代のない記録は generation_id が 0 で届くので、世代なし（undefined）として扱う。
+export function splitRecords(records: WhiteboardRecord[]) {
+  const utterances: { text: string; generationId?: number }[] = []
+  const others: WhiteboardRecord[] = []
+  for (const record of records) {
+    if (record.role !== 'user') {
+      others.push(record)
+      continue
+    }
+    const generation = record.generation_id
+    utterances.push({ text: record.text, generationId: Number.isSafeInteger(generation) && generation! > 0 ? generation : undefined })
+  }
+  return { utterances, others }
+}
+
 // mergeRecords は接続後に届いた記録を足す。同じ ID が届いても重複させない。
 export function mergeRecords(current: Map<string, WhiteboardRecord>, records: WhiteboardRecord[]): Map<string, WhiteboardRecord> {
   const next = new Map(current)

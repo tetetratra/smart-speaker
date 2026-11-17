@@ -140,8 +140,8 @@ flowchart LR
     end
 
     manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>ユーザーの発話・ツールの記録<br/>EventConversationInput{ModelAlreadyKnows: true, UserAlreadyKnows: true}<br/>モデルの発話・遮られた記録などの記録<br/>EventConversationInput{ModelShouldRespond: true}<br/>ユーザーのテキスト入力<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
-    manager --->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼・ユーザーのテキスト入力<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
+    rt -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>ユーザーの発話・ツールの記録<br/>EventConversationInput{ModelAlreadyKnows: true, UserAlreadyKnows: true}<br/>モデルの発話・遮られた記録などの記録<br/>EventConversationInput{ModelShouldRespond: true}<br/>ローカルの呼びかけ判定を通った発話<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
+    manager --->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼・ローカルの呼びかけ判定を通った発話<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
     rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
     tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
     manager -->|"EventConversationInput{Subscribable: true}<br/>購読可能な記録（schedule.source が一致するジョブを動かす）<br/>※会話に入れた記録はすべて流れ、購読可能なものだけを使う"| scheduler
