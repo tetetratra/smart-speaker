@@ -20,7 +20,7 @@ func withWaitTool(definitions []any) []any {
 	return append(result, map[string]any{
 		"type":        "function",
 		"name":        waitToolName,
-		"description": "雑音、テレビの声、独り言など、自分への依頼ではない音声に返答せず待つための会話制御です。ユーザーが待つよう明示した場合も使えます。自分への依頼が聞き取れない場合は使わず、短く聞き返してください。呼び出しの前後に相槌・説明・確認を発話しないでください。",
+		"description": "物音、テレビの声、「うーん」のような独り言、意味の通らない断片など、自分への依頼ではない音声に返答せず待つための会話制御です。自分への依頼かどうか迷う場合や、ユーザーが待つよう明示した場合も使えます。自分への依頼だと分かるのに内容を聞き取れない場合だけは使わず、短く聞き返してください。呼び出しの前後に相槌・説明・確認を発話しないでください。",
 		"parameters": map[string]any{
 			"type": "object", "properties": map[string]any{}, "required": []string{}, "additionalProperties": false,
 		},
