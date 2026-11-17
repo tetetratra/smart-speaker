@@ -143,6 +143,45 @@ plugins:
     # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
     # token_path: "data/google_oauth_token.json"
 
+  # MCP サーバー。登録したサーバーのツールを「<サーバー名>__<ツール名>」として会話から使えます。
+  # 設定の変更は再起動で反映します。文字列の ${VAR} は環境変数で展開するので、秘密の値は環境変数で渡します。
+  mcp:
+    # OAuth のコールバックURL。認可サーバーのリダイレクト URI に登録します。既定: "http://localhost:8081/oauth/mcp/callback"
+    # redirect_url: "http://localhost:8081/oauth/mcp/callback"
+
+    # OAuth のトークンの保存先。既定: memory.store_path と同じディレクトリの "mcp_oauth.json"
+    # token_path: "data/mcp_oauth.json"
+
+    # サーバー。キーがサーバー名（英数字・_・-）で、ツール名の接頭辞になります。既定: なし
+    # servers:
+    #   # OAuth が要るリモートの MCP サーバー（Streamable HTTP）。
+    #   # サーバーを起動して /oauth/mcp/start?server=calendar を開いて認可し、再起動するとツールが出ます。
+    #   calendar:
+    #     url: "https://calendarmcp.googleapis.com/mcp/v1"
+    #     # 会話に出すツール（MCP サーバー上の名前）。書かなければ全部出します。
+    #     allowed_tools: [list_events, get_event, create_event, update_event]
+    #     oauth:
+    #       # 動的クライアント登録に対応していないサーバーは、事前に作った OAuth クライアントを書きます。
+    #       client_id: "${MCP_CALENDAR_CLIENT_ID}"
+    #       client_secret: "${MCP_CALENDAR_CLIENT_SECRET}"
+    #       # 要求するスコープ。書かなければサーバーが示すスコープを全部要求します。
+    #       scopes: ["https://www.googleapis.com/auth/calendar.events"]
+    #
+    #   # 固定のトークンをヘッダーで渡すリモートの MCP サーバー。
+    #   example:
+    #     url: "https://mcp.example.com/mcp"
+    #     headers:
+    #       Authorization: "Bearer ${EXAMPLE_MCP_TOKEN}"
+    #
+    #   # stdio のローカル MCP サーバー。コマンドはサーバー（本番は Docker コンテナ）の中で動きます。
+    #   local:
+    #     command: "/usr/local/bin/some-mcp-server"
+    #     args: ["--flag"]
+    #     env:
+    #       API_KEY: "${SOME_API_KEY}"
+    #     # false にすると接続しません。既定: true
+    #     enabled: false
+
   # SwitchBot。トークンとシークレットはシークレットなので、環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡します。
   # 両方があるときだけ有効になります。
   switchbot:
