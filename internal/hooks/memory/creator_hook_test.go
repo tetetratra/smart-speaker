@@ -44,7 +44,7 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 		{Action: OperationAdd, Content: "ユーザーは寿司が好き"},
 	}}
 	store := &fakeMemoryWriter{records: []memorystate.Record{
-		{ID: "1788926855608507735-3", Content: "ユーザーは大岡山に住んでいる"},
+		{ID: "1788926855608507735-3", Content: "ユーザーは東京に住んでいる"},
 		{ID: "1789095948492476660-8", Content: "ユーザーは朝にコーヒーを飲む"},
 	}}
 	hook := mustCreatorHook(t, &fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "横浜に引っ越した"}}}, creator, store)
@@ -57,7 +57,7 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 		t.Fatalf("applied = %+v, want %+v", applied, want)
 	}
 	// LLM には長い store ID ではなく短い参照番号を渡す。
-	wantExisting := []ExistingMemory{{ID: "1", Content: "ユーザーは大岡山に住んでいる"}, {ID: "2", Content: "ユーザーは朝にコーヒーを飲む"}}
+	wantExisting := []ExistingMemory{{ID: "1", Content: "ユーザーは東京に住んでいる"}, {ID: "2", Content: "ユーザーは朝にコーヒーを飲む"}}
 	if !reflect.DeepEqual(creator.existing, wantExisting) {
 		t.Fatalf("existing = %#v, want %#v", creator.existing, wantExisting)
 	}
@@ -174,13 +174,13 @@ func TestCreatorHookSkipsRecordsChangedWhileCreatingOperations(t *testing.T) {
 
 func TestCreatorHookDeletesInsteadOfUpdatingToDuplicateContent(t *testing.T) {
 	store := &fakeMemoryWriter{records: []memorystate.Record{
-		{ID: "m-1", Content: "ユーザーは大岡山に住んでいる"},
-		{ID: "m-2", Content: "ユーザーは東京に住んでいる"},
+		{ID: "m-1", Content: "ユーザーは東京に住んでいる"},
+		{ID: "m-2", Content: "ユーザーは大阪に住んでいる"},
 	}}
 	hook := mustCreatorHook(
 		t,
 		&fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "test"}}},
-		&fakeOperationCreator{operations: []Operation{{Action: OperationUpdate, TargetID: "2", Content: " ユーザーは大岡山に住んでいる "}}},
+		&fakeOperationCreator{operations: []Operation{{Action: OperationUpdate, TargetID: "2", Content: " ユーザーは東京に住んでいる "}}},
 		store,
 	)
 	applied, err := hook.ExecRecords(context.Background(), hook.history.records)
