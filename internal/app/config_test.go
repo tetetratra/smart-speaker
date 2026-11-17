@@ -70,6 +70,7 @@ func TestBuildConfigDefaults(t *testing.T) {
 		"ResponsesModel":             {cfg.ResponsesModel, "gpt-5.4-nano-2026-03-17"},
 		"RealtimeModel":              {cfg.RealtimeModel, "gpt-realtime-2.1"},
 		"RealtimeVAD":                {cfg.RealtimeVAD, "semantic_vad"},
+		"RealtimeNoiseReduction":     {cfg.RealtimeNoiseReduction, "far_field"},
 		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-4o-mini-transcribe"},
 		"RealtimeEndpoint":           {cfg.RealtimeEndpoint, ""},
 		"Memory.Model":               {cfg.Memory.Model, "gpt-5.6-luna"},

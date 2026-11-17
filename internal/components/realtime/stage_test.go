@@ -201,6 +201,13 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 	} else if vad["type"] != "semantic_vad" || vad["eagerness"] != "auto" || vad["silence_duration_ms"] != nil {
 		t.Fatalf("Semantic VADの設定が違います: %v", vad)
 	}
+	wantNoiseReduction := "far_field"
+	if cfg.NoiseReduction != "" {
+		wantNoiseReduction = cfg.NoiseReduction
+	}
+	if nr := session["audio"].(map[string]any)["input"].(map[string]any)["noise_reduction"].(map[string]any); nr["type"] != wantNoiseReduction {
+		t.Fatalf("ノイズ除去の設定が違います: %v", nr)
+	}
 	if _, specified := session["reasoning"]; specified {
 		t.Fatal("推論量はAPIのデフォルトに任せます", session)
 	}

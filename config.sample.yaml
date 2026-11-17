@@ -42,6 +42,9 @@ openai:
     # 発話の区切り。"semantic_vad" または "server_vad"。未対応の値は起動時にエラーになります。既定: "semantic_vad"
     # vad: "semantic_vad"
 
+    # 入力音声のノイズ除去。"far_field"（スマートスピーカーのように離れて話す）または "near_field"（ヘッドセットのように口元のマイク）。未対応の値は起動時にエラーになります。既定: "far_field"
+    # noise_reduction: "far_field"
+
     # 履歴保存用の非同期文字起こしモデル。音声理解とは別に課金されます。既定: "gpt-4o-mini-transcribe"
     # transcription_model: "gpt-4o-mini-transcribe"
 

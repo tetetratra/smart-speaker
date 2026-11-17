@@ -28,7 +28,7 @@ type Config struct {
 	// ToolTitle はツールの呼び出しを記録するときに、画面に出すタイトルを作る。
 	ToolTitle                                                 func(name string, arguments json.RawMessage) string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
-	TurnDetection                                             string
+	TurnDetection, NoiseReduction                             string
 	Tools                                                     []any
 	Generation                                                *generation.Store
 	RotateAfter, IdleTimeout                                  time.Duration
@@ -100,6 +100,12 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	}
 	if cfg.TurnDetection != "semantic_vad" && cfg.TurnDetection != "server_vad" {
 		return nil, fmt.Errorf("realtime: 発話区切りはsemantic_vadまたはserver_vadを指定してください: %s", cfg.TurnDetection)
+	}
+	if cfg.NoiseReduction == "" {
+		cfg.NoiseReduction = "far_field"
+	}
+	if cfg.NoiseReduction != "far_field" && cfg.NoiseReduction != "near_field" {
+		return nil, fmt.Errorf("realtime: ノイズ除去はfar_fieldまたはnear_fieldを指定してください: %s", cfg.NoiseReduction)
 	}
 	cfg.Tools = withWaitTool(cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {

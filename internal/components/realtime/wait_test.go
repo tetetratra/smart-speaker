@@ -92,6 +92,16 @@ func TestServerVADCanBeSelectedForComparison(t *testing.T) {
 	newRig(t, func(cfg *Config) { cfg.TurnDetection = "server_vad" })
 }
 
+func TestNearFieldNoiseReductionCanBeSelected(t *testing.T) {
+	newRig(t, func(cfg *Config) { cfg.NoiseReduction = "near_field" })
+}
+
+func TestInvalidNoiseReductionFailsBeforeConnecting(t *testing.T) {
+	if _, err := NewStage(Config{APIKey: "local", NoiseReduction: "invalid"}); err == nil {
+		t.Fatal("未対応のノイズ除去設定が受理されました")
+	}
+}
+
 func TestInvalidTurnDetectionFailsBeforeConnecting(t *testing.T) {
 	if _, err := NewStage(Config{APIKey: "local", TurnDetection: "invalid"}); err == nil {
 		t.Fatal("未対応の発話区切り設定が受理されました")

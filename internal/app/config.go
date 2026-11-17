@@ -31,6 +31,7 @@ type Config struct {
 	ConversationHistoryPath    string
 	RealtimeModel              string
 	RealtimeVAD                string
+	RealtimeNoiseReduction     string
 	RealtimeEndpoint           string
 	RealtimeTranscriptionModel string
 	Memory                     MemoryConfig
@@ -188,6 +189,7 @@ type configFile struct {
 		Realtime       struct {
 			Model              string `yaml:"model"`
 			VAD                string `yaml:"vad"`
+			NoiseReduction     string `yaml:"noise_reduction"`
 			TranscriptionModel string `yaml:"transcription_model"`
 			Endpoint           string `yaml:"endpoint"`
 		} `yaml:"realtime"`
@@ -303,6 +305,7 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
 		RealtimeModel:              stringOr(file.OpenAI.Realtime.Model, "gpt-realtime-2.1"),
 		RealtimeVAD:                stringOr(file.OpenAI.Realtime.VAD, "semantic_vad"),
+		RealtimeNoiseReduction:     stringOr(file.OpenAI.Realtime.NoiseReduction, "far_field"),
 		RealtimeEndpoint:           strings.TrimSpace(file.OpenAI.Realtime.Endpoint),
 		RealtimeTranscriptionModel: stringOr(file.OpenAI.Realtime.TranscriptionModel, "gpt-4o-mini-transcribe"),
 		ResponsesModel:             responsesModel,
