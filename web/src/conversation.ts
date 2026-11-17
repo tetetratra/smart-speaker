@@ -1,5 +1,6 @@
+// ConversationMessage はユーザーの発話。AI の発話は届いた全文ではなく、再生を始めた区間（PlaybackSpeech）から出す。
 export interface ConversationMessage {
-  type: 'user' | 'agent'
+  type: 'user'
   text: string
   generationId?: number
 }
@@ -19,11 +20,8 @@ export function conversationBubble(messages: readonly ConversationMessage[], pla
     }
   }
   const current = generation === undefined ? speech : speech.filter(message => message.generationId === generation)
-  let user = ''
-  for (const message of current) {
-    if (message.type === 'user') user = message.text
-  }
-  // 全文の受信では吹き出しを更新せず、実際に再生を始めた区間だけを表示する。
+  const user = current.at(-1)?.text ?? ''
+  // AI の側は、実際に再生を始めた区間だけを表示する。
   const assistant = playback && playback.generationId === generation ? playback.text : ''
   return { user, assistant, visible: Boolean(user || assistant) }
 }

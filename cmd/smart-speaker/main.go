@@ -293,7 +293,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, pace, output, types.EventAudioFrame{})
 	connect(g, output, chat, types.EventAudioSent{})
 	connect(g, output, rt, types.EventAudioSent{})
-	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventRealtimeOutput{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
+	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
 	connect(g, rt, tool, types.EventToolRequest{})
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }

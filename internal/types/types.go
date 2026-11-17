@@ -2,16 +2,6 @@ package types
 
 import "time"
 
-// アシスタントやユーザーの 1 行分の出力
-type OutputLine struct {
-	Role         string
-	Text         string
-	ResponseID   string
-	Final        bool
-	Source       string
-	GenerationID GenerationID
-}
-
 // SpeechEvent は文字起こしの終了イベントを表します。
 type SpeechEvent struct {
 	Source     string
