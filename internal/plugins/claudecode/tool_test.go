@@ -20,15 +20,21 @@ func newTools(t *testing.T) (map[string]*Tool, *agentbridge.Service, *[]string) 
 		switch {
 		case r.URL.Path == "/tasks":
 			// 送られた作業ディレクトリの名前を返し、ツールが渡せているか確かめる。空なら既定の候補を使ったことにする。
+			// session_id が s1 なら作業中のセッションへの追加の依頼として扱う。
 			var body struct {
-				Workdir string `json:"workdir"`
+				SessionID string `json:"session_id"`
+				Workdir   string `json:"workdir"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			if body.Workdir == "" {
 				body.Workdir = "work"
 			}
+			status := "started"
+			if body.SessionID == "s1" {
+				status = "appended"
+			}
 			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]string{"task_id": "t1", "session_id": "s1", "workdir": body.Workdir})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": status, "task_id": "t1", "session_id": "s1", "workdir": body.Workdir})
 		case r.URL.Path == "/sessions":
 			_, _ = w.Write([]byte(`{"workdirs":["work","speaker"],"sessions":[{"session_id":"s1","workdir":"speaker","title":"PDFの要約","created_at":"2026-11-07T08:00:00.000Z","last_modified":"2026-11-07T09:30:00.000Z","first_prompt":"PDFを読んで","running":false,"from_smart_speaker":true}]}`))
 		case strings.HasPrefix(r.URL.Path, "/sessions/"):
@@ -54,6 +60,11 @@ func TestAskReturnsImmediatelyWithIDs(t *testing.T) {
 	}
 	result, err = tools[OpAsk].Run(context.Background(), map[string]any{"input": "PDFを読んで", "session_id": "", "workdir": "speaker"})
 	if err != nil || result["workdir"] != "speaker" {
+		t.Fatal(result, err)
+	}
+	// 作業中のセッションへの依頼は、ブリッジの返した status をそのまま伝える。
+	result, err = tools[OpAsk].Run(context.Background(), map[string]any{"input": "ついでにこれも", "session_id": "s1", "workdir": ""})
+	if err != nil || result["status"] != "appended" || result["task_id"] != "t1" {
 		t.Fatal(result, err)
 	}
 	if _, err := tools[OpAsk].Run(context.Background(), map[string]any{"input": " ", "session_id": ""}); err == nil {

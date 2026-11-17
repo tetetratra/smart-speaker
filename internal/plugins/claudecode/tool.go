@@ -70,7 +70,7 @@ func (t *Tool) run(ctx context.Context, args map[string]any) (map[string]any, er
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"status": "started", "task_id": accepted.TaskID, "session_id": accepted.SessionID, "workdir": accepted.Workdir}, nil
+		return map[string]any{"status": accepted.Status, "task_id": accepted.TaskID, "session_id": accepted.SessionID, "workdir": accepted.Workdir}, nil
 	case OpAnswer:
 		requestID, err := a.str("request_id", true)
 		if err != nil {
@@ -186,7 +186,7 @@ func (t *Tool) Definition() map[string]any {
 	var properties map[string]any
 	switch t.Operation {
 	case OpAsk:
-		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。この会話で最初の依頼はsession_idを空にし、2回目以降はユーザーの指示がない限り、返されたsession_idを指定して同じセッションを使い続けます。作業する場所はworkdirに候補の名前で指定します。候補はlist_claude_code_sessionsの結果のworkdirsで分かり、先頭が既定です。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
+		description = "手元のMacで動くClaude Codeに作業を依頼します。資料の読み込み、調査、文章作成、コーディングなど時間のかかる作業に使います。ユーザーの了承がある場合だけ呼び出してください。結果は待たずにすぐ返り、作業が終わると[Claude Codeの作業完了]として届きます。この会話で最初の依頼はsession_idを空にし、2回目以降はユーザーの指示がない限り、返されたsession_idを指定して同じセッションを使い続けます。作業中のセッションを指定すると、実行中の作業への追加の依頼として取り込まれ（statusがappended）、結果は元の作業の完了にまとめて1回だけ届きます。作業する場所はworkdirに候補の名前で指定します。候補はlist_claude_code_sessionsの結果のworkdirsで分かり、先頭が既定です。親の会話は渡らないため、inputに必要な背景と依頼内容を日本語で書いてください。"
 		properties = map[string]any{"input": str("Claude Codeへの依頼文。ユーザーの言葉をもとに日本語で書く。英語に訳さない"), "session_id": str("この会話で最初の依頼なら空文字。2回目以降は、ユーザーが新しいセッションを頼まない限り、この会話で使っているセッションID"), "workdir": str("作業する場所の候補の名前。ユーザーが場所を言わなければ空文字（既定の場所）。続きの依頼ではセッションを始めた場所で再開するので空文字")}
 	case OpAnswer:
 		description = "Claude Codeからの承認依頼に答えます。ユーザーの返事を聞いた後でだけ呼び出してください。ユーザーがはっきり許可したときだけallowをtrueにします。"
