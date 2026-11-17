@@ -201,8 +201,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
-		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
+		TurnDetection: cfg.RealtimeVAD, NoiseReduction: cfg.RealtimeNoiseReduction,
+		Instructions: plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
 		ToolTitle:   execution.New(toolHandlers).Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
