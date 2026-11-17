@@ -22,12 +22,13 @@ type InboundEntry = {
 }
 export type HistoryEntry = ToolEntry | InboundEntry
 
-// WhiteboardRecord はサーバーが送る会話履歴の記録（ホワイトボードに出す、会話でないもの）。
+// WhiteboardRecord はサーバーが送る会話履歴の記録。ユーザーの発話はチャット欄、それ以外はホワイトボードに出す。
 export type WhiteboardRecord = {
   id: string
   role: string
   text: string
   source: string
+  generation_id?: number
   title?: string
   external?: boolean
   call_id?: string

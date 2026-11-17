@@ -32,8 +32,8 @@ func eventDetail(evt types.Event) (string, bool) {
 	switch e := evt.(type) {
 	case types.EventSpeechEnd:
 		return formatSpeechEventDetail(e.SpeechEvent), true
-	case types.EventRealtimeOutput:
-		return formatOutputLineDetail(e.OutputLine), true
+	case types.EventConversationRecordAdded:
+		return formatRecordDetail(e.ConversationRecord), true
 	case types.EventToolRequest:
 		return formatToolRequestDetail(e.ToolRequest), true
 	case types.EventRTCSignal:
@@ -79,19 +79,8 @@ func stageNames(stages []*Stage) []string {
 	return names
 }
 
-func formatOutputLineDetail(line types.OutputLine) string {
-	parts := []string{
-		fmt.Sprintf("text=%s", quoteText(line.Text)),
-		fmt.Sprintf("chars=%d", utf8.RuneCountInString(line.Text)),
-		fmt.Sprintf("final=%t", line.Final),
-	}
-	if line.Role != "" {
-		parts = append(parts, fmt.Sprintf("role=%s", line.Role))
-	}
-	if line.Source != "" {
-		parts = append(parts, fmt.Sprintf("source=%s", line.Source))
-	}
-	return strings.Join(parts, ", ")
+func formatRecordDetail(record types.ConversationRecord) string {
+	return fmt.Sprintf("role=%s, source=%s, text=%s, chars=%d", record.Role, record.Source, quoteText(record.Text), utf8.RuneCountInString(record.Text))
 }
 
 func formatToolRequestDetail(req types.ToolRequest) string {

@@ -156,19 +156,6 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 		p := ev.RealtimeStatus
 		msg = map[string]any{"type": "realtime_status", "status": p.Status, "message": p.Message}
 
-	case types.EventRealtimeOutput:
-		line := ev.OutputLine
-		msg = map[string]any{
-			"type":          "message",
-			"role":          line.Role,
-			"text":          line.Text,
-			"response_id":   line.ResponseID,
-			"generation_id": uint64(line.GenerationID),
-			"final":         line.Final,
-		}
-		if line.Source != "" {
-			msg["source"] = line.Source
-		}
 	case types.EventRTCSignal:
 		sig := ev.RTCSignal
 		targetID = sig.ClientID
@@ -220,17 +207,18 @@ func messageForEvent(evt types.Event) (map[string]any, string, bool) {
 
 func recordMessage(record types.ConversationRecord) map[string]any {
 	return map[string]any{
-		"id":         record.ID,
-		"role":       record.Role,
-		"text":       record.Text,
-		"source":     record.Source,
-		"title":      record.Title,
-		"external":   record.External,
-		"call_id":    record.CallID,
-		"arguments":  record.Arguments,
-		"output":     record.Output,
-		"error":      record.Error,
-		"created_at": record.CreatedAt,
+		"id":            record.ID,
+		"role":          record.Role,
+		"generation_id": uint64(record.GenerationID),
+		"text":          record.Text,
+		"source":        record.Source,
+		"title":         record.Title,
+		"external":      record.External,
+		"call_id":       record.CallID,
+		"arguments":     record.Arguments,
+		"output":        record.Output,
+		"error":         record.Error,
+		"created_at":    record.CreatedAt,
 	}
 }
 

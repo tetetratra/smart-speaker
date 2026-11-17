@@ -351,7 +351,8 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: realtimeSource, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
-		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true, UserAlreadyKnows: true}})
+		// テキスト入力も音声の発話と同じく、会話管理から画面に送られる（チャット欄に出る）。
+		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true}})
 
 	}
 }
@@ -412,11 +413,10 @@ func (s *stage) pendingTools() bool {
 	}
 	return false
 }
+
+// record は発話を記録する。文字起こしが空でなければ、会話管理から画面にも送られる（チャット欄に出る）。
 func (s *stage) record(ctx context.Context, id, role, text string, gen types.GenerationID) {
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: realtimeSource, CreatedAt: time.Now()}, true)
-	if text != "" {
-		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: role, Text: text, GenerationID: gen, Source: realtimeSource, ResponseID: id, Final: true}})
-	}
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: realtimeSource, CreatedAt: time.Now()}, text == "")
 }
 
 func (s *stage) hasPendingOutput() bool {

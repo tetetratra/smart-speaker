@@ -16,7 +16,7 @@ func TestShouldLogForwardEvent(t *testing.T) {
 	if g.shouldLogForwardEvent(reflect.TypeOf(types.EventRTCPeerAudioFrame{})) {
 		t.Fatalf("EventRTCPeerAudioFrame should be suppressed")
 	}
-	if !g.shouldLogForwardEvent(reflect.TypeOf(types.EventRealtimeOutput{})) {
-		t.Fatalf("EventRealtimeOutput should still be logged")
+	if !g.shouldLogForwardEvent(reflect.TypeOf(types.EventConversationRecordAdded{})) {
+		t.Fatalf("EventConversationRecordAdded should still be logged")
 	}
 }

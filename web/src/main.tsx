@@ -12,8 +12,8 @@ import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
 
-type ChatMessage =
-  | { id: number; type: 'user' | 'agent'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
+// ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
+type ChatMessage = { id: number; type: 'user'; text: string; generationId?: number }
 
 type ServerEventLog = { id: number; line: string }
 type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs' | 'settings'
@@ -747,34 +747,11 @@ function App() {
       if (!raw || typeof raw !== 'object') return
       const generation = Number.isSafeInteger(raw.generation_id) ? raw.generation_id as number : undefined
       if (generation !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, generation)
-      const isCurrentGeneration = generation === undefined || generation === currentGenerationRef.current
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
         return
       }
       switch (raw.type) {
-        case 'message': {
-          const text = typeof raw.text === 'string' ? raw.text : ''
-          if (!text) return
-          // サーバーは吹き出しに使うユーザーとモデルの発話だけを送る。
-          const role: ChatMessage['type'] = raw.role === 'user' ? 'user' : 'agent'
-          if (role === 'user' && isCurrentGeneration) {
-            setIsAiSpeaking(false)
-            setSttStatus('完了')
-            setSpeechDetectStatus('待機中')
-          }
-          const displayText = raw.role ? text : `(roleなし) ${text}`
-          appendMessage({
-            id: nextMessageId(),
-            type: role,
-            text: displayText,
-            responseId: raw.response_id,
-            final: raw.final,
-            source: typeof raw.source === 'string' ? raw.source : undefined,
-            generationId: generation,
-          })
-          break
-        }
         case 'playback_progress': {
           audioReceiverRef.current?.progress(raw)
           break
@@ -801,7 +778,22 @@ function App() {
           break
         }
         case 'conversation_records': {
-          if (Array.isArray(raw.records)) setWhiteboardRecords(current => mergeRecords(current, raw.records))
+          if (!Array.isArray(raw.records)) break
+          // 画面に出す記録だけが届くので、どこに出すかを role で決める。ユーザーの発話はチャット欄、それ以外はホワイトボード。
+          const records = raw.records as WhiteboardRecord[]
+          for (const record of records) {
+            if (record.role !== 'user') continue
+            const recordGeneration = Number.isSafeInteger(record.generation_id) ? record.generation_id : undefined
+            if (recordGeneration !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, recordGeneration)
+            if (recordGeneration === undefined || recordGeneration === currentGenerationRef.current) {
+              setIsAiSpeaking(false)
+              setSttStatus('完了')
+              setSpeechDetectStatus('待機中')
+            }
+            appendMessage({ id: nextMessageId(), type: 'user', text: record.text, generationId: recordGeneration })
+          }
+          const others = records.filter(record => record.role !== 'user')
+          if (others.length > 0) setWhiteboardRecords(current => mergeRecords(current, others))
           break
         }
         default:

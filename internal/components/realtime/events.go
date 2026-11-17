@@ -177,12 +177,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if r == nil {
 			return
 		}
-		item := s.items[e.ItemID]
-		if item != nil {
-			if e.Text != "" {
-				item.generated = e.Text
-			}
-			s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: types.RoleAgent, Text: item.generated, GenerationID: r.generation, ResponseID: e.ResponseID, Final: true}})
+		if item := s.items[e.ItemID]; item != nil && e.Text != "" {
+			item.generated = e.Text
 		}
 		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
 	case "response.function_call_arguments.done":

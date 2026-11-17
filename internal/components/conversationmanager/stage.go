@@ -91,7 +91,7 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 }
 
 // 保存に失敗しても会話は続けられるので、記録はメモリ上に残してログだけ出す。
-// ユーザーがまだ知らない記録は、保存したあとで画面へ知らせる（ホワイトボードに出す）。
+// UserAlreadyKnows が立っていない記録は、保存したあとで画面へ送る。どこに出すか（チャット欄・ホワイトボード）は画面が決める。
 func (s *stage) save(ctx context.Context, input types.ConversationInput) {
 	if err := s.history.Append(input.Record); err != nil {
 		log.Printf("会話管理: 会話履歴の保存: %v", err)

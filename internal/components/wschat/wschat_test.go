@@ -87,3 +87,15 @@ func TestMessageForEventWakeTranscription(t *testing.T) {
 		t.Fatalf("msg = %v, want %v", msg, want)
 	}
 }
+
+// 画面がチャット欄の発話を応答と組にできるよう、記録には世代を載せる。
+func TestMessageForRecordIncludesGeneration(t *testing.T) {
+	msg, _, ok := messageForEvent(types.EventConversationRecordAdded{ConversationRecord: types.ConversationRecord{ID: "1/user1", Role: types.RoleUser, Text: "おはよう", GenerationID: 3}})
+	if !ok {
+		t.Fatal("messageForEvent returned ok=false")
+	}
+	records := msg["records"].([]map[string]any)
+	if msg["type"] != "conversation_records" || len(records) != 1 || records[0]["generation_id"] != uint64(3) || records[0]["role"] != types.RoleUser {
+		t.Fatal(msg)
+	}
+}
