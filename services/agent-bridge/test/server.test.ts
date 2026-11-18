@@ -9,7 +9,7 @@ const calls: unknown[][] = [];
 const server = createBridgeServer({
   token: TOKEN,
   tasks: {
-    start: async (input: string, sessionId?: string, workdir?: string, context?: Record<string, unknown>) => (calls.push(["start", input, sessionId, workdir, ...(context === undefined ? [] : [context])]), { task_id: "t1", session_id: "s1", workdir: "work" }),
+    start: async (input: string, sessionId?: string, workdir?: string, context?: Record<string, unknown>) => (calls.push(["start", input, sessionId, workdir, ...(context === undefined ? [] : [context])]), { status: "started" as const, task_id: "t1", session_id: "s1", workdir: "work" }),
     cancel: (id: string) => {
       if (id !== "t1") throw new HttpError(404, "作業が見つかりません");
       calls.push(["cancel", id]);
@@ -47,7 +47,7 @@ test("トークンがなければ401、healthzは認証なし", async () => {
 test("作業の開始・承認の返事・中止", async () => {
   const started = await call("/tasks", { method: "POST", body: JSON.stringify({ input: "やって", session_id: "", workdir: "work" }) });
   assert.equal(started.status, 202);
-  assert.deepEqual(await started.json(), { task_id: "t1", session_id: "s1", workdir: "work" });
+  assert.deepEqual(await started.json(), { status: "started", task_id: "t1", session_id: "s1", workdir: "work" });
   assert.equal((await call("/permissions/r1", { method: "POST", body: JSON.stringify({ allow: false }) })).status, 204);
   assert.equal((await call("/tasks/t1/cancel", { method: "POST" })).status, 204);
   assert.equal((await call("/tasks/t2/cancel", { method: "POST" })).status, 404);

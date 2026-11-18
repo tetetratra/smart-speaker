@@ -122,7 +122,7 @@ Tailscaleのアクセス制御で、サーバーからMacの待ち受けポー�
 
 | メソッドとパス | 用途 |
 | --- | --- |
-| `POST /tasks {input, session_id, workdir}` | 作業を始める。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続き（`session_id` あり）はセッションを始めた場所で再開する。`202 {task_id, session_id, workdir}`。400はない名前（候補の一覧つき）、409は同じセッションが作業中、429は同時実行数の上限、404はセッションがない |
+| `POST /tasks {input, session_id, workdir}` | 作業を始める。`workdir` は作業ディレクトリの候補の名前で、空なら先頭の候補。続き（`session_id` あり）はセッションを始めた場所で再開する。`202 {status: "started", task_id, session_id, workdir}`。同じセッションが作業中なら、その作業への追加の依頼として流し込み（`priority: "next"`）、`202 {status: "appended", ...}` を返す。`task_id` は実行中の作業のもので、完了通知は作業全体で1回だけ届く。400はない名前（候補の一覧つき）、409は作業が最初の結果を返した後で追加の依頼を受け付けられない、429は同時実行数の上限、404はセッションがない |
 | `POST /permissions/{request_id} {allow, message}` | 承認依頼に答える。`204`。404は保留中の依頼がない |
 | `POST /tasks/{task_id}/cancel` | 作業を止める。`204` |
 | `POST /sessions/{session_id}/cancel` | セッションで実行中の作業を止める。`204`。404は実行中の作業がない |

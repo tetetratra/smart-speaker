@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Options, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage, SDKResultMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { EventInput } from "../src/protocol.ts";
 import { PermissionBroker } from "../src/permissions.ts";
 import { TaskManager, interpret, childEnv, ENTRYPOINT } from "../src/tasks.ts";
@@ -17,7 +17,7 @@ const WORKDIRS = [
 ];
 
 // found はセッションを始めた作業ディレクトリ。null なら見つからないセッションとして扱う。
-function setup(run: (options: Options) => AsyncIterable<SDKMessage>, found: (typeof WORKDIRS)[number] | null = WORKDIRS[1]) {
+function setup(run: (options: Options, prompt: AsyncIterable<SDKUserMessage>) => AsyncIterable<SDKMessage>, found: (typeof WORKDIRS)[number] | null = WORKDIRS[1]) {
   const events: EventInput[] = [];
   const queries: Options[] = [];
   const tags: string[] = [];
@@ -30,7 +30,7 @@ function setup(run: (options: Options) => AsyncIterable<SDKMessage>, found: (typ
   };
   const broker = new PermissionBroker(notify, 1000);
   const manager = new TaskManager({
-    query: ({ options }) => (queries.push(options!), run(options!)),
+    query: ({ prompt, options }) => (queries.push(options!), run(options!, prompt)),
     tagSession: async (id, tag, options) => void tags.push(`${id}:${tag}:${options?.dir}`),
     findSession: async () => found ?? undefined,
     broker,
@@ -129,7 +129,7 @@ test("canUseTool の承認依頼は、作業とセッションのIDを付けて�
   assert.equal((events[1] as { summary: string }).summary, "allow");
 });
 
-test("入力の誤り・実行中・上限・存在しないセッションを断る", async () => {
+test("入力の誤り・上限・存在しないセッションを断る", async () => {
   let release!: () => void;
   const blocker = new Promise<void>((resolve) => (release = resolve));
   const { manager, finished } = setup(async function* () {
@@ -139,13 +139,47 @@ test("入力の誤り・実行中・上限・存在しないセッションを�
   await assert.rejects(manager.start("  "), { status: 400 });
   await assert.rejects(manager.start("x", "not-a-uuid"), { status: 400 });
   await manager.start("x", SESSION);
-  await assert.rejects(manager.start("y", SESSION), { status: 409 });
   await assert.rejects(manager.start("z"), { status: 429 });
   release();
   await finished;
 
   const missing = setup(async function* () {}, null);
   await assert.rejects(missing.manager.start("x", SESSION), { status: 404 });
+});
+
+test("作業中のセッションへの依頼は next で流し込み、最初の結果の後は断る", async () => {
+  const received: SDKUserMessage[] = [];
+  let gotSecond!: () => void;
+  const second = new Promise<void>((resolve) => (gotSecond = resolve));
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => (release = resolve));
+  const { manager, events, finished } = setup(async function* (_options, prompt) {
+    const input = prompt[Symbol.asyncIterator]();
+    received.push((await input.next()).value);
+    received.push((await input.next()).value);
+    gotSecond();
+    yield success({ summary: "両方やりました", details: [] });
+    // 最初の結果で入口が閉じ、入力が終わる。
+    assert.equal((await input.next()).done, true);
+    await blocker;
+    // バックグラウンドの完了などで続いたターンの結果。通知はこちらだけ。
+    yield success({ summary: "最後", details: [] });
+  });
+  const first = await manager.start("一つ目", SESSION, "", { from: "first" });
+  const appended = await manager.start("ついでに二つ目", SESSION, "", { from: "second" });
+  assert.deepEqual(appended, { status: "appended", task_id: first.task_id, session_id: SESSION, workdir: "speaker" });
+  await second;
+  assert.deepEqual(
+    received.map((m) => [m.message.content, m.priority]),
+    [["一つ目", undefined], ["ついでに二つ目", "next"]],
+  );
+  // 結果が返るのを待ってから、閉じた入口への依頼を確かめる。
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(manager.start("三つ目", SESSION), { status: 409 });
+  release();
+  await finished;
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], { type: "completed", summary: "最後", details: [], task_id: first.task_id, session_id: SESSION, request: "一つ目", context: { from: "first" } });
 });
 
 test("作業ディレクトリは名前で選び、ない名前は候補つきで断る", async () => {

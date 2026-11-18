@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { CanUseTool, Options, Query, SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Workdir } from "./config.ts";
 import type { Notify } from "./notifier.ts";
 import type { PermissionBroker } from "./permissions.ts";
 import { HttpError, type TaskAccepted } from "./protocol.ts";
 import { SMART_SPEAKER_TAG } from "./sessions.ts";
 
-export type QueryFn = (params: { prompt: string; options?: Options }) => Query | AsyncIterable<SDKMessage>;
+export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options?: Options }) => Query | AsyncIterable<SDKMessage>;
 export type TagFn = (sessionId: string, tag: string | null, options?: { dir?: string }) => Promise<void>;
 
 type Task = {
@@ -16,6 +16,8 @@ type Task = {
   abort: AbortController;
   status: "running" | "completed" | "failed";
   context?: Record<string, unknown>;
+  // inbox は Claude Code へ依頼を流し込む入口。最初の結果が返ったら閉じ、以降の追加の依頼は断る。
+  inbox: Inbox;
 };
 
 type Deps = {
@@ -67,7 +69,8 @@ const APPEND_SYSTEM_PROMPT = `この作業はスマートスピーカーの音�
 日本の著作権法では、公衆に聞かせることを目的としない朗読は口述権（第24条、「公に」の意味は第22条）の対象外で、そのための文章の抽出は私的使用のための複製（第30条第1項）に当たります。
 ただし、DRM などの技術的保護手段を回避しないと文章を取り出せない場合は、私的使用でも認められない（第30条第1項第2号）ため、抽出せずにその旨を伝えてください。`;
 
-// TaskManager は Claude Code への依頼を管理する。1つのセッションで同時に動く作業は1つだけにする。
+// TaskManager は Claude Code への依頼を管理する。1つのセッションで同時に動く作業は1つだけにし、
+// 作業中のセッションへの依頼は、その作業への追加の依頼として流し込む。
 export class TaskManager {
   #tasks = new Map<string, Task>();
   #deps: Deps;
@@ -96,13 +99,20 @@ export class TaskManager {
     }
     // await の後に確かめ、同時に届いた依頼が上限をすり抜けないようにする。
     const running = [...this.#tasks.values()].filter((t) => t.status === "running");
-    if (resume && running.some((t) => t.sessionId === resume)) throw new HttpError(409, "このセッションは作業中です");
+    const current = resume ? running.find((t) => t.sessionId === resume) : undefined;
+    if (current) {
+      // 作業中のセッションへの依頼は、実行中の作業に取り込ませる。context と時間の上限は最初の依頼のままにする。
+      if (!current.inbox.push(input, "next")) throw new HttpError(409, "このセッションは作業の終わり際なので、追加の依頼を受け付けられません");
+      this.#log(`task ${current.id}: 追加の依頼を受け付けました`);
+      return { status: "appended", task_id: current.id, session_id: current.sessionId, workdir: current.workdir.name };
+    }
     if (running.length >= this.#deps.maxTasks) throw new HttpError(429, "同時に動かせる作業の上限に達しています");
 
-    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), workdir, abort: new AbortController(), status: "running", context: taskContext };
+    const task: Task = { id: randomUUID(), sessionId: resume ?? randomUUID(), workdir, abort: new AbortController(), status: "running", context: taskContext, inbox: new Inbox() };
+    task.inbox.push(input);
     this.#tasks.set(task.id, task);
     void this.#run(task, input, !resume);
-    return { task_id: task.id, session_id: task.sessionId, workdir: workdir.name };
+    return { status: "started", task_id: task.id, session_id: task.sessionId, workdir: workdir.name };
   }
 
   #workdir(name: string | undefined): Workdir {
@@ -163,7 +173,7 @@ export class TaskManager {
     let error: unknown;
     try {
       const messages = this.#deps.query({
-        prompt: input,
+        prompt: task.inbox,
         options: {
           cwd: task.workdir.path,
           ...(isNew ? { sessionId: task.sessionId } : { resume: task.sessionId }),
@@ -179,11 +189,16 @@ export class TaskManager {
         },
       });
       for await (const message of messages) {
-        if (message.type === "result") result = message;
+        if (message.type !== "result") continue;
+        // 読み取り済みの依頼やバックグラウンドの完了による続きのターンは、閉じた後も最後まで動く。
+        // 通知するのは最後の結果だけで、取り込まれた追加の依頼の答えもそこに入る。
+        result = message;
+        task.inbox.close();
       }
     } catch (e) {
       error = e;
     } finally {
+      task.inbox.close();
       clearTimeout(timer);
       broker.rejectTask(task.id);
     }
@@ -200,6 +215,39 @@ export class TaskManager {
     await notify({ ...outcome, task_id: task.id, session_id: task.sessionId, request: short(input, 100), ...(task.context === undefined ? {} : { context: task.context }) }, deadline);
     // 終わった作業は動作確認用にしばらく残してから消す。
     setTimeout(() => this.#tasks.delete(task.id), 10 * 60 * 1000).unref();
+  }
+}
+
+// Inbox は依頼を後から流し込める入力。閉じると、読み終えたところで入力が終わる。
+class Inbox implements AsyncIterable<SDKUserMessage> {
+  #queue: SDKUserMessage[] = [];
+  #closed = false;
+  #wake?: () => void;
+
+  // push は依頼を流し込む。閉じた後は何もせず false を返す。
+  push(text: string, priority?: SDKUserMessage["priority"]): boolean {
+    if (this.#closed) return false;
+    this.#queue.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, ...(priority ? { priority } : {}) });
+    this.#wake?.();
+    return true;
+  }
+
+  close(): void {
+    this.#closed = true;
+    this.#wake?.();
+  }
+
+  async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    for (;;) {
+      const next = this.#queue.shift();
+      if (next) {
+        yield next;
+        continue;
+      }
+      if (this.#closed) return;
+      await new Promise<void>((resolve) => (this.#wake = resolve));
+      this.#wake = undefined;
+    }
   }
 }
 
