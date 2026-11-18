@@ -9,11 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
+
+// callTimeout は、ツール呼び出し1回（接続の張り直しを含む）の待ち時間。応答しないサーバーで会話が止まらないようにする。
+var callTimeout = 60 * time.Second
 
 // server は MCP サーバー1つへの接続。接続は最初に使うときに張り、失敗したら次の呼び出しで張り直す。
 type server struct {
@@ -50,6 +54,7 @@ func (s *server) listTools(ctx context.Context) ([]tools.Handler, error) {
 	}
 	var handlers []tools.Handler
 	seen := map[string]bool{}
+	names := map[string]string{}
 	for t, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			s.reset(session)
@@ -64,6 +69,12 @@ func (s *server) listTools(ctx context.Context) ([]tools.Handler, error) {
 			log.Printf("mcp: %s のツール %q を飛ばします: %v", s.name, t.Name, err)
 			continue
 		}
+		// 使えない文字を _ に置き換えると、別のツールと同じ名前になることがある。
+		if other, ok := names[h.name]; ok {
+			log.Printf("mcp: %s のツール %q は %q と同じ名前 %s になるので飛ばします", s.name, t.Name, other, h.name)
+			continue
+		}
+		names[h.name] = t.Name
 		handlers = append(handlers, h)
 	}
 	for _, toolName := range s.cfg.AllowedTools {
@@ -77,6 +88,8 @@ func (s *server) listTools(ctx context.Context) ([]tools.Handler, error) {
 // callTool はツールを呼ぶ。通信やプロトコルの失敗では接続を捨て、次の呼び出しで張り直す。
 // 書き込みのツールを二重に実行しないよう、失敗した呼び出しはやり直さない。
 func (s *server) callTool(ctx context.Context, toolName string, args map[string]any) (*sdk.CallToolResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
 	session, err := s.currentSession(ctx)
 	if err != nil {
 		return nil, err
@@ -116,7 +129,8 @@ func (s *server) reset(session *sdk.ClientSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.session == session {
-		_ = session.Close()
+		// Close は実行中の呼び出しが終わるのを待つことがあるので、待たずに捨てる。
+		go func() { _ = session.Close() }()
 		s.session = nil
 	}
 }

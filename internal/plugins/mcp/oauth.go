@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -59,10 +60,14 @@ type oauthServer struct {
 	tokens oauth2.TokenSource
 }
 
+// pendingTTL は、認可を始めてからコールバックを待つ時間。過ぎた認可は捨てる。
+const pendingTTL = 10 * time.Minute
+
 type pendingAuth struct {
-	server   *oauthServer
-	config   *oauth2.Config
-	verifier string
+	server    *oauthServer
+	config    *oauth2.Config
+	verifier  string
+	createdAt time.Time
 }
 
 // oauthManager は、MCP サーバーの OAuth（認可の開始・コールバック・トークンの更新）をまとめて扱う。
@@ -124,6 +129,11 @@ func (m *oauthManager) token(ctx context.Context, serverName string) (*oauth2.To
 	}
 	tok, err := s.tokens.Token()
 	if err != nil {
+		// 認可サーバーにつながらないだけなら、認可し直しても直らないので、未認可とは案内しない。
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return nil, fmt.Errorf("MCPサーバー %s のトークンを更新できません: %w", serverName, err)
+		}
 		return nil, &authRequiredError{server: serverName, cause: err}
 	}
 	return tok, nil
@@ -207,8 +217,14 @@ func (m *oauthManager) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
+	now := time.Now()
 	m.mu.Lock()
-	m.pending[state] = pendingAuth{server: s, config: config, verifier: verifier}
+	for key, p := range m.pending {
+		if now.Sub(p.createdAt) > pendingTTL {
+			delete(m.pending, key)
+		}
+	}
+	m.pending[state] = pendingAuth{server: s, config: config, verifier: verifier, createdAt: now}
 	m.mu.Unlock()
 	authURL := config.AuthCodeURL(state,
 		oauth2.S256ChallengeOption(verifier),
@@ -227,7 +243,7 @@ func (m *oauthManager) handleCallback(w http.ResponseWriter, r *http.Request) {
 	pending, ok := m.pending[state]
 	delete(m.pending, state)
 	m.mu.Unlock()
-	if !ok {
+	if !ok || time.Since(pending.createdAt) > pendingTTL {
 		http.Error(w, "認可の state が一致しません。/oauth/mcp/start からやり直してください", http.StatusBadRequest)
 		return
 	}

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/oauth2"
 
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 )
@@ -21,36 +24,53 @@ import (
 // MCP サーバーは access-2 だけを受け付けるので、認可で得た access-1 が更新されないとツールを取れない。
 type fakeAuthServer struct {
 	*httptest.Server
+	// googleLike なら、401 の WWW-Authenticate でメタデータの場所を知らせず、well-known の path 付きの場所にだけ置く。
+	// 認可サーバーも動的クライアント登録を持たず、OpenID の設定だけを出す。
+	googleLike bool
 	mu         sync.Mutex
 	registered []string
 	tokenForms []url.Values
 }
 
 func newFakeAuthServer(t *testing.T) *fakeAuthServer {
+	return newFakeAuthServerWith(t, false)
+}
+
+func newFakeAuthServerWith(t *testing.T, googleLike bool) *fakeAuthServer {
 	t.Helper()
-	f := &fakeAuthServer{}
+	f := &fakeAuthServer{googleLike: googleLike}
 	mcpServer := newTestMCPServer()
 	mcpHandler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return mcpServer }, nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer access-2" {
-			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+f.URL+`/custom-prm"`)
+			if !f.googleLike {
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+f.URL+`/custom-prm"`)
+			}
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		mcpHandler.ServeHTTP(w, r)
 	})
-	mux.HandleFunc("GET /custom-prm", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"resource": f.URL + "/mcp", "authorization_servers": []string{f.URL + "/as"}, "scopes_supported": []string{"read", "write"}})
-	})
-	mux.HandleFunc("GET /.well-known/oauth-authorization-server/as", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{
-			"issuer":                 f.URL + "/as",
-			"authorization_endpoint": f.URL + "/as/authorize",
-			"token_endpoint":         f.URL + "/as/token",
-			"registration_endpoint":  f.URL + "/as/register",
+	resourceMetadata := func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"resource": f.URL + "/mcp", "authorization_servers": []string{f.URL + "/as/"}, "scopes_supported": []string{"read", "write"}})
+	}
+	if googleLike {
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", resourceMetadata)
+		mux.HandleFunc("GET /.well-known/openid-configuration/as", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]any{"issuer": f.URL + "/as/", "authorization_endpoint": f.URL + "/as/authorize", "token_endpoint": f.URL + "/as/token"})
 		})
-	})
+	} else {
+		mux.HandleFunc("GET /custom-prm", resourceMetadata)
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server/as", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]any{
+				"issuer":                 f.URL + "/as",
+				"authorization_endpoint": f.URL + "/as/authorize",
+				"token_endpoint":         f.URL + "/as/token",
+				"registration_endpoint":  f.URL + "/as/register",
+			})
+		})
+	}
 	mux.HandleFunc("POST /as/register", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			RedirectURIs []string `json:"redirect_uris"`
@@ -188,6 +208,84 @@ func TestAuthRequiredWithoutToken(t *testing.T) {
 	p := newPlugin(t, Config{Servers: map[string]ServerConfig{"auth": {URL: f.URL + "/mcp", OAuth: &OAuthConfig{}}}})
 	_, err := p.oauth.token(context.Background(), "auth")
 	if err == nil || !strings.Contains(err.Error(), "/oauth/mcp/start?server=auth") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// Google と同じ形（well-known の path 付きの場所からメタデータを取り、設定した client_id を使う）で認可できること。
+func TestOAuthFlowWithConfiguredClient(t *testing.T) {
+	f := newFakeAuthServerWith(t, true)
+	dataDir := t.TempDir()
+	t.Setenv("TEST_CLIENT_SECRET", "the-secret")
+	cfg := Config{Servers: map[string]ServerConfig{"auth": {URL: f.URL + "/mcp", AllowedTools: []string{"echo"},
+		OAuth: &OAuthConfig{ClientID: "configured-client", ClientSecret: "${TEST_CLIENT_SECRET}", Scopes: []string{"read"}}}}}
+	p := newPluginIn(t, dataDir, cfg)
+	mux := http.NewServeMux()
+	p.RegisterHTTP(mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/start?server=auth", nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
+	}
+	location, _ := url.Parse(rec.Header().Get("Location"))
+	q := location.Query()
+	if q.Get("client_id") != "configured-client" || q.Get("scope") != "read" || len(f.registered) != 0 {
+		t.Fatalf("authorize URL = %s registered = %v", location, f.registered)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/callback?code=c&state="+url.QueryEscape(q.Get("state")), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("callback: %d %s", rec.Code, rec.Body.String())
+	}
+
+	p = newPluginIn(t, dataDir, cfg)
+	if _, err := toolByName(t, p, "auth__echo").Run(context.Background(), map[string]any{"text": "x"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dataDir, "mcp_oauth.json"))
+	if strings.Contains(string(data), "the-secret") || strings.Contains(string(data), "configured-client") {
+		t.Fatalf("設定のクライアントを保存しています: %s", data)
+	}
+}
+
+func TestOAuthCallbackRejectsExpiredState(t *testing.T) {
+	f := newFakeAuthServer(t)
+	p := newPlugin(t, Config{Servers: map[string]ServerConfig{"auth": {URL: f.URL + "/mcp", OAuth: &OAuthConfig{}}}})
+	mux := http.NewServeMux()
+	p.RegisterHTTP(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/start?server=auth", nil))
+	location, _ := url.Parse(rec.Header().Get("Location"))
+	state := location.Query().Get("state")
+	p.oauth.mu.Lock()
+	pending := p.oauth.pending[state]
+	pending.createdAt = time.Now().Add(-pendingTTL - time.Second)
+	p.oauth.pending[state] = pending
+	p.oauth.mu.Unlock()
+
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/callback?code=c&state="+url.QueryEscape(state), nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("期限切れの state を受け付けました: %d", rec.Code)
+	}
+}
+
+// 認可サーバーにつながらないだけのときは、認可し直すよう案内しない。
+func TestTokenRefreshNetworkErrorIsNotAuthRequired(t *testing.T) {
+	down := httptest.NewServer(http.NotFoundHandler())
+	downURL := down.URL
+	down.Close()
+	store := &tokenStore{path: filepath.Join(t.TempDir(), "mcp_oauth.json")}
+	if err := store.saveToken("auth", &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	m := newOAuthManager(DefaultRedirectURL, store, &http.Client{Timeout: time.Second})
+	m.add("auth", downURL+"/mcp", OAuthConfig{ClientID: "c"})
+	m.server("auth").meta = &authMetadata{resource: downURL + "/mcp", authorizationEndpoint: downURL + "/authorize", tokenEndpoint: downURL + "/token"}
+	_, err := m.token(context.Background(), "auth")
+	var authErr *authRequiredError
+	if err == nil || errors.As(err, &authErr) {
 		t.Fatalf("err = %v", err)
 	}
 }

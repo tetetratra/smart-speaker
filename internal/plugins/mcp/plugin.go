@@ -31,6 +31,9 @@ const (
 	DefaultRedirectURL = "http://localhost:8081/oauth/mcp/callback"
 	// connectTimeout は、起動時に1つのサーバーへ接続してツールの一覧を取るまでの待ち時間。
 	connectTimeout = 30 * time.Second
+	// oauthHTTPTimeout は、メタデータの取得・動的クライアント登録・トークンの取得と更新の HTTP の待ち時間。
+	// トークンの更新はロックを持ったまま待つので、応答しない認可サーバーで起動やツール呼び出しが止まらないようにする。
+	oauthHTTPTimeout = 30 * time.Second
 )
 
 // Config は config.yaml の plugins.mcp。
@@ -155,7 +158,7 @@ func New(deps plugin.Deps) (*Plugin, error) {
 	if redirectURL == "" {
 		redirectURL = DefaultRedirectURL
 	}
-	oauth := newOAuthManager(redirectURL, &tokenStore{path: tokenPath}, http.DefaultClient)
+	oauth := newOAuthManager(redirectURL, &tokenStore{path: tokenPath}, &http.Client{Timeout: oauthHTTPTimeout})
 
 	servers := make([]*server, 0, len(names))
 	for _, serverName := range names {
