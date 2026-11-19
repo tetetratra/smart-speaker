@@ -6,6 +6,7 @@ import { Whiteboard, type HistoryEntry } from './Whiteboard'
 import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
 import { WakeModeControl } from './WakeModeControl'
 import { AutomationView } from './AutomationView'
+import { SettingsView } from './SettingsView'
 import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume, type PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolume'
 import { PlaybackVolumeSlider } from './plugins/playbackvolume/PlaybackVolumeSlider'
 import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
@@ -16,7 +17,7 @@ type ChatMessage =
   | { id: number; type: 'user' | 'agent'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
 
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs'
+type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs' | 'settings'
 type MemoryItem = {
   id: string
   content: string
@@ -153,7 +154,7 @@ const liveRootStyle = `
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .live-controls-nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .live-controls-toggles .live-control-btn,
   .live-controls-nav .live-admin-btn {
@@ -602,6 +603,7 @@ type LiveViewProps = {
   goMemory: () => void
   goAdmin: () => void
   goJobs: () => void
+  goSettings: () => void
 }
 
 function App() {
@@ -1061,9 +1063,11 @@ function App() {
     if (params.get('ui') === 'admin') return 'admin'
     if (params.get('ui') === 'memory') return 'memory'
     if (params.get('ui') === 'scenes') return 'scenes'
+    if (params.get('ui') === 'settings') return 'settings'
     if (window.location.pathname.startsWith('/admin')) return 'admin'
     if (window.location.pathname.startsWith('/memory')) return 'memory'
     if (window.location.pathname.startsWith('/scenes')) return 'scenes'
+    if (window.location.pathname.startsWith('/settings')) return 'settings'
     return 'app'
   })
   useEffect(() => {
@@ -1082,6 +1086,10 @@ function App() {
         setUiMode('scenes')
         return
       }
+      if (params.get('ui') === 'settings') {
+        setUiMode('settings')
+        return
+      }
       if (window.location.pathname.startsWith('/admin')) {
         setUiMode('admin')
         return
@@ -1092,6 +1100,10 @@ function App() {
       }
       if (window.location.pathname.startsWith('/scenes')) {
         setUiMode('scenes')
+        return
+      }
+      if (window.location.pathname.startsWith('/settings')) {
+        setUiMode('settings')
         return
       }
       setUiMode('app')
@@ -1177,6 +1189,8 @@ function App() {
       params.set('ui', 'memory')
     } else if (mode === 'scenes') {
       params.set('ui', 'scenes')
+    } else if (mode === 'settings') {
+      params.set('ui', 'settings')
     } else {
       params.delete('ui')
     }
@@ -1210,6 +1224,7 @@ function App() {
           goMemory={() => setMode('memory')}
           goAdmin={() => setMode('admin')}
           goJobs={() => setMode('jobs')}
+          goSettings={() => setMode('settings')}
         />
       </div>
       <div
@@ -1281,6 +1296,7 @@ function App() {
         backendURL={backendURL}
         goApp={() => setMode('app')}
       />
+      <SettingsView visible={uiMode === 'settings'} backendURL={backendURL} goApp={() => setMode('app')} />
     </>
   )
 }
@@ -1681,6 +1697,7 @@ function LiveView(props: LiveViewProps) {
     goMemory,
     goAdmin,
     goJobs,
+    goSettings,
   } = props
   const bubbleContentRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -1729,6 +1746,7 @@ function LiveView(props: LiveViewProps) {
                 <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                 <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 <button onClick={goJobs} className="live-admin-btn">予約</button>
+                <button onClick={goSettings} className="live-admin-btn">設定</button>
               </div>
               <div className="live-status-grid">
                 <div className="live-status-card">

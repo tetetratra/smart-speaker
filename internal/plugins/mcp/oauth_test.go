@@ -136,6 +136,9 @@ func TestOAuthFlow(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	p.RegisterHTTP(mux)
+	if got := serverStates(t, mux); got["auth"].State != stateUnauthorized || got["auth"].AuthURL != "/oauth/mcp/start?server=auth" {
+		t.Fatalf("認可前の状態 = %+v", got["auth"])
+	}
 
 	// 認可の開始: 動的クライアント登録をして、PKCE と resource つきで認可サーバーへリダイレクトする。
 	rec := httptest.NewRecorder()
@@ -159,8 +162,12 @@ func TestOAuthFlow(t *testing.T) {
 	// コールバック: 認可コードをトークンに換えて保存する。
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/callback?code=the-code&state="+url.QueryEscape(q.Get("state")), nil))
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != settingsPath {
 		t.Fatalf("callback: %d %s", rec.Code, rec.Body.String())
+	}
+	// 認可したあとは、再起動すると使える状態になる。認可の URL はもう出さない。
+	if got := serverStates(t, mux); got["auth"].State != stateRestartRequired || got["auth"].AuthURL != "" {
+		t.Fatalf("認可後の状態 = %+v", got["auth"])
 	}
 	exchange := f.tokenForms[0]
 	if exchange.Get("code") != "the-code" || exchange.Get("code_verifier") == "" || exchange.Get("resource") != f.URL+"/mcp" {
@@ -176,6 +183,11 @@ func TestOAuthFlow(t *testing.T) {
 
 	// 再起動すると、保存したトークンを更新してからツールを取る。更新したトークンは保存し直す。
 	p = newPluginIn(t, dataDir, cfg)
+	mux = http.NewServeMux()
+	p.RegisterHTTP(mux)
+	if got := serverStates(t, mux); got["auth"].State != stateReady || got["auth"].ToolCount != 1 {
+		t.Fatalf("再起動後の状態 = %+v", got["auth"])
+	}
 	out, err := toolByName(t, p, "auth__echo").Run(context.Background(), map[string]any{"text": "x"})
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +219,7 @@ func TestAuthRequiredWithoutToken(t *testing.T) {
 	f := newFakeAuthServer(t)
 	p := newPlugin(t, Config{Servers: map[string]ServerConfig{"auth": {URL: f.URL + "/mcp", OAuth: &OAuthConfig{}}}})
 	_, err := p.oauth.token(context.Background(), "auth")
-	if err == nil || !strings.Contains(err.Error(), "/oauth/mcp/start?server=auth") {
+	if err == nil || !strings.Contains(err.Error(), "設定") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -235,7 +247,7 @@ func TestOAuthFlowWithConfiguredClient(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/callback?code=c&state="+url.QueryEscape(q.Get("state")), nil))
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != settingsPath {
 		t.Fatalf("callback: %d %s", rec.Code, rec.Body.String())
 	}
 
@@ -288,4 +300,22 @@ func TestTokenRefreshNetworkErrorIsNotAuthRequired(t *testing.T) {
 	if err == nil || errors.As(err, &authErr) {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+// serverStates は、GET /api/mcp/servers の結果をサーバー名で引けるようにして返す。
+func serverStates(t *testing.T, mux *http.ServeMux) map[string]serverStatus {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/mcp/servers", nil))
+	var body struct {
+		Servers []serverStatus `json:"servers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("servers: %v %s", err, rec.Body.String())
+	}
+	states := map[string]serverStatus{}
+	for _, s := range body.Servers {
+		states[s.Name] = s
+	}
+	return states
 }

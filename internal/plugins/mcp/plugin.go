@@ -2,10 +2,11 @@
 //
 // Go サーバーが MCP クライアントになり、起動時に各サーバーへ接続してツールの一覧を取る。
 // ツールは「<サーバー名>__<ツール名>」の function ツールとして会話モデルに渡し、呼ばれたら MCP の tools/call に中継する。
-// 登録・変更・無効化は config.yaml の plugins.mcp に書き、再起動で反映する。
+// 登録・変更・無効化は config.yaml の plugins.mcp に書き、再起動で反映する。再起動は画面の「設定」からできる。
 //
 // 認可が要るリモートの MCP サーバーは、MCP 標準の OAuth（保護リソースのメタデータ・認可サーバーのメタデータ・
-// 動的クライアント登録・PKCE）で認可する。/oauth/mcp/start?server=<名前> をブラウザで開いて認可し、再起動するとツールが出る。
+// 動的クライアント登録・PKCE）で認可する。画面の「設定」から認可して再起動すると、ツールが出る。
+// 設定画面にはサーバーごとの状態を GET /api/mcp/servers で返す。
 package mcp
 
 import (
@@ -128,6 +129,10 @@ func (c ServerConfig) validate(serverName string) error {
 type Plugin struct {
 	tools []tools.Handler
 	oauth *oauthManager
+
+	mu sync.Mutex
+	// statuses はサーバーごとの状態。設定画面に出す。並びはサーバー名の順。
+	statuses []serverStatus
 }
 
 // New は、有効な MCP サーバーへ並行して接続し、ツールの一覧を取る。
@@ -160,11 +165,16 @@ func New(deps plugin.Deps) (*Plugin, error) {
 	}
 	oauth := newOAuthManager(redirectURL, &tokenStore{path: tokenPath}, &http.Client{Timeout: oauthHTTPTimeout})
 
+	p := &Plugin{oauth: oauth}
 	servers := make([]*server, 0, len(names))
+	statusIndex := map[string]int{}
 	for _, serverName := range names {
 		sc := cfg.Servers[serverName]
+		statusIndex[serverName] = len(p.statuses)
+		p.statuses = append(p.statuses, serverStatus{Name: serverName, OAuth: sc.OAuth != nil})
 		if !sc.enabled() {
 			log.Printf("mcp: %s は無効なので接続しません", serverName)
+			p.statuses[statusIndex[serverName]].State = stateDisabled
 			continue
 		}
 		sc = sc.expanded()
@@ -175,6 +185,7 @@ func New(deps plugin.Deps) (*Plugin, error) {
 	}
 
 	toolsByServer := make([][]tools.Handler, len(servers))
+	results := make([]serverStatus, len(servers))
 	var wg sync.WaitGroup
 	for i, s := range servers {
 		wg.Add(1)
@@ -183,6 +194,7 @@ func New(deps plugin.Deps) (*Plugin, error) {
 			listCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 			defer cancel()
 			handlers, err := s.listTools(listCtx)
+			results[i] = startupStatus(len(handlers), err)
 			if err != nil {
 				log.Printf("mcp: %s のツールを取れませんでした: %v", s.name, err)
 				return
@@ -193,10 +205,12 @@ func New(deps plugin.Deps) (*Plugin, error) {
 	}
 	wg.Wait()
 
-	p := &Plugin{oauth: oauth}
-	for _, handlers := range toolsByServer {
+	for i, handlers := range toolsByServer {
 		p.tools = append(p.tools, handlers...)
+		st := &p.statuses[statusIndex[servers[i].name]]
+		st.State, st.ToolCount, st.Message = results[i].State, results[i].ToolCount, results[i].Message
 	}
+	oauth.onAuthorized = p.markAuthorized
 	return p, nil
 }
 
@@ -205,7 +219,10 @@ func (p *Plugin) Name() string { return name }
 func (p *Plugin) Tools() []tools.Handler { return p.tools }
 
 // RegisterHTTP は OAuth の認可の開始とコールバックを登録する。
-func (p *Plugin) RegisterHTTP(mux *http.ServeMux) { p.oauth.registerHTTP(mux) }
+func (p *Plugin) RegisterHTTP(mux *http.ServeMux) {
+	p.oauth.registerHTTP(mux)
+	mux.HandleFunc("GET /api/mcp/servers", p.handleServers)
+}
 
 // Instructions は、MCP のツールで外部の状態を変える前に確認するよう指示する。ツールがなければ空。
 func (p *Plugin) Instructions() string {

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"log"
 	"mime"
@@ -21,6 +20,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// settingsPath は、認可が終わったあとに戻す設定画面のパス。
+const settingsPath = "/?ui=settings"
+
 // authRequiredError は、認可されていないか、認可が切れているときのエラー。会話モデルにもそのまま返す。
 type authRequiredError struct {
 	server string
@@ -28,7 +30,7 @@ type authRequiredError struct {
 }
 
 func (e *authRequiredError) Error() string {
-	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。ブラウザで /oauth/mcp/start?server=%s を開いて認可し、サーバーを再起動してください", e.server, e.server)
+	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。画面の「設定」から認可し、再起動してください", e.server)
 	if e.cause != nil {
 		msg += fmt.Sprintf("（%v）", e.cause)
 	}
@@ -75,6 +77,9 @@ type oauthManager struct {
 	redirectURL string
 	store       *tokenStore
 	httpClient  *http.Client
+
+	// onAuthorized は、認可が終わったときに呼ぶ。設定画面に出す状態を変えるのに使う。
+	onAuthorized func(serverName string)
 
 	mu      sync.Mutex
 	servers map[string]*oauthServer
@@ -277,8 +282,11 @@ func (m *oauthManager) handleCallback(w http.ResponseWriter, r *http.Request) {
 	s.tokens = nil // 次に使うとき、保存したトークンから作り直す。
 	s.mu.Unlock()
 	log.Printf("mcp: %s を認可しました", s.name)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, "<!doctype html><meta charset=utf-8><p>MCPサーバー %s を認可しました。サーバーを再起動すると、ツールを使えるようになります。</p>", html.EscapeString(s.name))
+	if m.onAuthorized != nil {
+		m.onAuthorized(s.name)
+	}
+	// 設定画面へ戻す。設定画面には「認可済み（再起動すると使えます）」と出る。
+	http.Redirect(w, r, settingsPath, http.StatusSeeOther)
 }
 
 // oauthTransport は、リクエストにアクセストークンを付ける。

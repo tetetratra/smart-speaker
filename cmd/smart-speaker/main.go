@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,9 +50,27 @@ import (
 
 func main() {
 	log.SetFlags(0)
+	if !run() {
+		return
+	}
+	// 画面から再起動を頼まれたので、終了の処理を済ませたうえで、同じプログラムを同じ引数で起動し直す。
+	// プロセスを置き換えるので、Docker でも開発時の go run でも、外の仕組みに頼らずに起動し直せる。
+	executable, err := os.Executable()
+	if err != nil {
+		log.Fatalf("restart: 実行ファイルの場所が分かりません: %v", err)
+	}
+	log.Println("restart: 起動し直します")
+	if err := syscall.Exec(executable, os.Args, os.Environ()); err != nil {
+		log.Fatalf("restart: 起動し直せませんでした: %v", err)
+	}
+}
 
+// run はサーバーを動かし、終了するまで戻らない。画面から再起動を頼まれて終了したときは true を返す。
+// 終了の処理（HTTP サーバーやグラフを閉じる）は、戻る前に defer で済ませる。
+func run() bool {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	var restartRequested atomic.Bool
 
 	setLocalTimeZone()
 
@@ -68,7 +88,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore,
+		// 再起動を頼まれたら、アプリの context を終わらせて run から戻る。MCP の stdio のプロセスなども、これで止まる。
+		Restart: func() {
+			restartRequested.Store(true)
+			cancel()
+		},
+	}
 	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
@@ -121,6 +147,7 @@ func main() {
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
 	}
+	return restartRequested.Load()
 }
 
 func setLocalTimeZone() {

@@ -165,6 +165,12 @@ func TestDisabledAndUnreachableServers(t *testing.T) {
 	if len(p.Tools()) != 0 || p.Instructions() != "" {
 		t.Fatalf("tools = %v", toolNames(p))
 	}
+	mux := http.NewServeMux()
+	p.RegisterHTTP(mux)
+	got := serverStates(t, mux)
+	if got["off"].State != stateDisabled || got["down"].State != stateError || got["down"].Message == "" {
+		t.Fatalf("状態 = %+v", got)
+	}
 }
 
 func TestConfigValidation(t *testing.T) {
