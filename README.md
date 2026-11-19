@@ -130,6 +130,8 @@ flowchart LR
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
     locationAPI("【現在地】<br/>位置情報API<br/>POST /api/location")
+    hub2Watcher("【SwitchBot】<br/>Hub 2 の監視<br/>起動時と5分おき")
+    switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
 
@@ -152,7 +154,9 @@ flowchart LR
     runner -->|"スクリプトからの呼び出し"| webSearchTool
     webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
     locationAPI -->|"Deliver<br/>居場所の変化"| gateway
-    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所の変化"| manager
+    hub2Watcher <==>|"HTTPS<br/>温度・湿度・明るさの取得"| switchBot
+    hub2Watcher -->|"Deliver<br/>温度・湿度・明るさの段階の変化"| gateway
+    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所・温度・湿度・明るさの変化"| manager
     manager <-.->|"記録、無操作が続いたときに<br/>時間がたった・大きくなりすぎた古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt
@@ -176,7 +180,7 @@ flowchart LR
         webSearchTool["【Web検索】<br/>web_search"]
         claudeCodeTool["【Claude Code】<br/>ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>（agentbridge.Service）"]
         calendarTool["【Googleカレンダー】<br/>google_calendar_list<br/>google_calendar_create<br/>google_calendar_update"]
-        switchBotTool["【SwitchBot】<br/>hub2_get_temperature<br/>hub2_get_humidity<br/>hub2_get_light_level<br/>switchbot_execute_scene"]
+        switchBotTool["【SwitchBot】<br/>switchbot_execute_scene"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
         volumeTool["【再生音量】<br/>set_playback_volume"]
@@ -213,7 +217,7 @@ flowchart LR
     calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
     calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
     calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
-    switchBotTool <==>|"HTTPS<br/>計測値の取得・シーン実行"| switchBot
+    switchBotTool <==>|"HTTPS<br/>シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
     wakeModeTool <-.->|"参照・切替"| wakeModeStore
     volumeTool <-.->|"切替"| volumeStore

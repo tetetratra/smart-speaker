@@ -1,6 +1,7 @@
 // Package switchbot は、SwitchBot の機器を扱うプラグイン。
 //
-// Hub 2 の温度・湿度・照度を取得する AI ツールと、登録済みのシーンを実行する AI ツールを持つ。
+// 登録済みのシーンを実行する AI ツールを持つ。
+// Hub 2 の温度・湿度・明るさは5分おきに取得し、段階が変わったら計測値ごとに購読できる記録として会話へ入れる。
 // 画面のリモコン（web/src/plugins/switchbot）向けに、シーンの一覧・実行の HTTP API も持つ。
 //
 // トークンとシークレットは環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡す。
@@ -31,9 +32,12 @@ type Config struct {
 type Plugin struct {
 	client *Client
 	scenes []Scene
+	// watching は Hub 2 の計測値を監視しているか。
+	watching bool
 }
 
 // New は SwitchBot のプラグインを作る。有効なら、起動時にシーンの一覧を取得する。
+// device_map に hub2 があれば、計測値の監視を始める（deps.Deliver がなければ始めない）。
 func New(deps plugin.Deps) (*Plugin, error) {
 	var cfg Config
 	if err := deps.DecodeConfig(name, &cfg); err != nil {
@@ -46,7 +50,16 @@ func New(deps plugin.Deps) (*Plugin, error) {
 		return &Plugin{}, nil
 	}
 	client := NewSwitchbotClient(token, secret, cfg.DeviceMap)
-	return &Plugin{client: client, scenes: loadScenes(deps.AppContext, client)}, nil
+	p := &Plugin{client: client, scenes: loadScenes(deps.AppContext, client)}
+	if client.deviceMap[hub2Alias] != "" && deps.Deliver != nil {
+		ctx := deps.AppContext
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		p.watching = true
+		go newSensorWatcher(client, deps.Deliver).run(ctx, sensorInterval)
+	}
+	return p, nil
 }
 
 func loadScenes(parent context.Context, client *Client) []Scene {
@@ -70,9 +83,6 @@ func (p *Plugin) Tools() []tools.Handler {
 	if scene := NewScene(p.client, p.scenes); scene != nil {
 		handlers = append(handlers, scene)
 	}
-	for _, t := range NewHub2ToolsWithClient(p.client) {
-		handlers = append(handlers, t)
-	}
 	return handlers
 }
 
@@ -83,6 +93,17 @@ func (p *Plugin) RegisterHTTP(mux *http.ServeMux) {
 		client = p.client
 	}
 	registerSwitchBotSceneAPI(mux, client)
+}
+
+func (p *Plugin) SubscribableSources() map[string]string {
+	if !p.watching {
+		return nil
+	}
+	return map[string]string{
+		TemperatureSource: "Hub 2 の室温が1℃刻みで変わった（event.metadata.temperature に計測値の数値）。サーバー起動直後にも現在の値が1件届く",
+		HumiditySource:    "Hub 2 の湿度が5%刻みで変わった（event.metadata.humidity に計測値の数値）。サーバー起動直後にも現在の値が1件届く",
+		LightSource:       "Hub 2 で測った部屋の明るさの段階が変わった（event.metadata.light に dark（照明を消している）・dim（照明を暗くつけている）・bright（照明を明るくつけている）、event.metadata.light_level に照度1〜20）。サーバー起動直後にも現在の値が1件届く",
+	}
 }
 
 // Instructions は、シーンを実行するツールがあるときだけ、シーン名の選び方を伝える。
