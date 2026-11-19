@@ -70,7 +70,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 	}
 	system := input[0].(map[string]any)
 	instructions := system["content"].(string)
-	for _, want := range []string{"出力例", "existing_memories", "迷ったら保存しない", "operations: []", "不要になった記憶の削除", RetentionCriteria} {
+	for _, want := range []string{"出力例", "existing_memories", "迷ったら保存しない", "operations: []", "不要になった記憶の削除", RetentionCriteria, ContentStyle} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("system instructions = %s, want it to contain %s", instructions, want)
 		}

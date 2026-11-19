@@ -107,6 +107,11 @@ func TestMemoryToolDefinitions(t *testing.T) {
 		if operation == "list_memories" {
 			continue
 		}
+		// 本文の書き方も、会話終了時の自動抽出と同じものを示す（add と update には content がある）。
+		if props := def["parameters"].(map[string]any)["properties"].(map[string]any); props["content"] != nil &&
+			!strings.Contains(props["content"].(map[string]any)["description"].(string), memoryhook.ContentStyle) {
+			t.Fatal(operation, "本文の書き方がありません")
+		}
 		// 何を残す価値があるかは、会話終了時の自動抽出と同じ基準を示す。
 		if !strings.Contains(description, "了承") || !strings.Contains(description, memoryhook.RetentionCriteria) {
 			t.Fatal(operation, description)
