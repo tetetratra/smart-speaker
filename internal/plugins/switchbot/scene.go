@@ -2,6 +2,7 @@ package switchbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 )
 
 const sceneToolName = "switchbot_execute_scene"
+
+var errNotConfigured = errors.New("SwitchBot が設定されていません")
 
 type SceneTool struct {
 	client       *Client

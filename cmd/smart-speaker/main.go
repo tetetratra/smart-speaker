@@ -68,7 +68,7 @@ func main() {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
 	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
-	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
+	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置や室温などの変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
