@@ -235,6 +235,27 @@ func (r *rig) send(v any) {
 		r.t.Fatal(err)
 	}
 }
+
+// waitResponse は次の応答要求まで待ち、その直前に足した知らせの本文も返す。
+func (r *rig) waitResponse() (map[string]any, string) {
+	r.t.Helper()
+	notice := ""
+	for {
+		select {
+		case m := <-r.commands:
+			if isNotice(m) {
+				notice = noticeText(m)
+			}
+			if m["type"] == "response.create" {
+				return m["response"].(map[string]any), notice
+			}
+		case <-r.ctx.Done():
+			r.t.Fatal("response.create が届かない")
+			return nil, ""
+		}
+	}
+}
+
 func (r *rig) wait(kind string) map[string]any {
 	r.t.Helper()
 	for {
@@ -418,8 +439,8 @@ func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
 	if !found {
 		t.Fatal(records)
 	}
-	next := r.wait("response.create")["response"].(map[string]any)
-	if next["metadata"].(map[string]any)["generation"] != "2" || !strings.Contains(next["instructions"].(string), "call1") {
+	next, notice := r.waitResponse()
+	if next["metadata"].(map[string]any)["generation"] != "2" || !strings.Contains(notice, "call1") {
 		t.Fatal("旧結果を現在の世代で説明する指示がありません", next)
 	}
 }
@@ -535,7 +556,7 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 	for {
 		select {
 		case cmd := <-r.commands:
-			if isTimeNotice(cmd) {
+			if isNotice(cmd) {
 				continue
 			}
 			if cmd["type"] != "response.create" {
@@ -579,8 +600,8 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
 	}
-	if instructions, _ := request["response"].(map[string]any)["instructions"].(string); instructions != "元のシステム指示" {
-		t.Fatalf("応答ごとの指示が元の指示と違います: %s", instructions)
+	if _, ok := request["response"].(map[string]any)["instructions"]; ok {
+		t.Fatalf("応答ごとに指示を変えています: %v", request)
 	}
 }
 func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
@@ -626,9 +647,9 @@ func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T)
 	created("r1", initial)
 	call("r1", "search1", "web_search")
 	result("search1", "web_search", `{"result":"明日の天気"}`)
-	required := r.wait("response.create")
-	followup := required["response"].(map[string]any)
-	if followup["tool_choice"] != nil || !strings.Contains(followup["instructions"].(string), "口頭説明より先に") {
+	followup, notice := r.waitResponse()
+	required := map[string]any{"response": followup}
+	if followup["tool_choice"] != nil || !strings.Contains(notice, "口頭説明より先に") {
 		t.Fatal("表示の必要性を判断する指示がありません", required)
 	}
 	created("r2", required)

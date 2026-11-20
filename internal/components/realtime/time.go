@@ -7,11 +7,15 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 )
 
-// sendTimeNotice は、応答の前に日時の知らせを会話の末尾に足す。
-// 指示（instructions）に日時を入れると応答ごとに先頭が変わり、会話全体でキャッシュが効かなくなるため、会話の末尾に足す。
+// sendNotice は、応答の前に日時の知らせと、この応答だけへの指示を system のメッセージで会話の末尾に足す。
+// 指示（instructions）を応答ごとに変えると入力の先頭が変わり、会話全体でキャッシュが効かなくなるため、会話の末尾に足す。
 // 古い知らせは消さずに残す。途中の項目を消すと、そこから後ろのキャッシュが効かなくなるため。
-func (s *stage) sendTimeNotice(now time.Time) {
-	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "system", "content": []any{map[string]any{"type": "input_text", "text": conversation.TimeNotice(now)}}}})
+func (s *stage) sendNotice(now time.Time, oneOff string) {
+	text := conversation.TimeNotice(now)
+	if oneOff != "" {
+		text += "\n## この応答だけへの指示\n" + oneOff
+	}
+	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "system", "content": []any{map[string]any{"type": "input_text", "text": text}}}})
 }
 
 // usage は response.done に含まれる、応答1回分のトークン数。

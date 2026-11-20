@@ -103,16 +103,16 @@ func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
 	if text := item["content"].([]any)[0].(map[string]any)["text"]; text != "起きて" {
 		t.Fatal(item)
 	}
-	request := r.wait("response.create")["response"].(map[string]any)
-	if !strings.Contains(request["instructions"].(string), "呼びかけの言葉だけを言いました") {
-		t.Fatal("呼びかけだけの発話への指示がありません", request["instructions"])
+	request, notice := r.waitResponse()
+	if !strings.Contains(notice, "呼びかけの言葉だけを言いました") {
+		t.Fatal("呼びかけだけの発話への指示がありません", notice)
 	}
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": request["metadata"]}})
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
 	// 本文のある次の発話には指示を持ち越さない。
 	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、天気は", Revision: m.Revision, Confidence: 0.9}}
-	next := r.wait("response.create")["response"].(map[string]any)
-	if strings.Contains(next["instructions"].(string), "呼びかけの言葉だけを言いました") {
+	_, next := r.waitResponse()
+	if strings.Contains(next, "呼びかけの言葉だけを言いました") {
 		t.Fatal("本文のある発話に呼びかけだけの指示を付けました")
 	}
 }

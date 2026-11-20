@@ -10,7 +10,6 @@ import (
 // wakeOnlyInstructionsは、呼びかけだけの発話への応答にだけ付ける指示。
 // 呼びかけの言葉は設定で変わるため、システムプロンプトではなく応答ごとに渡す。
 const wakeOnlyInstructions = `
-
 ユーザーは呼びかけの言葉だけを言いました。起きていて話を聞けることを、普段の口調で一言だけ伝えてください（例:「起きたよ」「起きてるよ」）。ツールは使わないでください。`
 
 func (s *stage) wakeRequired() bool {

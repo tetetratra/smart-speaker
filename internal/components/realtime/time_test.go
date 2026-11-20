@@ -14,10 +14,9 @@ import (
 func TestResponseAddsTimeNoticeInsteadOfChangingInstructions(t *testing.T) {
 	commands := eventqueue.New[any](nil)
 	s := &stage{
-		cfg:          Config{Generation: generation.NewStore()},
-		ready:        true,
-		instructions: "元の指示",
-		transport:    &transport{commands: commands},
+		cfg:       Config{Generation: generation.NewStore()},
+		ready:     true,
+		transport: &transport{commands: commands},
 	}
 	pop := func() map[string]any {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -44,7 +43,7 @@ func TestResponseAddsTimeNoticeInsteadOfChangingInstructions(t *testing.T) {
 		t.Fatalf("日時が違います: %s, %v", text, err)
 	}
 	response := pop()
-	if response["type"] != "response.create" || response["response"].(map[string]any)["instructions"] != "元の指示" {
+	if _, changed := response["response"].(map[string]any)["instructions"]; response["type"] != "response.create" || changed {
 		t.Fatalf("指示が変わっています: %v", response)
 	}
 

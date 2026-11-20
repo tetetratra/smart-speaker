@@ -8,14 +8,13 @@ type toolCompletion struct {
 	Name   string `json:"name"`
 }
 
+// toolResultInstructions は、ツールの結果を受けた応答だけへの指示。結果が無ければ空。
 func (s *stage) toolResultInstructions() string {
 	if len(s.pendingToolResponses) == 0 {
-		return s.instructions
+		return ""
 	}
 	encoded, _ := json.Marshal(s.pendingToolResponses)
-	return s.instructions + `
-
-ツールの実行結果が会話に追加されました。次の一覧のcall_idに対応する結果を確認してください。
+	return `ツールの実行結果が会話に追加されました。次の一覧のcall_idに対応する結果を確認してください。
 取り消された依頼、報告不要になった結果、既に説明済みの結果は説明せず、他に返答が不要ならwait_for_userで待機してください。
 結果に中身があれば、要点を短く説明してください。画面に残す必要があれば、口頭説明より先にホワイトボードを更新し、その成功後に説明してください。
 受け付けただけで本当の結果が後から届くもの（statusがstartedなど）は、呼び出しの前に一言伝えていれば何も話さずwait_for_userで待機し、伝えていなければ短い一言だけにしてください。同じ呼び出しを繰り返さないでください。
