@@ -95,6 +95,25 @@ curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"ホワイトボ
 Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS を求めます。
 本番サーバーで認可するときは、`ssh -L 8081:localhost:8081 <user>@<本番サーバー>` でポートを転送してから、手元のブラウザで `http://localhost:8081/oauth/google/start` を開きます。
 
+### MCP サーバー
+
+`config.yaml` の `plugins.mcp.servers` に MCP サーバーを書くと、そのツールを会話から使えます（書き方は `config.sample.yaml`）。
+ツール名は `<サーバー名>__<ツール名>` になり、`allowed_tools` で会話に出すツールを絞れます。
+設定はサーバーの再起動で反映します。
+設定画面には、サーバーごとに認可済みか・接続できているか・読み込んだツールの数を出します。接続できなかったサーバーは、ツールを出さずに起動します。
+
+- リモート（`url`）: Streamable HTTP の MCP サーバーにつなぎます。固定のトークンは `headers` に `${環境変数}` で書きます。
+- ローカル（`command`）: stdio の MCP サーバーを子プロセスとして起動します。本番ではコマンドが Docker コンテナの中で動くので、使うコマンドをイメージに入れておく必要があります。
+
+OAuth が要るリモートの MCP サーバーは、`oauth:` を書いて次の手順で認可します。サーバーは MCP 標準の保護リソースのメタデータ（`/.well-known/oauth-protected-resource`）を公開している必要があります。
+
+1. `plugins.mcp.redirect_url` に、画面を開いている HTTPS の住所のコールバック URL（`https://<ドメイン>/oauth/mcp/callback`）を書きます。独自のドメインでも、`tailscale serve` の `https://<マシン名>.<tailnet名>.ts.net` でも構いません。既定の `http://localhost:8081/oauth/mcp/callback` は、手元で開発するとき用です。
+2. 動的クライアント登録に対応していないサーバー（Google など）は、提供元で OAuth クライアントを作って `oauth.client_id`・`oauth.client_secret` に書き、リダイレクト URI に 1 の URL を登録します。
+3. 画面の「設定」を開き、未認可のサーバーの「認可する」を押します。提供元の画面で許可すると、設定画面へ戻ります。トークンは `plugins.mcp.token_path`（既定は `memory.store_path` と同じディレクトリの `mcp_oauth.json`）に保存し、期限が切れたら自動で更新します。
+4. サーバーを再起動すると、ツールが出ます。
+
+Google Calendar の MCP サーバー（`https://calendarmcp.googleapis.com/mcp/v1`）を使う場合は、Google Cloud で「Google Calendar API」と「Google Calendar MCP API」を有効にし、ウェブアプリケーションの OAuth クライアントを作ります（[Configure the Calendar MCP server](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server)）。
+
 ### SwitchBot
 
 1. SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。

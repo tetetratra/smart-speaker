@@ -31,6 +31,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
 	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
+	mcpplugin "github.com/tetetratra/smart-speaker/internal/plugins/mcp"
 	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
 	"github.com/tetetratra/smart-speaker/internal/plugins/userlocation"
@@ -312,6 +313,10 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcp, err := mcpplugin.New(deps)
+	if err != nil {
+		return nil, err
+	}
 	return []plugin.Plugin{
 		userlocation.New(deps),
 		playbackvolume.New(deps),
@@ -319,6 +324,7 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 		websearch.New(deps),
 		calendar,
 		claudeCode,
+		mcp,
 	}, nil
 }
 

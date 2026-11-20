@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { WakeModeControl, type WakeModeState } from './WakeModeControl'
 import { PlaybackVolumeSlider } from './plugins/playbackvolume/PlaybackVolumeSlider'
 import type { PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolume'
+import { MCPServerList } from './plugins/mcp/MCPServerList'
 
 // メイン画面からは外した、ふだん触らない設定と状態表示をまとめた画面。
 export function SettingsView(props: {
@@ -70,6 +71,9 @@ export function SettingsView(props: {
         </SettingsSection>
         <SettingsSection title="再生音量">
           <PlaybackVolumeSlider level={playbackVolumeLevel} onChange={onPlaybackVolumeChange} />
+        </SettingsSection>
+        <SettingsSection title="MCPサーバー">
+          <MCPServerList backendURL={backendURL} visible={visible} />
         </SettingsSection>
       </div>
       <button
