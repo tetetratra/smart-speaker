@@ -298,13 +298,12 @@ func (s *stage) maybeRespond(ctx context.Context) {
 	}
 	s.wantResponse = false
 	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
-	s.sendTimeNotice(time.Now())
-	instructions := s.toolResultInstructions()
+	oneOff := s.toolResultInstructions()
 	if s.wakeOnlyReply {
-		instructions += wakeOnlyInstructions
+		oneOff += wakeOnlyInstructions
 		s.wakeOnlyReply = false
 	}
-	response["instructions"] = instructions
+	s.sendNotice(time.Now(), strings.TrimSpace(oneOff))
 	s.transport.send(map[string]any{"type": "response.create", "response": response})
 	// 送信まで保持する一回用の指示。報告完了を管理するキューではない。
 	s.pendingToolResponses = nil

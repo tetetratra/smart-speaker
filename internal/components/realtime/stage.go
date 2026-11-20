@@ -71,7 +71,6 @@ type stage struct {
 	epoch                                     uint64
 	connecting, ready, speaking, wantResponse bool
 	active                                    string
-	instructions                              string
 	restoredContext                           string
 	started, lastActivity                     time.Time
 	peers                                     map[string]bool
@@ -193,7 +192,6 @@ func (s *stage) run(ctx context.Context) {
 			for _, id := range in.restoredIDs {
 				s.externalApplied[id] = true
 			}
-			s.instructions = instructions
 			s.wakeModeRequired = s.wakeRequired()
 			s.wakeGated = s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Gated()
 			s.transport.send(sessionUpdate(s.cfg, instructions))

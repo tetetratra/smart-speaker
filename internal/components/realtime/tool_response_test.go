@@ -22,7 +22,7 @@ func newToolResponseStage(t *testing.T) *stage {
 		node:       &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:  &transport{commands: eventqueue.New[any](nil)},
 		controller: generationcontroller.New(gen), epoch: 1, ready: true,
-		instructions: "元の会話指示", started: time.Now(),
+		started:   time.Now(),
 		calls:     map[string]*call{"search": {epoch: 1, generation: 1}},
 		responses: map[string]*response{}, userGenerations: map[string]types.GenerationID{},
 	}
@@ -37,8 +37,8 @@ func popToolCommand(t *testing.T, s *stage, kind string) map[string]any {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, ok := s.transport.commands.Pop(ctx)
-	// 応答の前に毎回足す日時の知らせは、ここでは見ない。
-	if ok && isTimeNotice(cmd.(map[string]any)) {
+	// 応答の前に毎回足す知らせは、ここでは見ない。
+	if ok && isNotice(cmd.(map[string]any)) {
 		cmd, ok = s.transport.commands.Pop(ctx)
 	}
 	if !ok || cmd.(map[string]any)["type"] != kind {
@@ -47,9 +47,25 @@ func popToolCommand(t *testing.T, s *stage, kind string) map[string]any {
 	return cmd.(map[string]any)
 }
 
-func isTimeNotice(cmd map[string]any) bool {
+func isNotice(cmd map[string]any) bool {
 	item, _ := cmd["item"].(map[string]any)
 	return cmd["type"] == "conversation.item.create" && item != nil && item["role"] == "system"
+}
+
+func noticeText(cmd map[string]any) string {
+	return cmd["item"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+}
+
+// popToolResponse は、応答の前の知らせと応答要求を順に取り出す。
+func popToolResponse(t *testing.T, s *stage) (map[string]any, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	cmd, ok := s.transport.commands.Pop(ctx)
+	if !ok || !isNotice(cmd.(map[string]any)) {
+		t.Fatalf("応答の前の知らせがありません: %v", cmd)
+	}
+	return popToolCommand(t, s, "response.create")["response"].(map[string]any), noticeText(cmd.(map[string]any))
 }
 
 func noToolCommand(t *testing.T, s *stage) {
@@ -81,9 +97,11 @@ func TestToolInstructionsWaitForCurrentInputCommit(t *testing.T) {
 		t.Fatal("待機中に追加指示が失われました")
 	}
 	toolServerEvent(s, map[string]any{"type": "input_audio_buffer.committed", "item_id": "user2"})
-	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	instructions := response["instructions"].(string)
-	for _, text := range []string{"元の会話指示", "search", "取り消された依頼", "口頭説明より先に"} {
+	response, instructions := popToolResponse(t, s)
+	if _, ok := response["instructions"]; ok {
+		t.Fatal("応答ごとに指示を変えています", response)
+	}
+	for _, text := range []string{"この応答だけへの指示", "search", "取り消された依頼", "口頭説明より先に"} {
 		if !strings.Contains(instructions, text) {
 			t.Fatalf("追加指示に必要な内容がありません: %s", text)
 		}
@@ -108,8 +126,8 @@ func TestToolInstructionsWaitForActiveResponseAndRepairs(t *testing.T) {
 	toolServerEvent(s, map[string]any{"type": "response.done", "response": map[string]any{"id": "ack"}})
 	noToolCommand(t, s)
 	toolServerEvent(s, map[string]any{"type": "conversation.item.deleted", "item_id": "old-item"})
-	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) {
+	_, notice := popToolResponse(t, s)
+	if !strings.Contains(notice, `"call_id":"search"`) {
 		t.Fatal("履歴補正中にツール結果の案内が失われました")
 	}
 }
@@ -120,8 +138,8 @@ func TestToolResultRespondsWhileOtherCallIsRunning(t *testing.T) {
 	s.calls["slow"] = &call{epoch: 1, generation: 1}
 	s.toolResult(context.Background(), toolResultForTest("search", "web_search", `{"result":"情報"}`))
 	popToolCommand(t, s, "conversation.item.create")
-	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if !strings.Contains(response["instructions"].(string), `"call_id":"search"`) {
+	response, notice := popToolResponse(t, s)
+	if !strings.Contains(notice, `"call_id":"search"`) {
 		t.Fatal(response)
 	}
 }
@@ -138,8 +156,7 @@ func TestReconnectedToolResultUsesContextAndKeepsInstructions(t *testing.T) {
 	if item["type"] != "message" {
 		t.Fatal("旧call_idの結果を新しい接続へ再送しました", item)
 	}
-	response := popToolCommand(t, s, "response.create")["response"].(map[string]any)
-	if !strings.Contains(response["instructions"].(string), "search") {
+	if _, notice := popToolResponse(t, s); !strings.Contains(notice, "search") {
 		t.Fatal("再接続時に追加指示がありません")
 	}
 }
