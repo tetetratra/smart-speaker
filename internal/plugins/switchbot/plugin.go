@@ -102,7 +102,7 @@ func (p *Plugin) SubscribableSources() map[string]string {
 	return map[string]string{
 		TemperatureSource: "Hub 2 の室温が1℃刻みで変わった（event.metadata.temperature に計測値の数値）。サーバー起動直後にも現在の値が1件届く",
 		HumiditySource:    "Hub 2 の湿度が5%刻みで変わった（event.metadata.humidity に計測値の数値）。サーバー起動直後にも現在の値が1件届く",
-		LightSource:       "Hub 2 で測った部屋の明るさの段階が変わった（event.metadata.light に dark（照明を消している）・dim（照明を暗くつけている）・bright（照明を明るくつけている）、event.metadata.light_level に照度1〜20）。サーバー起動直後にも現在の値が1件届く",
+		LightSource:       "Hub 2 で測った部屋の明るさが2段階以上変わった（event.metadata.light_level に明るさ1〜20。照明を消すと小さく、明るくつけると大きくなる）。サーバー起動直後にも現在の値が1件届く",
 	}
 }
 

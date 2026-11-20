@@ -24,16 +24,6 @@ const (
 	sensorInterval = 5 * time.Minute
 )
 
-// 明るさの段階。Hub 2 の lightLevel（1〜20）を3段階に分ける。しきい値は実測ではなく推測。
-const (
-	lightDark   = 0 // 1〜4: 照明を消している
-	lightDim    = 1 // 5〜12: 照明を暗くつけている
-	lightBright = 2 // 13〜20: 照明を明るくつけている
-)
-
-var lightLabels = map[int]string{lightDark: "真っ暗", lightDim: "薄暗い", lightBright: "明るい"}
-var lightNames = map[int]string{lightDark: "dark", lightDim: "dim", lightBright: "bright"}
-
 // measurement は、Hub 2 の計測値1つを段階に分けて記録にする方法。
 type measurement struct {
 	source  string
@@ -76,24 +66,15 @@ var measurements = []measurement{
 	{
 		source:  LightSource,
 		bodyKey: "lightLevel",
-		classify: func(v float64) int {
-			switch {
-			case v <= 4:
-				return lightDark
-			case v <= 12:
-				return lightDim
-			default:
-				return lightBright
-			}
-		},
-		margin: 1,
+		// Hub 2 の lightLevel（1〜20）を2段階刻みにする（1・2→2、3・4→4、…）。
+		classify: func(v float64) int { return int(math.Round(v/2) * 2) },
+		margin:   1,
 		record: func(level int, v float64, first bool) (string, string, map[string]any) {
-			label := lightLabels[level]
-			text := "部屋の明るさが「" + label + "」になりました。"
+			text := fmt.Sprintf("部屋の明るさが%d/20になりました。", level)
 			if first {
-				text = "現在の部屋の明るさは「" + label + "」です。"
+				text = fmt.Sprintf("現在の部屋の明るさは%d/20です。", level)
 			}
-			return "明るさ " + label, text, map[string]any{"light": lightNames[level], "light_level": v}
+			return fmt.Sprintf("明るさ %d/20", level), text, map[string]any{"light_level": v}
 		},
 	},
 }

@@ -48,14 +48,14 @@ func TestSensorWatcherDeliversChangedLevels(t *testing.T) {
 	}
 
 	check(map[string]any{"temperature": 24.6, "humidity": 46.0, "lightLevel": 3.0},
-		"現在の室温は25℃です。", "現在の湿度は45%です。", "現在の部屋の明るさは「真っ暗」です。")
+		"現在の室温は25℃です。", "現在の湿度は45%です。", "現在の部屋の明るさは4/20です。")
 	first := got[0]
 	if first.Record.Source != TemperatureSource || first.Record.Title != "室温 25℃" || !first.Subscribable ||
 		first.ModelShouldRespond || first.ModelAlreadyKnows || first.UserAlreadyKnows || !first.Record.External ||
 		first.Record.Role != types.RoleSystem || first.Record.Metadata["temperature"] != 24.6 {
 		t.Fatalf("温度の記録 = %#v", first)
 	}
-	if light := got[2].Record; light.Source != LightSource || light.Metadata["light"] != "dark" || light.Metadata["light_level"] != 3.0 {
+	if light := got[2].Record; light.Source != LightSource || light.Title != "明るさ 4/20" || light.Metadata["light_level"] != 3.0 {
 		t.Fatalf("明るさの記録 = %#v", light)
 	}
 
@@ -64,14 +64,14 @@ func TestSensorWatcherDeliversChangedLevels(t *testing.T) {
 	check(map[string]any{"temperature": 24.2, "humidity": 41.6, "lightLevel": 3.0})
 	// 余裕の幅を越えたものだけ届ける。
 	check(map[string]any{"temperature": 25.8, "humidity": 48.4, "lightLevel": 6.0},
-		"室温が26℃になりました。", "部屋の明るさが「薄暗い」になりました。")
-	check(map[string]any{"temperature": 25.8, "humidity": 48.5, "lightLevel": 12.0}, "湿度が50%になりました。")
+		"室温が26℃になりました。", "部屋の明るさが6/20になりました。")
+	check(map[string]any{"temperature": 25.8, "humidity": 48.5, "lightLevel": 7.0}, "湿度が50%になりました。")
 
 	// 取得に失敗したら何も届けず、次の取得で前回の段階と比べる。
 	fail = true
 	check(nil)
 	fail = false
-	check(map[string]any{"temperature": 25.8, "humidity": 50.0, "lightLevel": 20.0}, "部屋の明るさが「明るい」になりました。")
+	check(map[string]any{"temperature": 25.8, "humidity": 50.0, "lightLevel": 20.0}, "部屋の明るさが20/20になりました。")
 
 	// 計測値がない項目は飛ばす。
 	check(map[string]any{"temperature": 30.0}, "室温が30℃になりました。")
