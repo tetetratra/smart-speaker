@@ -48,7 +48,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 			Metadata:     map[string]any{"lang": "ja"},
 			CreatedAt:    time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC),
 		},
-	}, []ExistingMemory{{ID: "m-1", Content: "ユーザーは大岡山に住んでいる"}})
+	}, []ExistingMemory{{ID: "m-1", Content: "ユーザーは東京に住んでいる"}})
 	if err != nil {
 		t.Fatalf("CreateOperations() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 	}
 	system := input[0].(map[string]any)
 	instructions := system["content"].(string)
-	for _, want := range []string{"出力例", "existing_memories", "迷ったら保存しない", "operations: []", "不要になった記憶の削除", RetentionCriteria} {
+	for _, want := range []string{"出力例", "existing_memories", "迷ったら保存しない", "operations: []", "不要になった記憶の削除", RetentionCriteria, ContentStyle} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("system instructions = %s, want it to contain %s", instructions, want)
 		}
@@ -80,7 +80,7 @@ func TestOpenAIClientCreateOperationsSendsStructuredOutputSchema(t *testing.T) {
 		t.Fatalf("history role = %v, want user", history["role"])
 	}
 	content := history["content"].(string)
-	for _, want := range []string{`"role":"user"`, `"text":"朝はコーヒーが多い"`, `"existing_memories":[{"id":"m-1","content":"ユーザーは大岡山に住んでいる"}]`} {
+	for _, want := range []string{`"role":"user"`, `"text":"朝はコーヒーが多い"`, `"existing_memories":[{"id":"m-1","content":"ユーザーは東京に住んでいる"}]`} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("history content = %s, want it to contain %s", content, want)
 		}

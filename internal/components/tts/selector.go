@@ -11,12 +11,16 @@ type Selector struct {
 	mu           sync.RWMutex
 	selected     string
 	synthesizers map[string]speechSynthesizer
+	// voicevoxCreditは、VOICEVOX の利用規約が求めるクレジット表記。
+	voicevoxCredit string
 }
 
 type ProviderOption struct {
 	ID        string `json:"id"`
 	Label     string `json:"label"`
 	Available bool   `json:"available"`
+	// Creditは、そのTTSを使うときに画面へ表示するクレジット表記。不要なTTSでは空。
+	Credit string `json:"credit,omitempty"`
 }
 
 type Selection struct {
@@ -29,7 +33,7 @@ func NewSelector(cfg Config) (*Selector, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Selector{selected: initial.Name(), synthesizers: map[string]speechSynthesizer{initial.Name(): initial}}
+	s := &Selector{selected: initial.Name(), synthesizers: map[string]speechSynthesizer{initial.Name(): initial}, voicevoxCredit: voicevoxCredit(cfg.Voicevox.SpeakerName)}
 	for _, provider := range []string{ProviderVoicevox, ProviderElevenLabs} {
 		if _, ok := s.synthesizers[provider]; ok {
 			continue
@@ -47,7 +51,7 @@ func (s *Selector) Snapshot() Selection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return Selection{Provider: s.selected, Providers: []ProviderOption{
-		{ID: ProviderVoicevox, Label: "VOICEVOX", Available: s.synthesizers[ProviderVoicevox] != nil},
+		{ID: ProviderVoicevox, Label: "VOICEVOX", Available: s.synthesizers[ProviderVoicevox] != nil, Credit: s.voicevoxCredit},
 		{ID: ProviderElevenLabs, Label: "ElevenLabs", Available: s.synthesizers[ProviderElevenLabs] != nil},
 	}}
 }
@@ -68,4 +72,14 @@ func (s *Selector) current() speechSynthesizer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.synthesizers[s.selected]
+}
+
+// voicevoxCreditは、話者名が分かれば「VOICEVOX:話者名」、分からなければ「VOICEVOX」を返す。
+// 話者名を設定と一致させるのは運用者の責任とし、ここでは検証しない。
+func voicevoxCredit(speakerName string) string {
+	speakerName = strings.TrimSpace(speakerName)
+	if speakerName == "" {
+		return "VOICEVOX"
+	}
+	return "VOICEVOX:" + speakerName
 }

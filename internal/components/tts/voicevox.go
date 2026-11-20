@@ -13,9 +13,11 @@ import (
 )
 
 type VoicevoxConfig struct {
-	Endpoint   string
-	SpeakerID  int
-	SpeedScale *float64
+	Endpoint  string
+	SpeakerID int
+	// SpeakerNameは音声合成には使わず、画面のクレジット表記（VOICEVOX:話者名）にだけ使う。
+	SpeakerName string
+	SpeedScale  *float64
 }
 
 type voicevoxSynthesizer struct {

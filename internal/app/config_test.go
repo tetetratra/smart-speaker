@@ -70,6 +70,7 @@ func TestBuildConfigDefaults(t *testing.T) {
 		"ResponsesModel":             {cfg.ResponsesModel, "gpt-5.4-nano-2026-03-17"},
 		"RealtimeModel":              {cfg.RealtimeModel, "gpt-realtime-2.1"},
 		"RealtimeVAD":                {cfg.RealtimeVAD, "semantic_vad"},
+		"RealtimeNoiseReduction":     {cfg.RealtimeNoiseReduction, "far_field"},
 		"RealtimeTranscriptionModel": {cfg.RealtimeTranscriptionModel, "gpt-4o-mini-transcribe"},
 		"RealtimeEndpoint":           {cfg.RealtimeEndpoint, ""},
 		"Memory.Model":               {cfg.Memory.Model, "gpt-5.6-luna"},
@@ -354,4 +355,22 @@ func switchBotDeviceMap(t *testing.T, cfg Config) map[string]string {
 		t.Fatal(err)
 	}
 	return v.DeviceMap
+}
+
+func TestLoadVoicevoxSpeakerName(t *testing.T) {
+	cases := []struct {
+		yaml string
+		want string
+	}{
+		{"", "ずんだもん"},
+		{"tts:\n  voicevox:\n    speaker_id: 2\n", ""},
+		{"tts:\n  voicevox:\n    speaker_id: 2\n    speaker_name: \" 四国めたん \"\n", "四国めたん"},
+		{"tts:\n  voicevox:\n    speaker_name: 春日部つむぎ\n", "春日部つむぎ"},
+	}
+	for _, c := range cases {
+		cfg := mustLoadFromYAML(t, c.yaml, minimalEnv)
+		if cfg.Voicevox.SpeakerName != c.want {
+			t.Errorf("yaml=%q: SpeakerName = %q, want %q", c.yaml, cfg.Voicevox.SpeakerName, c.want)
+		}
+	}
 }

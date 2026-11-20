@@ -13,14 +13,14 @@ import (
 
 func TestScriptExamplesRunWithDocumentedToolResults(t *testing.T) {
 	for _, tt := range []struct {
-		name, source, temperature string
-		tools                     []string
-		reminders                 int
+		name, source, event string
+		tools               []string
+		reminders           int
 	}{
 		{"直接実行", directScriptExample, "", []string{"set_whiteboard"}, 0},
 		{"リマインダー", remindScriptExample, "", nil, 1},
-		{"28度以上", temperatureScriptExample, "28", []string{"hub2_get_temperature", "set_whiteboard"}, 1},
-		{"28度未満", temperatureScriptExample, "27.9", []string{"hub2_get_temperature"}, 0},
+		{"28度以上", temperatureScriptExample, `{"metadata":{"temperature":28}}`, []string{"set_whiteboard"}, 1},
+		{"28度未満", temperatureScriptExample, `{"metadata":{"temperature":27.9}}`, nil, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, operation := range []string{"register_job", "update_job"} {
@@ -35,8 +35,6 @@ func TestScriptExamplesRunWithDocumentedToolResults(t *testing.T) {
 				called = append(called, req.Name)
 				var result map[string]any
 				switch req.Name {
-				case "hub2_get_temperature":
-					result = map[string]any{"temperature": tt.temperature}
 				case "set_whiteboard":
 					result = map[string]any{"updated": true}
 				default:
@@ -50,7 +48,7 @@ func TestScriptExamplesRunWithDocumentedToolResults(t *testing.T) {
 				}
 				return nil
 			})
-			if err := runner.Run(context.Background(), "example", "説明例", tt.source); err != nil {
+			if err := runner.RunWithEvent(context.Background(), "example", "説明例", tt.source, json.RawMessage(tt.event)); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(called, tt.tools) || reminders != tt.reminders {

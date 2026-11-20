@@ -73,6 +73,9 @@ export type SessionList = {
 };
 
 export type TaskAccepted = {
+  // started は新しく作業を始めたとき、appended は作業中のセッションへ追加の依頼として流し込んだとき。
+  // appended の task_id は実行中の作業のもので、完了通知は1回だけ届く。
+  status: "started" | "appended";
   task_id: string;
   session_id: string;
   workdir: string;

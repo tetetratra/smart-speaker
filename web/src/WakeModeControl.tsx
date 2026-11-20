@@ -1,14 +1,27 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 // awakeは呼びかけ後の会話中で、最後の発話から設定された時間（既定5分）は呼びかけなしで話せる状態。
-type WakeMode = { required: boolean, awake?: boolean }
+export type WakeMode = { required: boolean, awake: boolean }
 
-export function WakeModeControl({ backendURL }: { backendURL: URL }) {
+export type WakeModeState = {
+  // サーバーとつながっていない間は undefined。
+  mode?: WakeMode
+  error: string
+  pending: boolean
+  save: (required: boolean) => void
+  // 呼びかけをonにしたうえで、呼びかけなしで話せる会話中の状態にする。
+  wake: () => Promise<void>
+}
+
+// 呼びかけ設定をサーバーから購読する。メイン画面（キャラクターエリアの暗さ）と設定画面（トグル）で共有する。
+export function useWakeMode(backendURL: URL): WakeModeState {
   const [mode, setMode] = useState<WakeMode>()
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const writing = useRef(false)
+  const modeRef = useRef<WakeMode>()
+  modeRef.current = mode
 
   useEffect(() => {
     let disposed = false
@@ -54,15 +67,40 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
     }
   }, [backendURL])
 
-  const save = (required: boolean) => {
+  const save = useCallback((required: boolean) => {
     const socket = socketRef.current
     if (writing.current || !socket || socket.readyState !== WebSocket.OPEN) return
     writing.current = true
     setPending(true)
     setError('')
     socket.send(JSON.stringify({ type: 'set_wake_mode', required }))
-  }
+  }, [])
 
+  // 呼びかけをonにすると会話中の状態が解除されるため、onにし終えてから会話中にする。
+  // 順番を保証するため、応答を待てるHTTPのAPIを使う。結果の状態はWebSocketで届く。
+  const wake = useCallback(async () => {
+    try {
+      if (!modeRef.current?.required) {
+        const response = await fetch(new URL('/api/wake-mode', backendURL), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ required: true }),
+          cache: 'no-store',
+        })
+        if (!response.ok) throw new Error(await response.text())
+      }
+      const response = await fetch(new URL('/api/wake-mode/wake', backendURL), { method: 'POST', cache: 'no-store' })
+      if (!response.ok) throw new Error(await response.text())
+    } catch {
+      setError('呼びかけ中にできませんでした')
+    }
+  }, [backendURL])
+
+  return { mode, error, pending, save, wake }
+}
+
+export function WakeModeControl({ state }: { state: WakeModeState }) {
+  const { mode, error, pending, save } = state
   return (
     <div style={{ display: 'grid', gap: 4, minWidth: 0, fontSize: 12 }}>
       <button
@@ -71,9 +109,9 @@ export function WakeModeControl({ backendURL }: { backendURL: URL }) {
         aria-label="ウェイクアップワード必須"
         aria-checked={mode?.required ?? false}
         aria-busy={pending}
-        className={`live-control-btn ${mode?.required && mode.awake ? 'live-control-btn-awake' : ''}`}
+        className="live-control-btn"
         disabled={!mode || pending}
-        onClick={() => { if (mode) void save(!mode.required) }}
+        onClick={() => { if (mode) save(!mode.required) }}
       >
         <span className={`live-toggle-switch ${mode?.required ? 'on' : ''}`} aria-hidden="true" />
         呼びかけ

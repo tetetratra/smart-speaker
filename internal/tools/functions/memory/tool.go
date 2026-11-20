@@ -18,7 +18,7 @@ import (
 var Operations = []string{"list_memories", "add_memory", "update_memory", "delete_memory"}
 
 // memoryRole は、長期メモリが何のためのものかの説明。全ツールの説明の冒頭に添える。
-const memoryRole = "長期メモリは、次回以降の別の会話でもあなたが参照する、ユーザーについての情報です。会話の冒頭に毎回渡されます。"
+const memoryRole = "長期メモリは、次回以降の別の会話でもあなたが参照する、ユーザーについての情報や、ユーザーに頼まれた応答の仕方などの決まりです。会話の冒頭に毎回渡されます。"
 
 // ユーザーの依頼か了承があるときだけ書き換えるよう、書き込みツールの説明に共通で添える。
 // 提案してよいものの基準は、古い会話を長期メモリにするときの自動抽出と同じものを使う。
@@ -84,7 +84,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 func (t *Tool) Definition() map[string]any {
 	idProp := map[string]any{"type": "string", "description": "list_memoriesで確かめたメモリのID"}
 	// 古い会話の自動抽出（internal/hooks/memory）と書き方を揃え、言い換えの重複を防ぐ。
-	contentProp := map[string]any{"type": "string", "description": "メモリの本文。1件に1つの話題を、「ユーザーは」か「ユーザーの」で始まる短い1文で書く。「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。例: ユーザーの長女の誕生日は5月3日、ユーザーの2026-05-03の天気は晴れ"}
+	contentProp := map[string]any{"type": "string", "description": "メモリの本文。" + memoryhook.ContentStyle + "\n「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。"}
 	props := map[string]any{}
 	required := []string{}
 	description := ""

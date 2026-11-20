@@ -10,7 +10,7 @@ func TestStoreSetAndStep(t *testing.T) {
 	changed, unsubscribe := store.Subscribe()
 	defer unsubscribe()
 
-	if previous, ok := store.Set("low"); !ok || previous != Default || store.Level() != "low" {
+	if previous, ok := store.Set("normal"); !ok || previous != Default || store.Level() != "normal" {
 		t.Fatalf("Setが反映されない: previous=%s ok=%v level=%s", previous, ok, store.Level())
 	}
 	select {
@@ -18,11 +18,11 @@ func TestStoreSetAndStep(t *testing.T) {
 	default:
 		t.Fatal("変更が通知されない")
 	}
-	if _, ok := store.Set("loud"); ok || store.Level() != "low" {
+	if _, ok := store.Set("loud"); ok || store.Level() != "normal" {
 		t.Fatal("段階にない値を受け付けた")
 	}
 
-	if previous, current := store.Step(-1); previous != "low" || current != "quiet" {
+	if previous, current := store.Step(-1); previous != "normal" || current != "low" {
 		t.Fatalf("1段階下げられない: %s -> %s", previous, current)
 	}
 	// 端では止まり、変わらなければ通知しない。

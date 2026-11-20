@@ -40,6 +40,8 @@ type Event struct {
 }
 
 type TaskAccepted struct {
+	// Status は、新しく作業を始めたら started、作業中のセッションへ追加の依頼として流し込んだら appended。
+	Status    string `json:"status"`
 	TaskID    string `json:"task_id"`
 	SessionID string `json:"session_id"`
 	Workdir   string `json:"workdir"`

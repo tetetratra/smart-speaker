@@ -1,12 +1,14 @@
 package switchbot
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/tetetratra/smart-speaker/internal/plugin"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 func toolNames(p *Plugin) []string {
@@ -40,18 +42,18 @@ func TestPluginWithoutCredentials(t *testing.T) {
 	}
 }
 
-// シーンがあればシーンのツールと指示文を出し、なければ Hub 2 のツールだけを出す。
+// シーンがあればシーンのツールと指示文を出し、なければツールを出さない。
 func TestPluginTools(t *testing.T) {
 	client := NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
 	withScenes := &Plugin{client: client, scenes: []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}}}
-	if got := strings.Join(toolNames(withScenes), ","); got != "switchbot_execute_scene,hub2_get_temperature,hub2_get_humidity,hub2_get_light_level" {
+	if got := strings.Join(toolNames(withScenes), ","); got != "switchbot_execute_scene" {
 		t.Fatalf("ツール = %s", got)
 	}
 	if !strings.Contains(withScenes.Instructions(), "scene_name") {
 		t.Fatalf("指示文 = %q", withScenes.Instructions())
 	}
 	withoutScenes := &Plugin{client: client}
-	if got := strings.Join(toolNames(withoutScenes), ","); got != "hub2_get_temperature,hub2_get_humidity,hub2_get_light_level" {
+	if got := strings.Join(toolNames(withoutScenes), ","); got != "" {
 		t.Fatalf("ツール = %s", got)
 	}
 	if withoutScenes.Instructions() != "" {
@@ -74,5 +76,36 @@ func TestPluginReadsConfig(t *testing.T) {
 	deps.Config = func(string, any) error { return http.ErrNotSupported }
 	if _, err := New(deps); err == nil {
 		t.Fatal("設定の読み込みの失敗がエラーになりません")
+	}
+}
+
+// device_map に hub2 があり、会話へ届ける先があるときだけ、計測値を監視して購読できる記録を出す。
+func TestPluginWatchesHub2(t *testing.T) {
+	t.Setenv("SWITCHBOT_TOKEN", "token")
+	t.Setenv("SWITCHBOT_SECRET", "secret")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	deliver := func(context.Context, types.ConversationInput) error { return nil }
+	newPlugin := func(deviceMap map[string]string, deliver func(context.Context, types.ConversationInput) error) *Plugin {
+		t.Helper()
+		p, err := New(plugin.Deps{AppContext: ctx, Deliver: deliver, Config: func(_ string, v any) error {
+			v.(*Config).DeviceMap = deviceMap
+			return nil
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// 取り消し済みの context で作り、シーンの取得と監視が本物の API へ行かないようにする。
+	cancel()
+	if got := newPlugin(map[string]string{"hub2": "id"}, deliver).SubscribableSources(); len(got) != 3 || got[TemperatureSource] == "" || got[HumiditySource] == "" || got[LightSource] == "" {
+		t.Fatalf("Sources = %#v", got)
+	}
+	if got := newPlugin(nil, deliver).SubscribableSources(); len(got) != 0 {
+		t.Fatalf("hub2 がないのに Sources = %#v", got)
+	}
+	if got := newPlugin(map[string]string{"hub2": "id"}, nil).SubscribableSources(); len(got) != 0 {
+		t.Fatalf("届け先がないのに Sources = %#v", got)
 	}
 }

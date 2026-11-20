@@ -3,18 +3,17 @@ import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { Whiteboard, type HistoryEntry } from './Whiteboard'
-import { historyEntries, mergeRecords, type WhiteboardRecord } from './whiteboardHistory'
-import { WakeModeControl } from './WakeModeControl'
-import { AutomationView } from './AutomationView'
+import { historyEntries, mergeRecords, splitRecords, type WhiteboardRecord } from './whiteboardHistory'
+import { useWakeMode, type WakeMode } from './WakeModeControl'
 import { SettingsView } from './SettingsView'
+import { AutomationView } from './AutomationView'
 import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume, type PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolume'
-import { PlaybackVolumeSlider } from './plugins/playbackvolume/PlaybackVolumeSlider'
 import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
 
-type ChatMessage =
-  | { id: number; type: 'user' | 'agent'; text: string; responseId?: string; final?: boolean; source?: string; generationId?: number }
+// ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
+type ChatMessage = { id: number; type: 'user'; text: string; generationId?: number }
 
 type ServerEventLog = { id: number; line: string }
 type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs' | 'settings'
@@ -64,6 +63,7 @@ const liveRootStyle = `
     --live-toggle-bg: #e9e9e9;
     --live-toggle-on: #2f6fde;
     --live-toggle-knob: #ffffff;
+    --live-character-dim: #e5e5e5;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -111,6 +111,7 @@ const liveRootStyle = `
       --live-toggle-bg: #303643;
       --live-toggle-on: #4f8cff;
       --live-toggle-knob: #f4f7fb;
+      --live-character-dim: #0f1115;
     }
   }
   textarea, input, select {
@@ -140,7 +141,7 @@ const liveRootStyle = `
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr;
     gap: 8px;
   }
   .live-controls-toggles,
@@ -154,7 +155,7 @@ const liveRootStyle = `
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .live-controls-nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .live-controls-toggles .live-control-btn,
   .live-controls-nav .live-admin-btn {
@@ -174,6 +175,11 @@ const liveRootStyle = `
     overflow: hidden;
     min-height: 0;
     flex: 1;
+    transition: background-color 0.3s;
+  }
+  /* 電源（接続）がオフの間と、呼びかけ待ちの間は、話しかけても反応しないことが分かるよう暗くする。 */
+  .live-volume-control.live-character-dim {
+    background: var(--live-character-dim);
   }
   .live-tool-toast {
     min-height: 24px;
@@ -414,13 +420,6 @@ const liveRootStyle = `
     border-right-color: var(--live-toggle-on);
     border-top-color: var(--live-toggle-on);
   }
-  /* 呼びかけ後の会話中（呼びかけなしで話せる間）は、話している吹き出しと同じく枠を光らせる。 */
-  .live-control-btn.live-control-btn-awake {
-    border-color: var(--live-toggle-on);
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--live-toggle-on) 35%, transparent),
-      0 0 12px color-mix(in srgb, var(--live-toggle-on) 45%, transparent);
-  }
   .live-board {
     background: var(--live-panel-soft);
     border: 2px solid var(--live-line-strong);
@@ -449,7 +448,7 @@ const liveRootStyle = `
   }
   .live-controls-panel {
     display: grid;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto;
     gap: 8px;
     min-width: 0;
     min-height: 0;
@@ -463,7 +462,7 @@ const liveRootStyle = `
   @media (orientation: portrait) {
     .live-main {
       grid-template-columns: 1fr;
-      grid-template-rows: auto repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto minmax(0, 3fr) minmax(0, 3fr) minmax(0, 5fr);
       gap: 8px;
     }
     .live-left,
@@ -595,8 +594,8 @@ type LiveViewProps = {
   // 今再生中の読み上げ区間。ホワイトボードのスクロールの速さを読み上げに合わせるのに使う。
   playbackSpeech?: PlaybackSpeech
   toolEntries: HistoryEntry[]
-  playbackVolumeLevel: PlaybackVolumeLevel
-  onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
+  wakeMode?: WakeMode
+  wake: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => void
   goScenes: () => void
@@ -618,6 +617,7 @@ function App() {
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
   const [playbackVolumeLevel, setPlaybackVolumeLevel] = usePlaybackVolume(backendURL)
+  const wakeMode = useWakeMode(backendURL)
   const [whiteboardRecords, setWhiteboardRecords] = useState<Map<string, WhiteboardRecord>>(() => new Map())
   const toolEntries = useMemo(() => historyEntries(whiteboardRecords.values()), [whiteboardRecords])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
@@ -747,34 +747,11 @@ function App() {
       if (!raw || typeof raw !== 'object') return
       const generation = Number.isSafeInteger(raw.generation_id) ? raw.generation_id as number : undefined
       if (generation !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, generation)
-      const isCurrentGeneration = generation === undefined || generation === currentGenerationRef.current
       if (raw.type === 'webrtc.answer' || raw.type === 'webrtc.ice') {
         handleRTCSignal(raw)
         return
       }
       switch (raw.type) {
-        case 'message': {
-          const text = typeof raw.text === 'string' ? raw.text : ''
-          if (!text) return
-          // サーバーは吹き出しに使うユーザーとモデルの発話だけを送る。
-          const role: ChatMessage['type'] = raw.role === 'user' ? 'user' : 'agent'
-          if (role === 'user' && isCurrentGeneration) {
-            setIsAiSpeaking(false)
-            setSttStatus('完了')
-            setSpeechDetectStatus('待機中')
-          }
-          const displayText = raw.role ? text : `(roleなし) ${text}`
-          appendMessage({
-            id: nextMessageId(),
-            type: role,
-            text: displayText,
-            responseId: raw.response_id,
-            final: raw.final,
-            source: typeof raw.source === 'string' ? raw.source : undefined,
-            generationId: generation,
-          })
-          break
-        }
         case 'playback_progress': {
           audioReceiverRef.current?.progress(raw)
           break
@@ -801,7 +778,19 @@ function App() {
           break
         }
         case 'conversation_records': {
-          if (Array.isArray(raw.records)) setWhiteboardRecords(current => mergeRecords(current, raw.records))
+          if (!Array.isArray(raw.records)) break
+          // 画面に出す記録だけが届くので、どこに出すかだけを決める。
+          const { utterances, others } = splitRecords(raw.records as WhiteboardRecord[])
+          for (const { text, generationId } of utterances) {
+            if (generationId !== undefined) currentGenerationRef.current = Math.max(currentGenerationRef.current, generationId)
+            if (generationId === undefined || generationId === currentGenerationRef.current) {
+              setIsAiSpeaking(false)
+              setSttStatus('完了')
+              setSpeechDetectStatus('待機中')
+            }
+            appendMessage({ id: nextMessageId(), type: 'user', text, generationId })
+          }
+          if (others.length > 0) setWhiteboardRecords(current => mergeRecords(current, others))
           break
         }
         default:
@@ -1216,8 +1205,8 @@ function App() {
           assistantSpeech={bubble.assistant ? playbackSpeech : undefined}
           playbackSpeech={playbackSpeech}
           toolEntries={toolEntries}
-          playbackVolumeLevel={playbackVolumeLevel}
-          onPlaybackVolumeChange={setPlaybackVolumeLevel}
+          wakeMode={wakeMode.mode}
+          wake={wakeMode.wake}
           connect={connect}
           disconnect={disconnect}
           goScenes={() => setMode('scenes')}
@@ -1296,7 +1285,17 @@ function App() {
         backendURL={backendURL}
         goApp={() => setMode('app')}
       />
-      <SettingsView visible={uiMode === 'settings'} backendURL={backendURL} goApp={() => setMode('app')} />
+      <SettingsView
+        visible={uiMode === 'settings'}
+        backendURL={backendURL}
+        connectionStatus={connectionStatusLabel(connected, busy)}
+        speechDetectStatus={speechDetectStatus}
+        sttStatus={sttStatus}
+        wakeMode={wakeMode}
+        playbackVolumeLevel={playbackVolumeLevel}
+        onPlaybackVolumeChange={setPlaybackVolumeLevel}
+        goApp={() => setMode('app')}
+      />
     </>
   )
 }
@@ -1617,63 +1616,8 @@ function MemoryView(props: {
   )
 }
 
-type TTSSelection = {
-  provider: string
-  providers: { id: string; label: string; available: boolean }[]
-}
-
-function TTSControl({ visible }: { visible: boolean }) {
-  const [selection, setSelection] = useState<TTSSelection | null>(null)
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-  const requestID = useRef(0)
-  const request = useCallback(async (provider?: string) => {
-    const id = ++requestID.current
-    setPending(true)
-    setError('')
-    try {
-      const response = await fetch(new URL('/api/tts', backendURL), {
-        method: provider === undefined ? 'GET' : 'PUT',
-        headers: provider === undefined ? undefined : { 'Content-Type': 'application/json' },
-        body: provider === undefined ? undefined : JSON.stringify({ provider }),
-        cache: 'no-store',
-      })
-      if (!response.ok) throw new Error(await response.text() || 'TTSの設定を取得・変更できませんでした')
-      const next = await response.json() as TTSSelection
-      if (id === requestID.current) setSelection(next)
-    } catch (err) {
-      if (id === requestID.current) setError(err instanceof Error ? err.message : 'TTSを変更できませんでした')
-    } finally {
-      if (id === requestID.current) setPending(false)
-    }
-  }, [])
-  useEffect(() => {
-    if (!visible) return
-    void request()
-    return () => { requestID.current++ }
-  }, [request, visible])
-  return (
-    <div style={{ display: 'grid', gap: 4, fontSize: 12, minWidth: 0 }}>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-        <select
-          aria-label="読み上げ音声"
-          value={selection?.provider ?? ''}
-          disabled={pending || !selection}
-          onChange={(event) => void request(event.currentTarget.value)}
-          style={{ flex: 1, minWidth: 0, minHeight: 30, background: 'var(--live-panel-soft)', color: 'var(--live-text)', border: '1px solid var(--live-line)', borderRadius: 8, padding: 4 }}
-        >
-          {!selection && <option value="">{pending ? '読み込み中' : '取得できません'}</option>}
-          {selection?.providers.map((provider) => (
-            <option key={provider.id} value={provider.id} disabled={!provider.available}>
-              {provider.label}{provider.available ? '' : '（未設定）'}
-            </option>
-          ))}
-        </select>
-        {error && <button className="live-admin-btn" onClick={() => void request()} disabled={pending}>再取得</button>}
-      </label>
-      {error && <span role="alert">{error}</span>}
-    </div>
-  )
+function connectionStatusLabel(connected: boolean, connecting: boolean): string {
+  return connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
 }
 
 function LiveView(props: LiveViewProps) {
@@ -1689,8 +1633,8 @@ function LiveView(props: LiveViewProps) {
     assistantSpeech,
     playbackSpeech,
     toolEntries,
-    playbackVolumeLevel,
-    onPlaybackVolumeChange,
+    wakeMode,
+    wake,
     connect,
     disconnect,
     goScenes,
@@ -1712,7 +1656,20 @@ function LiveView(props: LiveViewProps) {
     }
     void connect()
   }, [connected, connect, disconnect])
-  const connectionStatus = connecting ? '接続中' : connected ? 'オンライン' : 'オフライン'
+  // 呼びかけ状態が分からない間（呼びかけ設定の接続が切れている間）は、呼びかけ待ちとは扱わない。
+  const isCharacterDim = !connected || (wakeMode?.required === true && !wakeMode.awake)
+  // 暗いとき（話しかけても反応しないとき）にタップすると、接続して呼びかけ中にし、すぐ話せるようにする。
+  const handleCharacterTap = useCallback(async () => {
+    if (!isCharacterDim) return
+    if (!connected) {
+      try {
+        await connect()
+      } catch {
+        return
+      }
+    }
+    await wake()
+  }, [isCharacterDim, connected, connect, wake])
   return (
     <>
       <style>{liveRootStyle}</style>
@@ -1739,34 +1696,23 @@ function LiveView(props: LiveViewProps) {
                   <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                   接続
                 </button>
-                <WakeModeControl backendURL={backendURL} />
+                <button onClick={goSettings} className="live-control-btn">設定</button>
               </div>
               <div className="live-controls-nav">
                 <button onClick={goScenes} className="live-admin-btn">リモコン</button>
                 <button onClick={goMemory} className="live-admin-btn">メモリ</button>
                 <button onClick={goAdmin} className="live-admin-btn">ログ</button>
                 <button onClick={goJobs} className="live-admin-btn">予約</button>
-                <button onClick={goSettings} className="live-admin-btn">設定</button>
               </div>
-              <div className="live-status-grid">
-                <div className="live-status-card">
-                  <div className="live-status-label">接続</div>
-                  <div className="live-status-value">{connectionStatus}</div>
-                </div>
-                <div className="live-status-card">
-                  <div className="live-status-label">マイク</div>
-                  <div className="live-status-value">{speechDetectStatus}</div>
-                </div>
-                <div className="live-status-card">
-                  <div className="live-status-label">認識</div>
-                  <div className="live-status-value">{sttStatus}</div>
-                </div>
-              </div>
-              <TTSControl visible={props.visible} />
-              <PlaybackVolumeSlider level={playbackVolumeLevel} onChange={onPlaybackVolumeChange} />
             </div>
             <div className="live-character-area">
-              <div className="live-volume-control" aria-label="キャラクターエリア" />
+              <div
+                className={`live-volume-control${isCharacterDim ? ' live-character-dim' : ''}`}
+                aria-label="キャラクターエリア"
+                role="button"
+                aria-disabled={!isCharacterDim}
+                onClick={() => void handleCharacterTap()}
+              />
             </div>
           </div>
         </div>

@@ -201,6 +201,13 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 	} else if vad["type"] != "semantic_vad" || vad["eagerness"] != "auto" || vad["silence_duration_ms"] != nil {
 		t.Fatalf("Semantic VADの設定が違います: %v", vad)
 	}
+	wantNoiseReduction := "far_field"
+	if cfg.NoiseReduction != "" {
+		wantNoiseReduction = cfg.NoiseReduction
+	}
+	if nr := session["audio"].(map[string]any)["input"].(map[string]any)["noise_reduction"].(map[string]any); nr["type"] != wantNoiseReduction {
+		t.Fatalf("ノイズ除去の設定が違います: %v", nr)
+	}
 	if _, specified := session["reasoning"]; specified {
 		t.Fatal("推論量はAPIのデフォルトに任せます", session)
 	}
@@ -288,8 +295,8 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 	}
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "おはよう"})
 	for {
-		e := r.event(types.EventRealtimeOutput{})
-		if e.(types.EventRealtimeOutput).OutputLine.Role == types.RoleUser {
+		input := r.event(types.EventConversationInput{}).(types.EventConversationInput)
+		if input.Record.Role == types.RoleUser {
 			break
 		}
 	}
@@ -541,8 +548,8 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 	r.wait("response.create")
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "前の会話を覚えて"})
 	for {
-		line := r.event(types.EventRealtimeOutput{}).(types.EventRealtimeOutput).OutputLine
-		if line.Role == types.RoleUser {
+		input := r.event(types.EventConversationInput{}).(types.EventConversationInput)
+		if input.Record.Role == types.RoleUser {
 			break
 		}
 	}
@@ -735,4 +742,37 @@ func TestToolRecordsCarryDisplayFields(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("ツールの記録がありません", r.records())
+}
+
+// ユーザーの発話とテキスト入力は、会話管理から画面に送られる（チャット欄に出す）よう UserAlreadyKnows を立てない。
+// 文字起こしが空の発話は見せる中身がないので立てる。
+func TestUserUtteranceRecordsAreShownOnScreen(t *testing.T) {
+	userInput := func(r *rig) types.ConversationInput {
+		for {
+			input := r.event(types.EventConversationInput{}).(types.EventConversationInput).ConversationInput
+			if input.Record.Role == types.RoleUser {
+				return input
+			}
+		}
+	}
+	r := newRig(t)
+	r.node.Upstream <- types.EventLLMRequest{LLMRequest: types.LLMRequest{Text: "テキストの質問"}}
+	if input := userInput(r); input.Record.Text != "テキストの質問" || input.UserAlreadyKnows {
+		t.Fatal("テキスト入力が画面に出ません", input)
+	}
+
+	r = newRig(t)
+	r.utterance("user1")
+	r.wait("response.create")
+	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "おはよう"})
+	if input := userInput(r); input.Record.Text != "おはよう" || input.Record.GenerationID == 0 || input.UserAlreadyKnows {
+		t.Fatal("発話が画面に出ません", input)
+	}
+	r = newRig(t)
+	r.utterance("user2")
+	r.wait("response.create")
+	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user2", "transcript": ""})
+	if input := userInput(r); input.Record.Text != "" || !input.UserAlreadyKnows {
+		t.Fatal("空の発話が画面に出ます", input)
+	}
 }

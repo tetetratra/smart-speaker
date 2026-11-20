@@ -42,6 +42,9 @@ openai:
     # 発話の区切り。"semantic_vad" または "server_vad"。未対応の値は起動時にエラーになります。既定: "semantic_vad"
     # vad: "semantic_vad"
 
+    # 入力音声のノイズ除去。"far_field"（スマートスピーカーのように離れて話す）または "near_field"（ヘッドセットのように口元のマイク）。未対応の値は起動時にエラーになります。既定: "far_field"
+    # noise_reduction: "far_field"
+
     # 履歴保存用の非同期文字起こしモデル。音声理解とは別に課金されます。既定: "gpt-4o-mini-transcribe"
     # transcription_model: "gpt-4o-mini-transcribe"
 
@@ -81,6 +84,11 @@ tts:
 
     # スタイルID。VOICEVOX Engine の GET /speakers が返す各スタイルの id を指定します。既定: 1
     # speaker_id: 1
+
+    # 話者名。設定画面に「VOICEVOX:話者名」のクレジットとして表示します。
+    # VOICEVOX と各キャラクターの利用規約がクレジット表記を求めるため、speaker_id の話者と一致させてください。
+    # 既定: speaker_id も省略したときは "ずんだもん"（スタイルID 1 の話者）、speaker_id だけ指定したときはなし（「VOICEVOX」とだけ表示）
+    # speaker_name: "ずんだもん"
 
     # 話速。指定した場合だけ /audio_query の speedScale を上書きします。0 以下は無視します。既定: なし
     # speed_scale: 1.1

@@ -28,7 +28,6 @@ func Is[T Event](e Event) bool {
 
 type EventSpeechStart struct{ SpeechEvent }
 type EventSpeechEnd struct{ SpeechEvent }
-type EventRealtimeOutput struct{ OutputLine }
 type EventRealtimeStatus struct{ RealtimeStatus }
 type EventToolRequest struct{ ToolRequest }
 type EventRTCSignal struct{ RTCSignal }
@@ -51,7 +50,6 @@ type EventWakeTranscription struct{ WakeTranscription }
 
 func (EventSpeechStart) isEvent()               {}
 func (EventSpeechEnd) isEvent()                 {}
-func (EventRealtimeOutput) isEvent()            {}
 func (EventRealtimeStatus) isEvent()            {}
 func (EventToolRequest) isEvent()               {}
 func (EventRTCSignal) isEvent()                 {}

@@ -28,7 +28,7 @@ type Config struct {
 	// ToolTitle はツールの呼び出しを記録するときに、画面に出すタイトルを作る。
 	ToolTitle                                                 func(name string, arguments json.RawMessage) string
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
-	TurnDetection                                             string
+	TurnDetection, NoiseReduction                             string
 	Tools                                                     []any
 	Generation                                                *generation.Store
 	RotateAfter, IdleTimeout                                  time.Duration
@@ -100,6 +100,12 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	}
 	if cfg.TurnDetection != "semantic_vad" && cfg.TurnDetection != "server_vad" {
 		return nil, fmt.Errorf("realtime: 発話区切りはsemantic_vadまたはserver_vadを指定してください: %s", cfg.TurnDetection)
+	}
+	if cfg.NoiseReduction == "" {
+		cfg.NoiseReduction = "far_field"
+	}
+	if cfg.NoiseReduction != "far_field" && cfg.NoiseReduction != "near_field" {
+		return nil, fmt.Errorf("realtime: ノイズ除去はfar_fieldまたはnear_fieldを指定してください: %s", cfg.NoiseReduction)
 	}
 	cfg.Tools = withWaitTool(cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {
@@ -351,7 +357,8 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		}
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
 		record := types.ConversationRecord{ID: id, Role: types.RoleUser, Text: p.Text, Source: realtimeSource, Metadata: p.Metadata, CreatedAt: time.Now(), GenerationID: change.GenerationID}
-		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true, UserAlreadyKnows: true}})
+		// ローカルの呼びかけ判定を通った発話も、Realtime の発話と同じく会話管理から画面に送られる（チャット欄に出る）。
+		s.emit(ctx, types.EventConversationInput{ConversationInput: types.ConversationInput{Record: record, ModelShouldRespond: true}})
 
 	}
 }
@@ -412,11 +419,10 @@ func (s *stage) pendingTools() bool {
 	}
 	return false
 }
+
+// record は発話を記録する。文字起こしが空でなければ、会話管理から画面にも送られる（チャット欄に出る）。
 func (s *stage) record(ctx context.Context, id, role, text string, gen types.GenerationID) {
-	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: realtimeSource, CreatedAt: time.Now()}, true)
-	if text != "" {
-		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: role, Text: text, GenerationID: gen, Source: realtimeSource, ResponseID: id, Final: true}})
-	}
+	s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, id), Role: role, Text: text, GenerationID: gen, Source: realtimeSource, CreatedAt: time.Now()}, text == "")
 }
 
 func (s *stage) hasPendingOutput() bool {

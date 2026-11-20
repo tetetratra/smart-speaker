@@ -20,11 +20,9 @@ func (s *stage) startInbound(ctx context.Context) bool {
 	}
 	input := s.inbound[0]
 	s.inbound = s.inbound[1:]
-	record := input.Record
-	if record.External || record.GenerationID == 0 {
+	if record := input.Record; record.External || record.GenerationID == 0 {
 		change, _ := s.controller.Start(record.ID)
 		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
-		record.GenerationID = change.GenerationID
 	}
 	// 記録は会話管理が受け取った時点で保存しているので、ここでは保存し直さない。
 	// 定期的な外部入力で無操作の通知が止まり、古い履歴がメモリ化されないままにならないよう、
@@ -33,10 +31,6 @@ func (s *stage) startInbound(ctx context.Context) bool {
 		s.lastActivity = time.Now()
 	}
 	s.addContext(input)
-	// 吹き出しに出すのはユーザーの発話だけ。外から届いた入力はホワイトボードに出る。
-	if record.Role == types.RoleUser {
-		s.emit(ctx, types.EventRealtimeOutput{OutputLine: types.OutputLine{Role: record.Role, Text: record.Text, Source: record.Source, GenerationID: record.GenerationID, ResponseID: record.ID, Final: true}})
-	}
 	s.wantResponse = true
 	s.maybeRespond(ctx)
 	return true

@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,27 +48,9 @@ import (
 
 func main() {
 	log.SetFlags(0)
-	if !run() {
-		return
-	}
-	// 画面から再起動を頼まれたので、終了の処理を済ませたうえで、同じプログラムを同じ引数で起動し直す。
-	// プロセスを置き換えるので、Docker でも開発時の go run でも、外の仕組みに頼らずに起動し直せる。
-	executable, err := os.Executable()
-	if err != nil {
-		log.Fatalf("restart: 実行ファイルの場所が分かりません: %v", err)
-	}
-	log.Println("restart: 起動し直します")
-	if err := syscall.Exec(executable, os.Args, os.Environ()); err != nil {
-		log.Fatalf("restart: 起動し直せませんでした: %v", err)
-	}
-}
 
-// run はサーバーを動かし、終了するまで戻らない。画面から再起動を頼まれて終了したときは true を返す。
-// 終了の処理（HTTP サーバーやグラフを閉じる）は、戻る前に defer で済ませる。
-func run() bool {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	var restartRequested atomic.Bool
 
 	setLocalTimeZone()
 
@@ -88,14 +68,8 @@ func run() bool {
 	if err != nil {
 		log.Fatalf("failed to init conversation history: %v", err)
 	}
-	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore,
-		// 再起動を頼まれたら、アプリの context を終わらせて run から戻る。MCP の stdio のプロセスなども、これで止まる。
-		Restart: func() {
-			restartRequested.Store(true)
-			cancel()
-		},
-	}
-	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置の変化）は、gateway を通ってグラフへ入る。
+	services := runtimeServices{AppContext: ctx, TTS: ttsSelector, History: historyStore}
+	// グラフの外からの入力（Claude Codeの通知・Web検索の結果・位置や室温などの変化）は、gateway を通ってグラフへ入る。
 	// サービスはグラフのコンポーネントより先に作るので、gateway だけ先に作って送り口を渡す。
 	services.Gateway = gateway.New()
 	services.Deliver = services.Gateway.Deliver
@@ -147,7 +121,6 @@ func run() bool {
 	if err := g.Run(ctx); err != nil {
 		log.Fatalf("graph run error: %v", err)
 	}
-	return restartRequested.Load()
 }
 
 func setLocalTimeZone() {
@@ -179,7 +152,7 @@ func ttsConfig(cfg app.Config) tts.Config {
 	return tts.Config{
 		Provider:   cfg.TTSProvider,
 		ElevenLabs: tts.ElevenLabsConfig{APIKey: cfg.ElevenLabs.APIKey, Voice: cfg.ElevenLabs.VoiceID, Model: cfg.ElevenLabs.Model},
-		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeedScale: cfg.Voicevox.SpeedScale},
+		Voicevox:   tts.VoicevoxConfig{Endpoint: cfg.Voicevox.Endpoint, SpeakerID: cfg.Voicevox.SpeakerID, SpeakerName: cfg.Voicevox.SpeakerName, SpeedScale: cfg.Voicevox.SpeedScale},
 	}
 }
 
@@ -229,8 +202,8 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
-		TurnDetection: cfg.RealtimeVAD,
-		Instructions:  plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
+		TurnDetection: cfg.RealtimeVAD, NoiseReduction: cfg.RealtimeNoiseReduction,
+		Instructions: plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
 		ToolTitle:   execution.New(toolHandlers).Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
@@ -321,7 +294,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, pace, output, types.EventAudioFrame{})
 	connect(g, output, chat, types.EventAudioSent{})
 	connect(g, output, rt, types.EventAudioSent{})
-	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventRealtimeOutput{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
+	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
 	connect(g, rt, tool, types.EventToolRequest{})
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }
