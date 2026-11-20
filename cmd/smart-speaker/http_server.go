@@ -20,7 +20,6 @@ func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services ru
 	registerWakeModeAPI(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)
 	registerAutomationsAPI(mux, services.Automations)
-	registerRestartAPI(mux, services.Restart)
 	registerWebUI(mux, cfg.WebDistDir)
 	plugin.RegisterHTTP(services.Plugins, mux)
 	server := &http.Server{

@@ -31,8 +31,8 @@ export function stateLabel(server: MCPServer): string {
   }
 }
 
-// MCP サーバーの一覧を取る。reloadKey が変わるたびに取り直す。
-export function useMCPServers(backendURL: URL, visible: boolean, reloadKey: number) {
+// MCP サーバーの一覧を取る。設定画面を開くたびに取り直す。
+export function useMCPServers(backendURL: URL, visible: boolean) {
   const [servers, setServers] = useState<MCPServer[]>([])
   const [error, setError] = useState('')
   useEffect(() => {
@@ -50,25 +50,24 @@ export function useMCPServers(backendURL: URL, visible: boolean, reloadKey: numb
         setError(err instanceof Error ? err.message : 'MCPサーバーの一覧を取得できませんでした')
       })
     return () => controller.abort()
-  }, [backendURL, visible, reloadKey])
+  }, [backendURL, visible])
   return { servers, error }
 }
 
-// 設定画面の MCP サーバーの欄。未認可のサーバーには認可のボタンを出し、認可済みのサーバーには認可済みと出す。
-export function MCPServerList(props: { backendURL: URL; visible: boolean; reloadKey: number }) {
-  const { backendURL, visible, reloadKey } = props
-  const { servers, error } = useMCPServers(backendURL, visible, reloadKey)
+// 設定画面の MCP サーバーの欄の中身。未認可のサーバーには認可のボタンを出し、認可済みのサーバーには認可済みと出す。
+export function MCPServerList(props: { backendURL: URL; visible: boolean }) {
+  const { backendURL, visible } = props
+  const { servers, error } = useMCPServers(backendURL, visible)
   // 認可は Google などの画面へ移るので、画面ごと移動する。終わると設定画面へ戻ってくる。
   const authorize = useCallback((server: MCPServer) => {
     if (!server.auth_url) return
     window.location.href = new URL(server.auth_url, backendURL).toString()
   }, [backendURL])
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <h2 style={{ margin: 0, fontSize: 16 }}>MCPサーバー</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       {error && <div style={{ color: 'var(--ui-danger-text)', fontSize: 13, fontWeight: 700 }}>{error}</div>}
       {!error && servers.length === 0 && (
-        <div style={{ color: 'var(--live-muted)', fontSize: 14 }}>config.yaml に登録された MCP サーバーはありません</div>
+        <div style={{ color: 'var(--live-muted)', fontSize: 12 }}>config.yaml に登録された MCP サーバーはありません</div>
       )}
       {servers.map((server) => (
         <div
@@ -84,10 +83,10 @@ export function MCPServerList(props: { backendURL: URL; visible: boolean; reload
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, overflowWrap: 'anywhere' }}>{server.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, overflowWrap: 'anywhere' }}>{server.name}</div>
             <div
               style={{
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 700,
                 color: server.state === 'error' || server.state === 'unauthorized' ? 'var(--ui-danger-text)' : 'var(--live-muted)',
               }}
@@ -118,6 +117,6 @@ export function MCPServerList(props: { backendURL: URL; visible: boolean; reload
           )}
         </div>
       ))}
-    </section>
+    </div>
   )
 }

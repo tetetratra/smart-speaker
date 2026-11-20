@@ -34,6 +34,4 @@ type runtimeServices struct {
 	TTS     *tts.Selector
 	// History は会話履歴。会話管理が記録し、realtime と画面連携が直接読む。nil なら buildStages で作る。
 	History *conversationhistory.Store
-	// Restart は、サーバーを終了して起動し直す。画面の再起動ボタンから呼ぶ。nil なら再起動の API を出さない。
-	Restart func()
 }

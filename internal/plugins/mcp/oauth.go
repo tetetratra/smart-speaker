@@ -30,7 +30,7 @@ type authRequiredError struct {
 }
 
 func (e *authRequiredError) Error() string {
-	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。画面の「設定」から認可し、再起動してください", e.server)
+	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。画面の「設定」から認可し、サーバーを再起動してください", e.server)
 	if e.cause != nil {
 		msg += fmt.Sprintf("（%v）", e.cause)
 	}
