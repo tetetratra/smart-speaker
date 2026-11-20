@@ -37,10 +37,19 @@ func popToolCommand(t *testing.T, s *stage, kind string) map[string]any {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	cmd, ok := s.transport.commands.Pop(ctx)
+	// 応答の前に毎回足す日時の知らせは、ここでは見ない。
+	if ok && isTimeNotice(cmd.(map[string]any)) {
+		cmd, ok = s.transport.commands.Pop(ctx)
+	}
 	if !ok || cmd.(map[string]any)["type"] != kind {
 		t.Fatalf("期待するAPI要求がありません: %s, %v", kind, cmd)
 	}
 	return cmd.(map[string]any)
+}
+
+func isTimeNotice(cmd map[string]any) bool {
+	item, _ := cmd["item"].(map[string]any)
+	return cmd["type"] == "conversation.item.create" && item != nil && item["role"] == "system"
 }
 
 func noToolCommand(t *testing.T, s *stage) {
