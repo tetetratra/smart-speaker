@@ -10,36 +10,52 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 )
 
-func TestResponseRefreshesTimeWithoutReusingSessionTimestamp(t *testing.T) {
+// 日時は指示ではなく会話の末尾に応答ごとに足し、指示を応答ごとに変えない。
+func TestResponseAddsTimeNoticeInsteadOfChangingInstructions(t *testing.T) {
 	commands := eventqueue.New[any](nil)
 	s := &stage{
 		cfg:          Config{Generation: generation.NewStore()},
 		ready:        true,
-		wantResponse: true,
-		instructions: "元の指示と再接続時の履歴",
+		instructions: "元の指示",
 		transport:    &transport{commands: commands},
-		started:      time.Date(2024, 11, 5, 0, 0, 0, 0, time.UTC),
+	}
+	pop := func() map[string]any {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		command, ok := commands.Pop(ctx)
+		if !ok {
+			t.Fatal("送信がありません")
+		}
+		return command.(map[string]any)
 	}
 	before := time.Now()
+	s.wantResponse = true
 	s.maybeRespond(context.Background())
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	command, ok := commands.Pop(ctx)
-	if !ok {
-		t.Fatal("応答要求がありません")
+	notice := pop()
+	item := notice["item"].(map[string]any)
+	if notice["type"] != "conversation.item.create" || item["role"] != "system" {
+		t.Fatalf("日時の知らせがありません: %v", notice)
 	}
-	response := command.(map[string]any)["response"].(map[string]any)
-	instructions := response["instructions"].(string)
-	if !strings.Contains(instructions, "元の指示と再接続時の履歴") {
-		t.Fatalf("元の指示が失われました: %s", instructions)
-	}
-	_, timestamp, ok := strings.Cut(instructions, "現在日時: ")
-	if !ok {
-		t.Fatal("現在日時がありません")
-	}
+	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
+	_, timestamp, _ := strings.Cut(text, "この時点の日時: ")
 	timestamp, _, _ = strings.Cut(timestamp, "\n")
 	now, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil || now.Before(before.Truncate(time.Second)) || now.After(time.Now()) {
-		t.Fatalf("応答に古い日時が含まれています: %s, %v", timestamp, err)
+		t.Fatalf("日時が違います: %s, %v", text, err)
+	}
+	response := pop()
+	if response["type"] != "response.create" || response["response"].(map[string]any)["instructions"] != "元の指示" {
+		t.Fatalf("指示が変わっています: %v", response)
+	}
+
+	// 次の応答でも、前の知らせは消さずに新しい知らせを足す。
+	s.active = ""
+	s.wantResponse = true
+	s.maybeRespond(context.Background())
+	if next := pop(); next["type"] != "conversation.item.create" {
+		t.Fatalf("次の応答の前に日時を足していません: %v", next)
+	}
+	if next := pop(); next["type"] != "response.create" {
+		t.Fatalf("応答要求がありません: %v", next)
 	}
 }

@@ -10,14 +10,13 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
-	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -197,7 +196,7 @@ func (s *stage) run(ctx context.Context) {
 			s.instructions = instructions
 			s.wakeModeRequired = s.wakeRequired()
 			s.wakeGated = s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Gated()
-			s.transport.send(sessionUpdate(s.cfg, conversation.WithCurrentTime(instructions, time.Now())))
+			s.transport.send(sessionUpdate(s.cfg, instructions))
 			continue
 		}
 		s.serverEvent(ctx, in.data)
@@ -223,15 +222,11 @@ func (s *stage) restore(ctx context.Context, sync types.EventConversationHistory
 		return
 	}
 	history := s.cfg.History.Snapshot()
-	memory := ""
+	var memories []string
 	if s.cfg.Memory != nil {
-		provider, _ := memoryhook.NewContextProvider(memoryhook.ContextProviderConfig{Memory: s.cfg.Memory})
-		messages, err := provider.BuildContext(ctx, nil)
-		if err != nil {
-			log.Printf("Realtime: 長期メモリの読み出し: %v", err)
-		} else {
-			for _, m := range messages {
-				memory += m.Content + "\n"
+		for _, record := range s.cfg.Memory.Snapshot() {
+			if content := strings.TrimSpace(record.Content); content != "" {
+				memories = append(memories, content)
 			}
 		}
 	}
@@ -252,7 +247,7 @@ func (s *stage) restore(ctx context.Context, sync types.EventConversationHistory
 	for _, record := range records {
 		ids = append(ids, record.ID)
 	}
-	restore := conversation.RestoreContext(records, memory)
+	restore := conversation.RestoreContext(records, memories)
 	epoch := s.epoch
 	go func() {
 		t, err := dial(ctx, s.cfg, epoch)

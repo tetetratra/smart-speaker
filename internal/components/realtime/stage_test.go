@@ -221,8 +221,8 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 		t.Fatal("待機ツールがAPIに渡されていません")
 	}
 	instructions, _ := session["instructions"].(string)
-	if !strings.Contains(instructions, "Asia/Tokyo") || !strings.Contains(instructions, cfg.Instructions) {
-		t.Fatalf("日本時間または元の指示がありません: %s", instructions)
+	if strings.Contains(instructions, "Asia/Tokyo") || !strings.Contains(instructions, cfg.Instructions) {
+		t.Fatalf("指示に日時が入っているか、元の指示がありません: %s", instructions)
 	}
 	r.send(map[string]any{"type": "session.updated"})
 	r.event(types.EventRealtimeStatus{})
@@ -531,14 +531,20 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 	r.event(types.EventResponseText{})
 	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", Final: true, Text: "こんにちは。次の文章です。"}}
 	r.utterance("user2")
-	// delete/createを待ち飛ばさず、次のコマンドが直接response.createであることを確認する。
-	select {
-	case cmd := <-r.commands:
-		if cmd["type"] != "response.create" {
-			t.Fatal("全文送信後に不要な中断補正", cmd)
+	// delete/createを待ち飛ばさず、日時の知らせの次のコマンドが直接response.createであることを確認する。
+	for {
+		select {
+		case cmd := <-r.commands:
+			if isTimeNotice(cmd) {
+				continue
+			}
+			if cmd["type"] != "response.create" {
+				t.Fatal("全文送信後に不要な中断補正", cmd)
+			}
+			return
+		case <-r.ctx.Done():
+			t.Fatal("次の応答が始まらない")
 		}
-	case <-r.ctx.Done():
-		t.Fatal("次の応答が始まらない")
 	}
 }
 
@@ -573,11 +579,8 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
 	}
-	instructions, _ := request["response"].(map[string]any)["instructions"].(string)
-	for _, want := range []string{"元のシステム指示", "Asia/Tokyo", "今日:"} {
-		if !strings.Contains(instructions, want) {
-			t.Fatalf("応答ごとの指示に %q がありません: %s", want, instructions)
-		}
+	if instructions, _ := request["response"].(map[string]any)["instructions"].(string); instructions != "元のシステム指示" {
+		t.Fatalf("応答ごとの指示が元の指示と違います: %s", instructions)
 	}
 }
 func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
