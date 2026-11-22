@@ -21,6 +21,12 @@
 .page-layout-body > .panel {
   flex: 1 0 auto;
 }
+/* エラーの帯は、中身を下までスクロールしていても見えるよう上に留める。 */
+.page-layout-body > .error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
 .page-layout-back {
   align-self: flex-start;
   flex: 0 0 auto;
