@@ -2,12 +2,12 @@ package registry
 
 import (
 	"context"
+
 	"github.com/tetetratra/smart-speaker/internal/features/automations"
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
-
+	"github.com/tetetratra/smart-speaker/internal/features/whiteboard"
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。
