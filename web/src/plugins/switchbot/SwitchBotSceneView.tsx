@@ -13,19 +13,17 @@ function normalizeSwitchBotSceneItem(scene: SwitchBotSceneItem): SwitchBotSceneI
   }
 }
 
-// SwitchBot のシーンを実行するリモコン画面。表示されたときにシーン一覧を取得する。
+// SwitchBot のシーンを実行するリモコン画面。開いたときにシーン一覧を取得する。
 export function SwitchBotSceneView(props: {
-  visible: boolean
   backendURL: URL
   goApp: () => void
 }) {
-  const { visible, backendURL, goApp } = props
+  const { backendURL, goApp } = props
   const [scenes, setScenes] = useState<SwitchBotSceneItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pendingSceneID, setPendingSceneID] = useState('')
   useEffect(() => {
-    if (!visible) return
     const controller = new AbortController()
     const { signal } = controller
     setLoading(true)
@@ -53,7 +51,7 @@ export function SwitchBotSceneView(props: {
         }
       })
     return () => controller.abort()
-  }, [backendURL, visible])
+  }, [backendURL])
   const onExecute = useCallback(async (scene: SwitchBotSceneItem) => {
     try {
       setError('')
@@ -80,7 +78,7 @@ export function SwitchBotSceneView(props: {
   return (
     <div
       style={{
-        display: visible ? 'flex' : 'none',
+        display: 'flex',
         flexDirection: 'column',
         gap: 12,
         padding: 12,

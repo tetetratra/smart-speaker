@@ -56,7 +56,7 @@ const automationStyle = `
   .job-editor input, .job-editor textarea, .job-editor select { width:100%; box-sizing:border-box; padding:8px; border:1px solid var(--live-line-strong); border-radius:6px; background:var(--live-panel-soft); color:var(--live-text); font:inherit; font-size:14px; }
 `
 
-export function AutomationView({ visible, backendURL, goApp }: { visible: boolean; backendURL: URL; goApp: () => void }) {
+export function AutomationView({ backendURL, goApp }: { backendURL: URL; goApp: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [sources, setSources] = useState<AutomationSource[]>([])
   const [error, setError] = useState('')
@@ -64,7 +64,6 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
   const [pending, setPending] = useState(false)
   const [editor, setEditor] = useState<{ id?: string; spec: JobSpec }>()
   useEffect(() => {
-    if (!visible) return
     const controller = new AbortController()
     let loading = false
     const refresh = async () => {
@@ -80,7 +79,7 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
     }
     void refresh()
     return () => controller.abort()
-  }, [visible, backendURL, revision])
+  }, [backendURL, revision])
   const mutate = async (method: string, id?: string, body?: unknown) => {
     setPending(true)
     try {
@@ -95,7 +94,7 @@ export function AutomationView({ visible, backendURL, goApp }: { visible: boolea
   const remove = (job: Job) => { if (window.confirm(`「${job.name}」を削除しますか？`)) void mutate('DELETE', job.id) }
   const patchSpec = (changes: Partial<JobSpec>) => setEditor(previous => previous ? { ...previous, spec: { ...previous.spec, ...changes } } : previous)
   return (
-    <section aria-label="予約ジョブ" className="jobs-view" style={{ display: visible ? 'flex' : 'none' }}>
+    <section aria-label="予約ジョブ" className="jobs-view">
       <style>{automationStyle}</style>
       <div className="jobs-header">
         <h1>予約</h1>

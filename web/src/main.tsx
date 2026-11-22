@@ -13,12 +13,12 @@ import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './
 import { startBubbleAutoScroll } from './bubbleScroll'
 import { apiURL, wsURL } from './shared/backend'
 import './shared/theme.css'
+import { useScreen } from './app/routes'
 
 // ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
 type ChatMessage = { id: number; type: 'user'; text: string; generationId?: number }
 
 type ServerEventLog = { id: number; line: string }
-type UiMode = 'admin' | 'app' | 'memory' | 'scenes' | 'jobs' | 'settings'
 type MemoryItem = {
   id: string
   content: string
@@ -452,7 +452,6 @@ function isScrolledToBottom(el: HTMLElement): boolean {
 }
 
 type LiveViewProps = {
-  visible: boolean
   connected: boolean
   connecting: boolean
   speechDetectStatus: string
@@ -918,71 +917,18 @@ function App() {
   const bubble = useMemo(() => conversationBubble(messages, playbackSpeech), [messages, playbackSpeech])
   const lastAssistantMessage = bubble.assistant
   const lastUserMessage = bubble.user
-  const [uiMode, setUiMode] = useState<UiMode>(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) return 'jobs'
-    if (params.get('ui') === 'admin') return 'admin'
-    if (params.get('ui') === 'memory') return 'memory'
-    if (params.get('ui') === 'scenes') return 'scenes'
-    if (params.get('ui') === 'settings') return 'settings'
-    if (window.location.pathname.startsWith('/admin')) return 'admin'
-    if (window.location.pathname.startsWith('/memory')) return 'memory'
-    if (window.location.pathname.startsWith('/scenes')) return 'scenes'
-    if (window.location.pathname.startsWith('/settings')) return 'settings'
-    return 'app'
-  })
-  useEffect(() => {
-    const onPopState = () => {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('ui') === 'jobs' || window.location.pathname.startsWith('/jobs')) {setUiMode('jobs');return}
-      if (params.get('ui') === 'admin') {
-        setUiMode('admin')
-        return
-      }
-      if (params.get('ui') === 'memory') {
-        setUiMode('memory')
-        return
-      }
-      if (params.get('ui') === 'scenes') {
-        setUiMode('scenes')
-        return
-      }
-      if (params.get('ui') === 'settings') {
-        setUiMode('settings')
-        return
-      }
-      if (window.location.pathname.startsWith('/admin')) {
-        setUiMode('admin')
-        return
-      }
-      if (window.location.pathname.startsWith('/memory')) {
-        setUiMode('memory')
-        return
-      }
-      if (window.location.pathname.startsWith('/scenes')) {
-        setUiMode('scenes')
-        return
-      }
-      if (window.location.pathname.startsWith('/settings')) {
-        setUiMode('settings')
-        return
-      }
-      setUiMode('app')
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  const [screen, navigate] = useScreen()
   useEffect(() => {
     const body = document.body
-    if (uiMode !== 'app') {
+    if (screen !== 'live') {
       body.classList.add('admin-mode')
     } else {
       body.classList.remove('admin-mode')
     }
     return () => body.classList.remove('admin-mode')
-  }, [uiMode])
+  }, [screen])
   useEffect(() => {
-    if (uiMode !== 'admin' || !shouldFollowAdminLogRef.current) return
+    if (screen !== 'eventlog' || !shouldFollowAdminLogRef.current) return
     const frame = window.requestAnimationFrame(() => {
       const el = adminLogRef.current
       if (el) {
@@ -990,13 +936,13 @@ function App() {
       }
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [uiMode])
+  }, [screen])
   useEffect(() => {
-    if (uiMode !== 'memory') return
+    if (screen !== 'memory') return
     const controller = new AbortController()
     void loadMemories(controller.signal)
     return () => controller.abort()
-  }, [loadMemories, uiMode])
+  }, [loadMemories, screen])
   const writeMemory = useCallback(async (method: 'POST' | 'PUT', content: string, id?: string) => {
     setMemoryError('')
     const path = id ? `/api/memories/${encodeURIComponent(id)}` : '/api/memories'
@@ -1042,30 +988,10 @@ function App() {
       throw err
     }
   }, [])
-  const setMode = useCallback((mode: UiMode) => {
-    const params = new URLSearchParams(window.location.search)
-    if (mode === 'jobs') {params.set('ui', 'jobs')} else if (mode === 'admin') {
-      params.set('ui', 'admin')
-    } else if (mode === 'memory') {
-      params.set('ui', 'memory')
-    } else if (mode === 'scenes') {
-      params.set('ui', 'scenes')
-    } else if (mode === 'settings') {
-      params.set('ui', 'settings')
-    } else {
-      params.delete('ui')
-    }
-    const next = params.toString()
-    const nextUrl = next ? `/?${next}` : '/'
-    window.history.pushState({}, '', nextUrl)
-    setUiMode(mode)
-  }, [])
-
   return (
     <>
-      <div style={{ display: uiMode === 'app' ? 'block' : 'none' }}>
+      <div style={{ display: screen === 'live' ? 'block' : 'none' }}>
         <LiveView
-          visible={uiMode === 'app'}
           connected={connected}
           connecting={busy}
           speechDetectStatus={speechDetectStatus}
@@ -1081,16 +1007,16 @@ function App() {
           wake={wakeMode.wake}
           connect={connect}
           disconnect={disconnect}
-          goScenes={() => setMode('scenes')}
-          goMemory={() => setMode('memory')}
-          goAdmin={() => setMode('admin')}
-          goJobs={() => setMode('jobs')}
-          goSettings={() => setMode('settings')}
+          goScenes={() => navigate('scenes')}
+          goMemory={() => navigate('memory')}
+          goAdmin={() => navigate('eventlog')}
+          goJobs={() => navigate('jobs')}
+          goSettings={() => navigate('settings')}
         />
       </div>
-      <div
+      {screen === 'eventlog' && <div
         style={{
-          display: uiMode === 'admin' ? 'flex' : 'none',
+          display: 'flex',
           flexDirection: 'column',
           gap: 12,
           padding: 12,
@@ -1125,7 +1051,7 @@ function App() {
           ))}
         </div>
         <button
-          onClick={() => setMode('app')}
+          onClick={() => navigate('live')}
           style={{
             alignSelf: 'flex-start',
             borderRadius: 8,
@@ -1140,25 +1066,22 @@ function App() {
         >
           app画面
         </button>
-      </div>
-      <AutomationView visible={uiMode === 'jobs'} backendURL={backendURL} goApp={() => setMode('app')} />
-      <MemoryView
-        visible={uiMode === 'memory'}
+      </div>}
+      {screen === 'jobs' && <AutomationView backendURL={backendURL} goApp={() => navigate('live')} />}
+      {screen === 'memory' && <MemoryView
         memories={memories}
         loading={memoryLoading}
         error={memoryError}
         onCreate={createMemory}
         onUpdate={updateMemory}
         onDelete={deleteMemory}
-        goApp={() => setMode('app')}
-      />
-      <SwitchBotSceneView
-        visible={uiMode === 'scenes'}
+        goApp={() => navigate('live')}
+      />}
+      {screen === 'scenes' && <SwitchBotSceneView
         backendURL={backendURL}
-        goApp={() => setMode('app')}
-      />
-      <SettingsView
-        visible={uiMode === 'settings'}
+        goApp={() => navigate('live')}
+      />}
+      {screen === 'settings' && <SettingsView
         backendURL={backendURL}
         connectionStatus={connectionStatusLabel(connected, busy)}
         speechDetectStatus={speechDetectStatus}
@@ -1166,8 +1089,8 @@ function App() {
         wakeMode={wakeMode}
         playbackVolumeLevel={playbackVolumeLevel}
         onPlaybackVolumeChange={setPlaybackVolumeLevel}
-        goApp={() => setMode('app')}
-      />
+        goApp={() => navigate('live')}
+      />}
     </>
   )
 }
@@ -1199,7 +1122,6 @@ const memoryViewStyle = `
 `
 
 function MemoryView(props: {
-  visible: boolean
   memories: MemoryItem[]
   loading: boolean
   error: string
@@ -1208,7 +1130,7 @@ function MemoryView(props: {
   onDelete: (id: string) => Promise<void>
   goApp: () => void
 }) {
-  const { visible, memories, loading, error, onCreate, onUpdate, onDelete, goApp } = props
+  const { memories, loading, error, onCreate, onUpdate, onDelete, goApp } = props
   const [newContent, setNewContent] = useState('')
   const [editingID, setEditingID] = useState('')
   const [editingContent, setEditingContent] = useState('')
@@ -1258,7 +1180,7 @@ function MemoryView(props: {
   return (
     <div
       style={{
-        display: visible ? 'flex' : 'none',
+        display: 'flex',
         flexDirection: 'column',
         gap: 12,
         padding: 12,

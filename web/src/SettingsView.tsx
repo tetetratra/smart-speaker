@@ -5,7 +5,6 @@ import type { PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolum
 
 // メイン画面からは外した、ふだん触らない設定と状態表示をまとめた画面。
 export function SettingsView(props: {
-  visible: boolean
   backendURL: URL
   connectionStatus: string
   speechDetectStatus: string
@@ -15,11 +14,11 @@ export function SettingsView(props: {
   onPlaybackVolumeChange: (level: PlaybackVolumeLevel) => void
   goApp: () => void
 }) {
-  const { visible, backendURL, connectionStatus, speechDetectStatus, sttStatus, wakeMode, playbackVolumeLevel, onPlaybackVolumeChange, goApp } = props
+  const { backendURL, connectionStatus, speechDetectStatus, sttStatus, wakeMode, playbackVolumeLevel, onPlaybackVolumeChange, goApp } = props
   return (
     <div
       style={{
-        display: visible ? 'flex' : 'none',
+        display: 'flex',
         flexDirection: 'column',
         gap: 12,
         padding: 12,
@@ -66,7 +65,7 @@ export function SettingsView(props: {
           </div>
         </SettingsSection>
         <SettingsSection title="読み上げ音声">
-          <TTSControl visible={visible} backendURL={backendURL} />
+          <TTSControl backendURL={backendURL} />
         </SettingsSection>
         <SettingsSection title="再生音量">
           <PlaybackVolumeSlider level={playbackVolumeLevel} onChange={onPlaybackVolumeChange} />
@@ -106,7 +105,7 @@ type TTSSelection = {
   providers: { id: string; label: string; available: boolean; credit?: string }[]
 }
 
-function TTSControl({ visible, backendURL }: { visible: boolean; backendURL: URL }) {
+function TTSControl({ backendURL }: { backendURL: URL }) {
   const [selection, setSelection] = useState<TTSSelection | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -132,10 +131,9 @@ function TTSControl({ visible, backendURL }: { visible: boolean; backendURL: URL
     }
   }, [backendURL])
   useEffect(() => {
-    if (!visible) return
     void request()
     return () => { requestID.current++ }
-  }, [request, visible])
+  }, [request])
   // VOICEVOX などの利用規約が求めるクレジット表記。選択中のTTSのものだけ出す
   const credit = selection?.providers.find((provider) => provider.id === selection.provider)?.credit
   return (
