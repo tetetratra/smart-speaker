@@ -2,10 +2,9 @@ package registry
 
 import (
 	"context"
-	"github.com/tetetratra/smart-speaker/internal/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
-	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
@@ -47,7 +46,7 @@ func New(cfg Config) *Registry {
 	}
 	if cfg.Automations != nil {
 		for _, operation := range []string{"register_job", "list_jobs", "update_job", "delete_job"} {
-			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
+			t := &automations.Tool{Service: cfg.Automations, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}

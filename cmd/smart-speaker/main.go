@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/app"
-	"github.com/tetetratra/smart-speaker/internal/automations"
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/automation"
@@ -26,6 +24,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/graph"

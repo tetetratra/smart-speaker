@@ -5,9 +5,9 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/automation"
 	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 
-	"github.com/tetetratra/smart-speaker/internal/automations"
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
