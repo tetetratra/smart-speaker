@@ -1,4 +1,4 @@
-package main
+package memory
 
 import (
 	"context"
@@ -9,22 +9,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 )
 
-func TestRegisterMemoryAPIListsMemories(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
+func TestRegisterHTTPListsMemories(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldRecord, _, err := store.Upsert(memorystate.UpsertInput{
+	oldRecord, _, err := store.Upsert(UpsertInput{
 		Content: "朝はコーヒーを飲む",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	newRecord, _, err := store.Upsert(memorystate.UpsertInput{
+	newRecord, _, err := store.Upsert(UpsertInput{
 		Content: "辛い料理が苦手",
 	})
 	if err != nil {
@@ -32,7 +30,7 @@ func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, store, nil)
+	registerHTTP(mux, store, nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/memories", nil))
 
@@ -60,15 +58,15 @@ func TestRegisterMemoryAPIListsMemories(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPICreatesMemory(t *testing.T) {
+func TestRegisterHTTPCreatesMemory(t *testing.T) {
 	writer := &fakeManualMemoryWriter{
-		createRecord: memorystate.Record{
+		createRecord: Record{
 			ID:      "memory-1",
 			Content: "ユーザーは朝にコーヒーを飲む",
 		},
 	}
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, nil, writer)
+	registerHTTP(mux, nil, writer)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/memories", strings.NewReader(`{"content":"ユーザーは朝にコーヒーを飲む"}`))
 	mux.ServeHTTP(rec, req)
@@ -88,15 +86,15 @@ func TestRegisterMemoryAPICreatesMemory(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIUpdatesMemory(t *testing.T) {
+func TestRegisterHTTPUpdatesMemory(t *testing.T) {
 	writer := &fakeManualMemoryWriter{
-		updateRecord: memorystate.Record{
+		updateRecord: Record{
 			ID:      "memory-1",
 			Content: "ユーザーは朝に紅茶を飲む",
 		},
 	}
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, nil, writer)
+	registerHTTP(mux, nil, writer)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/memories/memory-1", strings.NewReader(`{"content":"ユーザーは朝に紅茶を飲む"}`))
 	mux.ServeHTTP(rec, req)
@@ -116,10 +114,10 @@ func TestRegisterMemoryAPIUpdatesMemory(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIDeletesMemory(t *testing.T) {
+func TestRegisterHTTPDeletesMemory(t *testing.T) {
 	writer := &fakeManualMemoryWriter{}
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, nil, writer)
+	registerHTTP(mux, nil, writer)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/memories/memory-1", nil))
 
@@ -131,13 +129,13 @@ func TestRegisterMemoryAPIDeletesMemory(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIRejectsUnsupportedMethods(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
+func TestRegisterHTTPRejectsUnsupportedMethods(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, store, &fakeManualMemoryWriter{})
+	registerHTTP(mux, store, &fakeManualMemoryWriter{})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/api/memories", nil))
 
@@ -146,9 +144,9 @@ func TestRegisterMemoryAPIRejectsUnsupportedMethods(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIReportsMissingStore(t *testing.T) {
+func TestRegisterHTTPReportsMissingStore(t *testing.T) {
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, nil, nil)
+	registerHTTP(mux, nil, nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/memories", nil))
 
@@ -157,21 +155,21 @@ func TestRegisterMemoryAPIReportsMissingStore(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryAPIReportsWriteErrors(t *testing.T) {
+func TestRegisterHTTPReportsWriteErrors(t *testing.T) {
 	tests := []struct {
 		name   string
 		err    error
 		status int
 	}{
-		{name: "empty content", err: memorystate.ErrEmptyContent, status: http.StatusBadRequest},
-		{name: "not found", err: memorystate.ErrRecordNotFound, status: http.StatusNotFound},
+		{name: "empty content", err: ErrEmptyContent, status: http.StatusBadRequest},
+		{name: "not found", err: ErrRecordNotFound, status: http.StatusNotFound},
 		{name: "internal", err: errors.New("failed"), status: http.StatusInternalServerError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &fakeManualMemoryWriter{updateErr: tt.err}
 			mux := http.NewServeMux()
-			registerMemoryAPI(mux, nil, writer)
+			registerHTTP(mux, nil, writer)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPut, "/api/memories/memory-1", strings.NewReader(`{"content":"有効な記憶"}`))
 			mux.ServeHTTP(rec, req)
@@ -187,20 +185,20 @@ type fakeManualMemoryWriter struct {
 	updateID      string
 	updateContent string
 	deleteID      string
-	createRecord  memorystate.Record
-	updateRecord  memorystate.Record
-	createResult  memorystate.UpsertResult
+	createRecord  Record
+	updateRecord  Record
+	createResult  UpsertResult
 	createErr     error
 	updateErr     error
 	deleteErr     error
 }
 
-func (f *fakeManualMemoryWriter) Create(ctx context.Context, content string) (memorystate.Record, memorystate.UpsertResult, error) {
+func (f *fakeManualMemoryWriter) Create(ctx context.Context, content string) (Record, UpsertResult, error) {
 	f.createContent = content
 	return f.createRecord, f.createResult, f.createErr
 }
 
-func (f *fakeManualMemoryWriter) Update(ctx context.Context, id, content string) (memorystate.Record, error) {
+func (f *fakeManualMemoryWriter) Update(ctx context.Context, id, content string) (Record, error) {
 	f.updateID = id
 	f.updateContent = content
 	return f.updateRecord, f.updateErr
@@ -209,21 +207,4 @@ func (f *fakeManualMemoryWriter) Update(ctx context.Context, id, content string)
 func (f *fakeManualMemoryWriter) Delete(id string) error {
 	f.deleteID = id
 	return f.deleteErr
-}
-
-func TestManualMemoryServiceCreatesAndUpdatesContent(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := &manualMemoryService{store: store}
-
-	record, result, err := service.Create(context.Background(), "ユーザーは朝にコーヒーを飲む")
-	if err != nil || !result.Created || record.Content != "ユーザーは朝にコーヒーを飲む" {
-		t.Fatalf("Create() = %#v, %#v, %v", record, result, err)
-	}
-	updated, err := service.Update(context.Background(), record.ID, "ユーザーは朝に紅茶を飲む")
-	if err != nil || updated.ID != record.ID || updated.Content != "ユーザーは朝に紅茶を飲む" {
-		t.Fatalf("Update() = %#v, %v", updated, err)
-	}
 }

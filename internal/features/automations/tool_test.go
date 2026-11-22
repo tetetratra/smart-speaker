@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
+	"github.com/tetetratra/smart-speaker/internal/features/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 

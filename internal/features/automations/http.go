@@ -1,10 +1,10 @@
-package main
+package automations
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/tetetratra/smart-speaker/internal/automations"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -12,7 +12,8 @@ import (
 	"time"
 )
 
-func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
+// RegisterHTTP は、画面から予約ジョブを一覧・追加・変更・削除する API を mux に登録する。
+func RegisterHTTP(mux *http.ServeMux, service *Service) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if service == nil {
@@ -45,7 +46,7 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 		case collection && r.Method == http.MethodGet:
 			writeJSON(w, 200, map[string]any{"jobs": service.List(), "sources": automationSourceList(service)})
 		case collection && r.Method == http.MethodPost:
-			var spec automations.Spec
+			var spec Spec
 			if !decode(&spec) {
 				return
 			}
@@ -56,7 +57,7 @@ func registerAutomationsAPI(mux *http.ServeMux, service *automations.Service) {
 			}
 			writeJSON(w, 201, map[string]any{"job": job})
 		case !collection && r.Method == http.MethodPut:
-			var spec automations.Spec
+			var spec Spec
 			if !decode(&spec) {
 				return
 			}
@@ -92,7 +93,7 @@ type automationSource struct {
 }
 
 // automationSourceList は、schedule.source に指定できる記録の Source を名前順に並べて返す。
-func automationSourceList(service *automations.Service) []automationSource {
+func automationSourceList(service *Service) []automationSource {
 	sources := service.Sources()
 	list := make([]automationSource, 0, len(sources))
 	for name, description := range sources {
@@ -100,4 +101,12 @@ func automationSourceList(service *automations.Service) []automationSource {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	return list
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("http: encode response: %v", err)
+	}
 }

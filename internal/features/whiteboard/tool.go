@@ -1,3 +1,4 @@
+// Package whiteboard は、画面のホワイトボードに文章を書く会話中のツールを持つ。
 package whiteboard
 
 import (

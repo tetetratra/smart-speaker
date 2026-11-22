@@ -1,3 +1,4 @@
+// Package wakemode は呼びかけ（呼びかけの言葉を聞くまで会話を始めない仕組み）の機能をまとめる。状態の保存、会話中のツール、画面向けの HTTP API を持つ。
 package wakemode
 
 import (

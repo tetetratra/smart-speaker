@@ -1,8 +1,7 @@
-package main
+package automations
 
 import (
 	"encoding/json"
-	"github.com/tetetratra/smart-speaker/internal/automations"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,9 +10,9 @@ import (
 )
 
 func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
-	service, _ := automations.New(filepath.Join(t.TempDir(), "jobs.json"), nil)
+	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), nil)
 	mux := http.NewServeMux()
-	registerAutomationsAPI(mux, service)
+	RegisterHTTP(mux, service)
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
@@ -24,7 +23,7 @@ func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 		t.Fatal(rec.Code, rec.Body)
 	}
 	var data struct {
-		Job automations.Job `json:"job"`
+		Job Job `json:"job"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
 		t.Fatal(err)
@@ -51,10 +50,10 @@ func TestJobsAPIRegistersUpdatesAndDeletes(t *testing.T) {
 }
 
 func TestJobsAPIListsSources(t *testing.T) {
-	service, _ := automations.New(filepath.Join(t.TempDir(), "jobs.json"), nil)
+	service, _ := New(filepath.Join(t.TempDir(), "jobs.json"), nil)
 	service.SetSources(map[string]string{"source_b": "Bの説明", "source_a": "Aの説明"})
 	mux := http.NewServeMux()
-	registerAutomationsAPI(mux, service)
+	RegisterHTTP(mux, service)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/jobs", nil))
 	var data struct {

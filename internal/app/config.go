@@ -14,8 +14,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 )
 
 // Config holds runtime settings.
@@ -271,8 +271,8 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		Model:     stringOr(file.Memory.Model, "gpt-5.6-luna"),
 		StorePath: stringOr(file.Memory.StorePath, "data/memories.json"),
 		// 0 以下は、メモリ化の側で既定値にする。
-		MemorizeAfter:   time.Duration(intOr(file.Memory.MemorizeAfterHours, int(memoryhook.DefaultMemorizeAfter/time.Hour))) * time.Hour,
-		HistoryMaxBytes: intOr(file.Memory.HistoryMaxBytes, memoryhook.DefaultMaxHistoryBytes),
+		MemorizeAfter:   time.Duration(intOr(file.Memory.MemorizeAfterHours, int(memory.DefaultMemorizeAfter/time.Hour))) * time.Hour,
+		HistoryMaxBytes: intOr(file.Memory.HistoryMaxBytes, memory.DefaultMaxHistoryBytes),
 	}
 	dataDir := filepath.Dir(memoryCfg.StorePath)
 

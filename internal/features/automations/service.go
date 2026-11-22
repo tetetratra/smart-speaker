@@ -1,3 +1,4 @@
+// Package automations は予約ジョブの機能をまとめる。ジョブの保存と実行時刻の判定、会話中のツール、画面向けの HTTP API を持つ。スクリプトの実行は script パッケージが受け持つ。
 package automations
 
 import (
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tetetratra/smart-speaker/internal/automations/script"
+	"github.com/tetetratra/smart-speaker/internal/features/automations/script"
 )
 
 type Spec struct {

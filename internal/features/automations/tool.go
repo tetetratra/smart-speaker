@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
@@ -24,17 +23,17 @@ if (temperature >= 28) {
 }`
 
 type Tool struct {
-	Service   *automations.Service
+	Service   *Service
 	Operation string
 }
 
 func (t *Tool) Name() string { return t.Operation }
 func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	var req struct {
-		ID       string               `json:"id"`
-		Name     string               `json:"name"`
-		Script   string               `json:"script"`
-		Schedule automations.Schedule `json:"schedule"`
+		ID       string   `json:"id"`
+		Name     string   `json:"name"`
+		Script   string   `json:"script"`
+		Schedule Schedule `json:"schedule"`
 	}
 	data, err := json.Marshal(args)
 	if err != nil {
@@ -45,7 +44,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 	if err = decoder.Decode(&req); err != nil {
 		return nil, err
 	}
-	spec := automations.Spec{Name: req.Name, Script: req.Script, Schedule: req.Schedule}
+	spec := Spec{Name: req.Name, Script: req.Script, Schedule: req.Schedule}
 	switch t.Operation {
 	case "list_jobs":
 		return map[string]any{"jobs": t.Service.List()}, nil

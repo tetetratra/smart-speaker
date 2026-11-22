@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 

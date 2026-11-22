@@ -5,21 +5,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 )
 
-func newStore(t *testing.T) *memorystate.Store {
+func newStore(t *testing.T) *Store {
 	t.Helper()
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	store, err := NewStore(filepath.Join(t.TempDir(), "memories.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store
 }
 
-func run(t *testing.T, store *memorystate.Store, operation string, args map[string]any) (map[string]any, error) {
+func run(t *testing.T, store *Store, operation string, args map[string]any) (map[string]any, error) {
 	t.Helper()
 	return (&Tool{Store: store, Operation: operation}).Run(context.Background(), args)
 }
@@ -109,11 +106,11 @@ func TestMemoryToolDefinitions(t *testing.T) {
 		}
 		// 本文の書き方も、会話終了時の自動抽出と同じものを示す（add と update には content がある）。
 		if props := def["parameters"].(map[string]any)["properties"].(map[string]any); props["content"] != nil &&
-			!strings.Contains(props["content"].(map[string]any)["description"].(string), memoryhook.ContentStyle) {
+			!strings.Contains(props["content"].(map[string]any)["description"].(string), ContentStyle) {
 			t.Fatal(operation, "本文の書き方がありません")
 		}
 		// 何を残す価値があるかは、会話終了時の自動抽出と同じ基準を示す。
-		if !strings.Contains(description, "了承") || !strings.Contains(description, memoryhook.RetentionCriteria) {
+		if !strings.Contains(description, "了承") || !strings.Contains(description, RetentionCriteria) {
 			t.Fatal(operation, description)
 		}
 	}

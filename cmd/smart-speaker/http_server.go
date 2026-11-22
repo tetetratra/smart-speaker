@@ -8,18 +8,20 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 )
 
-func buildHTTPServer(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
+func buildHTTPServer(cfg app.Config, memoryStore *memory.Store, services runtimeServices) (*http.Server, *graph.Stage, error) {
 	mux := http.NewServeMux()
-	registerMemoryAPI(mux, memoryStore, &manualMemoryService{store: memoryStore})
+	memory.RegisterHTTP(mux, memoryStore)
 	registerTTSAPI(mux, services.TTS)
-	registerWakeModeAPI(mux, services.WakeMode)
+	wakemode.RegisterHTTP(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)
-	registerAutomationsAPI(mux, services.Automations)
+	automations.RegisterHTTP(mux, services.Automations)
 	registerWebUI(mux, cfg.WebDistDir)
 	plugin.RegisterHTTP(services.Plugins, mux)
 	server := &http.Server{

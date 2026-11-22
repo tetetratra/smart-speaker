@@ -3,7 +3,6 @@ package wakemode
 import (
 	"context"
 	"encoding/json"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 // 話しかけて必須モードは切り替えられるが、呼びかけの言葉やしきい値は変えられない。
 func TestSetWakeModeOnlySwitchesRequired(t *testing.T) {
-	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	store, err := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +31,7 @@ func TestSetWakeModeOnlySwitchesRequired(t *testing.T) {
 			t.Fatal("不正な引数を受理しました", raw)
 		}
 	}
-	if mode := store.Snapshot(time.Now()); len(mode.Words) != len(wakemode.DefaultWords) || mode.MinSimilarity != 0.65 {
+	if mode := store.Snapshot(time.Now()); len(mode.Words) != len(DefaultWords) || mode.MinSimilarity != 0.65 {
 		t.Fatal("呼びかけの設定が変わりました", mode)
 	}
 }

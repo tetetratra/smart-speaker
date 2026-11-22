@@ -12,7 +12,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -59,9 +58,9 @@ type operationCreator interface {
 }
 
 type memoryWriter interface {
-	Snapshot() []memorystate.Record
-	Upsert(memorystate.UpsertInput) (memorystate.Record, memorystate.UpsertResult, error)
-	Update(string, memorystate.UpdateInput) (memorystate.Record, error)
+	Snapshot() []Record
+	Upsert(UpsertInput) (Record, UpsertResult, error)
+	Update(string, UpdateInput) (Record, error)
 	Delete(string) error
 }
 
@@ -206,7 +205,7 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 	snapshot := h.memory.Snapshot()
 	// store の ID は長い数値なので、LLM が書き写し間違えないよう短い参照番号に置き換えて渡す。
 	existing := make([]ExistingMemory, 0, len(snapshot))
-	byRef := make(map[string]memorystate.Record, len(snapshot))
+	byRef := make(map[string]Record, len(snapshot))
 	for i, record := range snapshot {
 		ref := strconv.Itoa(i + 1)
 		item := ExistingMemory{ID: ref, Content: record.Content}
@@ -278,11 +277,11 @@ func (h *CreatorHook) ExecRecords(ctx context.Context, records []types.Conversat
 // resolvedOperation は参照番号を抽出開始時点の記憶に解決した操作。
 type resolvedOperation struct {
 	Operation
-	original memorystate.Record
+	original Record
 }
 
 func (h *CreatorHook) add(operation Operation) error {
-	if _, _, err := h.memory.Upsert(memorystate.UpsertInput{Content: operation.Content}); err != nil {
+	if _, _, err := h.memory.Upsert(UpsertInput{Content: operation.Content}); err != nil {
 		return fmt.Errorf("add memory %q: %w", operation.Content, err)
 	}
 	return nil
@@ -308,15 +307,15 @@ func (h *CreatorHook) modify(resolved resolvedOperation) (string, error) {
 		}
 		return action, nil
 	}
-	if _, err := h.memory.Update(original.ID, memorystate.UpdateInput{Content: operation.Content}); err != nil {
+	if _, err := h.memory.Update(original.ID, UpdateInput{Content: operation.Content}); err != nil {
 		return "", fmt.Errorf("update memory %q: %w", original.ID, err)
 	}
 	return action, nil
 }
 
-func splitRecord(records []memorystate.Record, id string) (*memorystate.Record, []memorystate.Record) {
-	var target *memorystate.Record
-	others := make([]memorystate.Record, 0, len(records))
+func splitRecord(records []Record, id string) (*Record, []Record) {
+	var target *Record
+	others := make([]Record, 0, len(records))
 	for i := range records {
 		if records[i].ID == id {
 			target = &records[i]
@@ -327,9 +326,9 @@ func splitRecord(records []memorystate.Record, id string) (*memorystate.Record, 
 	return target, others
 }
 
-func hasSameContent(records []memorystate.Record, content string) bool {
+func hasSameContent(records []Record, content string) bool {
 	for _, record := range records {
-		if memorystate.SameContent(record.Content, content) {
+		if SameContent(record.Content, content) {
 			return true
 		}
 	}
