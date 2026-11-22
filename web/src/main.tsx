@@ -11,6 +11,8 @@ import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume, typ
 import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
+import { apiURL, wsURL } from './shared/backend'
+import './shared/theme.css'
 
 // ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
 type ChatMessage = { id: number; type: 'user'; text: string; generationId?: number }
@@ -26,56 +28,13 @@ type MemoryItem = {
 type MemoryListResponse = { memories: MemoryItem[] }
 type MemoryWriteResponse = { memory: MemoryItem }
 
-const browserURL = new URL(window.location.href)
-const backendURL = new URL(window.location.origin)
-if (browserURL.port === '5173') {
-  backendURL.port = '8081'
-}
-const wsProtocol = backendURL.protocol === 'https:' ? 'wss' : 'ws'
-const chatWSUrl = `${wsProtocol}://${backendURL.host}/ws/chat`
+const backendURL = new URL(apiURL('/'))
+const chatWSUrl = wsURL('/ws/chat')
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
 const serverEventLogLimit = 1000
 
 const liveRootStyle = `
-  :root {
-    color-scheme: light;
-    --ui-accent: #2563eb;
-    --ui-accent-text: #ffffff;
-    --ui-accent-soft: #dbeafe;
-    --ui-accent-soft-text: #1d4ed8;
-    --ui-tool-done-bg: #eff6ff;
-    --ui-tool-done-line: #dbeafe;
-    --ui-tool-done-text: #1d4ed8;
-    --ui-danger-bg: #fef2f2;
-    --ui-danger-line: #fecaca;
-    --ui-danger-text: #991b1b;
-    --live-bg: #f6f6f4;
-    --live-panel: #ffffff;
-    --live-panel-soft: #fafafa;
-    --live-panel-raised: #ffffff;
-    --live-text: #1f1f1f;
-    --live-muted: #6f6f6f;
-    --live-line: #e2e2e2;
-    --live-line-strong: #e2e2e2;
-    --live-shadow: rgba(0,0,0,0.04);
-    --live-inset-line: #f0f0f0;
-    --live-toggle-bg: #e9e9e9;
-    --live-toggle-on: #2f6fde;
-    --live-toggle-knob: #ffffff;
-    --live-character-dim: #e5e5e5;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; }
-  body {
-    margin: 0;
-    background: var(--live-bg);
-    color: var(--live-text);
-    font-family: "IBM Plex Sans", system-ui, sans-serif;
-  }
-  body.admin-mode {
-    overflow: auto;
-  }
   .live-frame {
     width: 100vw;
     height: 100vh;
@@ -83,39 +42,6 @@ const liveRootStyle = `
     padding: 6px;
     position: relative;
     background: var(--live-bg);
-    color: var(--live-text);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --ui-accent: #2563eb;
-      --ui-accent-text: #ffffff;
-      --ui-accent-soft: #1e3558;
-      --ui-accent-soft-text: #bfdbfe;
-      --ui-tool-done-bg: #131a26;
-      --ui-tool-done-line: #22324a;
-      --ui-tool-done-text: #b4cdf0;
-      --ui-danger-bg: #381c26;
-      --ui-danger-line: #864354;
-      --ui-danger-text: #fecdd3;
-      --live-bg: #050608;
-      --live-panel: #101217;
-      --live-panel-soft: #171a21;
-      --live-panel-raised: #1b1f28;
-      --live-text: #f4f7fb;
-      --live-muted: #aab2c0;
-      --live-line: #2a2f3a;
-      --live-line-strong: #3a4250;
-      --live-shadow: rgba(0,0,0,0.38);
-      --live-inset-line: #202632;
-      --live-toggle-bg: #303643;
-      --live-toggle-on: #4f8cff;
-      --live-toggle-knob: #f4f7fb;
-      --live-character-dim: #0f1115;
-    }
-  }
-  textarea, input, select {
-    background: var(--live-panel);
     color: var(--live-text);
   }
   .live-main {
@@ -295,60 +221,6 @@ const liveRootStyle = `
     font-weight: 700;
     color: var(--live-text);
     white-space: nowrap;
-  }
-  .live-control-btn,
-  .live-admin-btn {
-    border-radius: 999px;
-    padding: 4px 8px;
-    font-size: 11px;
-    font-weight: 700;
-    border: 1px solid var(--live-line);
-    background: var(--live-panel-soft);
-    color: var(--live-muted);
-    align-self: center;
-    white-space: nowrap;
-    min-height: 30px;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-  .live-control-btn {
-    width: auto;
-    justify-content: flex-start;
-  }
-  .live-admin-btn {
-    width: auto;
-    padding-inline: 10px;
-  }
-  .live-toggle-switch {
-    width: 36px;
-    height: 20px;
-    border-radius: 999px;
-    background: var(--live-toggle-bg);
-    border: 1px solid var(--live-line);
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-  }
-  .live-toggle-switch::after {
-    content: "";
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    background: var(--live-toggle-knob);
-    border: 1px solid var(--live-line);
-    position: absolute;
-    left: 2px;
-  }
-  .live-toggle-switch.on {
-    background: var(--live-toggle-on);
-    border-color: var(--live-toggle-on);
-  }
-  .live-toggle-switch.on::after {
-    left: 18px;
   }
   .live-bubble-slot {
     min-width: 0;
@@ -616,8 +488,8 @@ function App() {
   const [speechDetectStatus, setSpeechDetectStatus] = useState('待機中')
   const [sttStatus, setSttStatus] = useState('停止中')
   const [sttError, setSttError] = useState('')
-  const [playbackVolumeLevel, setPlaybackVolumeLevel] = usePlaybackVolume(backendURL)
-  const wakeMode = useWakeMode(backendURL)
+  const [playbackVolumeLevel, setPlaybackVolumeLevel] = usePlaybackVolume()
+  const wakeMode = useWakeMode()
   const [whiteboardRecords, setWhiteboardRecords] = useState<Map<string, WhiteboardRecord>>(() => new Map())
   const toolEntries = useMemo(() => historyEntries(whiteboardRecords.values()), [whiteboardRecords])
   const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])

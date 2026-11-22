@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { apiURL, wsURL } from './shared/backend'
+import { createSocket, type Socket } from './shared/socket'
 
 // awakeは呼びかけ後の会話中で、最後の発話から設定された時間（既定5分）は呼びかけなしで話せる状態。
 export type WakeMode = { required: boolean, awake: boolean }
@@ -14,28 +16,20 @@ export type WakeModeState = {
 }
 
 // 呼びかけ設定をサーバーから購読する。メイン画面（キャラクターエリアの暗さ）と設定画面（トグル）で共有する。
-export function useWakeMode(backendURL: URL): WakeModeState {
+export function useWakeMode(): WakeModeState {
   const [mode, setMode] = useState<WakeMode>()
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
-  const socketRef = useRef<WebSocket | null>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const openRef = useRef(false)
   const writing = useRef(false)
   const modeRef = useRef<WakeMode>()
   modeRef.current = mode
 
   useEffect(() => {
-    let disposed = false
-    let timer: number | undefined
-    let socket: WebSocket
-    const connect = () => {
-      const url = new URL('/ws/wake-mode', backendURL)
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      socket = new WebSocket(url)
-      socketRef.current = socket
-      socket.onmessage = event => {
-        if (disposed) return
-        let next: { type?: string; required?: boolean; awake?: boolean; error?: string }
-        try { next = JSON.parse(event.data) } catch { return }
+    const socket = createSocket(wsURL('/ws/wake-mode'), {
+      onOpen: () => { openRef.current = true },
+      onMessage: (next: { type?: string; required?: boolean; awake?: boolean; error?: string }) => {
         if (next.type !== 'wake_mode' && next.type !== 'wake_mode_result') return
         if (typeof next.required !== 'boolean' || typeof next.awake !== 'boolean') return
         setMode({ required: next.required, awake: next.awake })
@@ -46,34 +40,31 @@ export function useWakeMode(backendURL: URL): WakeModeState {
         } else if (!writing.current) {
           setError('')
         }
-      }
-      socket.onclose = () => {
-        if (disposed) return
-        socketRef.current = null
+      },
+      onClose: () => {
+        openRef.current = false
         writing.current = false
         setPending(false)
         setMode(undefined)
         setError('呼びかけ設定に再接続しています')
-        timer = window.setTimeout(connect, 2000)
-      }
-      socket.onerror = () => socket.close()
-    }
-    connect()
+      },
+      retryDelay: () => 2000,
+    })
+    socketRef.current = socket
     return () => {
-      disposed = true
-      window.clearTimeout(timer)
       socketRef.current = null
+      openRef.current = false
       socket.close()
     }
-  }, [backendURL])
+  }, [])
 
   const save = useCallback((required: boolean) => {
     const socket = socketRef.current
-    if (writing.current || !socket || socket.readyState !== WebSocket.OPEN) return
+    if (writing.current || !socket || !openRef.current) return
     writing.current = true
     setPending(true)
     setError('')
-    socket.send(JSON.stringify({ type: 'set_wake_mode', required }))
+    socket.send({ type: 'set_wake_mode', required })
   }, [])
 
   // 呼びかけをonにすると会話中の状態が解除されるため、onにし終えてから会話中にする。
@@ -81,7 +72,7 @@ export function useWakeMode(backendURL: URL): WakeModeState {
   const wake = useCallback(async () => {
     try {
       if (!modeRef.current?.required) {
-        const response = await fetch(new URL('/api/wake-mode', backendURL), {
+        const response = await fetch(apiURL('/api/wake-mode'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ required: true }),
@@ -89,12 +80,12 @@ export function useWakeMode(backendURL: URL): WakeModeState {
         })
         if (!response.ok) throw new Error(await response.text())
       }
-      const response = await fetch(new URL('/api/wake-mode/wake', backendURL), { method: 'POST', cache: 'no-store' })
+      const response = await fetch(apiURL('/api/wake-mode/wake'), { method: 'POST', cache: 'no-store' })
       if (!response.ok) throw new Error(await response.text())
     } catch {
       setError('呼びかけ中にできませんでした')
     }
-  }, [backendURL])
+  }, [])
 
   return { mode, error, pending, save, wake }
 }
