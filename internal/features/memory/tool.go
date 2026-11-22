@@ -81,7 +81,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 
 func (t *Tool) Definition() map[string]any {
 	idProp := map[string]any{"type": "string", "description": "list_memoriesで確かめたメモリのID"}
-	// 古い会話の自動抽出（internal/hooks/memory）と書き方を揃え、言い換えの重複を防ぐ。
+	// 古い会話の自動抽出（creator.go）と書き方を揃え、言い換えの重複を防ぐ。
 	contentProp := map[string]any{"type": "string", "description": "メモリの本文。" + ContentStyle + "\n「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。"}
 	props := map[string]any{}
 	required := []string{}
