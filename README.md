@@ -38,10 +38,11 @@ docker compose up --build
 
 | パス | 内容 |
 |---|---|
-| `cmd/smart-speaker` | サーバーの起動処理と HTTP API |
+| `cmd/smart-speaker` | サーバーの起動処理と部品をつなぐ配線、読み上げ音声の選択などの HTTP API |
 | `cmd/local-verify-realtime` | 外部 API を使わずに動かす確認用のサーバー |
-| `internal/` | 会話処理（`components/realtime` など）、ツール（`tools/`）、状態の保存（`states/`） |
-| `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（ツール・HTTP・状態などを1つのディレクトリにまとめた機能） |
+| `internal/` | 会話処理（`components/realtime` など）、ツールの登録と実行（`tools/`）、会話の状態の保存（`states/`） |
+| `internal/features/<名前>` | 本体に組み込む機能（長期メモリ・呼びかけ・予約ジョブ・ホワイトボード）。ストア・ツール・HTTP など 1 つの機能の部品を 1 つのディレクトリにまとめ、`cmd/smart-speaker` が直接つなぐ |
+| `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（config で有効にし、Plugin interface だけで本体とつながる機能） |
 | `web/` | ブラウザの画面（React） |
 | `services/local-stt` | 呼びかけ判定に使うローカルの文字起こし（faster-whisper） |
 | `services/agent-bridge` | Claude Code 連携のブリッジ |
