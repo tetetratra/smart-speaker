@@ -24,29 +24,6 @@ type InboundEntry = {
 }
 export type HistoryEntry = ToolEntry | InboundEntry
 
-// splitRecords は画面に届いた記録を、どこに出すかで分ける。ユーザーの発話はチャット欄、それ以外はホワイトボードに出す。
-// 世代のない記録は generation_id が 0 で届くので、世代なし（undefined）として扱う。
-export function splitRecords(records: ConversationRecord[]) {
-  const utterances: { text: string; generationId?: number }[] = []
-  const others: ConversationRecord[] = []
-  for (const record of records) {
-    if (record.role !== 'user') {
-      others.push(record)
-      continue
-    }
-    const generation = record.generation_id
-    utterances.push({ text: record.text, generationId: Number.isSafeInteger(generation) && generation! > 0 ? generation : undefined })
-  }
-  return { utterances, others }
-}
-
-// mergeRecords は接続後に届いた記録を足す。同じ ID が届いても重複させない。
-export function mergeRecords(current: Map<string, ConversationRecord>, records: ConversationRecord[]): Map<string, ConversationRecord> {
-  const next = new Map(current)
-  for (const record of records) next.set(record.id, record)
-  return next
-}
-
 // historyEntries は記録から表示用の履歴を組み立てる。
 // ツールの記録（tool）は呼び出しと結果を1件で持つので、引数と出力を出す。
 // それ以外の記録（後から届いた結果や通知）は、本文を出す。

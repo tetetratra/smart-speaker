@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { entryTone, historyEntries, mergeRecords, splitRecords, whiteboardEvents, type HistoryEntry, type ConversationRecord } from './history.ts'
+import { entryTone, historyEntries, whiteboardEvents, type HistoryEntry } from './history.ts'
+import type { ConversationRecord } from '../conversation/protocol.ts'
 
 const tool = (id: string, overrides: Record<string, unknown> = {}): HistoryEntry => ({
   kind: 'tool', id, role: 'tool', call_id: id, name: 'set_whiteboard', arguments: '{}',
@@ -67,12 +68,6 @@ test('後から届いた結果や通知は差し込みとして出し、見出�
   ])
 })
 
-test('届いた記録を足し、同じ ID が届いても重複しない', () => {
-  let merged = mergeRecords(new Map(), [record('a')])
-  merged = mergeRecords(merged, [record('b'), record('a')])
-  assert.deepEqual(historyEntries(merged.values()).map(entry => entry.id), ['a', 'b'])
-})
-
 test('色は Role で決め、error があれば Role によらず赤にする', () => {
   const entries = historyEntries([
     record('tool'),
@@ -82,11 +77,4 @@ test('色は Role で決め、error があれば Role によらず赤にする',
     record('claude-failed', { role: 'background', text: '失敗', error: '中止' }),
   ])
   assert.deepEqual(entries.map(entryTone), ['tool', 'background', 'system', 'failed', 'failed'])
-})
-
-test('届いた記録を、チャット欄に出すユーザーの発話と、ホワイトボードに出すそれ以外に分ける', () => {
-  const record = (id: string, role: string, generation_id?: number): ConversationRecord => ({ id, role, text: `本文${id}`, source: 'realtime', generation_id, created_at: '2026-11-18T00:00:00.000Z' })
-  const { utterances, others } = splitRecords([record('1', 'user', 3), record('2', 'tool', 3), record('3', 'user', 0), record('4', 'background')])
-  assert.deepEqual(utterances, [{ text: '本文1', generationId: 3 }, { text: '本文3', generationId: undefined }])
-  assert.deepEqual(others.map(r => r.id), ['2', '4'])
 })

@@ -82,7 +82,6 @@ test('ユーザーの発話以外の記録はホワイトボードに足し、�
   const state = run(board, board)
   assert.deepEqual([...state.records.keys()], ['t1'])
   assert.equal(state.utterances.length, 2)
-  assert.deepEqual(splitRecords([record('u', 'user', 'x', 0)]).utterances, [{ text: 'x', generationId: undefined }])
 })
 
 test('接続の出来事ごとに、消すものと残すものを分ける', () => {
@@ -104,4 +103,11 @@ test('接続の出来事ごとに、消すものと残すものを分ける', ()
   assert.deepEqual(kept(sessionReducer(talking(), { type: 'closed' })), { connection: 'offline', mic: 'idle', recognition: 'stopped', generation: 3, bubble: true, speaking: false, board: 1 })
   // 手動で切断した: 吹き出しと読み上げ中の印を消す。
   assert.deepEqual(kept(sessionReducer(talking(), { type: 'disconnected' })), { connection: 'offline', mic: 'idle', recognition: 'stopped', generation: 3, bubble: false, speaking: false, board: 1 })
+})
+
+test('届いた記録を、吹き出しに出すユーザーの発話と、ホワイトボードに出すそれ以外に分ける', () => {
+  const item = (id: string, role: string, generation_id?: number): ConversationRecord => ({ id, role, text: `本文${id}`, source: 'realtime', generation_id, created_at: '2026-11-18T00:00:00.000Z' })
+  const { utterances, others } = splitRecords([item('1', 'user', 3), item('2', 'tool', 3), item('3', 'user', 0), item('4', 'background')])
+  assert.deepEqual(utterances, [{ text: '本文1', generationId: 3 }, { text: '本文3', generationId: undefined }])
+  assert.deepEqual(others.map(r => r.id), ['2', '4'])
 })

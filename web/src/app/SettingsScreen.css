@@ -1,0 +1,51 @@
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-section {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.settings-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--live-muted);
+}
+.settings-wake-mode {
+  justify-self: start;
+}
+.live-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+.live-status-card {
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 3px;
+  border: 1px solid var(--live-line);
+  border-radius: 12px;
+  background: var(--live-panel-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+}
+.live-status-label {
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--live-muted);
+}
+.live-status-value {
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--live-text);
+  white-space: nowrap;
+}
