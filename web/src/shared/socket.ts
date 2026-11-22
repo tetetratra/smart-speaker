@@ -32,6 +32,7 @@ export function createSocket(url: string, handlers: SocketHandlers): Socket {
     const current = new WebSocket(url)
     socket = current
     current.onopen = () => {
+      if (closed || socket !== current) return
       attempt = 0
       handlers.onOpen?.()
     }

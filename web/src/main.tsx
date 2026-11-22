@@ -1,3 +1,5 @@
+// テーマを先に読み込み、各コンポーネントの CSS がその後に来るようにする。
+import './shared/theme.css'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { createWS } from './ws'
@@ -15,7 +17,6 @@ import { SceneScreen } from './plugins/switchbot/SceneScreen'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
 import { wsURL } from './shared/backend'
-import './shared/theme.css'
 import { useScreen } from './app/routes'
 
 // ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
