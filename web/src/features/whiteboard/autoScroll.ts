@@ -1,13 +1,13 @@
 // ホワイトボードに収まらなくなった書き込みを、一気に飛ばさず少しずつ末尾までスクロールする。
 //
 // 書き込みでスクロールが要るときは、今の読み上げ区間の80%が終わる頃にちょうど末尾へ届く速さにする。
-// 吹き出し（bubbleScroll.ts）と違い、書き込みは割り込みでも打ち消されないので、
+// 吹き出し（conversation/bubbleScroll.ts）と違い、書き込みは割り込みでも打ち消されないので、
 // 状態として持つのは「今の速さ」だけにし、割り込みが起きても速さを変えずに末尾までスクロールし切る。
 // 速さは run() を呼んだとき（新しい書き込みや読み上げ区間の開始）にだけ変わる。
 //
 // scrollTop は整数pxに丸められてカクつくため、自動で動かす間は中身を包む要素を transform でずらす。
 // 途中で速さを変えたり中身が増えたりするので、CSSの transition ではなく requestAnimationFrame で位置を進める。
-import { BUBBLE_SCROLL_END_RATIO } from './bubbleScroll.ts'
+import { BUBBLE_SCROLL_END_RATIO } from '../conversation/bubbleScroll.ts'
 
 // 読み上げに合わせられないとき（ツール呼び出しの表示、読み上げがないときの書き込み）の速さ（px/秒）。
 export const WHITEBOARD_FIXED_SPEED = 240

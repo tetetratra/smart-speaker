@@ -1,0 +1,62 @@
+.live-tool-toast {
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 700;
+  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+}
+.live-tool-toast.tool {
+  background: var(--ui-tool-done-bg);
+  border-color: var(--ui-tool-done-line);
+  color: var(--ui-tool-done-text);
+}
+.live-tool-toast-tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-board {
+  background: var(--live-panel-soft);
+  border: 2px solid var(--live-line-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--live-text);
+  box-shadow: inset 0 0 0 1px var(--live-inset-line);
+  overflow: auto;
+  min-height: 0;
+  height: 100%;
+}
+.live-board-entry {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 書き込みとツール呼び出しの項目の並び。ツール呼び出しの項目は、開くと引数と結果が見える。 */
+.live-board-content { display: flow-root; }
+.live-board-event + .live-board-event { margin-top: 6px; }
+.live-board-event.live-board-entry + .live-board-entry { border-top: 1px solid var(--live-line); padding-top: 10px; }
+.live-tool-entry { min-width: 0; }
+.live-tool-entry > summary.live-tool-toast { cursor: pointer; list-style: none; }
+.live-tool-entry > summary::-webkit-details-marker { display: none; }
+.live-tool-entry > summary::marker { content: ''; }
+.live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }
+.live-tool-entry > summary.failed { background: var(--ui-danger-bg); border-color: var(--ui-danger-line); color: var(--ui-danger-text); }
+.live-tool-entry > summary.background { background: #e8f6ea; border-color: #a7d7b0; color: #1f5f2c; }
+.live-tool-entry > summary.system { background: #fff0df; border-color: #e6bd93; color: #75451f; }
+.live-tool-entry .live-tool-toast-tool { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
+.live-tool-entry-name { flex-shrink: 0; white-space: pre; }
+.live-tool-entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.live-tool-entry-status { flex-shrink: 0; font-size: 10px; }
+.live-tool-entry-body { font-size: 12px; padding: 8px; border: 1px solid var(--live-line); border-radius: 8px; margin-top: 4px; overflow-wrap: anywhere; }
+.live-tool-entry-body p { margin: 0 0 8px; color: var(--live-muted); }
+.live-tool-entry-body h3 { margin: 8px 0 4px; font-size: 12px; }
+.live-tool-entry-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
