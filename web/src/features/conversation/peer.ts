@@ -79,7 +79,8 @@ export function createPeer(send: (message: unknown) => void, onTrack: (stream: M
         }
         await connection.addIceCandidate(message.candidate)
       } catch (err) {
-        console.error(`WebRTC の ${message.type} を反映できませんでした`, err)
+        // 反映の途中で stop された場合は、閉じた接続への操作で失敗するだけなので出さない。
+        if (!stopped) console.error(`WebRTC の ${message.type} を反映できませんでした`, err)
       }
     },
     stop,

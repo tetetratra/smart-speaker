@@ -111,3 +111,13 @@ test('届いた記録を、吹き出しに出すユーザーの発話と、ホ�
   assert.deepEqual(utterances, [{ text: '本文1', generationId: 3 }, { text: '本文3', generationId: undefined }])
   assert.deepEqual(others.map(r => r.id), ['2', '4'])
 })
+
+test('割り込みで新しい世代の playback_stop が届いたら、その世代の発話が届くまで吹き出しを隠す', () => {
+  // 世代は playback_stop でも進む。前の世代の発話を出し続けず、新しい世代の文字起こしか読み上げが届いたら出す。
+  let state = run(userRecords(['前の質問', 1]), progress(1, '前の応答'))
+  assert.equal(bubbleOf(state).visible, true)
+  state = sessionReducer(state, message({ type: 'playback_stop', generation_id: 2 }))
+  assert.equal(bubbleOf(state).visible, false)
+  state = sessionReducer(state, userRecords(['割り込んだ質問', 2]))
+  assert.deepEqual([bubbleOf(state).user, bubbleOf(state).assistant], ['割り込んだ質問', ''])
+})

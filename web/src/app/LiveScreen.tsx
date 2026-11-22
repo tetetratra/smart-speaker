@@ -19,13 +19,19 @@ export function LiveScreen(props: {
   const tools = useMemo(() => historyEntries(session.records.values()), [session.records])
   const bubble = bubbleOf(session)
   const connected = session.connection === 'online'
+  // 接続を試みている間に押しても、確立途中の接続を捨ててやり直さないよう、何もしない。
+  const offline = session.connection === 'offline'
+  const toggleConnection = () => {
+    if (connected) disconnect()
+    else if (offline) connect()
+  }
   // 呼びかけ状態が分からない間（呼びかけ設定の接続が切れている間）は、呼びかけ待ちとは扱わない。
   const isCharacterDim = !connected || (wakeMode.mode?.required === true && !wakeMode.mode.awake)
   // 暗いとき（話しかけても反応しないとき）にタップすると、接続して呼びかけ中にし、すぐ話せるようにする。
   // 呼びかけは HTTP で音声接続とは独立しているので、接続を待たずに同時に行う。
   const handleCharacterTap = () => {
     if (!isCharacterDim) return
-    if (!connected) connect()
+    if (offline) connect()
     void wakeMode.wake()
   }
   return (
@@ -39,7 +45,7 @@ export function LiveScreen(props: {
           <div className="live-controls-panel">
             {/* 切り替えスイッチと画面遷移ボタンを行で分け、狭い幅でも折り返しで崩れないようにする */}
             <div className="live-controls-toggles">
-              <button onClick={connected ? disconnect : connect} className="live-control-btn" aria-label="接続切替">
+              <button onClick={toggleConnection} className="live-control-btn" aria-label="接続切替">
                 <span className={`live-toggle-switch ${connected ? 'on' : ''}`}></span>
                 接続
               </button>

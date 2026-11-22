@@ -1,9 +1,9 @@
-import { wsURL } from '../../shared/backend'
-import { createSocket, type Socket } from '../../shared/socket'
-import { createAudioPlayer, type AudioPlayer } from './audioPlayer'
-import { createPeer, type Peer } from './peer'
-import { isWebRTCSignal } from './protocol'
-import type { SessionEvent } from './sessionReducer'
+import { wsURL } from '../../shared/backend.ts'
+import { createSocket, type Socket } from '../../shared/socket.ts'
+import { createAudioPlayer, type AudioPlayer } from './audioPlayer.ts'
+import { createPeer, type Peer } from './peer.ts'
+import { isWebRTCSignal } from './protocol.ts'
+import type { SessionEvent } from './sessionReducer.ts'
 
 // 自動でつなぎ直すのは 10 回まで。待ち時間は 1 秒から倍々に延ばす。
 const reconnectMaxAttempts = 10
