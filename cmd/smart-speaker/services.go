@@ -8,9 +8,9 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/automations/script"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )

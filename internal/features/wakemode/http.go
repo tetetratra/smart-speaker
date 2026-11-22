@@ -1,14 +1,15 @@
-package main
+package wakemode
 
 import (
 	"encoding/json"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
 
-func registerWakeModeAPI(mux *http.ServeMux, store *wakemode.Store) {
+// RegisterHTTP は、画面から呼びかけの状態を読み書きする API を mux に登録する。
+func RegisterHTTP(mux *http.ServeMux, store *Store) {
 	mux.HandleFunc("/api/wake-mode", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodGet && r.Method != http.MethodPut {
@@ -60,4 +61,12 @@ func registerWakeModeAPI(mux *http.ServeMux, store *wakemode.Store) {
 		}
 		writeJSON(w, 200, store.Wake(time.Now()))
 	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("http: encode response: %v", err)
+	}
 }

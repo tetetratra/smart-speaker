@@ -1,7 +1,6 @@
-package main
+package wakemode
 
 import (
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,9 +11,9 @@ import (
 
 func TestWakeModeAPIControlsPersistentSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mode.json")
-	store, _ := wakemode.NewStore(path, wakemode.DefaultSettings())
+	store, _ := NewStore(path, DefaultSettings())
 	mux := http.NewServeMux()
-	registerWakeModeAPI(mux, store)
+	RegisterHTTP(mux, store)
 	request := func(method, body string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(method, "/api/wake-mode", strings.NewReader(body)))
@@ -31,8 +30,8 @@ func TestWakeModeAPIControlsPersistentSettings(t *testing.T) {
 	if rec := request("PUT", `{"required":true}`); rec.Code != 200 {
 		t.Fatal(rec.Code, rec.Body)
 	}
-	restored, err := wakemode.NewStore(path, wakemode.DefaultSettings())
-	if err != nil || !restored.Snapshot(time.Now()).Required || restored.Snapshot(time.Now()).Words[0] != wakemode.DefaultWords[0] {
+	restored, err := NewStore(path, DefaultSettings())
+	if err != nil || !restored.Snapshot(time.Now()).Required || restored.Snapshot(time.Now()).Words[0] != DefaultWords[0] {
 		t.Fatal(err, restored)
 	}
 	if rec := request("DELETE", ""); rec.Code != 405 {
@@ -41,12 +40,12 @@ func TestWakeModeAPIControlsPersistentSettings(t *testing.T) {
 }
 
 func TestWakeModeAPIWakesWithoutWakeWord(t *testing.T) {
-	store, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
+	store, _ := NewStore(filepath.Join(t.TempDir(), "mode.json"), DefaultSettings())
 	if _, err := store.SetRequired(true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	registerWakeModeAPI(mux, store)
+	RegisterHTTP(mux, store)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/wake-mode/wake", nil))
 	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" || !strings.Contains(rec.Body.String(), `"awake":true`) {
@@ -62,7 +61,7 @@ func TestWakeModeAPIWakesWithoutWakeWord(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	unavailable := http.NewServeMux()
-	registerWakeModeAPI(unavailable, nil)
+	RegisterHTTP(unavailable, nil)
 	unavailable.ServeHTTP(rec, httptest.NewRequest("POST", "/api/wake-mode/wake", nil))
 	if rec.Code != 503 {
 		t.Fatal(rec.Code)

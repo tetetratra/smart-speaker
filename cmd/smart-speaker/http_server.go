@@ -9,6 +9,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 )
@@ -17,7 +18,7 @@ func buildHTTPServer(cfg app.Config, memoryStore *memory.Store, services runtime
 	mux := http.NewServeMux()
 	memory.RegisterHTTP(mux, memoryStore)
 	registerTTSAPI(mux, services.TTS)
-	registerWakeModeAPI(mux, services.WakeMode)
+	wakemode.RegisterHTTP(mux, services.WakeMode)
 	wschat.RegisterWakeMode(mux, services.WakeMode)
 	registerAutomationsAPI(mux, services.Automations)
 	registerWebUI(mux, cfg.WebDistDir)

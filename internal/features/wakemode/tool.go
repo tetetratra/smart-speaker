@@ -3,12 +3,11 @@ package wakemode
 import (
 	"context"
 	"fmt"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"time"
 )
 
 type Tool struct {
-	Store    *wakemode.Store
+	Store    *Store
 	ReadOnly bool
 }
 

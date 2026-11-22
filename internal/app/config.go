@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 )
 
 // Config holds runtime settings.

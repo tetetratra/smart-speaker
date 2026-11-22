@@ -4,9 +4,8 @@ import (
 	"context"
 	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/features/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
-	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
@@ -42,7 +41,7 @@ func New(cfg Config) *Registry {
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {
-			t := &waketool.Tool{Store: cfg.WakeMode, ReadOnly: readOnly}
+			t := &wakemode.Tool{Store: cfg.WakeMode, ReadOnly: readOnly}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
