@@ -12,7 +12,6 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
 
@@ -43,7 +42,7 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 		{Action: OperationDelete, TargetID: "2"},
 		{Action: OperationAdd, Content: "ユーザーは寿司が好き"},
 	}}
-	store := &fakeMemoryWriter{records: []memorystate.Record{
+	store := &fakeMemoryWriter{records: []Record{
 		{ID: "1788926855608507735-3", Content: "ユーザーは東京に住んでいる"},
 		{ID: "1789095948492476660-8", Content: "ユーザーは朝にコーヒーを飲む"},
 	}}
@@ -74,7 +73,7 @@ func TestCreatorHookPassesExistingMemoriesAndAppliesOperations(t *testing.T) {
 }
 
 func TestCreatorHookRejectsUnknownTargetIDs(t *testing.T) {
-	store := &fakeMemoryWriter{records: []memorystate.Record{{ID: "m-1", Content: "既存"}}}
+	store := &fakeMemoryWriter{records: []Record{{ID: "m-1", Content: "既存"}}}
 	hook := mustCreatorHook(
 		t,
 		&fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "test"}}},
@@ -101,7 +100,7 @@ func TestCreatorHookAppliesOnlyFirstOperationPerTarget(t *testing.T) {
 	tests := []struct {
 		name        string
 		operations  []Operation
-		wantUpdates map[string]memorystate.UpdateInput
+		wantUpdates map[string]UpdateInput
 		wantDeletes []string
 	}{
 		{
@@ -112,17 +111,17 @@ func TestCreatorHookAppliesOnlyFirstOperationPerTarget(t *testing.T) {
 		{
 			name:        "update then delete",
 			operations:  []Operation{{Action: OperationUpdate, TargetID: "1", Content: "A"}, {Action: OperationDelete, TargetID: "1"}},
-			wantUpdates: map[string]memorystate.UpdateInput{"m-1": {Content: "A"}},
+			wantUpdates: map[string]UpdateInput{"m-1": {Content: "A"}},
 		},
 		{
 			name:        "update twice",
 			operations:  []Operation{{Action: OperationUpdate, TargetID: "1", Content: "A"}, {Action: OperationUpdate, TargetID: "1", Content: "B"}},
-			wantUpdates: map[string]memorystate.UpdateInput{"m-1": {Content: "A"}},
+			wantUpdates: map[string]UpdateInput{"m-1": {Content: "A"}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &fakeMemoryWriter{records: []memorystate.Record{{ID: "m-1", Content: "既存"}}}
+			store := &fakeMemoryWriter{records: []Record{{ID: "m-1", Content: "既存"}}}
 			hook := mustCreatorHook(t, &fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "test"}}}, &fakeOperationCreator{operations: tt.operations}, store)
 			err := hook.Exec(context.Background())
 			if err == nil || !strings.Contains(err.Error(), "already modified") {
@@ -140,7 +139,7 @@ func TestCreatorHookAppliesOnlyFirstOperationPerTarget(t *testing.T) {
 
 func TestCreatorHookSkipsRecordsChangedWhileCreatingOperations(t *testing.T) {
 	base := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
-	store := &fakeMemoryWriter{records: []memorystate.Record{
+	store := &fakeMemoryWriter{records: []Record{
 		{ID: "m-1", Content: "手動で編集される記憶", UpdatedAt: base},
 		{ID: "m-2", Content: "手動で削除される記憶", UpdatedAt: base},
 		{ID: "m-3", Content: "変わらない記憶", UpdatedAt: base},
@@ -164,7 +163,7 @@ func TestCreatorHookSkipsRecordsChangedWhileCreatingOperations(t *testing.T) {
 	if err == nil || strings.Count(err.Error(), "changed while creating operations") != 2 {
 		t.Fatalf("Exec() error = %v, want 2 conflict errors", err)
 	}
-	if !reflect.DeepEqual(store.updates, map[string]memorystate.UpdateInput{"m-3": {Content: "LLMの更新3"}}) {
+	if !reflect.DeepEqual(store.updates, map[string]UpdateInput{"m-3": {Content: "LLMの更新3"}}) {
 		t.Fatalf("updates = %#v, want only m-3", store.updates)
 	}
 	if len(store.deletes) != 0 {
@@ -173,7 +172,7 @@ func TestCreatorHookSkipsRecordsChangedWhileCreatingOperations(t *testing.T) {
 }
 
 func TestCreatorHookDeletesInsteadOfUpdatingToDuplicateContent(t *testing.T) {
-	store := &fakeMemoryWriter{records: []memorystate.Record{
+	store := &fakeMemoryWriter{records: []Record{
 		{ID: "m-1", Content: "ユーザーは東京に住んでいる"},
 		{ID: "m-2", Content: "ユーザーは大阪に住んでいる"},
 	}}
@@ -293,7 +292,7 @@ func (h testHook) Exec(ctx context.Context) error {
 // 古くなった記憶を見分けられるよう、保存済みメモリの更新日時を日本時間で渡す。
 func TestCreatorHookPassesUpdatedAtInJapanTime(t *testing.T) {
 	creator := &fakeOperationCreator{}
-	store := &fakeMemoryWriter{records: []memorystate.Record{
+	store := &fakeMemoryWriter{records: []Record{
 		{ID: "1", Content: "ユーザーの2026-11-01の天気は晴れ", UpdatedAt: time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)},
 	}}
 	hook := mustCreatorHook(t, &fakeHistory{records: []types.ConversationRecord{{Role: types.RoleUser, Text: "おはよう"}}}, creator, store)
@@ -346,28 +345,28 @@ func (f *fakeOperationCreator) CreateOperations(ctx context.Context, records []t
 }
 
 type fakeMemoryWriter struct {
-	records      []memorystate.Record
-	inputs       []memorystate.UpsertInput
-	updates      map[string]memorystate.UpdateInput
+	records      []Record
+	inputs       []UpsertInput
+	updates      map[string]UpdateInput
 	deletes      []string
 	errByContent map[string]error
 }
 
-func (f *fakeMemoryWriter) Snapshot() []memorystate.Record {
-	return append([]memorystate.Record(nil), f.records...)
+func (f *fakeMemoryWriter) Snapshot() []Record {
+	return append([]Record(nil), f.records...)
 }
 
-func (f *fakeMemoryWriter) Upsert(input memorystate.UpsertInput) (memorystate.Record, memorystate.UpsertResult, error) {
+func (f *fakeMemoryWriter) Upsert(input UpsertInput) (Record, UpsertResult, error) {
 	f.inputs = append(f.inputs, input)
 	if err := f.errByContent[input.Content]; err != nil {
-		return memorystate.Record{}, memorystate.UpsertResult{}, err
+		return Record{}, UpsertResult{}, err
 	}
-	return memorystate.Record{Content: input.Content}, memorystate.UpsertResult{Created: true}, nil
+	return Record{Content: input.Content}, UpsertResult{Created: true}, nil
 }
 
-func (f *fakeMemoryWriter) Update(id string, input memorystate.UpdateInput) (memorystate.Record, error) {
+func (f *fakeMemoryWriter) Update(id string, input UpdateInput) (Record, error) {
 	if f.updates == nil {
-		f.updates = map[string]memorystate.UpdateInput{}
+		f.updates = map[string]UpdateInput{}
 	}
 	f.updates[id] = input
 	for i := range f.records {
@@ -376,7 +375,7 @@ func (f *fakeMemoryWriter) Update(id string, input memorystate.UpdateInput) (mem
 			f.records[i].UpdatedAt = f.records[i].UpdatedAt.Add(time.Second)
 		}
 	}
-	return memorystate.Record{ID: id, Content: input.Content}, nil
+	return Record{ID: id, Content: input.Content}, nil
 }
 
 func (f *fakeMemoryWriter) Delete(id string) error {

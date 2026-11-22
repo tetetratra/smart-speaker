@@ -26,8 +26,8 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
 	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
@@ -37,7 +37,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/plugins/websearch"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
@@ -54,7 +53,7 @@ func main() {
 	setLocalTimeZone()
 
 	cfg := app.LoadConfig()
-	memoryStore, err := memorystate.NewStore(cfg.Memory.StorePath)
+	memoryStore, err := memory.NewStore(cfg.Memory.StorePath)
 	if err != nil {
 		log.Fatalf("failed to init memory store: %v", err)
 	}
@@ -155,7 +154,7 @@ func ttsConfig(cfg app.Config) tts.Config {
 	}
 }
 
-func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystate.Store, services runtimeServices) (appStages, error) {
+func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Store, services runtimeServices) (appStages, error) {
 	var stages appStages
 	stages.chat = chatStage
 	if chatStage != nil {
@@ -172,7 +171,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if memoryStore == nil {
 		return appStages{}, fmt.Errorf("memory store is required")
 	}
-	memoryOperationCreator, err := memoryhook.NewOpenAIClient(memoryhook.OpenAIClientConfig{
+	memoryOperationCreator, err := memory.NewOpenAIClient(memory.OpenAIClientConfig{
 		APIKey: cfg.APIKey,
 		Model:  cfg.Memory.Model,
 	})
@@ -183,7 +182,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	if gw == nil {
 		gw = gateway.New()
 	}
-	memoryCreatorHook, err := memoryhook.NewCreatorHook(memoryhook.CreatorHookConfig{
+	memoryCreatorHook, err := memory.NewCreatorHook(memory.CreatorHookConfig{
 		OperationCreator: memoryOperationCreator,
 		Memory:           memoryStore,
 		Deliver:          gw.Deliver,
@@ -250,7 +249,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memorystat
 	return stages, nil
 }
 
-func buildToolRegistry(cfg app.Config, memoryStore *memorystate.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
+func buildToolRegistry(cfg app.Config, memoryStore *memory.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
 	reg := registry.New(registry.Config{AppContext: services.AppContext,
 		WakeMode:    services.WakeMode,
 		Automations: services.Automations,

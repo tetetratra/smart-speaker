@@ -3,10 +3,9 @@ package registry
 import (
 	"context"
 	"github.com/tetetratra/smart-speaker/internal/automations"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
-	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
 	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 
 	"github.com/tetetratra/smart-speaker/internal/tools"
@@ -28,7 +27,7 @@ type Config struct {
 	AppContext  context.Context
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
-	Memory      *memorystate.Store
+	Memory      *memory.Store
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -54,8 +53,8 @@ func New(cfg Config) *Registry {
 		}
 	}
 	if cfg.Memory != nil {
-		for _, operation := range memorytool.Operations {
-			t := &memorytool.Tool{Store: cfg.Memory, Operation: operation}
+		for _, operation := range memory.Operations {
+			t := &memory.Tool{Store: cfg.Memory, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}

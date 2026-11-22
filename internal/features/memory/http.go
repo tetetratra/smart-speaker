@@ -1,15 +1,14 @@
-package main
+package memory
 
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"path"
 	"sort"
 	"strings"
 	"time"
-
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 )
 
 type memoryListResponse struct {
@@ -31,7 +30,12 @@ type memoryWriteResponse struct {
 	Memory memoryListItem `json:"memory"`
 }
 
-func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store, writer manualMemoryWriter) {
+// RegisterHTTP は、画面から長期メモリを一覧・追加・変更・削除する API を mux に登録する。
+func RegisterHTTP(mux *http.ServeMux, store *Store) {
+	registerHTTP(mux, store, &manualMemoryService{store: store})
+}
+
+func registerHTTP(mux *http.ServeMux, memoryStore *Store, writer manualMemoryWriter) {
 	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -59,7 +63,7 @@ func registerMemoryAPI(mux *http.ServeMux, memoryStore *memorystate.Store, write
 	})
 }
 
-func handleMemoryList(w http.ResponseWriter, memoryStore *memorystate.Store) {
+func handleMemoryList(w http.ResponseWriter, memoryStore *Store) {
 	if memoryStore == nil {
 		http.Error(w, "memory store is unavailable", http.StatusInternalServerError)
 		return
@@ -130,7 +134,7 @@ func decodeMemoryWriteRequest(w http.ResponseWriter, r *http.Request) (memoryWri
 		return memoryWriteRequest{}, false
 	}
 	if strings.TrimSpace(req.Content) == "" {
-		http.Error(w, memorystate.ErrEmptyContent.Error(), http.StatusBadRequest)
+		http.Error(w, ErrEmptyContent.Error(), http.StatusBadRequest)
 		return memoryWriteRequest{}, false
 	}
 	return req, true
@@ -138,20 +142,28 @@ func decodeMemoryWriteRequest(w http.ResponseWriter, r *http.Request) (memoryWri
 
 func writeMemoryError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, memorystate.ErrEmptyContent):
+	case errors.Is(err, ErrEmptyContent):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, memorystate.ErrRecordNotFound):
+	case errors.Is(err, ErrRecordNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func memoryItemFromRecord(record memorystate.Record) memoryListItem {
+func memoryItemFromRecord(record Record) memoryListItem {
 	return memoryListItem{
 		ID:        record.ID,
 		Content:   record.Content,
 		CreatedAt: record.CreatedAt,
 		UpdatedAt: record.UpdatedAt,
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("http: encode response: %v", err)
 	}
 }

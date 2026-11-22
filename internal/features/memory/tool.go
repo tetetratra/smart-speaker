@@ -1,4 +1,4 @@
-// Package memory は、会話の中から長期メモリを確認・追加・変更・削除するツールを提供する。
+// Package memory は長期メモリの機能をまとめる。記録の保存、古い会話からの自動抽出、会話中のツール、画面向けの HTTP API を持つ。
 package memory
 
 import (
@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	memoryhook "github.com/tetetratra/smart-speaker/internal/hooks/memory"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 )
 
@@ -25,11 +23,11 @@ const memoryRole = "長期メモリは、次回以降の別の会話でもあな
 const writePolicy = "呼び出してよいのは、ユーザーが「覚えて」「変えて」「忘れて」などとはっきり頼んだときか、あなたの提案にユーザーが了承したときだけです。" +
 	"はっきり頼まれたときは、その場限りの内容でも、聞き返さずにそのまま呼び出します（その場限りの内容は、不要になると自動で削除されます）。ただしパスワード、暗証番号、カード番号などの秘密情報は、頼まれても保存しません。" +
 	"ユーザーが覚えておけそうな事実を話しただけのときは呼び出さず、次の基準で残す価値があるときだけ、残す内容を口頭で伝えて「覚えておこうか？」と提案し、返事を待ってください。\n" +
-	memoryhook.RetentionCriteria + "\n" +
+	RetentionCriteria + "\n" +
 	"この基準は、あなたから提案するかを決めるときだけに使います。ユーザーにはっきり頼まれたときは、基準で「保存しないもの」に当たる内容（その日の天気など）でも断らずに保存してください。"
 
 type Tool struct {
-	Store     *memorystate.Store
+	Store     *Store
 	Operation string
 }
 
@@ -53,14 +51,14 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 	case "list_memories":
 		return map[string]any{"memories": memoryItems(t.Store.Snapshot())}, nil
 	case "add_memory":
-		record, result, err := t.Store.Upsert(memorystate.UpsertInput{Content: req.Content})
+		record, result, err := t.Store.Upsert(UpsertInput{Content: req.Content})
 		if err != nil {
 			return nil, describeError(err)
 		}
 		// 同じ本文が既にあるときは追加せず、既存のメモリを返す。
 		return map[string]any{"memory": memoryItem(record), "created": result.Created}, nil
 	case "update_memory":
-		record, err := t.Store.Update(req.ID, memorystate.UpdateInput{Content: req.Content})
+		record, err := t.Store.Update(req.ID, UpdateInput{Content: req.Content})
 		if err != nil {
 			return nil, describeError(err)
 		}
@@ -69,7 +67,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 		// 何を消したかを口頭で伝えられるよう、消す前の本文を返す。
 		deleted, ok := findRecord(t.Store.Snapshot(), req.ID)
 		if !ok {
-			return nil, describeError(memorystate.ErrRecordNotFound)
+			return nil, describeError(ErrRecordNotFound)
 		}
 		if err := t.Store.Delete(deleted.ID); err != nil {
 			return nil, describeError(err)
@@ -84,7 +82,7 @@ func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, er
 func (t *Tool) Definition() map[string]any {
 	idProp := map[string]any{"type": "string", "description": "list_memoriesで確かめたメモリのID"}
 	// 古い会話の自動抽出（internal/hooks/memory）と書き方を揃え、言い換えの重複を防ぐ。
-	contentProp := map[string]any{"type": "string", "description": "メモリの本文。" + memoryhook.ContentStyle + "\n「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。"}
+	contentProp := map[string]any{"type": "string", "description": "メモリの本文。" + ContentStyle + "\n「今日」「明日」などの相対的な日付だけを、2026-05-03 のような年付きの日付に直す。誕生日や記念日のように毎年くり返す日付には、年を付けない。"}
 	props := map[string]any{}
 	required := []string{}
 	description := ""
@@ -112,7 +110,7 @@ func (t *Tool) Definition() map[string]any {
 	}
 }
 
-func memoryItems(records []memorystate.Record) []map[string]any {
+func memoryItems(records []Record) []map[string]any {
 	items := make([]map[string]any, 0, len(records))
 	for _, record := range records {
 		items = append(items, memoryItem(record))
@@ -120,26 +118,26 @@ func memoryItems(records []memorystate.Record) []map[string]any {
 	return items
 }
 
-func memoryItem(record memorystate.Record) map[string]any {
+func memoryItem(record Record) map[string]any {
 	return map[string]any{"id": record.ID, "content": record.Content, "updated_at": record.UpdatedAt}
 }
 
-func findRecord(records []memorystate.Record, id string) (memorystate.Record, bool) {
+func findRecord(records []Record, id string) (Record, bool) {
 	id = strings.TrimSpace(id)
 	for _, record := range records {
 		if id != "" && record.ID == id {
 			return record, true
 		}
 	}
-	return memorystate.Record{}, false
+	return Record{}, false
 }
 
 // describeError は、AIが次の行動を選べるように、よくある失敗を言い換える。
 func describeError(err error) error {
 	switch {
-	case errors.Is(err, memorystate.ErrEmptyContent):
+	case errors.Is(err, ErrEmptyContent):
 		return fmt.Errorf("contentが空です")
-	case errors.Is(err, memorystate.ErrRecordNotFound):
+	case errors.Is(err, ErrRecordNotFound):
 		return fmt.Errorf("指定したIDのメモリがありません。list_memoriesでIDを確かめてください")
 	default:
 		return err
