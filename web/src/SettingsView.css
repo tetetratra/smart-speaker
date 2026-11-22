@@ -1,0 +1,19 @@
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-section {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.settings-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--live-muted);
+}
+.settings-wake-mode {
+  justify-self: start;
+}

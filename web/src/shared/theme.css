@@ -35,9 +35,6 @@ body {
   color: var(--live-text);
   font-family: "IBM Plex Sans", system-ui, sans-serif;
 }
-body.admin-mode {
-  overflow: auto;
-}
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -124,4 +121,27 @@ textarea, input, select {
 }
 .live-toggle-switch.on::after {
   left: 18px;
+}
+
+/* 枠線付きの中身の箱。メイン画面以外の画面で、中身をまとめて囲むのに使う。 */
+.panel {
+  border: 2px solid var(--live-line);
+  border-radius: 10px;
+  background: var(--live-panel-soft);
+  padding: 12px;
+}
+/* 箱の内側にもう 1 本線を引く。ログと設定の画面で使う。 */
+.panel.inset {
+  box-shadow: inset 0 0 0 1px var(--live-inset-line);
+}
+/* HTTP の失敗などを画面の上に出す帯。 */
+.error-banner {
+  border: 1px solid var(--ui-danger-line);
+  border-radius: 8px;
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger-text);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 700;
 }

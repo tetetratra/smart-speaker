@@ -4,35 +4,26 @@ import { createWS } from './ws'
 import { conversationBubble } from './conversation'
 import { Whiteboard, type HistoryEntry } from './Whiteboard'
 import { historyEntries, mergeRecords, splitRecords, type WhiteboardRecord } from './whiteboardHistory'
-import { useWakeMode, type WakeMode } from './WakeModeControl'
+import { useWakeMode, type WakeMode } from './features/wakemode/useWakeMode'
 import { SettingsView } from './SettingsView'
-import { AutomationView } from './AutomationView'
-import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume, type PlaybackVolumeLevel } from './plugins/playbackvolume/playbackVolume'
-import { SwitchBotSceneView } from './plugins/switchbot/SwitchBotSceneView'
+import { AutomationScreen } from './features/automations/AutomationScreen'
+import { MemoryScreen } from './features/memory/MemoryScreen'
+import { EventLogScreen } from './features/eventlog/EventLogScreen'
+import { useEventLog } from './features/eventlog/useEventLog'
+import { defaultPlaybackVolumeLevel, playbackVolumeGains, usePlaybackVolume } from './plugins/playbackvolume/usePlaybackVolume'
+import { SceneScreen } from './plugins/switchbot/SceneScreen'
 import { createAudioReceiver, type AudioReceiver, type PlaybackSpeech } from './audio'
 import { startBubbleAutoScroll } from './bubbleScroll'
-import { apiURL, wsURL } from './shared/backend'
+import { wsURL } from './shared/backend'
 import './shared/theme.css'
 import { useScreen } from './app/routes'
 
 // ChatMessage はチャット欄（吹き出し）に出すユーザーの発話。AI の発話は playback_progress から作る。
 type ChatMessage = { id: number; type: 'user'; text: string; generationId?: number }
 
-type ServerEventLog = { id: number; line: string }
-type MemoryItem = {
-  id: string
-  content: string
-  created_at: string
-  updated_at: string
-}
-type MemoryListResponse = { memories: MemoryItem[] }
-type MemoryWriteResponse = { memory: MemoryItem }
-
-const backendURL = new URL(apiURL('/'))
 const chatWSUrl = wsURL('/ws/chat')
 const reconnectMaxAttempts = 10
 const reconnectInitialDelayMs = 1000
-const serverEventLogLimit = 1000
 
 const liveRootStyle = `
   .live-frame {
@@ -131,64 +122,6 @@ const liveRootStyle = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .live-volume-slider {
-    width: 100%;
-    height: 10px;
-    margin: 0;
-    cursor: pointer;
-    accent-color: var(--live-toggle-on);
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent;
-  }
-  .live-volume-slider::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 999px;
-    background: var(--live-toggle-bg);
-  }
-  .live-volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-top: -4px;
-    border: 1px solid var(--live-line);
-    border-radius: 50%;
-    background: var(--live-toggle-knob);
-    box-shadow: 0 1px 2px var(--live-shadow);
-  }
-  .live-volume-slider::-moz-range-track {
-    height: 4px;
-    border: none;
-    border-radius: 999px;
-    background: var(--live-toggle-bg);
-  }
-  .live-volume-slider::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border: 1px solid var(--live-line);
-    border-radius: 50%;
-    background: var(--live-toggle-knob);
-    box-shadow: 0 1px 2px var(--live-shadow);
-  }
-  .live-playback-slider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-  }
-  .live-playback-slider-label {
-    flex-shrink: 0;
-    width: 52px;
-    font-size: 10px;
-    line-height: 1;
-    color: var(--live-muted);
-    white-space: nowrap;
-  }
-  .live-playback-slider-row .live-volume-slider {
-    flex: 1;
-    min-width: 0;
   }
   .live-status-grid {
     display: grid;
@@ -382,75 +315,6 @@ const liveRootStyle = `
   }
 `
 
-function isBinaryLikeValue(value: unknown): boolean {
-  return value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob
-}
-
-function isBinaryLikeKey(key: string): boolean {
-  return /audio|pcm|sample|prebuffer|bytes|buffer|blob|binary|data/i.test(key)
-}
-
-function isBase64Like(value: string): boolean {
-  if (value.length < 256 || value.length % 4 !== 0) return false
-  return /^[A-Za-z0-9+/]+={0,2}$/.test(value)
-}
-
-function sanitizeEventValue(value: unknown, key = ''): unknown {
-  if (isBinaryLikeValue(value)) return '...'
-  if (typeof value === 'string') {
-    if (isBinaryLikeKey(key) || isBase64Like(value)) return '...'
-    return value
-  }
-  if (Array.isArray(value)) {
-    if (isBinaryLikeKey(key) && value.length > 0) return '...'
-    return value.map((item) => sanitizeEventValue(item))
-  }
-  if (value && typeof value === 'object') {
-    const source = value as Record<string, unknown>
-    const result: Record<string, unknown> = {}
-    if (Object.prototype.hasOwnProperty.call(source, 'type')) {
-      result.type = sanitizeEventValue(source.type, 'type')
-    }
-    for (const [entryKey, entryValue] of Object.entries(source)) {
-      if (entryKey === 'type') continue
-      result[entryKey] = sanitizeEventValue(entryValue, entryKey)
-    }
-    return result
-  }
-  return value
-}
-
-function formatServerEventLog(raw: unknown): string {
-  const sanitized = sanitizeEventValue(raw)
-  try {
-    return JSON.stringify(sanitized)
-  } catch {
-    return JSON.stringify({ type: 'unserializable', value: '...' })
-  }
-}
-
-function formatMemoryDate(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('ja-JP', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
-}
-
-function normalizeMemoryItem(memory: MemoryItem): MemoryItem {
-  return {
-    id: String(memory.id),
-    content: String(memory.content),
-    created_at: String(memory.created_at),
-    updated_at: String(memory.updated_at),
-  }
-}
-
-function isScrolledToBottom(el: HTMLElement): boolean {
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= 4
-}
-
 type LiveViewProps = {
   connected: boolean
   connecting: boolean
@@ -491,42 +355,10 @@ function App() {
   const wakeMode = useWakeMode()
   const [whiteboardRecords, setWhiteboardRecords] = useState<Map<string, WhiteboardRecord>>(() => new Map())
   const toolEntries = useMemo(() => historyEntries(whiteboardRecords.values()), [whiteboardRecords])
-  const [serverEventLogs, setServerEventLogs] = useState<ServerEventLog[]>([])
-  const [memories, setMemories] = useState<MemoryItem[]>([])
-  const [memoryLoading, setMemoryLoading] = useState(false)
-  const [memoryError, setMemoryError] = useState('')
-  const loadMemories = useCallback((signal?: AbortSignal) => {
-    setMemoryLoading(true)
-    setMemoryError('')
-
-    return fetch(new URL('/api/memories', backendURL).toString(), { signal })
-      .then(async (resp) => {
-        if (!resp.ok) {
-          throw new Error(`メモリ一覧を取得できませんでした (${resp.status})`)
-        }
-        return await resp.json() as MemoryListResponse
-      })
-      .then((data) => {
-        if (!Array.isArray(data.memories)) {
-          throw new Error('メモリ一覧の形式が不正です')
-        }
-        setMemories(data.memories.map(normalizeMemoryItem))
-      })
-      .catch((err) => {
-        if (signal?.aborted) return
-        setMemoryError(err instanceof Error ? err.message : 'メモリ一覧を取得できませんでした')
-      })
-      .finally(() => {
-        if (!signal?.aborted) {
-          setMemoryLoading(false)
-        }
-      })
-  }, [])
+  const [serverEventLogs, appendServerEventLog] = useEventLog()
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
   const currentGenerationRef = useRef(0)
   const idRef = useRef(0)
-  const adminLogRef = useRef<HTMLDivElement | null>(null)
-  const shouldFollowAdminLogRef = useRef(true)
   const audioReceiverRef = useRef<AudioReceiver | null>(null)
   const playbackGainRef = useRef(playbackVolumeGains[defaultPlaybackVolumeLevel])
 
@@ -554,19 +386,6 @@ function App() {
     setPlaybackSpeech(undefined)
     setMessages([])
   }, [])
-
-  const updateAdminLogFollow = useCallback(() => {
-    const el = adminLogRef.current
-    shouldFollowAdminLogRef.current = !el || isScrolledToBottom(el)
-  }, [])
-
-  const appendServerEventLog = useCallback((raw: unknown) => {
-    updateAdminLogFollow()
-    setServerEventLogs((prev) => {
-      const next = [...prev, { id: nextMessageId(), line: formatServerEventLog(raw) }]
-      return next.length > serverEventLogLimit ? next.slice(-serverEventLogLimit) : next
-    })
-  }, [nextMessageId, updateAdminLogFollow])
 
   const playbackGain = playbackVolumeGains[playbackVolumeLevel]
 
@@ -908,86 +727,12 @@ function App() {
   }, [connected])
 
 
-  useEffect(() => {
-    const el = adminLogRef.current
-    if (el && shouldFollowAdminLogRef.current) {
-      el.scrollTop = el.scrollHeight
-    }
-  }, [serverEventLogs])
   const bubble = useMemo(() => conversationBubble(messages, playbackSpeech), [messages, playbackSpeech])
   const lastAssistantMessage = bubble.assistant
   const lastUserMessage = bubble.user
   const [screen, navigate] = useScreen()
-  useEffect(() => {
-    const body = document.body
-    if (screen !== 'live') {
-      body.classList.add('admin-mode')
-    } else {
-      body.classList.remove('admin-mode')
-    }
-    return () => body.classList.remove('admin-mode')
-  }, [screen])
-  useEffect(() => {
-    if (screen !== 'eventlog' || !shouldFollowAdminLogRef.current) return
-    const frame = window.requestAnimationFrame(() => {
-      const el = adminLogRef.current
-      if (el) {
-        el.scrollTop = el.scrollHeight
-      }
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [screen])
-  useEffect(() => {
-    if (screen !== 'memory') return
-    const controller = new AbortController()
-    void loadMemories(controller.signal)
-    return () => controller.abort()
-  }, [loadMemories, screen])
-  const writeMemory = useCallback(async (method: 'POST' | 'PUT', content: string, id?: string) => {
-    setMemoryError('')
-    const path = id ? `/api/memories/${encodeURIComponent(id)}` : '/api/memories'
-    const resp = await fetch(new URL(path, backendURL).toString(), {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-    if (!resp.ok) {
-      throw new Error(`メモリを保存できませんでした (${resp.status})`)
-    }
-    const data = await resp.json() as MemoryWriteResponse
-    return normalizeMemoryItem(data.memory)
-  }, [])
-  const createMemory = useCallback(async (content: string) => {
-    try {
-      const memory = await writeMemory('POST', content)
-      setMemories((prev) => [memory, ...prev.filter((item) => item.id !== memory.id)])
-    } catch (err) {
-      setMemoryError(err instanceof Error ? err.message : 'メモリを追加できませんでした')
-      throw err
-    }
-  }, [writeMemory])
-  const updateMemory = useCallback(async (id: string, content: string) => {
-    try {
-      const memory = await writeMemory('PUT', content, id)
-      setMemories((prev) => prev.map((item) => item.id === id ? memory : item))
-    } catch (err) {
-      setMemoryError(err instanceof Error ? err.message : 'メモリを更新できませんでした')
-      throw err
-    }
-  }, [writeMemory])
-  const deleteMemory = useCallback(async (id: string) => {
-    try {
-      setMemoryError('')
-      const resp = await fetch(new URL(`/api/memories/${encodeURIComponent(id)}`, backendURL).toString(), { method: 'DELETE' })
-      if (!resp.ok) {
-        throw new Error(`メモリを削除できませんでした (${resp.status})`)
-      }
-      setMemories((prev) => prev.filter((item) => item.id !== id))
-    } catch (err) {
-      setMemoryError(err instanceof Error ? err.message : 'メモリを削除できませんでした')
-      throw err
-    }
-  }, [])
+  const goLive = useCallback(() => navigate('live'), [navigate])
+
   return (
     <>
       <div style={{ display: screen === 'live' ? 'block' : 'none' }}>
@@ -1014,399 +759,20 @@ function App() {
           goSettings={() => navigate('settings')}
         />
       </div>
-      {screen === 'eventlog' && <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          padding: 12,
-          height: '100vh',
-          minHeight: 0,
-          overflow: 'hidden',
-          boxSizing: 'border-box',
-        }}
-      >
-        <div
-          style={{
-            flex: '1 1 auto',
-            minHeight: 0,
-            height: '100%',
-            border: '2px solid var(--live-line)',
-            borderRadius: 10,
-            padding: '10px 12px',
-            overflow: 'auto',
-            background: 'var(--live-panel-soft)',
-            boxShadow: 'inset 0 0 0 1px var(--live-inset-line)',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-            fontSize: 12,
-            lineHeight: 1.5,
-          }}
-          ref={adminLogRef}
-          onScroll={updateAdminLogFollow}
-        >
-          {serverEventLogs.map((log) => (
-            <div key={log.id} style={{ whiteSpace: 'pre', minWidth: 'max-content' }}>
-              {log.line}
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={() => navigate('live')}
-          style={{
-            alignSelf: 'flex-start',
-            borderRadius: 8,
-            border: '1px solid var(--live-line-strong)',
-            background: 'var(--live-panel)',
-            color: 'var(--live-text)',
-            padding: '10px 14px',
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          app画面
-        </button>
-      </div>}
-      {screen === 'jobs' && <AutomationView backendURL={backendURL} goApp={() => navigate('live')} />}
-      {screen === 'memory' && <MemoryView
-        memories={memories}
-        loading={memoryLoading}
-        error={memoryError}
-        onCreate={createMemory}
-        onUpdate={updateMemory}
-        onDelete={deleteMemory}
-        goApp={() => navigate('live')}
-      />}
-      {screen === 'scenes' && <SwitchBotSceneView
-        backendURL={backendURL}
-        goApp={() => navigate('live')}
-      />}
+      {screen === 'eventlog' && <EventLogScreen lines={serverEventLogs} onBack={goLive} />}
+      {screen === 'jobs' && <AutomationScreen onBack={goLive} />}
+      {screen === 'memory' && <MemoryScreen onBack={goLive} />}
+      {screen === 'scenes' && <SceneScreen onBack={goLive} />}
       {screen === 'settings' && <SettingsView
-        backendURL={backendURL}
         connectionStatus={connectionStatusLabel(connected, busy)}
         speechDetectStatus={speechDetectStatus}
         sttStatus={sttStatus}
         wakeMode={wakeMode}
         playbackVolumeLevel={playbackVolumeLevel}
         onPlaybackVolumeChange={setPlaybackVolumeLevel}
-        goApp={() => navigate('live')}
+        onBack={goLive}
       />}
     </>
-  )
-}
-
-// 縦画面では幅が狭いので、編集・削除ボタンを縦に並べて本文の幅を確保する。
-// 作成日と更新日は折り返さず1行に並べ、1件あたりの高さを抑える。
-const memoryViewStyle = `
-  .memory-item-dates {
-    display: flex;
-    column-gap: 12px;
-    color: var(--live-muted);
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .memory-item-actions {
-    display: flex;
-    gap: 6px;
-  }
-  @media (orientation: portrait) {
-    .memory-item-dates {
-      column-gap: 8px;
-      font-size: 10px;
-    }
-    .memory-item-actions {
-      flex-direction: column;
-    }
-  }
-`
-
-function MemoryView(props: {
-  memories: MemoryItem[]
-  loading: boolean
-  error: string
-  onCreate: (content: string) => Promise<void>
-  onUpdate: (id: string, content: string) => Promise<void>
-  onDelete: (id: string) => Promise<void>
-  goApp: () => void
-}) {
-  const { memories, loading, error, onCreate, onUpdate, onDelete, goApp } = props
-  const [newContent, setNewContent] = useState('')
-  const [editingID, setEditingID] = useState('')
-  const [editingContent, setEditingContent] = useState('')
-  const [pendingAction, setPendingAction] = useState('')
-  const startEdit = useCallback((memory: MemoryItem) => {
-    setEditingID(memory.id)
-    setEditingContent(memory.content)
-  }, [])
-  const cancelEdit = useCallback(() => {
-    setEditingID('')
-    setEditingContent('')
-  }, [])
-  const submitNew = useCallback(async () => {
-    const content = newContent.trim()
-    if (!content) return
-    setPendingAction('create')
-    try {
-      await onCreate(content)
-      setNewContent('')
-    } finally {
-      setPendingAction('')
-    }
-  }, [newContent, onCreate])
-  const submitEdit = useCallback(async (id: string) => {
-    const content = editingContent.trim()
-    if (!content) return
-    setPendingAction(`update:${id}`)
-    try {
-      await onUpdate(id, content)
-      cancelEdit()
-    } finally {
-      setPendingAction('')
-    }
-  }, [cancelEdit, editingContent, onUpdate])
-  const submitDelete = useCallback(async (memory: MemoryItem) => {
-    if (!window.confirm('このメモリを削除しますか？')) return
-    setPendingAction(`delete:${memory.id}`)
-    try {
-      await onDelete(memory.id)
-      if (editingID === memory.id) {
-        cancelEdit()
-      }
-    } finally {
-      setPendingAction('')
-    }
-  }, [cancelEdit, editingID, onDelete])
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        padding: 12,
-        height: '100vh',
-        minHeight: 0,
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-    >
-      <style>{memoryViewStyle}</style>
-      {error && (
-        <div
-          style={{
-            border: '1px solid var(--ui-danger-line)',
-            borderRadius: 8,
-            background: 'var(--ui-danger-bg)',
-            color: 'var(--ui-danger-text)',
-            padding: '10px 12px',
-            fontSize: 13,
-            lineHeight: 1.4,
-            fontWeight: 700,
-          }}
-        >
-          {error}
-        </div>
-      )}
-      <div
-        style={{
-          flex: '1 1 auto',
-          minHeight: 0,
-          overflow: 'auto',
-          border: '2px solid var(--live-line)',
-          borderRadius: 10,
-          background: 'var(--live-panel-soft)',
-          padding: 12,
-        }}
-      >
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div
-            style={{
-              display: 'grid',
-              gap: 8,
-              border: '2px solid var(--live-line)',
-              borderRadius: 8,
-              background: 'var(--live-panel)',
-              padding: 12,
-            }}
-          >
-            <textarea
-              value={newContent}
-              onChange={(event) => setNewContent(event.currentTarget.value)}
-              placeholder="追加するメモリ文"
-              rows={3}
-              style={{
-                width: '100%',
-                resize: 'vertical',
-                border: '1px solid var(--live-line-strong)',
-                borderRadius: 8,
-                padding: '10px 12px',
-                color: 'var(--live-text)',
-                fontSize: 14,
-                lineHeight: 1.5,
-                fontFamily: 'inherit',
-              }}
-            />
-            <button
-              onClick={() => void submitNew()}
-              disabled={!newContent.trim() || pendingAction === 'create'}
-              style={{
-                justifySelf: 'start',
-                borderRadius: 8,
-                border: '1px solid var(--ui-accent)',
-                background: !newContent.trim() || pendingAction === 'create' ? 'var(--ui-accent-soft)' : 'var(--ui-accent)',
-                color: !newContent.trim() || pendingAction === 'create' ? 'var(--ui-accent-soft-text)' : 'var(--ui-accent-text)',
-                padding: '9px 13px',
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: !newContent.trim() || pendingAction === 'create' ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {pendingAction === 'create' ? '追加中' : '追加'}
-            </button>
-          </div>
-          {!loading && !error && memories.length === 0 && (
-            <div style={{ color: 'var(--live-muted)', fontSize: 14, fontWeight: 700 }}>保存済みメモリはありません</div>
-          )}
-          {memories.map((memory) => (
-            <div
-              key={memory.id}
-              style={{
-                border: '1px solid var(--live-line)',
-                borderRadius: 8,
-                background: 'var(--live-panel)',
-                padding: '8px 12px',
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) auto',
-                columnGap: 12,
-                alignItems: 'center',
-              }}
-            >
-              <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
-                {editingID === memory.id ? (
-                  <textarea
-                    value={editingContent}
-                    onChange={(event) => setEditingContent(event.currentTarget.value)}
-                    rows={3}
-                    style={{
-                      width: '100%',
-                      resize: 'vertical',
-                      border: '1px solid var(--live-line-strong)',
-                      borderRadius: 8,
-                      padding: '10px 12px',
-                      color: 'var(--live-text)',
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                      fontFamily: 'inherit',
-                    }}
-                  />
-                ) : (
-                  <div style={{ color: 'var(--live-text)', fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                    {memory.content}
-                  </div>
-                )}
-                <div className="memory-item-dates">
-                  <span>作成: {formatMemoryDate(memory.created_at)}</span>
-                  <span>更新: {formatMemoryDate(memory.updated_at)}</span>
-                </div>
-              </div>
-              <div className="memory-item-actions">
-                {editingID === memory.id ? (
-                  <>
-                    <button
-                      onClick={() => void submitEdit(memory.id)}
-                      disabled={!editingContent.trim() || pendingAction === `update:${memory.id}`}
-                      style={{
-                        borderRadius: 8,
-                        border: '1px solid var(--ui-accent)',
-                        background: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft)' : 'var(--ui-accent)',
-                        color: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'var(--ui-accent-soft-text)' : 'var(--ui-accent-text)',
-                        padding: '6px 10px',
-                        fontSize: 13,
-                        fontWeight: 800,
-                        whiteSpace: 'nowrap',
-                        cursor: !editingContent.trim() || pendingAction === `update:${memory.id}` ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {pendingAction === `update:${memory.id}` ? '保存中' : '保存'}
-                    </button>
-                    <button
-                      onClick={cancelEdit}
-                      disabled={pendingAction === `update:${memory.id}`}
-                      style={{
-                        borderRadius: 8,
-                        border: '1px solid var(--live-line-strong)',
-                        background: 'var(--live-panel)',
-                        color: 'var(--live-text)',
-                        padding: '6px 10px',
-                        fontSize: 13,
-                        fontWeight: 800,
-                        whiteSpace: 'nowrap',
-                        cursor: pendingAction === `update:${memory.id}` ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      キャンセル
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => startEdit(memory)}
-                      disabled={pendingAction !== ''}
-                      style={{
-                        borderRadius: 8,
-                        border: '1px solid var(--live-line-strong)',
-                        background: 'var(--live-panel)',
-                        color: 'var(--live-text)',
-                        padding: '6px 10px',
-                        fontSize: 13,
-                        fontWeight: 800,
-                        whiteSpace: 'nowrap',
-                        cursor: pendingAction !== '' ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      編集
-                    </button>
-                    <button
-                      onClick={() => void submitDelete(memory)}
-                      disabled={pendingAction === `delete:${memory.id}`}
-                      style={{
-                        borderRadius: 8,
-                        border: '1px solid var(--ui-danger-line)',
-                        background: 'var(--ui-danger-bg)',
-                        color: 'var(--ui-danger-text)',
-                        padding: '6px 10px',
-                        fontSize: 13,
-                        fontWeight: 800,
-                        whiteSpace: 'nowrap',
-                        cursor: pendingAction === `delete:${memory.id}` ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {pendingAction === `delete:${memory.id}` ? '削除中' : '削除'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <button
-        onClick={goApp}
-        style={{
-          alignSelf: 'flex-start',
-          borderRadius: 8,
-          border: '1px solid var(--live-line-strong)',
-          background: 'var(--live-panel)',
-          color: 'var(--live-text)',
-          padding: '10px 14px',
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}
-      >
-        app画面
-      </button>
-    </div>
   )
 }
 

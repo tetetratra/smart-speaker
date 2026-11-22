@@ -17,3 +17,32 @@ export function wsURL(path: string): string {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
+
+// requestJSON は JSON を送受信する。応答の本文が空（削除の 204 など）なら undefined を返す。
+// 失敗したら「既定の文言 (状態コード): サーバーの応答本文」の Error を投げる。原因の手がかりを残すため、応答本文も付ける。
+// 通信そのものに失敗したときは既定の文言だけの Error を投げる。signal で中断したときは中断のエラーをそのまま投げる。
+export async function requestJSON<T>(
+  path: string,
+  failure: string,
+  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(apiURL(path), {
+      method: options.method ?? 'GET',
+      headers: options.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal,
+      cache: 'no-store',
+    })
+  } catch (err) {
+    if (options.signal?.aborted) throw err
+    throw new Error(failure)
+  }
+  const text = await response.text()
+  if (!response.ok) {
+    const detail = text.trim()
+    throw new Error(`${failure} (${response.status})${detail ? `: ${detail}` : ''}`)
+  }
+  return (text ? JSON.parse(text) : undefined) as T
+}

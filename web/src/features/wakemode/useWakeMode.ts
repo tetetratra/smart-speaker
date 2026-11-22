@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { apiURL, wsURL } from './shared/backend'
-import { createSocket, type Socket } from './shared/socket'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { wsURL } from '../../shared/backend'
+import { createSocket, type Socket } from '../../shared/socket'
+import { requireWake, wake as wakeNow } from './api'
 
 // awakeは呼びかけ後の会話中で、最後の発話から設定された時間（既定5分）は呼びかけなしで話せる状態。
 export type WakeMode = { required: boolean, awake: boolean }
@@ -71,43 +72,12 @@ export function useWakeMode(): WakeModeState {
   // 順番を保証するため、応答を待てるHTTPのAPIを使う。結果の状態はWebSocketで届く。
   const wake = useCallback(async () => {
     try {
-      if (!modeRef.current?.required) {
-        const response = await fetch(apiURL('/api/wake-mode'), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ required: true }),
-          cache: 'no-store',
-        })
-        if (!response.ok) throw new Error(await response.text())
-      }
-      const response = await fetch(apiURL('/api/wake-mode/wake'), { method: 'POST', cache: 'no-store' })
-      if (!response.ok) throw new Error(await response.text())
-    } catch {
-      setError('呼びかけ中にできませんでした')
+      if (!modeRef.current?.required) await requireWake()
+      await wakeNow()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '呼びかけ中にできませんでした')
     }
   }, [])
 
   return { mode, error, pending, save, wake }
-}
-
-export function WakeModeControl({ state }: { state: WakeModeState }) {
-  const { mode, error, pending, save } = state
-  return (
-    <div style={{ display: 'grid', gap: 4, minWidth: 0, fontSize: 12 }}>
-      <button
-        type="button"
-        role="switch"
-        aria-label="ウェイクアップワード必須"
-        aria-checked={mode?.required ?? false}
-        aria-busy={pending}
-        className="live-control-btn"
-        disabled={!mode || pending}
-        onClick={() => { if (mode) save(!mode.required) }}
-      >
-        <span className={`live-toggle-switch ${mode?.required ? 'on' : ''}`} aria-hidden="true" />
-        呼びかけ
-      </button>
-      {error && <span role="alert">{error}</span>}
-    </div>
-  )
 }
