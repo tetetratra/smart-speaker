@@ -28,12 +28,6 @@ cp config.sample.yaml config.yaml
 シークレットは次の環境変数で渡します。必須は `OPENAI_API_KEY` だけで、ほかは使う機能に応じて設定します。
 リポジトリ直下の `.envrc`（direnv で読む、Git 管理外のファイル）に書いておくと、デプロイでも同じ値を使えます。
 
-```sh
-cp .envrc.sample .envrc
-# .envrcに値を記入し、使う機能のコメントを外す
-direnv allow
-```
-
 | 環境変数 | 用途 |
 |---|---|
 | `OPENAI_API_KEY` | OpenAI の API キー（必須） |
