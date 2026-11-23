@@ -245,30 +245,27 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    %% 配置をまとめるための見えない囲み（枠と見出しは出さない）
-    subgraph web[" "]
-        subgraph app["App 画面をまたぐ状態"]
-            voice["useVoiceSession<br/>音声接続"]
-            wake["useWakeMode<br/>呼びかけ設定"]
-            volume["usePlaybackVolume<br/>再生音量"]
-            state[("sessionReducer<br/>会話の状態")]
+    subgraph app["App 画面をまたぐ状態"]
+        voice["useVoiceSession<br/>音声接続"]
+        wake["useWakeMode<br/>呼びかけ設定"]
+        volume["usePlaybackVolume<br/>再生音量"]
+        state[("sessionReducer<br/>会話の状態")]
+    end
+    subgraph io["React の外の音声接続"]
+        session["createVoiceSession<br/>接続の管理"]
+        socket["createSocket<br/>再接続する WebSocket"]
+        peer["createPeer<br/>マイク・WebRTC"]
+        player["createAudioPlayer<br/>再生・音量"]
+    end
+    subgraph screens["画面"]
+        subgraph live["LiveScreen メイン画面"]
+            whiteboard["Whiteboard<br/>ホワイトボード"]
+            bubble["SpeechBubble<br/>吹き出し"]
         end
-        subgraph io["React の外の音声接続"]
-            session["createVoiceSession<br/>接続の管理"]
-            socket["createSocket<br/>再接続する WebSocket"]
-            peer["createPeer<br/>マイク・WebRTC"]
-            player["createAudioPlayer<br/>再生・音量"]
+        subgraph settings["SettingsScreen 設定画面"]
+            parts["状態表示・呼びかけ・読み上げ音声<br/>再生音量・MCP サーバー"]
         end
-        subgraph screens["画面"]
-            subgraph live["LiveScreen メイン画面"]
-                whiteboard["Whiteboard<br/>ホワイトボード"]
-                bubble["SpeechBubble<br/>吹き出し"]
-            end
-            subgraph settings["SettingsScreen 設定画面"]
-                parts["状態表示・呼びかけ・読み上げ音声<br/>再生音量・MCP サーバー"]
-            end
-            pages["ほかの画面<br/>メモリ・予約・リモコン・ログ"]
-        end
+        pages["ほかの画面<br/>メモリ・予約・リモコン・ログ"]
     end
 
     subgraph server["サーバー"]
@@ -300,6 +297,4 @@ flowchart LR
     settings <==>|"requestJSON<br/>/api/tts・/api/mcp/servers"| httpAPI
     settings ==>|"location.href<br/>/oauth/mcp/start?server=…<br/>認可を始める（画面ごと移動し、終わると設定画面へ戻る）"| oauthMCP
     pages <==>|"requestJSON<br/>/api/memories・/api/jobs・/api/switchbot/scenes"| httpAPI
-
-    style web fill:none,stroke:none
 ```
