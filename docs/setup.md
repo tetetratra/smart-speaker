@@ -98,7 +98,10 @@ Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS �
 ### SwitchBot
 
 1. SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。
-2. 温度・湿度・明るさを会話に伝える場合は、`config.yaml` の `plugins.switchbot.device_map` に `hub2` のデバイス ID を書きます。デバイス ID は `scripts/switchbot_deviceids.rb` で一覧できます。起動時と5分おきに Hub 2 の計測値を取得し、段階（温度は1℃・湿度は5%刻み、明るさは1〜20の2段階刻み）が変わったときだけ会話へ伝えます。
+2. Hub 2 は起動時にデバイス一覧から自動で見つけます。複数ある場合は一覧の最初の1台を選び、ログに残します。見つからない場合は監視しません。起動時と1分おきに計測値を取得し、段階（温度は1℃・湿度は5%刻み、明るさは1〜20の2段階刻み）が変わったときだけ会話へ伝えます。
+
+以前の `plugins.switchbot.device_map` は削除してください。`SWITCHBOT_DEVICE_MAP` も不要です。
+デバイス一覧と Hub 2 の状態は [SwitchBot Open API](https://github.com/OpenWonderLabs/SwitchBotAPI#get-device-list) から取得します。
 
 シーンは起動時に SwitchBot から取得します。シーンを足したら、サーバーを再起動します。
 

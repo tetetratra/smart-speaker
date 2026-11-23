@@ -29,7 +29,7 @@ func TestSensorWatcherDeliversChangedLevels(t *testing.T) {
 	defer server.Close()
 
 	var got []types.ConversationInput
-	watcher := newSensorWatcher(newTestClient(server), func(_ context.Context, input types.ConversationInput) error {
+	watcher := newSensorWatcher(newTestClient(server), "hub-device", func(_ context.Context, input types.ConversationInput) error {
 		got = append(got, input)
 		return nil
 	})

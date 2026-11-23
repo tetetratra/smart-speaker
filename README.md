@@ -130,7 +130,7 @@ flowchart LR
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
     locationAPI("【現在地】<br/>位置情報API<br/>POST /api/location")
-    hub2Watcher("【SwitchBot】<br/>Hub 2 の監視<br/>起動時と5分おき")
+    hub2Watcher("【SwitchBot】<br/>Hub 2 の監視<br/>起動時と1分おき")
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
