@@ -19,9 +19,8 @@ const (
 )
 
 const (
-	hub2Alias = "hub2"
 	// sensorInterval は Hub 2 の計測値を取りに行く間隔。SwitchBot API の上限は1日10,000回。
-	sensorInterval = 5 * time.Minute
+	sensorInterval = time.Minute
 )
 
 // measurement は、Hub 2 の計測値1つを段階に分けて記録にする方法。
@@ -98,15 +97,16 @@ func levelWithHysteresis(prev *int, v, margin float64, classify func(float64) in
 
 // sensorWatcher は Hub 2 の計測値を定期的に取得し、段階が変わった計測値ごとに記録を会話へ入れる。
 type sensorWatcher struct {
-	client  *Client
-	deliver func(context.Context, types.ConversationInput) error
+	client   *Client
+	deviceID string
+	deliver  func(context.Context, types.ConversationInput) error
 	// levels は Source ごとの最後に届けた段階。メモリ上だけに持つ。
 	levels map[string]int
 	now    func() time.Time
 }
 
-func newSensorWatcher(client *Client, deliver func(context.Context, types.ConversationInput) error) *sensorWatcher {
-	return &sensorWatcher{client: client, deliver: deliver, levels: map[string]int{}, now: time.Now}
+func newSensorWatcher(client *Client, deviceID string, deliver func(context.Context, types.ConversationInput) error) *sensorWatcher {
+	return &sensorWatcher{client: client, deviceID: deviceID, deliver: deliver, levels: map[string]int{}, now: time.Now}
 }
 
 // run は起動直後に1回取得し、そのあと interval ごとに取得する。ctx が取り消されたら終わる。
@@ -127,7 +127,7 @@ func (w *sensorWatcher) run(ctx context.Context, interval time.Duration) {
 // check は計測値を1回取得し、段階が変わった計測値（起動後の最初はすべて）の記録を会話へ入れる。
 // 取得に失敗したときはログに残すだけにし、次の取得で前回の段階と比べる。
 func (w *sensorWatcher) check(ctx context.Context) {
-	status, err := w.client.GetStatus(ctx, "", hub2Alias)
+	status, err := w.client.GetStatus(ctx, w.deviceID)
 	if err != nil {
 		log.Printf("switchbot: Hub 2 の計測値を取得できません: %v", err)
 		return

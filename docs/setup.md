@@ -105,8 +105,7 @@ OAuth が要るリモートの MCP サーバーは、`oauth:` を書いて次の
 
 ### SwitchBot
 
-1. SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。
-2. 温度・湿度・明るさを会話に伝える場合は、`config.yaml` の `plugins.switchbot.device_map` に `hub2` のデバイス ID を書きます。デバイス ID は `scripts/switchbot_deviceids.rb` で一覧できます。
+SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。
 
 シーンは起動時に SwitchBot から取得します。シーンを足したら、サーバーを再起動します。
 

@@ -1,11 +1,11 @@
 // Package switchbot は、SwitchBot の機器を扱うプラグイン。
 //
 // 登録済みのシーンを実行する AI ツールを持つ。
-// Hub 2 の温度・湿度・明るさは5分おきに取得し、段階が変わったら計測値ごとに購読できる記録として会話へ入れる。
+// Hub 2 の温度・湿度・明るさは1分おきに取得し、段階が変わったら計測値ごとに購読できる記録として会話へ入れる。
 // 画面のリモコン（web/src/plugins/switchbot）向けに、シーンの一覧・実行の HTTP API も持つ。
 //
 // トークンとシークレットは環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡す。
-// 機器名とデバイスIDの対応は config.yaml の plugins.switchbot.device_map に書く。
+// Hub 2 は起動時にデバイス一覧から自動で見つける。
 package switchbot
 
 import (
@@ -22,12 +22,6 @@ import (
 
 const name = "switchbot"
 
-// Config は config.yaml の plugins.switchbot。
-type Config struct {
-	// DeviceMap は機器名と SwitchBot のデバイスIDの対応。
-	DeviceMap map[string]string `yaml:"device_map"`
-}
-
 // Plugin は SwitchBot のプラグイン。トークンかシークレットがなければ、ツールを出さない。
 type Plugin struct {
 	client *Client
@@ -37,9 +31,10 @@ type Plugin struct {
 }
 
 // New は SwitchBot のプラグインを作る。有効なら、起動時にシーンの一覧を取得する。
-// device_map に hub2 があれば、計測値の監視を始める（deps.Deliver がなければ始めない）。
+// デバイス一覧に Hub 2 があれば、計測値の監視を始める（deps.Deliver がなければ始めない）。
 func New(deps plugin.Deps) (*Plugin, error) {
-	var cfg Config
+	// 設定項目はないが、未知のキーを黙って無視しないよう検査する。
+	var cfg struct{}
 	if err := deps.DecodeConfig(name, &cfg); err != nil {
 		return nil, err
 	}
@@ -49,17 +44,50 @@ func New(deps plugin.Deps) (*Plugin, error) {
 		log.Println("switchbot: token or secret not set; switchbot tools disabled")
 		return &Plugin{}, nil
 	}
-	client := NewSwitchbotClient(token, secret, cfg.DeviceMap)
-	p := &Plugin{client: client, scenes: loadScenes(deps.AppContext, client)}
-	if client.deviceMap[hub2Alias] != "" && deps.Deliver != nil {
-		ctx := deps.AppContext
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		p.watching = true
-		go newSensorWatcher(client, deps.Deliver).run(ctx, sensorInterval)
+	return newPlugin(deps, NewSwitchbotClient(token, secret)), nil
+}
+
+func newPlugin(deps plugin.Deps, client *Client) *Plugin {
+	ctx := deps.AppContext
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return p, nil
+	p := &Plugin{client: client, scenes: loadScenes(ctx, client)}
+	if deps.Deliver != nil {
+		if deviceID := findHub2(ctx, client); deviceID != "" {
+			p.watching = true
+			go newSensorWatcher(client, deviceID, deps.Deliver).run(ctx, sensorInterval)
+		}
+	}
+	return p
+}
+
+// findHub2 は一覧の最初の Hub 2 を選ぶ。複数あれば、採用した機器をログに残す。
+func findHub2(parent context.Context, client *Client) string {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	devices, err := client.ListDevices(ctx)
+	if err != nil {
+		log.Printf("switchbot: デバイス一覧を取得できないため、Hub 2 の監視を開始しません: %v", err)
+		return ""
+	}
+	var selected Device
+	count := 0
+	for _, device := range devices {
+		if device.DeviceType != "Hub 2" || strings.TrimSpace(device.DeviceID) == "" {
+			continue
+		}
+		if count == 0 {
+			selected = device
+		}
+		count++
+	}
+	if count == 0 {
+		log.Println("switchbot: Hub 2 が見つからないため、監視を開始しません")
+		return ""
+	}
+	log.Printf("switchbot: Hub 2 を%d台検出し、一覧の最初の1台を監視します: name=%q device_id=%q", count, selected.DeviceName, selected.DeviceID)
+	return selected.DeviceID
 }
 
 func loadScenes(parent context.Context, client *Client) []Scene {

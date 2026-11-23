@@ -191,11 +191,3 @@ plugins:
     #       API_KEY: "${SOME_API_KEY}"
     #     # false にすると接続しません。既定: true
     #     enabled: false
-
-  # SwitchBot。トークンとシークレットはシークレットなので、環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡します。
-  # 両方があるときだけ有効になります。
-  switchbot:
-    # 機器名と SwitchBot のデバイスIDの対応。scripts/switchbot_deviceids.rb で一覧を取得できます。既定: なし
-    # hub2 を書くと、温度・湿度・明るさの変化を会話へ伝えます。
-    # device_map:
-    #   hub2: "XXXXXXXXXXXX"

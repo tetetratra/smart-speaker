@@ -15,7 +15,7 @@ import (
 )
 
 func newTestClient(server *httptest.Server) *Client {
-	client := NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
+	client := NewSwitchbotClient("token", "secret")
 	client.baseURL = server.URL
 	client.http = server.Client()
 	return client
@@ -156,7 +156,7 @@ func TestClientGetStatusRejectsUnauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := newTestClient(server).GetStatus(context.Background(), "", "hub2")
+	_, err := newTestClient(server).GetStatus(context.Background(), "hub-device")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -179,7 +179,7 @@ func TestClientAppliesFreshAuthPerRequest(t *testing.T) {
 
 	client := newTestClient(server)
 	for i := 0; i < 2; i++ {
-		if _, err := client.GetStatus(context.Background(), "device-id", ""); err != nil {
+		if _, err := client.GetStatus(context.Background(), "device-id"); err != nil {
 			t.Fatalf("GetStatus() error = %v", err)
 		}
 	}
@@ -326,4 +326,34 @@ func containsAll(text string, substrings ...string) bool {
 		}
 	}
 	return true
+}
+
+// 物理デバイスだけを API の並び順で取得し、赤外線リモコンは含めない。
+func TestClientListDevices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1.1/devices" {
+			t.Errorf("想定外のリクエスト: %s %s", r.Method, r.URL.Path)
+		}
+		assertValidSwitchBotAuth(t, r)
+		_, _ = w.Write([]byte(`{"statusCode":100,"body":{"deviceList":[{"deviceId":"hub","deviceName":"居間","deviceType":"Hub 2"},{"deviceId":"meter","deviceName":"寝室","deviceType":"Meter"}],"infraredRemoteList":[{"deviceId":"ir","remoteType":"Air Conditioner"}]}}`))
+	}))
+	defer server.Close()
+	got, err := newTestClient(server).ListDevices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != (Device{DeviceID: "hub", DeviceName: "居間", DeviceType: "Hub 2"}) || got[1] != (Device{DeviceID: "meter", DeviceName: "寝室", DeviceType: "Meter"}) {
+		t.Fatalf("デバイス一覧 = %#v", got)
+	}
+}
+
+// ListDevices 自身も API の失敗を呼び出し元へ返す。
+func TestClientListDevicesRejectsAPIFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"statusCode":190,"message":"System error"}`))
+	}))
+	defer server.Close()
+	if _, err := newTestClient(server).ListDevices(context.Background()); err == nil {
+		t.Fatal("API の失敗が返されません")
+	}
 }

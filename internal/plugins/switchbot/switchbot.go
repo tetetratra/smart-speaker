@@ -1,7 +1,6 @@
 package switchbot
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -28,8 +27,14 @@ type Client struct {
 	secret    string
 	http      *http.Client
 	baseURL   string
-	deviceMap map[string]string
 	clockSkew atomic.Int64
+}
+
+// Device はデバイス一覧から監視対象を選ぶための情報。
+type Device struct {
+	DeviceID   string `json:"deviceId"`
+	DeviceName string `json:"deviceName"`
+	DeviceType string `json:"deviceType"`
 }
 
 type Scene struct {
@@ -43,17 +48,8 @@ type apiResponse[T any] struct {
 	Body       T      `json:"body"`
 }
 
-// NDJSON tool item から受け取るパラメータの構造
-type Command struct {
-	DeviceAlias string
-	DeviceID    string
-	Command     string
-	CommandType string
-	Parameter   string
-}
-
 // 設定値に基づいてクライアントを初期化する
-func NewSwitchbotClient(token, secret string, deviceMap map[string]string) *Client {
+func NewSwitchbotClient(token, secret string) *Client {
 	token = strings.TrimSpace(token)
 	secret = strings.TrimSpace(secret)
 	if token == "" || secret == "" {
@@ -61,49 +57,22 @@ func NewSwitchbotClient(token, secret string, deviceMap map[string]string) *Clie
 	}
 
 	client := &Client{
-		token:     token,
-		secret:    secret,
-		http:      &http.Client{Timeout: 10 * time.Second},
-		baseURL:   baseURL,
-		deviceMap: normalizeDeviceMap(deviceMap),
+		token:   token,
+		secret:  secret,
+		http:    &http.Client{Timeout: 10 * time.Second},
+		baseURL: baseURL,
 	}
 	return client
 }
 
-// SwitchBot API にコマンドを送りレスポンスを返す
-func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, error) {
-	deviceID, err := c.resolveDeviceID(cmd.DeviceID, cmd.DeviceAlias)
-	if err != nil {
-		return nil, err
+// GetStatus はデバイスのステータスを取得します。
+func (c *Client) GetStatus(ctx context.Context, deviceID string) (map[string]any, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return nil, errors.New("device_id を指定してください")
 	}
-
-	command := strings.TrimSpace(cmd.Command)
-	if command == "" {
-		return nil, errors.New("command を指定してください")
-	}
-
-	commandType := strings.TrimSpace(cmd.CommandType)
-	if commandType == "" {
-		commandType = "command"
-	}
-	parameter := strings.TrimSpace(cmd.Parameter)
-	if parameter == "" {
-		parameter = "default"
-	}
-
-	payload := map[string]string{
-		"command":     command,
-		"commandType": commandType,
-		"parameter":   parameter,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", c.baseURL, deviceID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	url := fmt.Sprintf("%s/v1.1/devices/%s/status", c.baseURL, deviceID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -131,39 +100,27 @@ func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, erro
 	}, nil
 }
 
-// GetStatus はデバイスのステータスを取得します。
-func (c *Client) GetStatus(ctx context.Context, deviceID, deviceAlias string) (map[string]any, error) {
-	resolvedID, err := c.resolveDeviceID(deviceID, deviceAlias)
+// ListDevices はアカウントに登録された物理デバイスを API の並び順で返す。
+func (c *Client) ListDevices(ctx context.Context) ([]Device, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1.1/devices", nil)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/v1.1/devices/%s/status", c.baseURL, resolvedID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := c.applyAuth(req); err != nil {
 		return nil, err
 	}
-
 	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
-	out, err := decodeAPIResponse[map[string]any](resp)
+	out, err := decodeAPIResponse[struct {
+		DeviceList []Device `json:"deviceList"`
+	}](resp)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"statusCode":  out.StatusCode,
-		"message":     out.Message,
-		"body":        out.Body,
-		"http_status": resp.StatusCode,
-		"device_id":   resolvedID,
-	}, nil
+	return out.Body.DeviceList, nil
 }
 
 func (c *Client) ListScenes(ctx context.Context) ([]Scene, error) {
@@ -243,21 +200,6 @@ func (c *Client) signPayload(timestamp, nonce string) (string, error) {
 	}
 	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	return sig, nil
-}
-
-func (c *Client) resolveDeviceID(deviceID, deviceAlias string) (string, error) {
-	deviceID = strings.TrimSpace(deviceID)
-	if deviceID == "" && deviceAlias != "" {
-		var ok bool
-		deviceID, ok = c.deviceMap[strings.ToLower(deviceAlias)]
-		if !ok {
-			return "", fmt.Errorf("未定義のデバイス名です: %s", deviceAlias)
-		}
-	}
-	if deviceID == "" {
-		return "", errors.New("device_id か device (エイリアス) のいずれかを指定してください")
-	}
-	return deviceID, nil
 }
 
 func (c *Client) applyAuthHeaders(req *http.Request, timestamp, nonce, signature string) {
@@ -395,13 +337,4 @@ func switchBotDiagnosticCategory(httpStatus, statusCode int, message string) str
 		return "rate_limited"
 	}
 	return "api_failure"
-}
-
-// normalizeDeviceMapは機器名の大文字・小文字と前後の空白を区別せずに引けるようにする。
-func normalizeDeviceMap(deviceMap map[string]string) map[string]string {
-	normalized := make(map[string]string, len(deviceMap))
-	for k, v := range deviceMap {
-		normalized[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
-	}
-	return normalized
 }

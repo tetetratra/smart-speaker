@@ -2,13 +2,16 @@ package switchbot
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/types"
+	"gopkg.in/yaml.v3"
 )
 
 func toolNames(p *Plugin) []string {
@@ -44,7 +47,7 @@ func TestPluginWithoutCredentials(t *testing.T) {
 
 // シーンがあればシーンのツールと指示文を出し、なければツールを出さない。
 func TestPluginTools(t *testing.T) {
-	client := NewSwitchbotClient("token", "secret", map[string]string{"hub2": "hub-device"})
+	client := NewSwitchbotClient("token", "secret")
 	withScenes := &Plugin{client: client, scenes: []Scene{{SceneID: "scene-1", SceneName: "換気扇をつける"}}}
 	if got := strings.Join(toolNames(withScenes), ","); got != "switchbot_execute_scene" {
 		t.Fatalf("ツール = %s", got)
@@ -61,51 +64,103 @@ func TestPluginTools(t *testing.T) {
 	}
 }
 
-// config.yaml の plugins.switchbot を読み、書き間違いはエラーにする。
-func TestPluginReadsConfig(t *testing.T) {
+// 設定項目がなくなっても、指定された未知のキーを黙って無視しない。
+func TestPluginRejectsUnknownConfig(t *testing.T) {
 	t.Setenv("SWITCHBOT_TOKEN", "")
-	var gotName string
-	deps := plugin.Deps{Config: func(name string, v any) error {
-		gotName = name
-		v.(*Config).DeviceMap = map[string]string{"hub2": "id"}
-		return nil
-	}}
-	if _, err := New(deps); err != nil || gotName != "switchbot" {
-		t.Fatalf("name = %q, err = %v", gotName, err)
-	}
-	deps.Config = func(string, any) error { return http.ErrNotSupported }
-	if _, err := New(deps); err == nil {
-		t.Fatal("設定の読み込みの失敗がエラーになりません")
+	for _, tt := range []struct {
+		yaml    string
+		wantErr bool
+	}{
+		{yaml: "{}"},
+		{yaml: "device_map: {hub2: id}", wantErr: true},
+		{yaml: "unknown: true", wantErr: true},
+	} {
+		deps := plugin.Deps{Config: func(name string, v any) error {
+			if name != "switchbot" {
+				t.Fatalf("設定の名前 = %q", name)
+			}
+			decoder := yaml.NewDecoder(strings.NewReader(tt.yaml))
+			decoder.KnownFields(true)
+			return decoder.Decode(v)
+		}}
+		if _, err := New(deps); (err != nil) != tt.wantErr {
+			t.Errorf("設定 %q: err = %v", tt.yaml, err)
+		}
 	}
 }
 
-// device_map に hub2 があり、会話へ届ける先があるときだけ、計測値を監視して購読できる記録を出す。
+// Hub 2 の自動検出結果に応じて監視と購読元を公開し、シーンは監視と独立して使える。
 func TestPluginWatchesHub2(t *testing.T) {
-	t.Setenv("SWITCHBOT_TOKEN", "token")
-	t.Setenv("SWITCHBOT_SECRET", "secret")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	deliver := func(context.Context, types.ConversationInput) error { return nil }
-	newPlugin := func(deviceMap map[string]string, deliver func(context.Context, types.ConversationInput) error) *Plugin {
-		t.Helper()
-		p, err := New(plugin.Deps{AppContext: ctx, Deliver: deliver, Config: func(_ string, v any) error {
-			v.(*Config).DeviceMap = deviceMap
-			return nil
-		}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	// 取り消し済みの context で作り、シーンの取得と監視が本物の API へ行かないようにする。
-	cancel()
-	if got := newPlugin(map[string]string{"hub2": "id"}, deliver).SubscribableSources(); len(got) != 3 || got[TemperatureSource] == "" || got[HumiditySource] == "" || got[LightSource] == "" {
-		t.Fatalf("Sources = %#v", got)
-	}
-	if got := newPlugin(nil, deliver).SubscribableSources(); len(got) != 0 {
-		t.Fatalf("hub2 がないのに Sources = %#v", got)
-	}
-	if got := newPlugin(map[string]string{"hub2": "id"}, nil).SubscribableSources(); len(got) != 0 {
-		t.Fatalf("届け先がないのに Sources = %#v", got)
+	for _, tt := range []struct {
+		name      string
+		devices   []Device
+		fail      bool
+		noDeliver bool
+		wantID    string
+	}{
+		{name: "Hub 2", devices: []Device{{DeviceID: "hub-device", DeviceType: "Hub 2"}}, wantID: "hub-device"},
+		{name: "複数なら最初", devices: []Device{{DeviceID: "meter", DeviceType: "Meter"}, {DeviceID: "first", DeviceName: "居間", DeviceType: "Hub 2"}, {DeviceID: "second", DeviceType: "Hub 2"}}, wantID: "first"},
+		{name: "対象なし", devices: []Device{{DeviceID: "motion", DeviceType: "Motion Sensor"}}},
+		{name: "一覧取得失敗", fail: true},
+		{name: "届け先なし", devices: []Device{{DeviceID: "hub-device", DeviceType: "Hub 2"}}, noDeliver: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v1.1/scenes":
+					_ = json.NewEncoder(w).Encode(map[string]any{"statusCode": 100, "body": []map[string]string{{"sceneId": "scene", "sceneName": "照明"}}})
+				case "/v1.1/devices":
+					if tt.noDeliver {
+						t.Error("届け先なしでデバイス一覧を取得しています")
+					}
+					if tt.fail {
+						w.WriteHeader(http.StatusInternalServerError)
+						_, _ = w.Write([]byte(`{"statusCode":190,"message":"error"}`))
+						return
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"statusCode": 100, "body": map[string]any{"deviceList": tt.devices}})
+				default:
+					if tt.wantID == "" || r.URL.Path != "/v1.1/devices/"+tt.wantID+"/status" {
+						t.Errorf("想定外のリクエスト: %s", r.URL.Path)
+					}
+					_, _ = w.Write([]byte(`{"statusCode":100,"body":{"temperature":25,"humidity":45,"lightLevel":4}}`))
+				}
+			}))
+			defer server.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			records := make(chan types.ConversationInput, 3)
+			deps := plugin.Deps{AppContext: ctx}
+			if !tt.noDeliver {
+				deps.Deliver = func(_ context.Context, input types.ConversationInput) error {
+					records <- input
+					return nil
+				}
+			}
+			p := newPlugin(deps, newTestClient(server))
+			if got := strings.Join(toolNames(p), ","); got != "switchbot_execute_scene" {
+				t.Fatalf("監視の有無にかかわらずシーンを使えるはずです: %s", got)
+			}
+			sources := p.SubscribableSources()
+			if tt.wantID == "" {
+				if len(sources) != 0 {
+					t.Fatalf("監視しないのに Sources = %#v", sources)
+				}
+				return
+			}
+			if len(sources) != 3 || sources[TemperatureSource] == "" || sources[HumiditySource] == "" || sources[LightSource] == "" {
+				t.Fatalf("Sources = %#v", sources)
+			}
+			for range 3 {
+				select {
+				case input := <-records:
+					if !input.Subscribable {
+						t.Fatal("購読できない記録です")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("起動直後の計測値が届きません")
+				}
+			}
+		})
 	}
 }
