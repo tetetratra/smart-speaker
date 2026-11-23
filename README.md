@@ -43,7 +43,7 @@ docker compose up --build
 | `internal/` | 会話処理（`components/realtime` など）、ツールの登録と実行（`tools/`）、会話の状態の保存（`states/`） |
 | `internal/features/<名前>` | 本体に組み込む機能（長期メモリ・呼びかけ・予約ジョブ・ホワイトボード）。ストア・ツール・HTTP など 1 つの機能の部品を 1 つのディレクトリにまとめ、`cmd/smart-speaker` が直接つなぐ |
 | `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（config で有効にし、Plugin interface だけで本体とつながる機能） |
-| `web/` | ブラウザの画面（React） |
+| `web/` | ブラウザの画面（React）。`web/src` を、画面の切り替えと配線（`app/`）、本体の機能（`features/<名前>`）、任意機能（`plugins/<名前>`）、機能に依存しない土台（`shared/`）に分ける。依存は `app/` → `features/`・`plugins/` → `shared/` の一方向にする |
 | `services/local-stt` | 呼びかけ判定に使うローカルの文字起こし（faster-whisper） |
 | `services/agent-bridge` | Claude Code 連携のブリッジ |
 | `scripts/` | デプロイなどのスクリプト |
@@ -163,7 +163,7 @@ flowchart LR
     memoryStore -.->|"接続時の文脈"| rt
     manager <-.->|"古い会話からの抽出結果"| memoryStore
     manager -->|"EventConversationRecordAdded<br/>画面に出す記録の追加"| chat
-    chat ==>|"WebSocket<br/>記録の追加<br/>（ユーザーの発話はチャット欄、それ以外はホワイトボード）"| browser
+    chat ==>|"WebSocket<br/>記録の追加<br/>（ユーザーの発話は吹き出し、それ以外はホワイトボード）"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```
 
@@ -226,4 +226,66 @@ flowchart LR
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     locationTool -.->|"最後に受信した場所・更新日時の参照"| locationStore
     whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
+```
+
+### 画面（web/）
+
+画面の部品と、サーバーとのやり取りです。画面が使うサーバーの API は、この図にまとめています。
+細い実線は値の受け渡し、太線はサーバーとの通信、点線は会話の状態の読み書きを表します。
+矢印のラベルは、1行目に関数名・型名・API のパス・メッセージの種類を、その下に説明を書きます。
+
+```mermaid
+flowchart LR
+    subgraph web["ブラウザ（web/src）"]
+        subgraph app["App 画面をまたぐ状態"]
+            voice["useVoiceSession<br/>音声接続"]
+            wake["useWakeMode<br/>呼びかけ設定"]
+            volume["usePlaybackVolume<br/>再生音量"]
+            state[("sessionReducer<br/>会話の状態")]
+        end
+        subgraph io["React の外の音声接続"]
+            session["createVoiceSession<br/>接続の管理"]
+            socket["createSocket<br/>再接続する WebSocket"]
+            peer["createPeer<br/>マイク・WebRTC"]
+            player["createAudioPlayer<br/>再生・音量"]
+        end
+        subgraph screens["画面"]
+            subgraph live["LiveScreen メイン画面"]
+                whiteboard["Whiteboard<br/>ホワイトボード"]
+                bubble["SpeechBubble<br/>吹き出し"]
+            end
+            subgraph settings["SettingsScreen 設定画面"]
+                parts["状態表示・呼びかけ・読み上げ音声<br/>再生音量・MCP サーバー"]
+            end
+            pages["ほかの画面<br/>メモリ・予約・リモコン・ログ"]
+        end
+    end
+
+    subgraph server["サーバー"]
+        chat{{"wschat<br/>/ws/chat"}}
+        rtc{{"rtcpeer・rtcout<br/>音声の送受信"}}
+        wsWake{{"/ws/wake-mode<br/>呼びかけ設定"}}
+        wsVolume{{"/ws/playback-volume<br/>再生音量"}}
+        httpAPI{{"HTTP API<br/>/api/*"}}
+    end
+
+    voice -->|"VoiceSession<br/>接続・切断・音量"| session
+    session -->|"SessionEvent<br/>出来事"| voice
+    session -->|"createPeer・stop<br/>開いたら作り、閉じたら止める"| peer
+    session -->|"createAudioPlayer・close<br/>開いたら作り、閉じたら止める"| player
+    session <-->|"SocketHandlers<br/>開いた・閉じた・メッセージ"| socket
+    peer -->|"attach<br/>受信した音声"| player
+    voice <-.->|"出来事を反映"| state
+    state -.->|"SessionState<br/>表示する状態の参照"| live & settings
+    wake -->|"WakeModeState<br/>呼びかけの状態"| live & settings
+    volume -->|"PlaybackVolumeLevel<br/>再生音量の段階"| settings
+    volume -->|"playbackVolumeGains<br/>再生音量の倍率"| voice
+
+    socket <==>|"ServerMessage<br/>会話の記録・読み上げの進み・音声接続の取り決め"| chat
+    peer <==>|"マイク音声・応答音声"| rtc
+    wake <==>|"wake_mode・set_wake_mode<br/>呼びかけ設定の配信・切替"| wsWake
+    wake ==>|"requestJSON<br/>/api/wake-mode・/api/wake-mode/wake<br/>呼びかけ中にする"| httpAPI
+    volume <==>|"playback_volume・set_playback_volume<br/>再生音量の配信・変更"| wsVolume
+    settings <==>|"requestJSON<br/>/api/tts・/api/mcp/servers"| httpAPI
+    pages <==>|"requestJSON<br/>/api/memories・/api/jobs・/api/switchbot/scenes"| httpAPI
 ```
