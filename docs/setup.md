@@ -1,5 +1,9 @@
 # セットアップとローカル起動
 
+> [!NOTE]
+> このファイルは、手元で動かせるようにするための手順（必要なもの・設定ファイルの置き方・起動・テスト・外部サービス側でやる準備）だけを書きます。
+> 設定項目の説明や既定値は [config.sample.yaml](../config.sample.yaml)、環境変数の一覧は [.env.sample](../.env.sample)、本番の運用は [deploy.md](deploy.md) に書き、アプリの動きの説明はここに書きません。
+
 ## 必要なもの
 
 - Docker（Docker Compose）
