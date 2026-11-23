@@ -40,7 +40,6 @@ cp .env.sample .env
 | `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar を使う場合 |
 | `AGENT_BRIDGE_TOKEN` | Claude Code 連携を使う場合 |
-| `MCP_CALENDAR_CLIENT_ID` / `MCP_CALENDAR_CLIENT_SECRET` | Google Calendar の MCP サーバーを使う場合（`config.sample.yaml` の例の名前） |
 
 ## 起動
 
