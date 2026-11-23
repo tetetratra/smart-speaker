@@ -5,6 +5,7 @@
 
 # 秘密情報を含むローカル設定
 .envrc
+.env
 
 # Claude Code の worktree など（それぞれに node_modules を含み大きい）
 .claude

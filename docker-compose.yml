@@ -16,20 +16,12 @@ services:
       - "50000-50100:50000-50100/udp"
     volumes:
       - /var/lib/smart-speaker/data:/app/data
+    # シークレットは .env に書き、すべてコンテナに渡す（.env.sample を参照）。
     # シークレット以外の設定値は config.yaml に書く（config.sample.yaml を参照）
+    env_file:
+      - path: .env
+        required: false
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
-      SWITCHBOT_TOKEN: ${SWITCHBOT_TOKEN:-}
-      SWITCHBOT_SECRET: ${SWITCHBOT_SECRET:-}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      # 手元のMacで動く agent-bridge と共有するトークン。接続先は config.yaml の plugins.claudecode.url に書く
-      AGENT_BRIDGE_TOKEN: ${AGENT_BRIDGE_TOKEN:-}
-      # config.yaml の plugins.mcp で ${...} として参照する MCP サーバーのシークレット。
-      # ここに書いた変数だけがコンテナに入るので、MCP サーバーを足してシークレットが増えたら、ここにも足す
-      MCP_CALENDAR_CLIENT_ID: ${MCP_CALENDAR_CLIENT_ID:-}
-      MCP_CALENDAR_CLIENT_SECRET: ${MCP_CALENDAR_CLIENT_SECRET:-}
       # デプロイスクリプトが本番サーバーのIPを取得して渡す。config.yaml の rtc.ice_advertise_ips より優先する
       RTC_ICE_ADVERTISE_IPS: ${RTC_ICE_ADVERTISE_IPS:-}
 
