@@ -1,5 +1,9 @@
 # 本番環境へのデプロイ
 
+> [!NOTE]
+> このファイルは、本番サーバーへデプロイして動かし続けるための手順（初回の準備・デプロイ・本番だけで要る外部サービスの認可や準備）だけを書きます。
+> 手元で動かす手順は [setup.md](setup.md)、設定項目の説明や既定値は [config.sample.yaml](../config.sample.yaml) に書き、アプリの動きの説明はここに書きません。
+
 本番サーバーへは、手元の PC から Docker の SSH 接続でイメージをビルド・起動します。
 
 ## 準備（初回だけ）
@@ -35,3 +39,8 @@ WebRTC 用の UDP ポート `50000-50100` はホストへ公開しますが、�
 - スクリプトは最後にサーバーのログを流し続けます。`Container smart-speaker-server-1 Started` が出て、エラーが出ていなければ、止めてかまいません。
 
 本番のコンテナを止めるときは `./scripts/stop.sh` を使います。
+
+## 外部サービスの認可と準備
+
+- Google Calendar（`plugins.googlecalendar`）の認可は、リダイレクト URI に localhost を使います。Google の OAuth は localhost 以外のリダイレクト URI に HTTPS を求めるためです。本番サーバーで認可するときは、`ssh -L 8081:localhost:8081 <user>@<本番サーバー>` でポートを転送してから、手元のブラウザで `http://localhost:8081/oauth/google/start` を開きます。
+- stdio の MCP サーバー（`command`）は、本番では Docker コンテナの中で動きます。使うコマンドをイメージに入れておく必要があります。

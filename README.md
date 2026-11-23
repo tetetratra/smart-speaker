@@ -14,12 +14,13 @@
 - 予約ジョブ：「10分後に起こして」「平日8時に〜して」などと会話から登録できます
 - 呼びかけ必須モード：「起きて」などの呼びかけで始まる発話だけに反応します
 - 手元の Mac の Claude Code に、調べものや文章作成などの作業を頼めます
+- 現在地：ショートカットなどから送った場所を、会話で使えます
 
 ## すぐに起動する
 
 ```sh
 cp config.sample.yaml config.yaml
-export OPENAI_API_KEY=...
+cp .env.sample .env  # OPENAI_API_KEY に OpenAI の API キーを書く
 docker compose up --build
 ```
 
