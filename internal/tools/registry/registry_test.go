@@ -2,7 +2,7 @@ package registry
 
 import (
 	"context"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"path/filepath"
 	"testing"
 
@@ -63,7 +63,7 @@ func TestRegistryOmitsScheduleTimerTool(t *testing.T) {
 
 // メモリの保存先があるときだけ、メモリのツールを登録する。
 func TestRegistryMemoryToolsOnlyWithStore(t *testing.T) {
-	store, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	store, err := memory.NewStore(filepath.Join(t.TempDir(), "memories.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

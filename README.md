@@ -9,7 +9,7 @@
 
 - 音声での会話。話しはじめると、読み上げ中の返答を止めて聞き取ります
 - ホワイトボード：調べた結果や補足を画面に書き出します
-- 外部サービスの操作：Google Calendar の予定の確認・登録、SwitchBot での家電操作、Web 検索
+- 外部サービスの操作：Google Calendar の予定の確認・登録、SwitchBot での家電操作、Web 検索、設定ファイルに登録した MCP サーバーのツール
 - 長期メモリ：会話から覚えておくことを抽出し、次の会話で使います。「覚えて」「忘れて」と頼むか、AIの提案に了承すると、その場で追加・変更・削除します（画面からも確認・編集できます）
 - 予約ジョブ：「10分後に起こして」「平日8時に〜して」などと会話から登録できます
 - 呼びかけ必須モード：「起きて」などの呼びかけで始まる発話だけに反応します
@@ -38,10 +38,11 @@ docker compose up --build
 
 | パス | 内容 |
 |---|---|
-| `cmd/smart-speaker` | サーバーの起動処理と HTTP API |
+| `cmd/smart-speaker` | サーバーの起動処理と部品をつなぐ配線、読み上げ音声の選択などの HTTP API |
 | `cmd/local-verify-realtime` | 外部 API を使わずに動かす確認用のサーバー |
-| `internal/` | 会話処理（`components/realtime` など）、ツール（`tools/`）、状態の保存（`states/`） |
-| `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（ツール・HTTP・状態などを1つのディレクトリにまとめた機能） |
+| `internal/` | 会話処理（`components/realtime` など）、ツールの登録と実行（`tools/`）、会話の状態の保存（`states/`） |
+| `internal/features/<名前>` | 本体に組み込む機能（長期メモリ・呼びかけ・予約ジョブ・ホワイトボード）。ストア・ツール・HTTP など 1 つの機能の部品を 1 つのディレクトリにまとめ、`cmd/smart-speaker` が直接つなぐ |
+| `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（config で有効にし、Plugin interface だけで本体とつながる機能） |
 | `web/` | ブラウザの画面（React） |
 | `services/local-stt` | 呼びかけ判定に使うローカルの文字起こし（faster-whisper） |
 | `services/agent-bridge` | Claude Code 連携のブリッジ |

@@ -9,8 +9,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/automations"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )

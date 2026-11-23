@@ -8,10 +8,10 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"net/http"
 	"net/http/httptest"
@@ -687,14 +687,14 @@ func TestStaleHistorySyncReleasesWriter(t *testing.T) {
 }
 
 func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
-	memory, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memories.json"))
+	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memories.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = memory.Upsert(memorystate.UpsertInput{Content: "好きな季節は秋"}); err != nil {
+	if _, _, err = memoryStore.Upsert(memory.UpsertInput{Content: "好きな季節は秋"}); err != nil {
 		t.Fatal(err)
 	}
-	r := newRig(t, func(cfg *Config) { cfg.Memory = memory })
+	r := newRig(t, func(cfg *Config) { cfg.Memory = memoryStore })
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
 	if !strings.Contains(text, "好きな季節は秋") {
