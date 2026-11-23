@@ -27,6 +27,7 @@ cp config.sample.yaml config.yaml
 
 シークレットは次の環境変数で渡します。必須は `OPENAI_API_KEY` だけで、ほかは使う機能に応じて設定します。
 リポジトリ直下の `.envrc`（direnv で読む、Git 管理外のファイル）に書いておくと、デプロイでも同じ値を使えます。
+Docker では `docker-compose.yml` の `environment:` に書いた変数だけがコンテナに入ります。新しく環境変数を使うときは、そこにも足します。
 
 | 環境変数 | 用途 |
 |---|---|
@@ -34,6 +35,7 @@ cp config.sample.yaml config.yaml
 | `ELEVENLABS_API_KEY` | ElevenLabs で読み上げる場合 |
 | `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合 |
 | `AGENT_BRIDGE_TOKEN` | Claude Code 連携を使う場合 |
+| `MCP_CALENDAR_CLIENT_ID` / `MCP_CALENDAR_CLIENT_SECRET` | Google Calendar の MCP サーバーを使う場合（`config.sample.yaml` の例の名前） |
 
 ## 起動
 
