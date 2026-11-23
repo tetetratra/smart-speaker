@@ -60,7 +60,7 @@ memory:
   # model: "gpt-5.6-luna"
 
   # メモリの保存先。既定: "data/memories.json"
-  # wake.store_path、automations.store_path、plugins.googlecalendar.token_path の既定値は、このファイルと同じディレクトリになります。
+  # wake.store_path、automations.store_path、plugins.mcp.token_path の既定値は、このファイルと同じディレクトリになります。
   # store_path: "data/memories.json"
 
   # 会話を長期メモリ化するまでの経過時間（時間）。30分以上空いた位置で区切った会話の塊ごとに、最後の記録からこの時間がたったら、conversation.idle_timeout_seconds 黙ったときにメモリ化します。既定: 24
@@ -138,18 +138,6 @@ plugins:
   claudecode:
     # 手元のMacで動く agent-bridge（services/agent-bridge）のURL。既定: なし（Claude Code連携は無効）
     # url: "http://100.x.y.z:8787"
-
-  # Google カレンダー。OAuth クライアントの ID とシークレットはシークレットなので、
-  # 環境変数 GOOGLE_CLIENT_ID・GOOGLE_CLIENT_SECRET で渡します。両方があるときだけ有効になります。
-  googlecalendar:
-    # OAuth のコールバックURL。既定: "http://localhost:8081/oauth/google/callback"
-    # redirect_url: "http://localhost:8081/oauth/google/callback"
-
-    # OAuth のスコープ。既定: "https://www.googleapis.com/auth/calendar.events"
-    # scope: "https://www.googleapis.com/auth/calendar.events"
-
-    # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
-    # token_path: "data/google_oauth_token.json"
 
   # MCP サーバー。登録したサーバーのツールを「<サーバー名>__<ツール名>」として会話から使えます。
   # 設定の変更はサーバーの再起動で反映します。文字列の ${VAR} は環境変数で展開するので、秘密の値は環境変数で渡します。

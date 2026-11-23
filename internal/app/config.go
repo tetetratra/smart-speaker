@@ -129,9 +129,6 @@ var legacyEnvVars = map[string]string{
 	"WAKE_MIN_CONFIDENCE":                 "wake.min_confidence",
 	"WAKE_MIN_SIMILARITY":                 "wake.min_similarity",
 	"SWITCHBOT_DEVICE_MAP":                "plugins.switchbot.device_map",
-	"GOOGLE_REDIRECT_URL":                 "plugins.googlecalendar.redirect_url",
-	"GOOGLE_OAUTH_SCOPE":                  "plugins.googlecalendar.scope",
-	"GOOGLE_OAUTH_TOKEN_PATH":             "plugins.googlecalendar.token_path",
 	"WS_ADDR":                             "server.ws_addr",
 	"WEB_DIST_DIR":                        "server.web_dist_dir",
 }

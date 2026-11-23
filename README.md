@@ -9,7 +9,7 @@
 
 - 音声での会話。話しはじめると、読み上げ中の返答を止めて聞き取ります
 - ホワイトボード：調べた結果や補足を画面に書き出します
-- 外部サービスの操作：Google Calendar の予定の確認・登録、SwitchBot での家電操作、Web 検索、設定ファイルに登録した MCP サーバーのツール
+- 外部サービスの操作：SwitchBot での家電操作、Web 検索、設定ファイルに登録した MCP サーバーのツール（Google Calendar の予定の確認・登録など）
 - 長期メモリ：会話から覚えておくことを抽出し、次の会話で使います。「覚えて」「忘れて」と頼むか、AIの提案に了承すると、その場で追加・変更・削除します（画面からも確認・編集できます）
 - 予約ジョブ：「10分後に起こして」「平日8時に〜して」などと会話から登録できます
 - 呼びかけ必須モード：「起きて」などの呼びかけで始まる発話だけに反応します
@@ -180,7 +180,7 @@ flowchart LR
     subgraph toolset["ツール"]
         webSearchTool["【Web検索】<br/>web_search"]
         claudeCodeTool["【Claude Code】<br/>ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>（agentbridge.Service）"]
-        calendarTool["【Googleカレンダー】<br/>google_calendar_list<br/>google_calendar_create<br/>google_calendar_update"]
+        mcpTool["【MCP】<br/>&lt;サーバー名&gt;__&lt;ツール名&gt;"]
         switchBotTool["【SwitchBot】<br/>switchbot_execute_scene"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
@@ -193,9 +193,8 @@ flowchart LR
 
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
     agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
-    googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
-    googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
-    googleTokenStore[("【Googleカレンダー】<br/>google_oauth_token.json<br/>Googleの認証トークン")]
+    mcpServer{{"MCP サーバー<br/>config.yaml の plugins.mcp.servers"}}
+    mcpTokenStore[("【MCP】<br/>mcp_oauth.json<br/>OAuth のトークン")]
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]
@@ -215,9 +214,8 @@ flowchart LR
     claudeCodeTool <==>|"HTTP<br/>依頼・承認・取消・参照"| agentBridge
     agentBridge -->|"HTTP<br/>Claude Codeの通知"| claudeCodeTool
     claudeCodeTool -->|"Deliver<br/>Claude Codeの通知"| gateway
-    calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
-    calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
-    calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
+    mcpTool <==>|"Streamable HTTP・stdio<br/>tools/call"| mcpServer
+    mcpTool <-.->|"読み出し・更新後の保存"| mcpTokenStore
     switchBotTool <==>|"HTTPS<br/>シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
     wakeModeTool <-.->|"参照・切替"| wakeModeStore

@@ -31,7 +31,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/plugins/claudecode"
-	"github.com/tetetratra/smart-speaker/internal/plugins/googlecalendar"
 	mcpplugin "github.com/tetetratra/smart-speaker/internal/plugins/mcp"
 	"github.com/tetetratra/smart-speaker/internal/plugins/playbackvolume"
 	"github.com/tetetratra/smart-speaker/internal/plugins/switchbot"
@@ -78,6 +77,11 @@ func main() {
 		log.Fatal(err)
 	}
 	if unknown := plugin.UnknownNames(services.Plugins, cfg.PluginConfigNames()); len(unknown) > 0 {
+		for _, name := range unknown {
+			if hint, ok := removedPlugins[name]; ok {
+				log.Fatalf("config: config.yaml の plugins.%s は削除したプラグインです。%s", name, hint)
+			}
+		}
 		log.Fatalf("config: config.yaml の plugins に、組み込まれていないプラグインの名前があります: %s", strings.Join(unknown, ", "))
 	}
 	services.Automations, err = automations.New(cfg.AutomationStorePath, func(ctx context.Context, delivery automations.Delivery) error {
@@ -298,13 +302,14 @@ func wireGraph(g *graph.Graph, s appStages) {
 	connect(g, tool, rt, types.EventConversationCommitRequest{})
 }
 
+// removedPlugins は、削除したプラグインの名前と、代わりの設定の案内。config.yaml に残っていたら案内して止める。
+var removedPlugins = map[string]string{
+	"googlecalendar": "Google カレンダーは MCP の Google Calendar サーバーで使えます。plugins.googlecalendar を消し、plugins.mcp.servers に登録してください（書き方は config.sample.yaml）",
+}
+
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
 func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 	switchBot, err := switchbot.New(deps)
-	if err != nil {
-		return nil, err
-	}
-	calendar, err := googlecalendar.New(deps)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +326,6 @@ func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
 		playbackvolume.New(deps),
 		switchBot,
 		websearch.New(deps),
-		calendar,
 		claudeCode,
 		mcp,
 	}, nil
