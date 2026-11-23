@@ -180,7 +180,7 @@ flowchart LR
     subgraph toolset["ツール"]
         webSearchTool["【Web検索】<br/>web_search"]
         claudeCodeTool["【Claude Code】<br/>ask_claude_code<br/>answer_claude_code_permission<br/>cancel_claude_code<br/>list_claude_code_sessions<br/>read_claude_code_session<br/>（agentbridge.Service）"]
-        mcpTool["【MCP】<br/>&lt;サーバー名&gt;__&lt;ツール名&gt;"]
+        mcpTool["【MCP】<br/>&lt;サーバー名&gt;__&lt;ツール名&gt;<br/>config.yaml に登録したサーバーのツール"]
         switchBotTool["【SwitchBot】<br/>switchbot_execute_scene"]
         memoryTool["list_memories<br/>add_memory<br/>update_memory<br/>delete_memory<br/>長期メモリ"]
         wakeModeTool["get_wake_mode<br/>set_wake_mode<br/>呼びかけモード"]
@@ -193,7 +193,9 @@ flowchart LR
 
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
     agentBridge{{"agent-bridge<br/>Claude Code連携（Mac）"}}
-    mcpServer{{"MCP サーバー<br/>config.yaml の plugins.mcp.servers"}}
+    mcpRemote{{"リモートの MCP サーバー<br/>Streamable HTTP（url）"}}
+    mcpLocal{{"ローカルの MCP サーバー<br/>stdio の子プロセス（command）"}}
+    mcpAuthServer{{"MCP サーバーの認可サーバー<br/>OAuth"}}
     mcpTokenStore[("【MCP】<br/>mcp_oauth.json<br/>OAuth のトークン")]
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
@@ -214,7 +216,9 @@ flowchart LR
     claudeCodeTool <==>|"HTTP<br/>依頼・承認・取消・参照"| agentBridge
     agentBridge -->|"HTTP<br/>Claude Codeの通知"| claudeCodeTool
     claudeCodeTool -->|"Deliver<br/>Claude Codeの通知"| gateway
-    mcpTool <==>|"Streamable HTTP・stdio<br/>tools/call"| mcpServer
+    mcpTool <==>|"HTTPS<br/>tools/list（起動時）・tools/call<br/>OAuth のサーバーにはアクセストークンを付ける"| mcpRemote
+    mcpTool <==>|"stdio<br/>tools/list（起動時）・tools/call"| mcpLocal
+    mcpTool <==>|"HTTPS<br/>トークンの更新"| mcpAuthServer
     mcpTool <-.->|"読み出し・更新後の保存"| mcpTokenStore
     switchBotTool <==>|"HTTPS<br/>シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
@@ -224,6 +228,36 @@ flowchart LR
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     locationTool -.->|"最後に受信した場所・更新日時の参照"| locationStore
     whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
+```
+
+### MCP サーバーの認可
+
+OAuth が要るリモートの MCP サーバーを、設定画面から認可する流れです（`internal/plugins/mcp`）。
+認可サーバーは、MCP サーバーが公開する保護リソースのメタデータから見つけます。
+
+```mermaid
+flowchart LR
+    settings["SettingsScreen<br/>設定画面の MCP サーバーの欄"]
+    servers("【MCP】<br/>状態の一覧<br/>GET /api/mcp/servers")
+    start("【MCP】<br/>認可の開始<br/>GET /oauth/mcp/start")
+    callback("【MCP】<br/>認可のコールバック<br/>GET /oauth/mcp/callback")
+    plugin["【MCP】<br/>mcp.Plugin<br/>サーバーごとの接続・ツール・状態"]
+    mcpRemote{{"リモートの MCP サーバー<br/>保護リソースのメタデータ"}}
+    authServer{{"認可サーバー<br/>メタデータ・動的クライアント登録<br/>認可画面・トークン"}}
+    tokenStore[("【MCP】<br/>mcp_oauth.json<br/>クライアントとトークン")]
+
+    settings ==>|"requestJSON<br/>状態（未認可・認可済み・ツールの数など）と認可の URL"| servers
+    servers -.->|"状態の参照"| plugin
+    settings ==>|"画面ごと移動<br/>「認可する」"| start
+    start <==>|"HTTPS<br/>/.well-known/oauth-protected-resource"| mcpRemote
+    start <==>|"HTTPS<br/>メタデータの取得・動的クライアント登録"| authServer
+    start -.->|"動的クライアント登録で得たクライアント"| tokenStore
+    start ==>|"リダイレクト<br/>PKCE・resource 付きの認可の URL"| authServer
+    authServer ==>|"リダイレクト<br/>認可コード"| callback
+    callback <==>|"HTTPS<br/>認可コードをトークンに換える"| authServer
+    callback -.->|"トークンの保存"| tokenStore
+    callback -->|"認可したことを知らせる"| plugin
+    callback ==>|"リダイレクト<br/>/?ui=settings"| settings
 ```
 
 ### 画面（web/）
@@ -265,6 +299,7 @@ flowchart LR
         wsWake{{"/ws/wake-mode<br/>呼びかけ設定"}}
         wsVolume{{"/ws/playback-volume<br/>再生音量"}}
         httpAPI{{"HTTP API<br/>/api/*"}}
+        oauthMCP{{"/oauth/mcp/*<br/>MCP サーバーの認可"}}
     end
 
     voice -->|"VoiceSession<br/>接続・切断・音量"| session
@@ -285,5 +320,6 @@ flowchart LR
     wake ==>|"requestJSON<br/>/api/wake-mode・/api/wake-mode/wake<br/>呼びかけ中にする"| httpAPI
     volume <==>|"playback_volume・set_playback_volume<br/>再生音量の配信・変更"| wsVolume
     settings <==>|"requestJSON<br/>/api/tts・/api/mcp/servers"| httpAPI
+    settings ==>|"location.href<br/>/oauth/mcp/start?server=…<br/>認可を始める（画面ごと移動し、終わると設定画面へ戻る）"| oauthMCP
     pages <==>|"requestJSON<br/>/api/memories・/api/jobs・/api/switchbot/scenes"| httpAPI
 ```
