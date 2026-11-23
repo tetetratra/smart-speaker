@@ -32,14 +32,22 @@ type Plugin struct {
 
 // New は SwitchBot のプラグインを作る。有効なら、起動時にシーンの一覧を取得する。
 // デバイス一覧に Hub 2 があれば、計測値の監視を始める（deps.Deliver がなければ始めない）。
-func New(deps plugin.Deps) *Plugin {
+func New(deps plugin.Deps) (*Plugin, error) {
+	// 設定項目はないが、未知のキーを黙って無視しないよう検査する。
+	var cfg struct{}
+	if err := deps.DecodeConfig(name, &cfg); err != nil {
+		return nil, err
+	}
 	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
 	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
 	if token == "" || secret == "" {
 		log.Println("switchbot: token or secret not set; switchbot tools disabled")
-		return &Plugin{}
+		return &Plugin{}, nil
 	}
-	client := NewSwitchbotClient(token, secret)
+	return newPlugin(deps, NewSwitchbotClient(token, secret)), nil
+}
+
+func newPlugin(deps plugin.Deps, client *Client) *Plugin {
 	ctx := deps.AppContext
 	if ctx == nil {
 		ctx = context.Background()

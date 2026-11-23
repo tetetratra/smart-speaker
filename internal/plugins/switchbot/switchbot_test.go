@@ -346,3 +346,14 @@ func TestClientListDevices(t *testing.T) {
 		t.Fatalf("デバイス一覧 = %#v", got)
 	}
 }
+
+// ListDevices 自身も API の失敗を呼び出し元へ返す。
+func TestClientListDevicesRejectsAPIFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"statusCode":190,"message":"System error"}`))
+	}))
+	defer server.Close()
+	if _, err := newTestClient(server).ListDevices(context.Background()); err == nil {
+		t.Fatal("API の失敗が返されません")
+	}
+}
