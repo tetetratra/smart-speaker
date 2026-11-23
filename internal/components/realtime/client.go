@@ -94,7 +94,7 @@ func (t *transport) close() {
 	t.conn.Close(websocket.StatusNormalClosure, "")
 }
 
-func sessionUpdate(cfg Config, instructions string) map[string]any {
+func sessionUpdate(cfg Config, instructions string, tools []any) map[string]any {
 	turnDetection := map[string]any{"type": cfg.TurnDetection, "create_response": false, "interrupt_response": cfg.WakeMode == nil || !cfg.WakeMode.Snapshot(time.Now()).Required}
 	if cfg.TurnDetection == "server_vad" {
 		turnDetection["silence_duration_ms"] = 800
@@ -102,12 +102,19 @@ func sessionUpdate(cfg Config, instructions string) map[string]any {
 		turnDetection["eagerness"] = "auto"
 	}
 	return map[string]any{"type": "session.update", "session": map[string]any{
-		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions, "tools": cfg.Tools, "tool_choice": "auto",
+		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions, "tools": tools, "tool_choice": "auto",
 		"audio": map[string]any{"input": map[string]any{
 			"format":          map[string]any{"type": "audio/pcm", "rate": 24000},
 			"noise_reduction": map[string]any{"type": cfg.NoiseReduction},
 			"transcription":   map[string]any{"model": cfg.TranscriptionModel, "language": "ja"},
 			"turn_detection":  turnDetection,
 		}},
+	}}
+}
+
+// toolsUpdate は、接続中のセッションの指示文とツールだけを変える session.update。
+func toolsUpdate(instructions string, tools []any) map[string]any {
+	return map[string]any{"type": "session.update", "session": map[string]any{
+		"type": "realtime", "instructions": instructions, "tools": tools, "tool_choice": "auto",
 	}}
 }

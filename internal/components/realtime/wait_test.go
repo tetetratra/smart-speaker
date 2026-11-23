@@ -23,7 +23,9 @@ func startWait(t *testing.T, r *rig) map[string]any {
 func TestWaitStaysSilentSkipsWhiteboardAndAcceptsNextUser(t *testing.T) {
 	r := newRig(t, func(cfg *Config) {
 		// 誤って読み取りに分類されても、待機は一般のツール・表示処理へ渡さない。
-		cfg.Tools = []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}}
+		cfg.Tools = func() []any {
+			return []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}}
+		}
 	})
 	startWait(t, r)
 	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "waiting", "status": "completed"}})

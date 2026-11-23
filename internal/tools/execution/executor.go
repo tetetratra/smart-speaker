@@ -10,16 +10,26 @@ import (
 
 // Executor は会話と予約で共有する、1回分のツール実行処理。
 type Executor struct {
-	handlers map[string]tools.Handler
+	// handlers は今の、ツール名から実行処理を引く map を返す。ツールは動いている間に変わることがあるので、使うたびに呼ぶ。
+	handlers func() map[string]tools.Handler
 }
 
-func New(handlers map[string]tools.Handler) *Executor {
+// New は、handlers が返す map でツールを引く Executor を作る。
+func New(handlers func() map[string]tools.Handler) *Executor {
+	if handlers == nil {
+		handlers = Static(nil)
+	}
 	return &Executor{handlers: handlers}
+}
+
+// Static は、いつも同じ map を返す関数を作る。ツールが変わらないときやテストで New に渡す。
+func Static(handlers map[string]tools.Handler) func() map[string]tools.Handler {
+	return func() map[string]tools.Handler { return handlers }
 }
 
 // Title は、画面に出すツールのタイトルを引数から作る。タイトルを持たないツールや引数が壊れているときは空。
 func (e *Executor) Title(name string, arguments json.RawMessage) string {
-	provider, ok := e.handlers[name].(tools.TitleProvider)
+	provider, ok := e.handlers()[name].(tools.TitleProvider)
 	if !ok {
 		return ""
 	}
@@ -42,7 +52,7 @@ func (e *Executor) Execute(ctx context.Context, req types.ToolRequest) types.Too
 		result = map[string]any{"error": err.Error()}
 	} else if argsErr != nil || args == nil {
 		result = map[string]any{"error": "invalid tool arguments"}
-	} else if handler, ok := e.handlers[req.Name]; !ok {
+	} else if handler, ok := e.handlers()[req.Name]; !ok {
 		result = map[string]any{"error": "unknown function: " + req.Name}
 	} else {
 		out, err := handler.Run(ctx, args)

@@ -53,6 +53,12 @@ type ToolProvider interface {
 	Tools() []tools.Handler
 }
 
+// ToolChangeNotifier は、動いている間にツールや指示文が変わることがある ToolProvider。
+// 変わったら f を呼ぶ。本体はそこでツールの一覧を作り直す。f は別のゴルーチンから呼ばれることがある。
+type ToolChangeNotifier interface {
+	OnToolsChanged(f func())
+}
+
 // HTTPRegistrar は、HTTP や WebSocket の受け口を持つプラグイン。自分のパスを mux に登録する。
 type HTTPRegistrar interface {
 	RegisterHTTP(mux *http.ServeMux)
@@ -94,6 +100,15 @@ func Tools(plugins []Plugin) []tools.Handler {
 		}
 	}
 	return handlers
+}
+
+// OnToolsChanged は、ツールが変わることがあるプラグインのどれかでツールが変わったら f を呼ぶよう登録する。
+func OnToolsChanged(plugins []Plugin, f func()) {
+	for _, p := range plugins {
+		if n, ok := p.(ToolChangeNotifier); ok {
+			n.OnToolsChanged(f)
+		}
+	}
 }
 
 // RegisterHTTP は、プラグインの HTTP の受け口を mux に登録する。

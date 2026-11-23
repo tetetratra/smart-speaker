@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -28,7 +29,7 @@ func (h stubHandler) Run(ctx context.Context, args map[string]any) (map[string]a
 }
 
 func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
-	st := NewStage(nil)
+	st := newStage(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -73,7 +74,7 @@ func TestStageEmitsUnknownToolResultCommitRequest(t *testing.T) {
 }
 
 func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
-	st := NewStage(map[string]tools.Handler{
+	st := newStage(map[string]tools.Handler{
 		"set_whiteboard": stubHandler{
 			name: "set_whiteboard",
 			out:  map[string]any{"updated": true},
@@ -103,7 +104,7 @@ func TestStagePreservesSuccessfulWriteToolResult(t *testing.T) {
 }
 
 func TestStageEmitsWriteToolResultOnError(t *testing.T) {
-	st := NewStage(map[string]tools.Handler{
+	st := newStage(map[string]tools.Handler{
 		"set_whiteboard": stubHandler{
 			name: "set_whiteboard",
 			err:  errors.New("failed"),
@@ -143,7 +144,7 @@ func TestStageEmitsWriteToolResultOnError(t *testing.T) {
 }
 
 func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
-	st := NewStage(map[string]tools.Handler{
+	st := newStage(map[string]tools.Handler{
 		"web_search": stubHandler{
 			name: "web_search",
 			out:  map[string]any{"result": "ok"},
@@ -181,7 +182,7 @@ func TestStageEmitsReadToolResultOnSuccess(t *testing.T) {
 
 func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 	handler := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"count": handler})
+	st := newStage(map[string]tools.Handler{"count": handler})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st.Run(ctx)
@@ -200,7 +201,7 @@ func TestDuplicateCallIsNotExecutedTwice(t *testing.T) {
 }
 func TestInvalidArgumentsDoNotExecuteTool(t *testing.T) {
 	handler := &countingHandler{}
-	executor := execution.New(map[string]tools.Handler{"count": handler})
+	executor := execution.New(execution.Static(map[string]tools.Handler{"count": handler}))
 	result := executor.Execute(context.Background(), types.ToolRequest{Name: "count", Arguments: json.RawMessage(`{"broken"`)})
 	if handler.calls != 0 || !json.Valid(result.Output) {
 		t.Fatal(handler.calls, string(result.Output))
@@ -226,7 +227,7 @@ func (h *blockingHandler) Run(context.Context, map[string]any) (map[string]any, 
 
 func TestDuplicateCallReturnsFinishedResultWithoutRerun(t *testing.T) {
 	handler := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
-	stage := NewStage(map[string]tools.Handler{"blocked": handler})
+	stage := newStage(map[string]tools.Handler{"blocked": handler})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	stage.Run(ctx)
@@ -262,7 +263,7 @@ func TestFailuresIncludingMalformedArgumentsReturnError(t *testing.T) {
 		{ToolCallID: "failed", Name: "failed", Arguments: json.RawMessage(`{}`)},
 	} {
 		t.Run(req.ToolCallID, func(t *testing.T) {
-			stage := NewStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}})
+			stage := newStage(map[string]tools.Handler{"failed": stubHandler{err: errors.New("失敗の詳細")}})
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			stage.Run(ctx)
@@ -286,7 +287,7 @@ func TestFailuresIncludingMalformedArgumentsReturnError(t *testing.T) {
 func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
 	slow := &blockingHandler{started: make(chan struct{}), release: make(chan struct{})}
 	fast := &countingHandler{}
-	st := NewStage(map[string]tools.Handler{"blocked": slow, "count": fast})
+	st := newStage(map[string]tools.Handler{"blocked": slow, "count": fast})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	st.Run(ctx)
@@ -317,4 +318,9 @@ func TestSlowToolDoesNotBlockOtherCalls(t *testing.T) {
 		t.Fatal("実行中に再送された呼び出しの結果が重複しました", evt)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+// newStage は、変わらないツールの一覧で stage を作る。
+func newStage(handlers map[string]tools.Handler) *graph.Stage {
+	return NewStage(execution.New(execution.Static(handlers)))
 }

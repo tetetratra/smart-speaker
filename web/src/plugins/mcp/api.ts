@@ -1,7 +1,7 @@
 import { requestJSON } from '../../shared/backend'
 
 // サーバーの状態。サーバー（internal/plugins/mcp/status.go）の値と同じ。
-export type MCPServerState = 'ready' | 'unauthorized' | 'restart_required' | 'error' | 'disabled'
+export type MCPServerState = 'ready' | 'unauthorized' | 'error' | 'disabled'
 
 export type MCPServer = {
   name: string

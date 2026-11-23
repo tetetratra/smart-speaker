@@ -221,7 +221,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 		t.Fatal("待機ツールがAPIに渡されていません")
 	}
 	instructions, _ := session["instructions"].(string)
-	if strings.Contains(instructions, "Asia/Tokyo") || !strings.Contains(instructions, cfg.Instructions) {
+	if strings.Contains(instructions, "Asia/Tokyo") || (cfg.Instructions != nil && !strings.Contains(instructions, cfg.Instructions())) {
 		t.Fatalf("指示に日時が入っているか、元の指示がありません: %s", instructions)
 	}
 	r.send(map[string]any{"type": "session.updated"})
@@ -570,7 +570,7 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 }
 
 func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
-	r := newRig(t, func(cfg *Config) { cfg.Instructions = "元のシステム指示" })
+	r := newRig(t, func(cfg *Config) { cfg.Instructions = func() string { return "元のシステム指示" } })
 	r.utterance("user1")
 	r.wait("response.create")
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "前の会話を覚えて"})
@@ -627,7 +627,9 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 
 func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T) {
 	r := newRig(t, func(cfg *Config) {
-		cfg.Tools = []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}}}
+		cfg.Tools = func() []any {
+			return []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}}}
+		}
 	})
 	r.utterance("user1")
 	initial := r.wait("response.create")

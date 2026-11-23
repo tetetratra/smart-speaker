@@ -5,7 +5,8 @@
 // 登録・変更・無効化は config.yaml の plugins.mcp に書き、サーバーの再起動で反映する。
 //
 // 認可が要るリモートの MCP サーバーは、MCP 標準の OAuth（保護リソースのメタデータ・認可サーバーのメタデータ・
-// 動的クライアント登録・PKCE）で認可する。画面の「設定」から認可してサーバーを再起動すると、ツールが出る。
+// 動的クライアント登録・PKCE）で認可する。画面の「設定」から認可すると、その場でツールを読み込み直し、
+// 再起動しなくても会話から使えるようになる。ツールが変わったことは OnToolsChanged で本体に知らせる。
 // 設定画面にはサーバーごとの状態を GET /api/mcp/servers で返す。
 package mcp
 
@@ -30,7 +31,7 @@ const (
 	name = "mcp"
 	// DefaultRedirectURL は、設定で指定しない場合の OAuth のコールバック URL。
 	DefaultRedirectURL = "http://localhost:8081/oauth/mcp/callback"
-	// connectTimeout は、起動時に1つのサーバーへ接続してツールの一覧を取るまでの待ち時間。
+	// connectTimeout は、1つのサーバーへ接続してツールの一覧を取るまでの待ち時間。起動時と、認可したあとの読み込み直しで使う。
 	connectTimeout = 30 * time.Second
 	// oauthHTTPTimeout は、メタデータの取得・動的クライアント登録・トークンの取得と更新の HTTP の待ち時間。
 	// トークンの更新はロックを持ったまま待つので、応答しない認可サーバーで起動やツール呼び出しが止まらないようにする。
@@ -127,12 +128,19 @@ func (c ServerConfig) validate(serverName string) error {
 
 // Plugin は MCP のプラグイン。
 type Plugin struct {
-	tools []tools.Handler
-	oauth *oauthManager
+	// appCtx はアプリが動いている間だけ有効な context。認可したあとの読み込み直しに使う。
+	appCtx context.Context
+	oauth  *oauthManager
+	// servers は、接続するサーバーをサーバー名で引く。無効なサーバーは入れない。作ったあとは変えない。
+	servers map[string]*server
 
 	mu sync.Mutex
+	// toolsByServer は、サーバーごとに読み込んだツール。認可したあとに読み込み直すと差し替える。
+	toolsByServer map[string][]tools.Handler
 	// statuses はサーバーごとの状態。設定画面に出す。並びはサーバー名の順。
 	statuses []serverStatus
+	// listeners は、ツールが変わったときに呼ぶ関数。
+	listeners []func()
 }
 
 // New は、有効な MCP サーバーへ並行して接続し、ツールの一覧を取る。
@@ -165,58 +173,104 @@ func New(deps plugin.Deps) (*Plugin, error) {
 	}
 	oauth := newOAuthManager(redirectURL, &tokenStore{path: tokenPath}, &http.Client{Timeout: oauthHTTPTimeout})
 
-	p := &Plugin{oauth: oauth}
-	servers := make([]*server, 0, len(names))
-	statusIndex := map[string]int{}
+	p := &Plugin{appCtx: ctx, oauth: oauth, servers: map[string]*server{}, toolsByServer: map[string][]tools.Handler{}}
 	for _, serverName := range names {
 		sc := cfg.Servers[serverName]
-		statusIndex[serverName] = len(p.statuses)
 		p.statuses = append(p.statuses, serverStatus{Name: serverName, OAuth: sc.OAuth != nil})
 		if !sc.enabled() {
 			log.Printf("mcp: %s は無効なので接続しません", serverName)
-			p.statuses[statusIndex[serverName]].State = stateDisabled
+			p.statuses[len(p.statuses)-1].State = stateDisabled
 			continue
 		}
 		sc = sc.expanded()
 		if sc.OAuth != nil {
 			oauth.add(serverName, sc.URL, *sc.OAuth)
 		}
-		servers = append(servers, newServer(ctx, serverName, sc, oauth))
+		p.servers[serverName] = newServer(ctx, serverName, sc, oauth)
 	}
 
-	toolsByServer := make([][]tools.Handler, len(servers))
-	results := make([]serverStatus, len(servers))
 	var wg sync.WaitGroup
-	for i, s := range servers {
+	for serverName := range p.servers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			listCtx, cancel := context.WithTimeout(ctx, connectTimeout)
-			defer cancel()
-			handlers, err := s.listTools(listCtx)
-			results[i] = startupStatus(len(handlers), err)
-			if err != nil {
-				log.Printf("mcp: %s のツールを取れませんでした: %v", s.name, err)
-				return
-			}
-			log.Printf("mcp: %s のツールを %d 個読み込みました", s.name, len(handlers))
-			toolsByServer[i] = handlers
+			p.loadServer(ctx, serverName)
 		}()
 	}
 	wg.Wait()
-
-	for i, handlers := range toolsByServer {
-		p.tools = append(p.tools, handlers...)
-		st := &p.statuses[statusIndex[servers[i].name]]
-		st.State, st.ToolCount, st.Message = results[i].State, results[i].ToolCount, results[i].Message
-	}
-	oauth.onAuthorized = p.markAuthorized
+	oauth.onAuthorized = p.reloadServer
 	return p, nil
+}
+
+// loadServer は、サーバーのツールの一覧を取り、そのサーバーのツールと状態を差し替える。
+// 取れなかったときは、そのサーバーのツールを外し、状態を unauthorized か error にする。ツールが変わったら true を返す。
+func (p *Plugin) loadServer(ctx context.Context, serverName string) bool {
+	s := p.servers[serverName]
+	listCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	handlers, err := s.listTools(listCtx)
+	status := loadedStatus(len(handlers), err)
+	if err != nil {
+		log.Printf("mcp: %s のツールを取れませんでした: %v", serverName, err)
+	} else {
+		log.Printf("mcp: %s のツールを %d 個読み込みました", serverName, len(handlers))
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	changed := len(p.toolsByServer[serverName]) > 0 || len(handlers) > 0
+	if len(handlers) > 0 {
+		p.toolsByServer[serverName] = handlers
+	} else {
+		delete(p.toolsByServer, serverName)
+	}
+	for i := range p.statuses {
+		if p.statuses[i].Name == serverName {
+			p.statuses[i].State, p.statuses[i].ToolCount, p.statuses[i].Message = status.State, status.ToolCount, status.Message
+		}
+	}
+	return changed
+}
+
+// reloadServer は、認可したサーバーのツールを読み込み直し、ツールが変わったら OnToolsChanged の関数を呼ぶ。
+// 認可のコールバックから呼び、読み込み終えるまで（最大 connectTimeout）待つ。
+func (p *Plugin) reloadServer(serverName string) {
+	if _, ok := p.servers[serverName]; !ok {
+		return
+	}
+	if !p.loadServer(p.appCtx, serverName) {
+		return
+	}
+	p.mu.Lock()
+	listeners := append([]func(){}, p.listeners...)
+	p.mu.Unlock()
+	// 呼ばれた側が Tools() や Instructions() を呼べるよう、ロックを放してから呼ぶ。
+	for _, f := range listeners {
+		f()
+	}
+}
+
+// OnToolsChanged は、認可したあとにツールを読み込み直して、ツールが変わったときに f を呼ぶよう登録する。
+func (p *Plugin) OnToolsChanged(f func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.listeners = append(p.listeners, f)
 }
 
 func (p *Plugin) Name() string { return name }
 
-func (p *Plugin) Tools() []tools.Handler { return p.tools }
+var _ plugin.ToolChangeNotifier = (*Plugin)(nil)
+
+// Tools は、今読み込んでいるツールをサーバー名の順に並べて返す。返す slice は呼び出し側で変えてよい。
+func (p *Plugin) Tools() []tools.Handler {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var handlers []tools.Handler
+	for _, st := range p.statuses {
+		handlers = append(handlers, p.toolsByServer[st.Name]...)
+	}
+	return handlers
+}
 
 // RegisterHTTP は OAuth の認可の開始とコールバックを登録する。
 func (p *Plugin) RegisterHTTP(mux *http.ServeMux) {
@@ -224,9 +278,13 @@ func (p *Plugin) RegisterHTTP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/mcp/servers", p.handleServers)
 }
 
-// Instructions は、MCP のツールで外部の状態を変える前に確認するよう指示する。ツールがなければ空。
+// Instructions は、MCP のツールで外部の状態を変える前に確認するよう指示する。今ツールがなければ空。
+// 起動したあとに認可してツールが増えることがあるので、呼ぶたびに今のツールで決める。
 func (p *Plugin) Instructions() string {
-	if len(p.tools) == 0 {
+	p.mu.Lock()
+	empty := len(p.toolsByServer) == 0
+	p.mu.Unlock()
+	if empty {
 		return ""
 	}
 	return `## MCPツールの利用方針

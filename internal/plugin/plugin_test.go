@@ -77,3 +77,22 @@ func TestDecodeConfigWithoutConfig(t *testing.T) {
 		t.Fatalf("name = %q, err = %v", gotName, err)
 	}
 }
+
+type notifyingPlugin struct{ listeners *[]func() }
+
+func (notifyingPlugin) Name() string              { return "notifying" }
+func (p notifyingPlugin) OnToolsChanged(f func()) { *p.listeners = append(*p.listeners, f) }
+
+// ツールが変わることがあるプラグインにだけ、変わったときの関数を登録する。
+func TestOnToolsChanged(t *testing.T) {
+	var listeners []func()
+	called := 0
+	OnToolsChanged([]Plugin{emptyPlugin{}, fullPlugin{}, notifyingPlugin{&listeners}}, func() { called++ })
+	if len(listeners) != 1 {
+		t.Fatalf("登録した数 = %d", len(listeners))
+	}
+	listeners[0]()
+	if called != 1 {
+		t.Fatalf("called = %d", called)
+	}
+}

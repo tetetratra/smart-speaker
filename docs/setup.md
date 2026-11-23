@@ -99,7 +99,7 @@ Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS �
 
 `config.yaml` の `plugins.mcp.servers` に MCP サーバーを書くと、そのツールを会話から使えます（書き方は `config.sample.yaml`）。
 ツール名は `<サーバー名>__<ツール名>` になり、`allowed_tools` で会話に出すツールを絞れます。
-設定はサーバーの再起動で反映します。
+`config.yaml` の設定（サーバーの追加・変更・無効化）は、サーバーの再起動で反映します。
 設定画面には、サーバーごとに認可済みか・接続できているか・読み込んだツールの数を出します。接続できなかったサーバーは、ツールを出さずに起動します。
 
 - リモート（`url`）: Streamable HTTP の MCP サーバーにつなぎます。固定のトークンは `headers` に `${環境変数}` で書きます。
@@ -109,8 +109,7 @@ OAuth が要るリモートの MCP サーバーは、`oauth:` を書いて次の
 
 1. `plugins.mcp.redirect_url` に、画面を開いている HTTPS の住所のコールバック URL（`https://<ドメイン>/oauth/mcp/callback`）を書きます。独自のドメインでも、`tailscale serve` の `https://<マシン名>.<tailnet名>.ts.net` でも構いません。既定の `http://localhost:8081/oauth/mcp/callback` は、手元で開発するとき用です。
 2. 動的クライアント登録に対応していないサーバー（Google など）は、提供元で OAuth クライアントを作って `oauth.client_id`・`oauth.client_secret` に書き、リダイレクト URI に 1 の URL を登録します。
-3. 画面の「設定」を開き、未認可のサーバーの「認可する」を押します。提供元の画面で許可すると、設定画面へ戻ります。トークンは `plugins.mcp.token_path`（既定は `memory.store_path` と同じディレクトリの `mcp_oauth.json`）に保存し、期限が切れたら自動で更新します。
-4. サーバーを再起動すると、ツールが出ます。
+3. 画面の「設定」を開き、未認可のサーバーの「認可する」を押します。提供元の画面で許可すると、そのサーバーのツールを読み込んでから設定画面へ戻ります。サーバーを再起動しなくても、すぐ会話や予約ジョブから使えます（設定画面には「認可済み・ツール◯個」と出ます）。トークンは `plugins.mcp.token_path`（既定は `memory.store_path` と同じディレクトリの `mcp_oauth.json`）に保存し、期限が切れたら自動で更新します。
 
 Google Calendar の MCP サーバー（`https://calendarmcp.googleapis.com/mcp/v1`）を使う場合は、Google Cloud で「Google Calendar API」と「Google Calendar MCP API」を有効にし、ウェブアプリケーションの OAuth クライアントを作ります（[Configure the Calendar MCP server](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server)）。
 

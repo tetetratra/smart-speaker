@@ -10,8 +10,6 @@ export function stateLabel(server: MCPServer): string {
       return server.oauth ? `認可済み・ツール${server.tool_count}個` : `接続済み・ツール${server.tool_count}個`
     case 'unauthorized':
       return '未認可'
-    case 'restart_required':
-      return '認可済み・再起動すると使えます'
     case 'error':
       return '接続できません'
     case 'disabled':

@@ -29,7 +29,7 @@ func TestExecutorSharesContextArgumentsAndError(t *testing.T) {
 		}
 		return nil, errors.New("失敗")
 	}}
-	result := New(map[string]tools.Handler{"test": tool}).Execute(WithDeliveryContext(context.Background(), raw), types.ToolRequest{ToolCallID: "call", Name: "test", Arguments: json.RawMessage(`{"n":3}`)})
+	result := New(Static(map[string]tools.Handler{"test": tool})).Execute(WithDeliveryContext(context.Background(), raw), types.ToolRequest{ToolCallID: "call", Name: "test", Arguments: json.RawMessage(`{"n":3}`)})
 	if string(result.Output) != `{"error":"失敗"}` || tool.calls != 1 {
 		t.Fatal(result, tool.calls)
 	}
@@ -40,7 +40,7 @@ func TestExecutorRejectsCanceledAndInvalidCallsBeforeSideEffect(t *testing.T) {
 		t.Fatal("実行してはいけません")
 		return nil, nil
 	}}
-	executor := New(map[string]tools.Handler{"test": tool})
+	executor := New(Static(map[string]tools.Handler{"test": tool}))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, test := range []struct {
@@ -74,7 +74,7 @@ type titledTestTool struct{ *testTool }
 func (t *titledTestTool) Title(args map[string]any) string { return args["subject"].(string) }
 
 func TestTitleUsesToolArgumentsAndIgnoresBrokenInput(t *testing.T) {
-	executor := New(map[string]tools.Handler{"titled": &titledTestTool{&testTool{}}, "plain": &testTool{}})
+	executor := New(Static(map[string]tools.Handler{"titled": &titledTestTool{&testTool{}}, "plain": &testTool{}}))
 	if title := executor.Title("titled", json.RawMessage(`{"subject":"調査対象"}`)); title != "調査対象" {
 		t.Fatal(title)
 	}
@@ -82,5 +82,21 @@ func TestTitleUsesToolArgumentsAndIgnoresBrokenInput(t *testing.T) {
 		if title := executor.Title(c.name, json.RawMessage(c.args)); title != "" {
 			t.Fatal(c, title)
 		}
+	}
+}
+
+// ツールの一覧を差し替えたら、同じ Executor のまま新しいツールを呼べる。
+func TestExecutorUsesCurrentHandlers(t *testing.T) {
+	handlers := map[string]tools.Handler{}
+	executor := New(func() map[string]tools.Handler { return handlers })
+	req := types.ToolRequest{ToolCallID: "call", Name: "test", Arguments: json.RawMessage(`{}`)}
+	if result := executor.Execute(context.Background(), req); string(result.Output) != `{"error":"unknown function: test"}` {
+		t.Fatal(string(result.Output))
+	}
+	handlers = map[string]tools.Handler{"test": &testTool{run: func(context.Context, map[string]any) (map[string]any, error) {
+		return map[string]any{"ok": true}, nil
+	}}}
+	if result := executor.Execute(context.Background(), req); string(result.Output) != `{"ok":true}` {
+		t.Fatal(string(result.Output))
 	}
 }

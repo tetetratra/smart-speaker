@@ -30,7 +30,7 @@ type authRequiredError struct {
 }
 
 func (e *authRequiredError) Error() string {
-	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。画面の「設定」から認可し、サーバーを再起動してください", e.server)
+	msg := fmt.Sprintf("MCPサーバー %s は未認可か、認可が切れています。画面の「設定」から認可してください", e.server)
 	if e.cause != nil {
 		msg += fmt.Sprintf("（%v）", e.cause)
 	}
@@ -78,7 +78,7 @@ type oauthManager struct {
 	store       *tokenStore
 	httpClient  *http.Client
 
-	// onAuthorized は、認可が終わったときに呼ぶ。設定画面に出す状態を変えるのに使う。
+	// onAuthorized は、認可が終わったときに呼ぶ。ツールを読み込み直すのに使い、終わるまで設定画面へ戻さない。
 	onAuthorized func(serverName string)
 
 	mu      sync.Mutex
@@ -285,7 +285,7 @@ func (m *oauthManager) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if m.onAuthorized != nil {
 		m.onAuthorized(s.name)
 	}
-	// 設定画面へ戻す。設定画面には「認可済み（再起動すると使えます）」と出る。
+	// 読み込み直したあとで設定画面へ戻す。画面を開いた時点で状態が決まっているので、画面はポーリングしなくてよい。
 	http.Redirect(w, r, settingsPath, http.StatusSeeOther)
 }
 

@@ -25,13 +25,21 @@ type Config struct {
 	Memory   *memory.Store
 	WakeMode *wakemode.Store
 	// ToolTitle はツールの呼び出しを記録するときに、画面に出すタイトルを作る。
-	ToolTitle                                                 func(name string, arguments json.RawMessage) string
-	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
-	TurnDetection, NoiseReduction                             string
-	Tools                                                     []any
-	Generation                                                *generation.Store
-	RotateAfter, IdleTimeout                                  time.Duration
+	ToolTitle                                   func(name string, arguments json.RawMessage) string
+	APIKey, Model, Endpoint, TranscriptionModel string
+	// Instructions と Tools は、その時点の指示文とツール定義を返す。接続するときと、ツールが変わったときに読む。nil なら空。
+	Instructions func() string
+	Tools        func() []any
+	// WatchTools は、ツールが変わったときに notify を呼ぶよう登録する。notify は別のゴルーチンから呼んでよい。
+	// 接続中なら、静かになってから session.update で今の指示文とツールを送り直す。nil なら登録しない。
+	WatchTools                    func(notify func())
+	TurnDetection, NoiseReduction string
+	Generation                    *generation.Store
+	RotateAfter, IdleTimeout      time.Duration
 }
+
+// toolsChanged は、ツールが変わったことを stage のキューで知らせる。
+type toolsChanged struct{}
 
 type response struct {
 	generation types.GenerationID
@@ -81,6 +89,8 @@ type stage struct {
 	repairs                                   map[string]bool
 	calls                                     map[string]*call
 	userGenerations                           map[string]types.GenerationID
+	// toolsDirty は、接続したあとにツールが変わり、まだ session.update で送り直していないこと。
+	toolsDirty bool
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
@@ -105,7 +115,6 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	if cfg.NoiseReduction != "far_field" && cfg.NoiseReduction != "near_field" {
 		return nil, fmt.Errorf("realtime: ノイズ除去はfar_fieldまたはnear_fieldを指定してください: %s", cfg.NoiseReduction)
 	}
-	cfg.Tools = withWaitTool(cfg.Tools)
 	if cfg.Generation == nil || cfg.History == nil {
 		return nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")
 	}
@@ -141,6 +150,9 @@ func (s *stage) run(ctx context.Context) {
 			s.queue.Push(incoming{event: e})
 		}
 	}()
+	if s.cfg.WatchTools != nil {
+		s.cfg.WatchTools(func() { s.queue.Push(incoming{event: toolsChanged{}}) })
+	}
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -164,6 +176,8 @@ func (s *stage) run(ctx context.Context) {
 				s.handle(ctx, e)
 			case time.Time:
 				s.tick(ctx, e)
+			case toolsChanged:
+				s.markToolsChanged()
 			}
 			continue
 		}
@@ -187,14 +201,15 @@ func (s *stage) run(ctx context.Context) {
 			s.previous = map[string]string{}
 			s.repairs = map[string]bool{}
 			s.userGenerations = map[string]types.GenerationID{}
-			instructions := s.cfg.Instructions
+			instructions := s.instructions()
+			s.toolsDirty = false
 			s.restoredContext = in.context
 			for _, id := range in.restoredIDs {
 				s.externalApplied[id] = true
 			}
 			s.wakeModeRequired = s.wakeRequired()
 			s.wakeGated = s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Gated()
-			s.transport.send(sessionUpdate(s.cfg, instructions))
+			s.transport.send(sessionUpdate(s.cfg, instructions, s.tools()))
 			continue
 		}
 		s.serverEvent(ctx, in.data)
@@ -269,6 +284,7 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 	s.externalRequested = nil
 	s.connecting = false
 	s.ready = false
+	s.toolsDirty = false
 	s.active = ""
 	s.speaking = false
 	s.awaitingInputCommit = ""
@@ -361,6 +377,7 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	}
 	s.refreshWakeConversation()
 	s.maybeRespond(ctx)
+	s.flushToolsUpdate()
 	if s.startInbound(ctx) {
 		return
 	}
@@ -396,6 +413,7 @@ func (s *stage) rotate(ctx context.Context) {
 	}
 	s.transport = nil
 	s.ready = false
+	s.toolsDirty = false
 	s.connecting = false
 	s.active = ""
 	s.pendingAudio = nil

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/tools"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	types "github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -30,15 +29,16 @@ type toolCaller struct {
 }
 
 // NewStage は tool の実行 stage を作る。呼び出しは届いた順を待たずに並行して実行する。
-func NewStage(handlers map[string]tools.Handler) *graph.Stage {
-	if handlers == nil {
-		handlers = map[string]tools.Handler{}
+// ツールは executor が呼び出しのたびに引くので、動いている間に増えたツールも呼べる。
+func NewStage(executor *execution.Executor) *graph.Stage {
+	if executor == nil {
+		executor = execution.New(nil)
 	}
 	s := &toolCaller{
 		upstream:   make(chan types.Event),
 		results:    map[string]*types.ToolResultRecord{},
 		downstream: make(chan types.Event, graph.DefaultChannelBufferSize),
-		executor:   execution.New(handlers),
+		executor:   executor,
 	}
 	s.node = &graph.Stage{
 		Upstream:   s.upstream,

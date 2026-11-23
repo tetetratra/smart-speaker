@@ -11,20 +11,20 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/plugin"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
-	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/catalog"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 // runtimeServices はHTTP APIと会話処理で共有する状態をまとめる。
 type runtimeServices struct {
 	// Plugins は本体に組み込むプラグイン。ツール・HTTP・指示文・購読できる記録をここから集める。
-	Plugins      []plugin.Plugin
-	AppContext   context.Context
-	Runner       *script.Runner
-	ToolSchemas  []any
-	ToolHandlers map[string]tools.Handler
-	WakeMode     *wakemode.Store
-	Automations  *automations.Service
+	Plugins    []plugin.Plugin
+	AppContext context.Context
+	Runner     *script.Runner
+	// Tools は会話モデルに渡すツールの一覧。認可などでツールが変わると作り直す。nil なら buildStages で作る。
+	Tools       *catalog.Catalog
+	WakeMode    *wakemode.Store
+	Automations *automations.Service
 	// AutomationStage は予約ジョブのコンポーネント。nil ならグラフに載せない。
 	AutomationStage *automation.Stage
 	// Gateway はグラフの外とグラフの境目。nil なら buildStages で作る。

@@ -14,8 +14,6 @@ const (
 	stateReady = "ready"
 	// stateUnauthorized は、OAuth の認可がまだか、切れていてツールを読み込めない状態。
 	stateUnauthorized = "unauthorized"
-	// stateRestartRequired は、起動したあとに認可した状態。ツールは再起動すると読み込む。
-	stateRestartRequired = "restart_required"
 	// stateError は、接続できないなど、認可のほかの理由でツールを読み込めない状態。
 	stateError = "error"
 	// stateDisabled は、設定で無効にしていて接続しない状態。
@@ -36,8 +34,8 @@ type serverStatus struct {
 	AuthURL string `json:"auth_url,omitempty"`
 }
 
-// startupStatus は、起動時にツールを読み込んだ結果から状態を決める。
-func startupStatus(toolCount int, err error) serverStatus {
+// loadedStatus は、ツールを読み込んだ結果から状態を決める。
+func loadedStatus(toolCount int, err error) serverStatus {
 	var authErr *authRequiredError
 	switch {
 	case err == nil:
@@ -46,18 +44,6 @@ func startupStatus(toolCount int, err error) serverStatus {
 		return serverStatus{State: stateUnauthorized}
 	default:
 		return serverStatus{State: stateError, Message: err.Error()}
-	}
-}
-
-// markAuthorized は、起動したあとに認可したサーバーを「再起動すると使える」にする。
-func (p *Plugin) markAuthorized(serverName string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for i := range p.statuses {
-		if p.statuses[i].Name == serverName && p.statuses[i].State != stateReady {
-			p.statuses[i].State = stateRestartRequired
-			p.statuses[i].Message = ""
-		}
 	}
 }
 

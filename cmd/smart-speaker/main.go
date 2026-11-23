@@ -40,6 +40,7 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/tools"
+	"github.com/tetetratra/smart-speaker/internal/tools/catalog"
 	"github.com/tetetratra/smart-speaker/internal/tools/execution"
 	"github.com/tetetratra/smart-speaker/internal/tools/registry"
 	types "github.com/tetetratra/smart-speaker/internal/types"
@@ -94,8 +95,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	services.ToolSchemas, services.ToolHandlers = buildToolRegistry(cfg, memoryStore, services)
-	executor := execution.New(services.ToolHandlers)
+	services.Tools = buildToolCatalog(cfg, memoryStore, services)
+	// MCP サーバーを認可したときなど、プラグインのツールが変わったら一覧を作り直す。Realtime には catalog から知らせる。
+	plugin.OnToolsChanged(services.Plugins, services.Tools.Rebuild)
+	executor := execution.New(services.Tools.Handlers)
 	services.Runner = script.New(executor.Execute, services.AutomationStage.Deliver).WithTitle(executor.Title)
 	server, chatStage, err := buildHTTPServer(cfg, memoryStore, services)
 	if err != nil {
@@ -194,16 +197,19 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 		return appStages{}, fmt.Errorf("failed to init memory creator hook: %w", err)
 	}
 
-	toolSchemas, toolHandlers := services.ToolSchemas, services.ToolHandlers
-	if toolHandlers == nil {
-		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
+	toolCatalog := services.Tools
+	if toolCatalog == nil {
+		toolCatalog = buildToolCatalog(cfg, memoryStore, services)
 	}
+	// 会話と予約ジョブで同じく、呼び出しのたびに今のツールを引く。
+	executor := execution.New(toolCatalog.Handlers)
 	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD, NoiseReduction: cfg.RealtimeNoiseReduction,
-		Instructions: plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
-		ToolTitle:   execution.New(toolHandlers).Title,
+		Instructions: toolCatalog.Instructions, Tools: toolCatalog.Definitions, WatchTools: toolCatalog.OnChange,
+		Generation:  generationStore,
+		ToolTitle:   executor.Title,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
 	if err != nil {
@@ -232,7 +238,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStage(toolHandlers)
+	stages.tool = toolcaller.NewStage(executor)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)
@@ -248,6 +254,14 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 	stages.tool.Name = "toolcaller"
 	stages.rtcpeer.Name = "rtcpeer"
 	return stages, nil
+}
+
+// buildToolCatalog は、ツールの定義・実行処理・指示文を持つ catalog を作る。Rebuild のたびに今のプラグインのツールで作り直す。
+func buildToolCatalog(cfg app.Config, memoryStore *memory.Store, services runtimeServices) *catalog.Catalog {
+	return catalog.New(func() catalog.Snapshot {
+		definitions, handlers := buildToolRegistry(cfg, memoryStore, services)
+		return catalog.Snapshot{Definitions: definitions, Handlers: handlers, Instructions: plugin.Instructions(cfg.SystemPrompt, services.Plugins)}
+	})
 }
 
 func buildToolRegistry(cfg app.Config, memoryStore *memory.Store, services runtimeServices) ([]any, map[string]tools.Handler) {

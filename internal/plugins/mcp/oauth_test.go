@@ -159,15 +159,33 @@ func TestOAuthFlow(t *testing.T) {
 		t.Fatalf("registered = %v", f.registered)
 	}
 
-	// コールバック: 認可コードをトークンに換えて保存する。
+	// コールバック: 認可コードをトークンに換えて保存し、その場でツールを読み込み直してから設定画面へ戻す。
+	changed := 0
+	p.OnToolsChanged(func() {
+		changed++
+		// 知らせを受けた時点で、新しいツールと指示文を読める。
+		if len(p.Tools()) != 1 || p.Instructions() == "" {
+			t.Errorf("知らせの時点でツールが読み込まれていません: %v", toolNames(p))
+		}
+	})
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/oauth/mcp/callback?code=the-code&state="+url.QueryEscape(q.Get("state")), nil))
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != settingsPath {
 		t.Fatalf("callback: %d %s", rec.Code, rec.Body.String())
 	}
-	// 認可したあとは、再起動すると使える状態になる。認可の URL はもう出さない。
-	if got := serverStates(t, mux); got["auth"].State != stateRestartRequired || got["auth"].AuthURL != "" {
+	if changed != 1 {
+		t.Fatalf("ツールが変わった知らせ = %d 回", changed)
+	}
+	// 再起動しなくても、認可したサーバーのツールを使える。認可の URL はもう出さない。
+	if got := serverStates(t, mux); got["auth"].State != stateReady || got["auth"].ToolCount != 1 || got["auth"].AuthURL != "" {
 		t.Fatalf("認可後の状態 = %+v", got["auth"])
+	}
+	out, err := toolByName(t, p, "auth__echo").Run(context.Background(), map[string]any{"text": "now"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out["result"].(string), "echo: now") {
+		t.Fatalf("result = %#v", out)
 	}
 	exchange := f.tokenForms[0]
 	if exchange.Get("code") != "the-code" || exchange.Get("code_verifier") == "" || exchange.Get("resource") != f.URL+"/mcp" {
@@ -181,14 +199,14 @@ func TestOAuthFlow(t *testing.T) {
 		t.Fatalf("state を使い回せてしまいます: %d", rec.Code)
 	}
 
-	// 再起動すると、保存したトークンを更新してからツールを取る。更新したトークンは保存し直す。
+	// 再起動しても、保存したトークンを更新してからツールを取る。更新したトークンは保存し直す。
 	p = newPluginIn(t, dataDir, cfg)
 	mux = http.NewServeMux()
 	p.RegisterHTTP(mux)
 	if got := serverStates(t, mux); got["auth"].State != stateReady || got["auth"].ToolCount != 1 {
 		t.Fatalf("再起動後の状態 = %+v", got["auth"])
 	}
-	out, err := toolByName(t, p, "auth__echo").Run(context.Background(), map[string]any{"text": "x"})
+	out, err = toolByName(t, p, "auth__echo").Run(context.Background(), map[string]any{"text": "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
