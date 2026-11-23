@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react'
-import type { PlaybackSpeech } from './audio'
-import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './whiteboardScroll'
-import { entryTone, whiteboardEvents, type HistoryEntry } from './whiteboardHistory'
-export type { HistoryEntry } from './whiteboardHistory'
+import type { PlaybackSpeech } from '../conversation/sessionReducer'
+import { createWhiteboardAutoScroll, whiteboardScrollSpeed, WHITEBOARD_FIXED_SPEED, type SpeechTiming, type WhiteboardAutoScroll } from './autoScroll'
+import { entryTone, whiteboardEvents, type HistoryEntry } from './history'
+import './Whiteboard.css'
+export type { HistoryEntry } from './history'
 
 function prettyJSON(value: string) {
   if (!value) return '（なし）'
@@ -71,27 +72,6 @@ export function Whiteboard({ tools, speech }: { tools: HistoryEntry[]; speech?: 
       const board = boardRef.current
       if (board) follow.current = board.scrollHeight - board.clientHeight - board.scrollTop < 32
     }}>
-      <style>{`
-        .live-board-content { display: flow-root; }
-        .live-board-event + .live-board-event { margin-top: 6px; }
-        .live-board-event.live-board-entry + .live-board-entry { border-top: 1px solid var(--live-line); padding-top: 10px; }
-        .live-tool-entry { min-width: 0; }
-        .live-tool-entry > summary.live-tool-toast { cursor: pointer; list-style: none; }
-        .live-tool-entry > summary::-webkit-details-marker { display: none; }
-        .live-tool-entry > summary::marker { content: ''; }
-        .live-tool-entry > summary:focus-visible { outline: 2px solid var(--live-toggle-on); outline-offset: 2px; }
-        .live-tool-entry > summary.failed { background: var(--ui-danger-bg); border-color: var(--ui-danger-line); color: var(--ui-danger-text); }
-        .live-tool-entry > summary.background { background: #e8f6ea; border-color: #a7d7b0; color: #1f5f2c; }
-        .live-tool-entry > summary.system { background: #fff0df; border-color: #e6bd93; color: #75451f; }
-        .live-tool-entry .live-tool-toast-tool { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
-        .live-tool-entry-name { flex-shrink: 0; white-space: pre; }
-        .live-tool-entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
-        .live-tool-entry-status { flex-shrink: 0; font-size: 10px; }
-        .live-tool-entry-body { font-size: 12px; padding: 8px; border: 1px solid var(--live-line); border-radius: 8px; margin-top: 4px; overflow-wrap: anywhere; }
-        .live-tool-entry-body p { margin: 0 0 8px; color: var(--live-muted); }
-        .live-tool-entry-body h3 { margin: 8px 0 4px; font-size: 12px; }
-        .live-tool-entry-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
-      `}</style>
       <div className="live-board-content" ref={contentRef}>
         {events.map(event => {
           if (event.kind === 'board') {

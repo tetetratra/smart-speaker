@@ -1,3 +1,5 @@
+import type { ConversationRecord } from '../conversation/protocol.ts'
+
 type ToolEntry = {
   kind: 'tool'
   id: string
@@ -22,50 +24,11 @@ type InboundEntry = {
 }
 export type HistoryEntry = ToolEntry | InboundEntry
 
-// WhiteboardRecord はサーバーが送る会話履歴の記録。ユーザーの発話はチャット欄、それ以外はホワイトボードに出す。
-export type WhiteboardRecord = {
-  id: string
-  role: string
-  text: string
-  source: string
-  generation_id?: number
-  title?: string
-  external?: boolean
-  call_id?: string
-  arguments?: string
-  output?: string
-  error?: string
-  created_at: string
-}
-
-// splitRecords は画面に届いた記録を、どこに出すかで分ける。ユーザーの発話はチャット欄、それ以外はホワイトボードに出す。
-// 世代のない記録は generation_id が 0 で届くので、世代なし（undefined）として扱う。
-export function splitRecords(records: WhiteboardRecord[]) {
-  const utterances: { text: string; generationId?: number }[] = []
-  const others: WhiteboardRecord[] = []
-  for (const record of records) {
-    if (record.role !== 'user') {
-      others.push(record)
-      continue
-    }
-    const generation = record.generation_id
-    utterances.push({ text: record.text, generationId: Number.isSafeInteger(generation) && generation! > 0 ? generation : undefined })
-  }
-  return { utterances, others }
-}
-
-// mergeRecords は接続後に届いた記録を足す。同じ ID が届いても重複させない。
-export function mergeRecords(current: Map<string, WhiteboardRecord>, records: WhiteboardRecord[]): Map<string, WhiteboardRecord> {
-  const next = new Map(current)
-  for (const record of records) next.set(record.id, record)
-  return next
-}
-
 // historyEntries は記録から表示用の履歴を組み立てる。
 // ツールの記録（tool）は呼び出しと結果を1件で持つので、引数と出力を出す。
 // それ以外の記録（後から届いた結果や通知）は、本文を出す。
 // 見出しの名前は、ツールかどうかによらず記録の source（中身を作った機能）をそのまま出す。
-export function historyEntries(records: Iterable<WhiteboardRecord>): HistoryEntry[] {
+export function historyEntries(records: Iterable<ConversationRecord>): HistoryEntry[] {
   return [...records].map((record): HistoryEntry => record.role === 'tool' ? {
     kind: 'tool', id: record.id, role: record.role, call_id: record.call_id ?? '', name: record.source,
     title: record.title, arguments: record.arguments ?? '', output: record.output ?? '',
