@@ -7,9 +7,9 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/tetetratra/smart-speaker/internal/app"
 	"github.com/tetetratra/smart-speaker/internal/components/wschat"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/localverify"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
 	opus "gopkg.in/hraban/opus.v2"
 	"net/http"
 	"net/http/httptest"
@@ -28,13 +28,13 @@ func TestRealtimeConversationLocal(t *testing.T) {
 	fake := httptest.NewServer(handler)
 	defer fake.Close()
 	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local"}, ConversationHistoryPath: filepath.Join(t.TempDir(), "conversation-history.json")}
-	memory, err := memorystate.NewStore(filepath.Join(t.TempDir(), "memory.json"))
+	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	chat := wschat.NewStage(mux)
-	stages, err := buildStages(cfg, chat, memory, runtimeServices{})
+	stages, err := buildStages(cfg, chat, memoryStore, runtimeServices{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,25 @@
+.tts-select {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+.tts-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.tts-select-row select {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  background: var(--live-panel-soft);
+  color: var(--live-text);
+  border: 1px solid var(--live-line);
+  border-radius: 8px;
+  padding: 4px;
+}
+.tts-select-credit {
+  color: var(--live-muted);
+}

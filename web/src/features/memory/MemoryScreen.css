@@ -1,0 +1,105 @@
+.memory-list {
+  display: grid;
+  gap: 10px;
+}
+.memory-new {
+  display: grid;
+  gap: 8px;
+  border: 2px solid var(--live-line);
+  border-radius: 8px;
+  background: var(--live-panel);
+  padding: 12px;
+}
+.memory-textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--live-line-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--live-text);
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+.memory-empty {
+  color: var(--live-muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+.memory-item {
+  border: 1px solid var(--live-line);
+  border-radius: 8px;
+  background: var(--live-panel);
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+}
+.memory-item-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.memory-item-content {
+  color: var(--live-text);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+/* 作成日と更新日は折り返さず 1 行に並べ、1 件あたりの高さを抑える。 */
+.memory-item-dates {
+  display: flex;
+  column-gap: 12px;
+  color: var(--live-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.memory-item-actions {
+  display: flex;
+  gap: 6px;
+}
+.memory-btn {
+  border-radius: 8px;
+  border: 1px solid var(--live-line-strong);
+  background: var(--live-panel);
+  color: var(--live-text);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.memory-btn:disabled {
+  cursor: not-allowed;
+}
+.memory-btn.primary {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-accent-text);
+}
+.memory-btn.primary:disabled {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-soft-text);
+}
+.memory-btn.danger {
+  border-color: var(--ui-danger-line);
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger-text);
+}
+.memory-new-submit {
+  justify-self: start;
+  padding: 9px 13px;
+  font-size: 14px;
+}
+/* 縦画面では幅が狭いので、編集・削除ボタンを縦に並べて本文の幅を確保する。 */
+@media (orientation: portrait) {
+  .memory-item-dates {
+    column-gap: 8px;
+    font-size: 10px;
+  }
+  .memory-item-actions {
+    flex-direction: column;
+  }
+}

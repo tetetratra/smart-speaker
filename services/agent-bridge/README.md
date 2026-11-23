@@ -12,7 +12,7 @@ Claude Code は `auto` モードで動くため、頼んだ操作は承認なし
 
 ## 設定（環境変数）
 設定は環境変数で渡します。常駐させるときは、リポジトリ直下の `.envrc`（direnvで読む、Git管理外のファイル）に書きます。
-サーバーのデプロイも同じ `.envrc` を読むため、共有トークン `AGENT_BRIDGE_TOKEN` は1か所に書くだけで済みます。
+共有トークン `AGENT_BRIDGE_TOKEN` は、サーバーのシークレットと一緒に `.env` に書き、`.envrc` の `dotenv` で読み込みます。サーバーのデプロイも同じ `.env` を読むため、1か所に書くだけで済みます。
 
 | 変数 | 必須 | 説明 |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Claude Code は `auto` モードで動くため、頼んだ操作は承認なし
 
 - `ANTHROPIC_` と `CLAUDE` で始まるもの。Claude Codeのデスクトップアプリから起動すると、これらの変数のせいでログインが使えなくなるためです。
 - `AGENT_BRIDGE_` で始まるもの。共有トークンがあると、Claude Codeが自分の承認依頼を自分で許可できてしまうためです。
-- 名前が `_TOKEN`、`_KEY`、`_SECRET`、`_PASSWORD` で終わるもの。`.envrc` にあるサーバー用のシークレット（`OPENAI_API_KEY` など）を渡さないためです。
+- 名前が `_TOKEN`、`_KEY`、`_SECRET`、`_PASSWORD` で終わるもの。`.env` から読み込んだサーバー用のシークレット（`OPENAI_API_KEY` など）を渡さないためです。
 
 ## 起動
 ```sh
@@ -48,9 +48,10 @@ npm run typecheck
 ## LaunchAgentで常駐させる
 worktreeは消えることがあるので、以下はリポジトリの本来の場所（メインのチェックアウト）で行います。
 
-1. リポジトリ直下の `.envrc` に、上の表の必須の変数を書き、`direnv allow` で許可します。
+1. リポジトリ直下の `.env` に `AGENT_BRIDGE_TOKEN` を書きます（`openssl rand -hex 32` などで作った値）。
+   `.envrc` に、`.env` を読み込む `dotenv` と、残りの必須の変数を書き、`direnv allow` で許可します。
    ```sh
-   export AGENT_BRIDGE_TOKEN=<openssl rand -hex 32 などで作った値>
+   dotenv
    export AGENT_BRIDGE_LISTEN=<MacのTailscale IP>:8787
    export AGENT_BRIDGE_WORKDIRS="work=$HOME/work,speaker=$HOME/p/smart-speaker"
    export AGENT_BRIDGE_EVENTS_URL=http://<サーバーのTailscale IP>:8081/api/agent-events
@@ -107,7 +108,7 @@ worktreeは消えることがあるので、以下はリポジトリの本来の
    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tetetratra.smart-speaker.agent-bridge.plist
    ```
 
-`.envrc` を変えたときは、再起動して読み直させます。
+`.envrc` や `.env` を変えたときは、再起動して読み直させます。
 ```sh
 launchctl kickstart -k gui/$(id -u)/com.tetetratra.smart-speaker.agent-bridge
 ```

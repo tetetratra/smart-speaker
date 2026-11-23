@@ -1,0 +1,110 @@
+/* メイン画面の配置。横画面では左にホワイトボードと吹き出し、右に操作ボタンとキャラクターエリアを並べる。 */
+/* 縦画面では左右の列をなくし、操作ボタン・ホワイトボード・キャラクターエリア・吹き出しの順に縦に並べ替える。 */
+.live-frame {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  padding: 6px;
+  position: relative;
+  background: var(--live-bg);
+  color: var(--live-text);
+}
+.live-main {
+  width: 100%;
+  height: 100%;
+  background: var(--live-panel);
+  border: 1px solid var(--live-line);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 30%);
+  gap: 12px;
+  min-height: 0;
+}
+.live-left {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 6fr 4fr;
+  gap: 12px;
+}
+.live-right {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+}
+.live-controls-toggles,
+.live-controls-nav {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.live-controls-toggles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.live-controls-nav {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.live-controls-toggles .live-control-btn,
+.live-controls-nav .live-admin-btn {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 4px;
+}
+.live-controls-toggles .live-control-btn {
+  justify-content: center;
+}
+.live-volume-control {
+  border: 1px solid var(--live-line);
+  background: var(--live-panel-soft);
+  border-radius: 10px;
+  padding: 8px 10px 7px;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  flex: 1;
+  transition: background-color 0.3s;
+}
+/* 電源（接続）がオフの間と、呼びかけ待ちの間は、話しかけても反応しないことが分かるよう暗くする。 */
+.live-volume-control.live-character-dim {
+  background: var(--live-character-dim);
+}
+.live-controls-panel {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.live-character-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+@media (orientation: portrait) {
+  .live-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 3fr) minmax(0, 3fr) minmax(0, 5fr);
+    gap: 8px;
+  }
+  .live-left,
+  .live-right {
+    display: contents;
+  }
+  .live-controls-panel {
+    grid-row: 1;
+  }
+  .live-board {
+    grid-row: 2;
+  }
+  .live-character-area {
+    grid-row: 3;
+  }
+  .live-bubble-slot {
+    grid-row: 4;
+  }
+}
