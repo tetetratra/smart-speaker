@@ -15,6 +15,7 @@
 
 ```sh
 cp config.sample.yaml config.yaml
+cp .env.sample .env
 ```
 
 `config.yaml` には変えたい項目だけを書きます。全項目と既定値は [config.sample.yaml](../config.sample.yaml) を参照してください。
@@ -25,9 +26,12 @@ cp config.sample.yaml config.yaml
 - `config.yaml` は Git の管理外です。
 - 家族構成や家電の呼び名など、環境ごとにシステムプロンプトへ足したい内容は `additional_system_prompt` に書きます。
 
-シークレットは次の環境変数で渡します。必須は `OPENAI_API_KEY` だけで、ほかは使う機能に応じて設定します。
-リポジトリ直下の `.envrc`（direnv で読む、Git 管理外のファイル）に書いておくと、デプロイでも同じ値を使えます。
-Docker では `docker-compose.yml` の `environment:` に書いた変数だけがコンテナに入ります。新しく環境変数を使うときは、そこにも足します。
+シークレットは、リポジトリ直下の `.env`（Git 管理外のファイル）に `名前=値` の形で書きます。項目は [.env.sample](../.env.sample) を参照してください。
+必須は `OPENAI_API_KEY` だけで、ほかは使う機能に応じて設定します。
+
+- `docker compose` が `.env` を読み、書いた変数をすべてサーバーのコンテナに渡します。デプロイでも同じ値を使います。
+- 新しい変数（`config.yaml` の `${...}` で参照する MCP サーバーのシークレットなど）を足すときも、`.env` に書くだけで済みます。
+- Docker を使わずに `go run` で動かす場合や、Mac で agent-bridge を動かす場合は、シェルの環境変数として値が要ります。リポジトリ直下の `.envrc`（direnv で読む、Git 管理外のファイル）に `dotenv` と書くと、`.env` を読み込めます。
 
 | 環境変数 | 用途 |
 |---|---|

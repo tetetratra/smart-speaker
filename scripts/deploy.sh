@@ -13,6 +13,12 @@ if [[ ! -f config.yaml ]]; then
   exit 1
 fi
 
+# シークレットは .env からコンテナへ渡す。無いと本番のサーバーが OPENAI_API_KEY 無しで起動に失敗し続けるため、ここで止める。
+if [[ ! -f .env ]]; then
+  echo ".env がありません。.env.sample をもとに作成してから、リポジトリ直下で実行してください。" >&2
+  exit 1
+fi
+
 production_docker_host="$(
   docker context inspect "$CONTEXT_NAME" --format '{{ (index .Endpoints "docker").Host }}'
 )"
