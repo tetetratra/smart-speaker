@@ -65,7 +65,7 @@ tts:
 	overrides := map[string]string{
 		"OPENAI_API_KEY": "local-verification-only", app.ConfigPathEnv: configPath,
 		"SWITCHBOT_TOKEN": "", "SWITCHBOT_SECRET": "", "RTC_ICE_ADVERTISE_IPS": "",
-		"GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "ELEVENLABS_API_KEY": "",
+		"ELEVENLABS_API_KEY": "",
 	}
 	var env []string
 	for _, entry := range os.Environ() {

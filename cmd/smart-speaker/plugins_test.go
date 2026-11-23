@@ -58,3 +58,16 @@ func TestPluginsAreWiredIntoApp(t *testing.T) {
 		t.Fatalf("%s が購読できる記録にありません", userlocation.Source)
 	}
 }
+
+// 削除したプラグインの名前が config.yaml に残っていたら、組み込まれていない名前として見つかり、案内がある。
+func TestRemovedPluginsAreUnknown(t *testing.T) {
+	plugins, err := buildPlugins(plugin.Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range removedPlugins {
+		if unknown := plugin.UnknownNames(plugins, []string{name}); len(unknown) != 1 {
+			t.Fatalf("%s がまだ組み込まれています", name)
+		}
+	}
+}
