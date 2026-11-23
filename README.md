@@ -197,10 +197,7 @@ flowchart LR
     googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
     googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
     googleTokenStore[("【Googleカレンダー】<br/>google_oauth_token.json<br/>Googleの認証トークン")]
-    mcpRemote{{"リモートの MCP サーバー<br/>Streamable HTTP（url）"}}
-    mcpLocal{{"ローカルの MCP サーバー<br/>stdio の子プロセス（command）"}}
-    mcpAuthServer{{"MCP サーバーの認可サーバー<br/>OAuth"}}
-    mcpTokenStore[("【MCP】<br/>mcp_oauth.json<br/>OAuth のトークン")]
+    mcpServer{{"MCP サーバー<br/>config.yaml に登録したもの"}}
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]
@@ -223,10 +220,7 @@ flowchart LR
     calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
     calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
     calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
-    mcpTool <==>|"HTTPS<br/>tools/list（起動時）・tools/call<br/>OAuth のサーバーにはアクセストークンを付ける"| mcpRemote
-    mcpTool <==>|"stdio<br/>tools/list（起動時）・tools/call"| mcpLocal
-    mcpTool <==>|"HTTPS<br/>トークンの更新"| mcpAuthServer
-    mcpTool <-.->|"読み出し・更新後の保存"| mcpTokenStore
+    mcpTool <==>|"HTTPS・stdio<br/>ツールの一覧・呼び出し（認可はプラグインが扱う）"| mcpServer
     switchBotTool <==>|"HTTPS<br/>シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
     wakeModeTool <-.->|"参照・切替"| wakeModeStore
@@ -235,36 +229,6 @@ flowchart LR
     automationTool <-.->|"登録・一覧・更新・削除"| automationStore
     locationTool -.->|"最後に受信した場所・更新日時の参照"| locationStore
     whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
-```
-
-### MCP サーバーの認可
-
-OAuth が要るリモートの MCP サーバーを、設定画面から認可する流れです（`internal/plugins/mcp`）。
-認可サーバーは、MCP サーバーが公開する保護リソースのメタデータから見つけます。
-
-```mermaid
-flowchart LR
-    settings["SettingsScreen<br/>設定画面の MCP サーバーの欄"]
-    servers("【MCP】<br/>状態の一覧<br/>GET /api/mcp/servers")
-    start("【MCP】<br/>認可の開始<br/>GET /oauth/mcp/start")
-    callback("【MCP】<br/>認可のコールバック<br/>GET /oauth/mcp/callback")
-    plugin["【MCP】<br/>mcp.Plugin<br/>サーバーごとの接続・ツール・状態"]
-    mcpRemote{{"リモートの MCP サーバー<br/>保護リソースのメタデータ"}}
-    authServer{{"認可サーバー<br/>メタデータ・動的クライアント登録<br/>認可画面・トークン"}}
-    tokenStore[("【MCP】<br/>mcp_oauth.json<br/>クライアントとトークン")]
-
-    settings ==>|"requestJSON<br/>状態（未認可・認可済み・ツールの数など）と認可の URL"| servers
-    servers -.->|"状態の参照"| plugin
-    settings ==>|"画面ごと移動<br/>「認可する」"| start
-    start <==>|"HTTPS<br/>/.well-known/oauth-protected-resource"| mcpRemote
-    start <==>|"HTTPS<br/>メタデータの取得・動的クライアント登録"| authServer
-    start -.->|"動的クライアント登録で得たクライアント"| tokenStore
-    start ==>|"リダイレクト<br/>PKCE・resource 付きの認可の URL"| authServer
-    authServer ==>|"リダイレクト<br/>認可コード"| callback
-    callback <==>|"HTTPS<br/>認可コードをトークンに換える"| authServer
-    callback -.->|"トークンの保存"| tokenStore
-    callback -->|"認可したことを知らせる"| plugin
-    callback ==>|"リダイレクト<br/>/?ui=settings"| settings
 ```
 
 ### 画面（web/）
@@ -327,6 +291,6 @@ flowchart LR
     wake ==>|"requestJSON<br/>/api/wake-mode・/api/wake-mode/wake<br/>呼びかけ中にする"| httpAPI
     volume <==>|"playback_volume・set_playback_volume<br/>再生音量の配信・変更"| wsVolume
     settings <==>|"requestJSON<br/>/api/tts・/api/mcp/servers"| httpAPI
-    settings ==>|"location.href<br/>/oauth/mcp/start?server=…<br/>認可を始める（画面ごと移動し、終わると設定画面へ戻る）"| oauthMCP
+    settings ==>|"location.href<br/>MCP サーバーの認可を始める"| oauthMCP
     pages <==>|"requestJSON<br/>/api/memories・/api/jobs・/api/switchbot/scenes"| httpAPI
 ```
