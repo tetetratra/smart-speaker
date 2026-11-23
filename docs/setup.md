@@ -34,6 +34,7 @@ Docker では `docker-compose.yml` の `environment:` に書いた変数だけ�
 | `OPENAI_API_KEY` | OpenAI の API キー（必須） |
 | `ELEVENLABS_API_KEY` | ElevenLabs で読み上げる場合 |
 | `SWITCHBOT_TOKEN` / `SWITCHBOT_SECRET` | SwitchBot で家電を操作する場合 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar を使う場合 |
 | `AGENT_BRIDGE_TOKEN` | Claude Code 連携を使う場合 |
 | `MCP_CALENDAR_CLIENT_ID` / `MCP_CALENDAR_CLIENT_SECRET` | Google Calendar の MCP サーバーを使う場合（`config.sample.yaml` の例の名前） |
 
@@ -87,6 +88,15 @@ curl -X POST http://127.0.0.1:18082/debug/utterance -d '{"text":"ホワイトボ
 
 設定していない連携は、そのツールを登録せずに起動します。
 
+### Google Calendar
+
+1. Google Cloud で OAuth クライアントを作り、`GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` を設定します。
+2. コールバック URL を、OAuth クライアントの承認済みリダイレクト URI に登録します。既定は `http://localhost:8081/oauth/google/callback` で、変える場合は `config.yaml` の `plugins.googlecalendar.redirect_url` に書きます。
+3. サーバーを起動し、`http://localhost:8081/oauth/google/start` を開いて認可します。トークンは `plugins.googlecalendar.token_path`（既定は `memory.store_path` と同じディレクトリの `google_oauth_token.json`）に保存されます。
+
+Google の OAuth は、localhost 以外のリダイレクト URI には HTTPS を求めます。
+本番サーバーで認可するときは、`ssh -L 8081:localhost:8081 <user>@<本番サーバー>` でポートを転送してから、手元のブラウザで `http://localhost:8081/oauth/google/start` を開きます。
+
 ### MCP サーバー
 
 `config.yaml` の `plugins.mcp.servers` に MCP サーバーを書くと、そのツールを会話から使えます（書き方は `config.sample.yaml`）。
@@ -105,6 +115,7 @@ OAuth が要るリモートの MCP サーバーは、`oauth:` を書いて次の
 4. サーバーを再起動すると、ツールが出ます。
 
 Google Calendar の MCP サーバー（`https://calendarmcp.googleapis.com/mcp/v1`）を使う場合は、Google Cloud で「Google Calendar API」と「Google Calendar MCP API」を有効にし、ウェブアプリケーションの OAuth クライアントを作ります（[Configure the Calendar MCP server](https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server)）。
+ツールを呼ぶには、Google Cloud のプロジェクトが [Google Workspace Developer Preview Program](https://developers.google.com/workspace/preview) に参加している必要があります。参加していないと、ツールの一覧は取れますが、呼び出しは断られます。
 
 ### SwitchBot
 
