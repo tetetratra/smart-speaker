@@ -237,36 +237,6 @@ flowchart LR
     whiteboardTool ==>|"WebSocket<br/>会話履歴経由<br/>ホワイトボードの内容"| browser
 ```
 
-### MCP サーバーの認可
-
-OAuth が要るリモートの MCP サーバーを、設定画面から認可する流れです（`internal/plugins/mcp`）。
-認可サーバーは、MCP サーバーが公開する保護リソースのメタデータから見つけます。
-
-```mermaid
-flowchart LR
-    settings["SettingsScreen<br/>設定画面の MCP サーバーの欄"]
-    servers("【MCP】<br/>状態の一覧<br/>GET /api/mcp/servers")
-    start("【MCP】<br/>認可の開始<br/>GET /oauth/mcp/start")
-    callback("【MCP】<br/>認可のコールバック<br/>GET /oauth/mcp/callback")
-    plugin["【MCP】<br/>mcp.Plugin<br/>サーバーごとの接続・ツール・状態"]
-    mcpRemote{{"リモートの MCP サーバー<br/>保護リソースのメタデータ"}}
-    authServer{{"認可サーバー<br/>メタデータ・動的クライアント登録<br/>認可画面・トークン"}}
-    tokenStore[("【MCP】<br/>mcp_oauth.json<br/>クライアントとトークン")]
-
-    settings ==>|"requestJSON<br/>状態（未認可・認可済み・ツールの数など）と認可の URL"| servers
-    servers -.->|"状態の参照"| plugin
-    settings ==>|"画面ごと移動<br/>「認可する」"| start
-    start <==>|"HTTPS<br/>/.well-known/oauth-protected-resource"| mcpRemote
-    start <==>|"HTTPS<br/>メタデータの取得・動的クライアント登録"| authServer
-    start -.->|"動的クライアント登録で得たクライアント"| tokenStore
-    start ==>|"リダイレクト<br/>PKCE・resource 付きの認可の URL"| authServer
-    authServer ==>|"リダイレクト<br/>認可コード"| callback
-    callback <==>|"HTTPS<br/>認可コードをトークンに換える"| authServer
-    callback -.->|"トークンの保存"| tokenStore
-    callback -->|"認可したことを知らせる"| plugin
-    callback ==>|"リダイレクト<br/>/?ui=settings"| settings
-```
-
 ### 画面（web/）
 
 画面の部品と、サーバーとのやり取りです。画面が使うサーバーの API は、この図にまとめています。
