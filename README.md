@@ -245,29 +245,27 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    subgraph web["ブラウザ（web/src）"]
-        subgraph app["App 画面をまたぐ状態"]
-            voice["useVoiceSession<br/>音声接続"]
-            wake["useWakeMode<br/>呼びかけ設定"]
-            volume["usePlaybackVolume<br/>再生音量"]
-            state[("sessionReducer<br/>会話の状態")]
+    subgraph app["App 画面をまたぐ状態"]
+        voice["useVoiceSession<br/>音声接続"]
+        wake["useWakeMode<br/>呼びかけ設定"]
+        volume["usePlaybackVolume<br/>再生音量"]
+        state[("sessionReducer<br/>会話の状態")]
+    end
+    subgraph io["React の外の音声接続"]
+        session["createVoiceSession<br/>接続の管理"]
+        socket["createSocket<br/>再接続する WebSocket"]
+        peer["createPeer<br/>マイク・WebRTC"]
+        player["createAudioPlayer<br/>再生・音量"]
+    end
+    subgraph screens["画面"]
+        subgraph live["LiveScreen メイン画面"]
+            whiteboard["Whiteboard<br/>ホワイトボード"]
+            bubble["SpeechBubble<br/>吹き出し"]
         end
-        subgraph io["React の外の音声接続"]
-            session["createVoiceSession<br/>接続の管理"]
-            socket["createSocket<br/>再接続する WebSocket"]
-            peer["createPeer<br/>マイク・WebRTC"]
-            player["createAudioPlayer<br/>再生・音量"]
+        subgraph settings["SettingsScreen 設定画面"]
+            parts["状態表示・呼びかけ・読み上げ音声<br/>再生音量・MCP サーバー"]
         end
-        subgraph screens["画面"]
-            subgraph live["LiveScreen メイン画面"]
-                whiteboard["Whiteboard<br/>ホワイトボード"]
-                bubble["SpeechBubble<br/>吹き出し"]
-            end
-            subgraph settings["SettingsScreen 設定画面"]
-                parts["状態表示・呼びかけ・読み上げ音声<br/>再生音量・MCP サーバー"]
-            end
-            pages["ほかの画面<br/>メモリ・予約・リモコン・ログ"]
-        end
+        pages["ほかの画面<br/>メモリ・予約・リモコン・ログ"]
     end
 
     subgraph server["サーバー"]
