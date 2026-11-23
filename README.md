@@ -197,7 +197,10 @@ flowchart LR
     googleCalendar{{"Google Calendar API<br/>https://www.googleapis.com/calendar/v3"}}
     googleOAuth{{"Google OAuth<br/>カレンダーの認可"}}
     googleTokenStore[("【Googleカレンダー】<br/>google_oauth_token.json<br/>Googleの認証トークン")]
-    mcpServer{{"MCP サーバー<br/>config.yaml に登録したもの"}}
+    mcpRemote{{"リモートの MCP サーバー<br/>Streamable HTTP（url）"}}
+    mcpLocal{{"ローカルの MCP サーバー<br/>stdio の子プロセス（command）"}}
+    mcpAuthServer{{"MCP サーバーの認可サーバー<br/>OAuth"}}
+    mcpTokenStore[("【MCP】<br/>mcp_oauth.json<br/>OAuth のトークン")]
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     memoryStore[("memory<br/>長期メモリ")]
     wakeModeStore[("wakemode<br/>呼びかけモード")]
@@ -220,7 +223,10 @@ flowchart LR
     calendarTool <==>|"HTTPS<br/>予定の参照・作成・更新"| googleCalendar
     calendarTool <-.->|"読み出し・更新後の保存"| googleTokenStore
     calendarTool <==>|"HTTPS<br/>トークンの更新"| googleOAuth
-    mcpTool <==>|"HTTPS・stdio<br/>ツールの一覧・呼び出し（認可はプラグインが扱う）"| mcpServer
+    mcpTool <==>|"HTTPS<br/>tools/list（起動時）・tools/call<br/>OAuth のサーバーにはアクセストークンを付ける"| mcpRemote
+    mcpTool <==>|"stdio<br/>tools/list（起動時）・tools/call"| mcpLocal
+    mcpTool <==>|"HTTPS<br/>トークンの更新"| mcpAuthServer
+    mcpTool <-.->|"読み出し・更新後の保存"| mcpTokenStore
     switchBotTool <==>|"HTTPS<br/>シーン実行"| switchBot
     memoryTool <-.->|"一覧・追加・更新・削除"| memoryStore
     wakeModeTool <-.->|"参照・切替"| wakeModeStore
@@ -291,6 +297,6 @@ flowchart LR
     wake ==>|"requestJSON<br/>/api/wake-mode・/api/wake-mode/wake<br/>呼びかけ中にする"| httpAPI
     volume <==>|"playback_volume・set_playback_volume<br/>再生音量の配信・変更"| wsVolume
     settings <==>|"requestJSON<br/>/api/tts・/api/mcp/servers"| httpAPI
-    settings ==>|"location.href<br/>MCP サーバーの認可を始める"| oauthMCP
+    settings ==>|"location.href<br/>/oauth/mcp/start?server=…<br/>認可を始める（画面ごと移動し、終わると設定画面へ戻る）"| oauthMCP
     pages <==>|"requestJSON<br/>/api/memories・/api/jobs・/api/switchbot/scenes"| httpAPI
 ```
