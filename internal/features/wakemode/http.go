@@ -1,0 +1,72 @@
+package wakemode
+
+import (
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"time"
+)
+
+// RegisterHTTP は、画面から呼びかけの状態を読み書きする API を mux に登録する。
+func RegisterHTTP(mux *http.ServeMux, store *Store) {
+	mux.HandleFunc("/api/wake-mode", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodGet && r.Method != http.MethodPut {
+			w.Header().Set("Allow", "GET, PUT")
+			w.WriteHeader(405)
+			return
+		}
+		if store == nil {
+			http.Error(w, "待機モードを利用できません", 503)
+			return
+		}
+		if r.Method == http.MethodGet {
+			writeJSON(w, 200, store.Snapshot(time.Now()))
+			return
+		}
+		var req struct {
+			Required *bool `json:"required"`
+		}
+		// 判定の言葉やしきい値はデプロイ時の環境変数で決めるため、ここでは必須モードだけを受け付ける。
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil || req.Required == nil {
+			http.Error(w, "requiredにtrueまたはfalseを指定してください", 400)
+			return
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			http.Error(w, "JSONは1件だけ指定してください", 400)
+			return
+		}
+		mode, err := store.SetRequired(*req.Required, time.Now())
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		writeJSON(w, 200, mode)
+	})
+	// 呼びかけの発話の代わりに、会話中（呼びかけなしで話せる状態）にする。
+	// 呼びかけの音声認識が外れやすいため、スマホのショートカットなどから確実に話し始められるようにする。
+	mux.HandleFunc("/api/wake-mode/wake", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			w.WriteHeader(405)
+			return
+		}
+		if store == nil {
+			http.Error(w, "待機モードを利用できません", 503)
+			return
+		}
+		writeJSON(w, 200, store.Wake(time.Now()))
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("http: encode response: %v", err)
+	}
+}

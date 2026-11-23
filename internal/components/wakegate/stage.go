@@ -7,8 +7,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 

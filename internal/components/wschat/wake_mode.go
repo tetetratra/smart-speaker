@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"nhooyr.io/websocket"
 )
 

@@ -5,6 +5,7 @@ import type { WakeModeState } from '../features/wakemode/useWakeMode'
 import { TTSSelect } from '../features/tts/TTSSelect'
 import type { ConnectionStatus, MicStatus, RecognitionStatus } from '../features/conversation/sessionReducer'
 import { PlaybackVolumeSlider } from '../plugins/playbackvolume/PlaybackVolumeSlider'
+import { MCPServerList } from '../plugins/mcp/MCPServerList'
 import type { PlaybackVolumeLevel } from '../plugins/playbackvolume/usePlaybackVolume'
 import './SettingsScreen.css'
 
@@ -55,6 +56,9 @@ export function SettingsScreen(props: {
         </SettingsSection>
         <SettingsSection title="再生音量">
           <PlaybackVolumeSlider level={playbackVolumeLevel} onChange={onPlaybackVolumeChange} />
+        </SettingsSection>
+        <SettingsSection title="MCPサーバー">
+          <MCPServerList />
         </SettingsSection>
       </div>
     </PageLayout>

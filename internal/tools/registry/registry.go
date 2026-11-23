@@ -2,15 +2,12 @@ package registry
 
 import (
 	"context"
-	"github.com/tetetratra/smart-speaker/internal/automations"
-	memorystate "github.com/tetetratra/smart-speaker/internal/states/memory"
-	"github.com/tetetratra/smart-speaker/internal/states/wakemode"
-	automationstool "github.com/tetetratra/smart-speaker/internal/tools/functions/automations"
-	memorytool "github.com/tetetratra/smart-speaker/internal/tools/functions/memory"
-	waketool "github.com/tetetratra/smart-speaker/internal/tools/functions/wakemode"
 
+	"github.com/tetetratra/smart-speaker/internal/features/automations"
+	"github.com/tetetratra/smart-speaker/internal/features/memory"
+	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
+	"github.com/tetetratra/smart-speaker/internal/features/whiteboard"
 	"github.com/tetetratra/smart-speaker/internal/tools"
-	"github.com/tetetratra/smart-speaker/internal/tools/functions/whiteboard"
 )
 
 // Registry はツール定義とハンドラをまとめて管理します。
@@ -28,7 +25,7 @@ type Config struct {
 	AppContext  context.Context
 	WakeMode    *wakemode.Store
 	Automations *automations.Service
-	Memory      *memorystate.Store
+	Memory      *memory.Store
 	// PluginTools はプラグインのツール。tools.DefinitionProvider を実装しないものは登録しない。
 	PluginTools []tools.Handler
 }
@@ -43,19 +40,19 @@ func New(cfg Config) *Registry {
 	}
 	if cfg.WakeMode != nil {
 		for _, readOnly := range []bool{true, false} {
-			t := &waketool.Tool{Store: cfg.WakeMode, ReadOnly: readOnly}
+			t := &wakemode.Tool{Store: cfg.WakeMode, ReadOnly: readOnly}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
 	if cfg.Automations != nil {
 		for _, operation := range []string{"register_job", "list_jobs", "update_job", "delete_job"} {
-			t := &automationstool.Tool{Service: cfg.Automations, Operation: operation}
+			t := &automations.Tool{Service: cfg.Automations, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
 	if cfg.Memory != nil {
-		for _, operation := range memorytool.Operations {
-			t := &memorytool.Tool{Store: cfg.Memory, Operation: operation}
+		for _, operation := range memory.Operations {
+			t := &memory.Tool{Store: cfg.Memory, Operation: operation}
 			toolEntries = append(toolEntries, entry{def: t.Definition(), handler: t})
 		}
 	}
