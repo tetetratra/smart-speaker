@@ -44,3 +44,34 @@ WebRTC 用の UDP ポート `50000-50100` はホストへ公開しますが、�
 
 - Google Calendar（`plugins.googlecalendar`）の認可は、リダイレクト URI に localhost を使います。Google の OAuth は localhost 以外のリダイレクト URI に HTTPS を求めるためです。本番サーバーで認可するときは、`ssh -L 8081:localhost:8081 <user>@<本番サーバー>` でポートを転送してから、手元のブラウザで `http://localhost:8081/oauth/google/start` を開きます。
 - stdio の MCP サーバー（`command`）は、本番では Docker コンテナの中で動きます。使うコマンドをイメージに入れておく必要があります。
+
+
+### SwitchBot の Webhook
+
+1. `.env` の `SWITCHBOT_WEBHOOK_TOKEN` に `openssl rand -hex 32` などで作った秘密の値を書きます。Dockerで受ける場合は `config.yaml` の `plugins.switchbot.webhook_addr` を `":8083"` にしてデプロイします。ホスト側の8083番はComposeが `127.0.0.1` だけへ公開します。
+2. 本番サーバーで `tailscale funnel status` を確認し、既存の公開設定と重ならないことを確認してから、専用ポートへの転送を追加します。以下は8443番を使う例です。Funnelの利用が未許可なら、表示される案内に従って管理画面で許可します。
+
+   ```sh
+   tailscale funnel --bg --https=8443 http://127.0.0.1:8083
+   ```
+
+3. 環境変数を読み込んだ手元のシェルで、現在のWebhookを照会してから登録します。direnvを使う場合は `.envrc` に `dotenv` と書いて `direnv allow` を実行します。
+
+   ```sh
+   go run ./cmd/switchbot-webhook query
+   go run ./cmd/switchbot-webhook register https://<Funnelのホスト名>:8443
+   ```
+
+   登録コマンドは `.env` から読み込んだ秘密をパスに付けます。別のWebhookがあれば上書きせずに止まります。照会の出力には秘密が含まれるため、公開ログに貼らないでください。
+
+4. 実機の状態を変え、会話の記録と予約ジョブへの配送を確認します。画面・操作APIのパスが公開URLで404になることも確認します。
+
+解除するときは、送信先を解除してからFunnelの転送を止め、`.env` の `SWITCHBOT_WEBHOOK_TOKEN` を消して再デプロイします。
+
+```sh
+go run ./cmd/switchbot-webhook delete https://<Funnelのホスト名>:8443
+# 本番サーバーで実行（ほかのFunnel設定は消さない）
+tailscale funnel --https=8443 off
+```
+
+Funnelは、既存のTailscale Serveと同じポートを使わないでください。使用できるポートや有効化の条件は [Tailscale公式手順](https://tailscale.com/docs/reference/tailscale-cli/funnel) を参照してください。

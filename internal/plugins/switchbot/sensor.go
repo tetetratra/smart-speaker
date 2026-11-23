@@ -133,6 +133,13 @@ func (w *sensorWatcher) check(ctx context.Context) {
 		return
 	}
 	body, _ := status["body"].(map[string]any)
+	if err := w.observe(ctx, body); err != nil {
+		log.Printf("switchbot: 計測値の変化を会話へ届けられません: %v", err)
+	}
+}
+
+// observe は REST と Webhook に共通する段階判定と記録の配送を行う。
+func (w *sensorWatcher) observe(ctx context.Context, body map[string]any) error {
 	for _, m := range measurements {
 		v, ok := body[m.bodyKey].(float64)
 		if !ok {
@@ -147,7 +154,6 @@ func (w *sensorWatcher) check(ctx context.Context) {
 		if seen && level == prevLevel {
 			continue
 		}
-		w.levels[m.source] = level
 		title, text, metadata := m.record(level, v, !seen)
 		input := types.ConversationInput{
 			Record: types.ConversationRecord{
@@ -163,7 +169,9 @@ func (w *sensorWatcher) check(ctx context.Context) {
 			Subscribable: true,
 		}
 		if err := w.deliver(ctx, input); err != nil {
-			log.Printf("switchbot: 計測値の変化を会話へ届けられません: %v", err)
+			return err
 		}
+		w.levels[m.source] = level
 	}
+	return nil
 }

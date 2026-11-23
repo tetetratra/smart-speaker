@@ -191,3 +191,9 @@ plugins:
     #       API_KEY: "${SOME_API_KEY}"
     #     # false にすると接続しません。既定: true
     #     enabled: false
+
+  # SwitchBot の Webhook 受信。SWITCHBOT_WEBHOOK_TOKEN があるときだけ有効。
+  switchbot:
+    # Webhook専用の待受け先。既定: "127.0.0.1:8083"（手元で直接起動する場合）。
+    # Dockerではコンテナ内から受け付け、ホスト側はComposeでloopbackだけへ公開します。
+    # webhook_addr: ":8083"

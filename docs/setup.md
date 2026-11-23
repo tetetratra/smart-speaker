@@ -106,6 +106,7 @@ OAuth が要るリモートの MCP サーバーは、`oauth:` を書いて次の
 ### SwitchBot
 
 SwitchBot アプリでトークンとシークレットを発行し、`SWITCHBOT_TOKEN` と `SWITCHBOT_SECRET` を設定します。
+Webhookを使う場合の公開・登録手順は[デプロイ](deploy.md#switchbot-の-webhook)を参照してください。
 
 シーンは起動時に SwitchBot から取得します。シーンを足したら、サーバーを再起動します。
 

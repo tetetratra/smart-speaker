@@ -132,7 +132,7 @@ flowchart LR
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
     locationAPI("【現在地】<br/>位置情報API<br/>POST /api/location")
-    hub2Watcher("【SwitchBot】<br/>Hub 2 の監視<br/>起動時と1分おき")
+    hub2Watcher("【SwitchBot】<br/>センサーの監視<br/>起動時の取得とWebhook<br/>未設定ならHub 2を1分おき")
     switchBot{{"SwitchBot API<br/>https://api.switch-bot.com"}}
     chat["wschat<br/>画面連携"]
     browser{{"ブラウザ<br/>web/"}}
@@ -156,9 +156,9 @@ flowchart LR
     runner -->|"スクリプトからの呼び出し"| webSearchTool
     webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
     locationAPI -->|"Deliver<br/>居場所の変化"| gateway
-    hub2Watcher <==>|"HTTPS<br/>温度・湿度・明るさの取得"| switchBot
-    hub2Watcher -->|"Deliver<br/>温度・湿度・明るさの段階の変化"| gateway
-    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所・温度・湿度・明るさの変化"| manager
+    hub2Watcher <==>|"HTTPS<br/>初期状態の取得・Webhook通知<br/>未設定ならHub 2の定期取得"| switchBot
+    hub2Watcher -->|"Deliver<br/>温湿度・明るさの段階、人感の変化"| gateway
+    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所・温湿度・明るさ・人感の変化"| manager
     manager <-.->|"記録、無操作が続いたときに<br/>時間がたった・大きくなりすぎた古い会話を取り出し"| historyStore
     historyStore -.->|"接続時の文脈復元"| rt
     memoryStore -.->|"接続時の文脈"| rt

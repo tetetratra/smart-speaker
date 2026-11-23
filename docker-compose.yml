@@ -13,6 +13,8 @@ services:
 
     ports:
       - "8081:8081"
+      # Webhook専用。ホストのloopbackだけへ公開し、Funnelから転送する。
+      - "127.0.0.1:8083:8083"
       - "50000-50100:50000-50100/udp"
     volumes:
       - /var/lib/smart-speaker/data:/app/data

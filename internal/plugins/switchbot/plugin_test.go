@@ -137,7 +137,7 @@ func TestPluginWatchesHub2(t *testing.T) {
 					return nil
 				}
 			}
-			p := newPlugin(deps, newTestClient(server))
+			p := newPlugin(deps, newTestClient(server), false)
 			if got := strings.Join(toolNames(p), ","); got != "switchbot_execute_scene" {
 				t.Fatalf("監視の有無にかかわらずシーンを使えるはずです: %s", got)
 			}
