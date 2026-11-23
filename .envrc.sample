@@ -1,0 +1,16 @@
+# 必須
+export OPENAI_API_KEY=""
+
+# SwitchBot
+# export SWITCHBOT_TOKEN=""
+# export SWITCHBOT_SECRET=""
+
+# ElevenLabs
+# export ELEVENLABS_API_KEY=""
+
+# Google Calendar
+# export GOOGLE_CLIENT_ID=""
+# export GOOGLE_CLIENT_SECRET=""
+
+# Claude Code連携（agent-bridgeと同じ値）
+# export AGENT_BRIDGE_TOKEN=""
