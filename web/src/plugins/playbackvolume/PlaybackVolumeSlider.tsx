@@ -1,4 +1,5 @@
-import { playbackVolumeLevels, type PlaybackVolumeLevel } from './playbackVolume'
+import { playbackVolumeLevels, type PlaybackVolumeLevel } from './usePlaybackVolume'
+import './PlaybackVolumeSlider.css'
 
 // 全端末で共通の再生音量を切り替えるスライダー。
 export function PlaybackVolumeSlider({ level, onChange }: { level: PlaybackVolumeLevel; onChange: (level: PlaybackVolumeLevel) => void }) {
