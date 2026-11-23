@@ -151,8 +151,6 @@ wake:
   min_similarity: 0.7
   energy_threshold: 0.003
   conversation_timeout_seconds: 120
-plugins:
-  switchbot: {}
 `
 	env := map[string]string{
 		"OPENAI_API_KEY":     "openai",

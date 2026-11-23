@@ -22,9 +22,6 @@ import (
 
 const name = "switchbot"
 
-// Config は config.yaml の plugins.switchbot。
-type Config struct{}
-
 // Plugin は SwitchBot のプラグイン。トークンかシークレットがなければ、ツールを出さない。
 type Plugin struct {
 	client *Client
@@ -35,21 +32,14 @@ type Plugin struct {
 
 // New は SwitchBot のプラグインを作る。有効なら、起動時にシーンの一覧を取得する。
 // デバイス一覧に Hub 2 があれば、計測値の監視を始める（deps.Deliver がなければ始めない）。
-func New(deps plugin.Deps) (*Plugin, error) {
-	var cfg Config
-	if err := deps.DecodeConfig(name, &cfg); err != nil {
-		return nil, err
-	}
+func New(deps plugin.Deps) *Plugin {
 	token := strings.TrimSpace(os.Getenv("SWITCHBOT_TOKEN"))
 	secret := strings.TrimSpace(os.Getenv("SWITCHBOT_SECRET"))
 	if token == "" || secret == "" {
 		log.Println("switchbot: token or secret not set; switchbot tools disabled")
-		return &Plugin{}, nil
+		return &Plugin{}
 	}
-	return newPlugin(deps, NewSwitchbotClient(token, secret)), nil
-}
-
-func newPlugin(deps plugin.Deps, client *Client) *Plugin {
+	client := NewSwitchbotClient(token, secret)
 	ctx := deps.AppContext
 	if ctx == nil {
 		ctx = context.Background()

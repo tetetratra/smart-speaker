@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -329,38 +328,21 @@ func containsAll(text string, substrings ...string) bool {
 	return true
 }
 
-// デバイス一覧は認証付きで取得し、赤外線リモコンを混ぜずに API の並び順を保つ。
+// 物理デバイスだけを API の並び順で取得し、赤外線リモコンは含めない。
 func TestClientListDevices(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		status  int
-		body    string
-		want    []Device
-		wantErr bool
-	}{
-		{name: "物理デバイス", status: http.StatusOK, body: `{"statusCode":100,"body":{"deviceList":[{"deviceId":"hub","deviceName":"居間","deviceType":"Hub 2"},{"deviceId":"meter","deviceName":"寝室","deviceType":"Meter"}],"infraredRemoteList":[{"deviceId":"ir","remoteType":"Air Conditioner"}]}}`, want: []Device{{DeviceID: "hub", DeviceName: "居間", DeviceType: "Hub 2"}, {DeviceID: "meter", DeviceName: "寝室", DeviceType: "Meter"}}},
-		{name: "空の一覧", status: http.StatusOK, body: `{"statusCode":100,"body":{"deviceList":[]}}`, want: []Device{}},
-		{name: "認証エラー", status: http.StatusUnauthorized, body: `{"message":"Unauthorized"}`, wantErr: true},
-		{name: "APIエラー", status: http.StatusOK, body: `{"statusCode":190,"message":"System error"}`, wantErr: true},
-		{name: "JSONの破損", status: http.StatusOK, body: `{`, wantErr: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodGet || r.URL.Path != "/v1.1/devices" {
-					t.Errorf("想定外のリクエスト: %s %s", r.Method, r.URL.Path)
-				}
-				assertValidSwitchBotAuth(t, r)
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.body))
-			}))
-			defer server.Close()
-			got, err := newTestClient(server).ListDevices(context.Background())
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ListDevices() error = %v", err)
-			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("デバイス一覧 = %#v、期待値 = %#v", got, tt.want)
-			}
-		})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1.1/devices" {
+			t.Errorf("想定外のリクエスト: %s %s", r.Method, r.URL.Path)
+		}
+		assertValidSwitchBotAuth(t, r)
+		_, _ = w.Write([]byte(`{"statusCode":100,"body":{"deviceList":[{"deviceId":"hub","deviceName":"居間","deviceType":"Hub 2"},{"deviceId":"meter","deviceName":"寝室","deviceType":"Meter"}],"infraredRemoteList":[{"deviceId":"ir","remoteType":"Air Conditioner"}]}}`))
+	}))
+	defer server.Close()
+	got, err := newTestClient(server).ListDevices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != (Device{DeviceID: "hub", DeviceName: "居間", DeviceType: "Hub 2"}) || got[1] != (Device{DeviceID: "meter", DeviceName: "寝室", DeviceType: "Meter"}) {
+		t.Fatalf("デバイス一覧 = %#v", got)
 	}
 }

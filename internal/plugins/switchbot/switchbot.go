@@ -1,7 +1,6 @@
 package switchbot
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -49,14 +48,6 @@ type apiResponse[T any] struct {
 	Body       T      `json:"body"`
 }
 
-// NDJSON tool item から受け取るパラメータの構造
-type Command struct {
-	DeviceID    string
-	Command     string
-	CommandType string
-	Parameter   string
-}
-
 // 設定値に基づいてクライアントを初期化する
 func NewSwitchbotClient(token, secret string) *Client {
 	token = strings.TrimSpace(token)
@@ -72,67 +63,6 @@ func NewSwitchbotClient(token, secret string) *Client {
 		baseURL: baseURL,
 	}
 	return client
-}
-
-// SwitchBot API にコマンドを送りレスポンスを返す
-func (c *Client) Execute(ctx context.Context, cmd Command) (map[string]any, error) {
-	deviceID := strings.TrimSpace(cmd.DeviceID)
-	if deviceID == "" {
-		return nil, errors.New("device_id を指定してください")
-	}
-
-	command := strings.TrimSpace(cmd.Command)
-	if command == "" {
-		return nil, errors.New("command を指定してください")
-	}
-
-	commandType := strings.TrimSpace(cmd.CommandType)
-	if commandType == "" {
-		commandType = "command"
-	}
-	parameter := strings.TrimSpace(cmd.Parameter)
-	if parameter == "" {
-		parameter = "default"
-	}
-
-	payload := map[string]string{
-		"command":     command,
-		"commandType": commandType,
-		"parameter":   parameter,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/v1.1/devices/%s/commands", c.baseURL, deviceID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.applyAuth(req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	out, err := decodeAPIResponse[map[string]any](resp)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"statusCode":  out.StatusCode,
-		"message":     out.Message,
-		"body":        out.Body,
-		"http_status": resp.StatusCode,
-		"device_id":   deviceID,
-	}, nil
 }
 
 // GetStatus はデバイスのステータスを取得します。

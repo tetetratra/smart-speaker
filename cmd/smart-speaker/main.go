@@ -300,10 +300,7 @@ func wireGraph(g *graph.Graph, s appStages) {
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。
 func buildPlugins(deps plugin.Deps) ([]plugin.Plugin, error) {
-	switchBot, err := switchbot.New(deps)
-	if err != nil {
-		return nil, err
-	}
+	switchBot := switchbot.New(deps)
 	calendar, err := googlecalendar.New(deps)
 	if err != nil {
 		return nil, err

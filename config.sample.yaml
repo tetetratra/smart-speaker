@@ -150,7 +150,3 @@ plugins:
 
     # トークンの保存先。既定: memory.store_path と同じディレクトリの "google_oauth_token.json"
     # token_path: "data/google_oauth_token.json"
-
-  # SwitchBot。トークンとシークレットはシークレットなので、環境変数 SWITCHBOT_TOKEN・SWITCHBOT_SECRET で渡します。
-  # 両方があるときだけ有効になります。Hub 2 は起動時に自動検出し、1分おきに監視します。
-  switchbot: {}
