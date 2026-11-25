@@ -64,6 +64,17 @@ func TestPluginTools(t *testing.T) {
 	}
 }
 
+// シーンがなくても、監視が有効ならセンサーの値の読み方をモデルへ伝える。
+func TestPluginSensorInstructionsWithoutScenes(t *testing.T) {
+	p := &Plugin{watching: true}
+	if len(p.Tools()) != 0 {
+		t.Fatal("シーンがないのに操作ツールが出ています")
+	}
+	if p.Instructions() != sensorInstructions {
+		t.Fatalf("センサー監視だけの指示文 = %q", p.Instructions())
+	}
+}
+
 // 設定項目がなくなっても、指定された未知のキーを黙って無視しない。
 func TestPluginRejectsUnknownConfig(t *testing.T) {
 	t.Setenv("SWITCHBOT_TOKEN", "")
@@ -138,6 +149,9 @@ func TestPluginWatchesHub2(t *testing.T) {
 				}
 			}
 			p := newPlugin(deps, newTestClient(server))
+			if got := strings.Contains(p.Instructions(), sensorInstructions); got != (tt.wantID != "") {
+				t.Fatalf("センサーの指示文の有無 = %v、監視対象 = %q", got, tt.wantID)
+			}
 			if got := strings.Join(toolNames(p), ","); got != "switchbot_execute_scene" {
 				t.Fatalf("監視の有無にかかわらずシーンを使えるはずです: %s", got)
 			}
