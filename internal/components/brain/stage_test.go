@@ -145,7 +145,7 @@ func TestThinkReportsSilenceAndFailure(t *testing.T) {
 	}
 }
 
-// ユーザーが話し足して世代が進んだら、次の API 呼び出しをせずにやめる。呼んだツールの記録は残す。
+// ユーザーが話し足して世代が進んだら、次の API 呼び出しをせずにやめ、何も話さないことを返す。呼んだツールの記録は残す。
 func TestThinkStopsWhenGenerationAdvances(t *testing.T) {
 	api := &fakeAPI{replies: []string{
 		`{"output":[{"type":"function_call","call_id":"call1","name":"switchbot_execute_scene","arguments":"{}"}]}`,
@@ -156,7 +156,7 @@ func TestThinkStopsWhenGenerationAdvances(t *testing.T) {
 	s.cfg.Executor = execution.New(map[string]tools.Handler{"switchbot_execute_scene": advancing{tool: tool, gen: s.cfg.Generation}})
 	s.think(context.Background(), types.BrainRequest{RequestID: "req1", GenerationID: gen})
 	got := records(s)
-	if len(api.payloads) != 1 || len(got) != 1 || got[0].Record.Role != types.RoleTool {
+	if len(api.payloads) != 1 || len(got) != 2 || got[0].Record.Role != types.RoleTool || got[1].Record.Metadata[types.BrainSilentMetadataKey] != true {
 		t.Fatal(len(api.payloads), got)
 	}
 }

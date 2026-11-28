@@ -119,7 +119,9 @@ func (s *stage) think(ctx context.Context, req types.BrainRequest) {
 	input := []json.RawMessage{s.prompt()}
 	for step := 0; step < maxSteps; step++ {
 		if s.stale(req) {
-			log.Printf("brain: 依頼 %s はユーザーが話し足したため打ち切りました", req.RequestID)
+			log.Printf("brain: 依頼 %s は世代が進んだため打ち切りました", req.RequestID)
+			// 何も話さないことを返し、会話の流れがターンを終えられるようにする（ためていた応答依頼もそこで流れる）。
+			s.say(ctx, req, "", true)
 			return
 		}
 		out, err := s.call(ctx, input)

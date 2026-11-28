@@ -138,7 +138,8 @@ func (s *stage) brainSaid(ctx context.Context, record types.ConversationRecord) 
 		s.endTurn(ctx)
 		return
 	}
-	if silent {
+	// ユーザーの発話から任せた依頼（世代つき）の答えなのに、今のターンのものでなければ、ユーザーが話し足してターンが置き換わったあとに届いた古い答え。伝えない。
+	if silent || record.GenerationID != 0 {
 		return
 	}
 	// ターンの外の発話（後から届いた結果への対応など）は、ユーザーが話しても捨てない。ターンの途中なら、終わるまでためておく。

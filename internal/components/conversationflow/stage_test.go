@@ -167,3 +167,21 @@ func TestContextRecordIsForwardedAndEmptyUtteranceIsIgnored(t *testing.T) {
 	s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{Role: types.RoleAgent, Source: types.RealtimeSource, Text: "はい"}, ModelAlreadyKnows: true}})
 	s.none(t)
 }
+
+// 頭脳AIが考えている間にユーザーが話し足してターンが置き換わったら、古いターンの答えは、あとで届いても伝えない。
+func TestAnswerOfReplacedTurnIsDropped(t *testing.T) {
+	s := testStage()
+	req := s.userSaid("電気消して")
+	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegate}})
+	brain := s.next(t).(types.EventBrainRequest)
+	s.next(t)
+	s.cfg.Generation.Next()
+	s.userSaid("やっぱりいいや")
+	s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{
+		Record: types.ConversationRecord{Role: types.RoleBackground, Source: types.BrainSource, Text: "消した", GenerationID: brain.GenerationID,
+			Metadata: map[string]any{types.BrainRequestMetadataKey: brain.RequestID}}, ModelAlreadyKnows: true}})
+	s.none(t)
+	if len(s.held) != 0 {
+		t.Fatal("古いターンの答えをためました", s.held)
+	}
+}
