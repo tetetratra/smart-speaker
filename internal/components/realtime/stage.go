@@ -69,7 +69,9 @@ type stage struct {
 	items                       map[string]*assistantItem
 	previous                    map[string]string
 	repairs                     map[string]bool
-	userGenerations             map[string]types.GenerationID
+	// commentary は、前置き（phase が commentary）の item。読み上げに流さない。
+	commentary      map[string]bool
+	userGenerations map[string]types.GenerationID
 }
 
 // NewStages は、1本の会話セッションを共有する、文字起こし（transcription）と応答生成（response）の2つのコンポーネントを作る。
@@ -200,6 +202,7 @@ func (s *stage) run(ctx context.Context) {
 			s.items = map[string]*assistantItem{}
 			s.previous = map[string]string{}
 			s.repairs = map[string]bool{}
+			s.commentary = map[string]bool{}
 			s.userGenerations = map[string]types.GenerationID{}
 			instructions := s.cfg.Instructions
 			s.restoredContext = in.context

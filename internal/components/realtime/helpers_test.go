@@ -25,7 +25,7 @@ func newTestStage(t *testing.T) *stage {
 		controller:    generationcontroller.New(gen), epoch: 1, ready: true,
 		started:   time.Now(),
 		responses: map[string]*response{}, userGenerations: map[string]types.GenerationID{},
-		items: map[string]*assistantItem{}, pendingOutput: map[string]bool{}, repairs: map[string]bool{},
+		items: map[string]*assistantItem{}, pendingOutput: map[string]bool{}, repairs: map[string]bool{}, commentary: map[string]bool{},
 	}
 }
 

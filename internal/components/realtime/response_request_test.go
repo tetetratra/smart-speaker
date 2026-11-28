@@ -77,3 +77,26 @@ func TestOutOfTurnRequestWaitsForPlaybackAndStartsNewGeneration(t *testing.T) {
 		t.Fatal(response)
 	}
 }
+
+// Realtime はツールを持たないので、前置き（phase が commentary）の item は読み上げに流さない。
+// 前置きと最終回答が同じ文になり、二重に読み上げてしまうため。
+func TestCommentaryItemIsNotSpoken(t *testing.T) {
+	s := newTestStage(t)
+	request(s, "")
+	first, _ := popResponse(t, s)
+	serverEventForTest(s, map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": first["metadata"]}})
+	for _, item := range []map[string]any{{"id": "pre", "phase": "commentary"}, {"id": "final", "phase": "final_answer"}} {
+		serverEventForTest(s, map[string]any{"type": "response.output_item.added", "response_id": "r1", "item": item})
+		serverEventForTest(s, map[string]any{"type": "response.output_text.delta", "response_id": "r1", "item_id": item["id"], "delta": "ちょっと見てみるね。"})
+		serverEventForTest(s, map[string]any{"type": "response.output_text.done", "response_id": "r1", "item_id": item["id"], "text": "ちょっと見てみるね。"})
+	}
+	var spoken []string
+	for len(s.response.Downstream) > 0 {
+		if e, ok := (<-s.response.Downstream).(types.EventResponseText); ok && e.Text != "" {
+			spoken = append(spoken, e.ItemID+":"+e.Text)
+		}
+	}
+	if strings.Join(spoken, ",") != "final:ちょっと見てみるね。" {
+		t.Fatal(spoken)
+	}
+}

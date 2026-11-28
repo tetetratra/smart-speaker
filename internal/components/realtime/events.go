@@ -22,8 +22,8 @@ type serverEvent struct {
 	CallID                                   string `json:"call_id"`
 	Item                                     struct {
 		ID, Type, Role, Text string
-		CallID               string `json:"call_id"`
-		Name, Arguments      string
+		// Phase は、応答の item が前置き（commentary）か最終回答（final_answer）か。
+		Phase string `json:"phase"`
 	} `json:"item"`
 	Response struct {
 		ID, Status string
@@ -148,9 +148,14 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			}
 		}
 		s.externalOrder = order
+	case "response.output_item.added":
+		// Realtime はツールを持たないので、前置きは要らない。前置きと最終回答が同じ文になることがあるため、前置きは読み上げない。
+		if e.Item.Phase == "commentary" {
+			s.commentary[e.Item.ID] = true
+		}
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
-		if r == nil {
+		if r == nil || s.commentary[e.ItemID] {
 			return
 		}
 		item := s.items[e.ItemID]
@@ -165,7 +170,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
 	case "response.output_text.done":
 		r := s.responses[e.ResponseID]
-		if r == nil {
+		if r == nil || s.commentary[e.ItemID] {
 			return
 		}
 		if item := s.items[e.ItemID]; item != nil && e.Text != "" {
