@@ -192,9 +192,7 @@ func TestUtterancesAreGatedUntilWakeAndThenPassRawAudio(t *testing.T) {
 	}
 	r.utterance(t)
 	r.stt.answers <- result{transcript: Transcript{Text: "ねえ、起きて。予定を教えて", Confidence: 0.9}}
-	if p := r.wake(t, "ねえ、起きて。予定を教えて"); p.WakeOnly {
-		t.Fatal("本文のある発話を呼びかけだけと判定しました")
-	}
+	r.wake(t, "ねえ、起きて。予定を教えて")
 	// 会話中はローカルSTTを通さず、音声をそのまま送る。
 	go r.frame(t, true)
 	select {
@@ -222,9 +220,7 @@ func TestUtteranceQueuedBeforeWakeIsAcceptedAfterWake(t *testing.T) {
 		r.frame(t, false)
 	}
 	r.stt.answers <- result{transcript: Transcript{Text: "起きて", Confidence: 0.9}}
-	if p := r.wake(t, "起きて"); !p.WakeOnly {
-		t.Fatal("呼びかけだけの発話を判定できません")
-	}
+	r.wake(t, "起きて")
 	<-r.stt.calls
 	r.stt.answers <- result{transcript: Transcript{Text: "今日の天気は", Confidence: 0.9}}
 	r.wake(t, "今日の天気は")

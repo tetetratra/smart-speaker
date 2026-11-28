@@ -80,12 +80,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.localWake(ctx, utterance)
 		}
 		s.status(ctx, "connected", "")
-		for _, result := range s.contextResults {
-			s.sendResultContext(result)
-		}
-		s.contextResults = nil
 		s.flushExternal()
-		s.startInbound(ctx)
 		s.maybeRespond(ctx)
 	case "input_audio_buffer.speech_started":
 		// 呼びかけ後の会話中は、ユーザーの発話ごとに会話中の時間を数え直す。
@@ -93,11 +88,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			s.cfg.WakeMode.Touch(time.Now())
 		}
 		s.awaitingInputCommit = e.ItemID
-		// 呼びかけだけの発話への指示を、後から話した発話の応答へ持ち越さない。
-		s.wakeOnlyReply = false
 		s.speaking = true
 		s.lastActivity = time.Now()
-		s.wantResponse = false
 		previous := s.cfg.Generation.Current()
 		change, ok := s.controller.Start(fmt.Sprintf("%d/%s", s.epoch, e.ItemID))
 		if !ok {
@@ -116,8 +108,7 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		if s.awaitingInputCommit == e.ItemID {
 			s.awaitingInputCommit = ""
 		}
-		// 発話終了だけでなく、APIが入力itemを確定した後に応答を要求する。
-		s.wantResponse = true
+		// 応答はここでは始めない。文字起こしが確定したら会話の流れが振り分け、応答依頼として届く。
 		s.maybeRespond(ctx)
 	case "conversation.item.input_audio_transcription.completed":
 		gen, ok := s.userGenerations[e.ItemID]
@@ -181,24 +172,6 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 			item.generated = e.Text
 		}
 		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
-	case "response.function_call_arguments.done":
-		r := s.responses[e.ResponseID]
-		if r == nil {
-			return
-		}
-		if _, exists := s.calls[e.CallID]; exists {
-			return
-		}
-		// 引数の確定前にユーザーが話し始めて世代が進んでも、呼び出しは捨てずに実行する。
-		// 捨てると結果のない呼び出しが会話に残り、モデルが「実行中」とみなして再実行しなくなるため。
-		req := types.ToolRequest{ResponseID: e.ResponseID, ToolCallID: e.CallID, Name: e.Name, Arguments: json.RawMessage(e.Arguments), GenerationID: r.generation}
-		s.calls[e.CallID] = &call{epoch: s.epoch, generation: r.generation, name: e.Name, arguments: e.Arguments, title: s.toolTitle(e.Name, req.Arguments)}
-		// 履歴には結果が出たときに呼び出しと合わせて1件だけ記録する。
-		if e.Name == waitToolName {
-			s.waitForUser(ctx, req)
-			return
-		}
-		s.emit(ctx, types.EventToolRequest{ToolRequest: req})
 	case "response.done":
 		logUsage(e.Response.Usage)
 		if s.active == e.Response.ID {
@@ -222,7 +195,7 @@ func (s *stage) recordInterruption(ctx context.Context, generation types.Generat
 		if item == nil || item.generation != generation || !s.pendingOutput[id] || sameSpokenText(item.generated, item.sent) {
 			continue
 		}
-		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s/interrupted", s.epoch, id), Role: types.RoleSystem, Text: interruptedText, GenerationID: generation, Source: realtimeSource, CreatedAt: time.Now()}, true)
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s/interrupted", s.epoch, id), Role: types.RoleSystem, Text: interruptedText, GenerationID: generation, Source: types.RealtimeSource, CreatedAt: time.Now()}, true)
 		return
 	}
 }
@@ -243,11 +216,22 @@ func (s *stage) sent(ctx context.Context, frame types.AudioFrame) {
 	}
 	if frame.Final {
 		item.sent += frame.Text
-		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, frame.SegmentID), Role: types.RoleAgent, Text: frame.Text, GenerationID: item.generation, Source: realtimeSource, CreatedAt: time.Now()}, true)
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/%s", s.epoch, frame.SegmentID), Role: types.RoleAgent, Text: frame.Text, GenerationID: item.generation, Source: types.RealtimeSource, CreatedAt: time.Now()}, true)
 	}
 }
+
+// maybeRespond は、送れる状態なら、ためている応答依頼の先頭を1件送る。
+// 応答の終わり（response.done）や接続の完了など、送れない理由が解けるイベントのたびに呼ぶ。
 func (s *stage) maybeRespond(ctx context.Context) {
-	if !s.ready || (!s.wantResponse && len(s.pendingToolResponses) == 0) || s.speaking || s.awaitingInputCommit != "" || s.active != "" || len(s.repairs) > 0 {
+	// ユーザーが話し足して世代が進んだら、その前のターンの依頼は送らない。ターンの外の依頼（NewGeneration）は捨てない。
+	for len(s.pendingRequests) > 0 && !s.pendingRequests[0].NewGeneration && !s.cfg.Generation.IsCurrent(s.pendingRequests[0].GenerationID) {
+		s.pendingRequests = s.pendingRequests[1:]
+	}
+	if !s.ready || len(s.pendingRequests) == 0 || s.speaking || s.awaitingInputCommit != "" || s.active != "" || len(s.repairs) > 0 {
+		return
+	}
+	// ターンの外の発話は、読み上げ中の応答を新しい世代で止めてしまわないよう、読み上げが終わってから始める。
+	if s.pendingRequests[0].NewGeneration && s.hasPendingOutput() {
 		return
 	}
 	// 旧応答の未送信テキストを補正し、APIの反映通知が届くまで次の生成を始めない。
@@ -296,41 +280,20 @@ func (s *stage) maybeRespond(ctx context.Context) {
 		}
 		s.externalRequested[id] = true
 	}
-	s.wantResponse = false
-	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(s.cfg.Generation.Current()), 10)}}
-	oneOff := s.toolResultInstructions()
-	if s.wakeOnlyReply {
-		oneOff += wakeOnlyInstructions
-		s.wakeOnlyReply = false
+	req := s.pendingRequests[0]
+	s.pendingRequests = s.pendingRequests[1:]
+	gen := req.GenerationID
+	if req.NewGeneration {
+		change, _ := s.controller.Start("response/" + uuid.NewString())
+		s.emit(ctx, types.EventGenerationChanged{GenerationChanged: change})
+		gen = change.GenerationID
 	}
-	s.sendNotice(time.Now(), strings.TrimSpace(oneOff))
+	response := map[string]any{"output_modalities": []string{"text"}, "metadata": map[string]string{"generation": strconv.FormatUint(uint64(gen), 10)}}
+	s.sendNotice(time.Now(), strings.TrimSpace(req.Notice))
 	s.transport.send(map[string]any{"type": "response.create", "response": response})
-	// 送信まで保持する一回用の指示。報告完了を管理するキューではない。
-	s.pendingToolResponses = nil
 	// response.createdを受信するまでの二重開始を防ぐ。
 	s.active = "pending"
 }
-func (s *stage) toolResult(ctx context.Context, result types.ToolResultRecord) {
-	c := s.calls[result.ToolCallID]
-	if c == nil || c.finished {
-		return
-	}
-	c.finished = true
-	// ツールの実行はユーザーがまだ知らないので、画面に出す。
-	s.recordTool(ctx, result.ToolCallID, c, string(result.Output), false)
-	if c.epoch != s.epoch || s.transport == nil {
-		if s.ready && s.transport != nil {
-			s.sendResultContext(result)
-		} else {
-			s.contextResults = append(s.contextResults, result)
-		}
-	} else {
-		s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "function_call_output", "call_id": result.ToolCallID, "output": string(result.Output)}})
-	}
-	s.pendingToolResponses = append(s.pendingToolResponses, toolCompletion{CallID: result.ToolCallID, Name: result.Name})
-	s.maybeRespond(ctx)
-}
-
 func encodeAudio(pcm []byte) string { return base64.StdEncoding.EncodeToString(pcm) }
 
 // 文章分割で読み飛ばした空白は、読み上げの欠落とみなさない。
@@ -344,10 +307,4 @@ func sameSpokenText(a, b string) bool {
 		}, s)
 	}
 	return normalize(a) == normalize(b)
-}
-
-// 再接続前のcall_idを新接続へ再送せず、確定した操作結果だけを文脈に追加する。
-func (s *stage) sendResultContext(result types.ToolResultRecord) {
-	text := "過去の操作の実行結果（操作を再実行しない）: call_id=" + result.ToolCallID + " name=" + result.Name + " " + string(result.Output)
-	s.transport.send(map[string]any{"type": "conversation.item.create", "item": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}}})
 }

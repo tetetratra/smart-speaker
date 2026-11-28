@@ -118,7 +118,7 @@ func NewStage(cfg Config) *graph.Stage {
 				tr.Matched, tr.Accepted, tr.WakeOnly, tr.Awake = d.Matched, d.Accepted, d.WakeOnly, mode.Awake
 				emit(types.EventWakeTranscription{WakeTranscription: tr})
 				if d.Accepted {
-					emit(types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence, WakeOnly: d.WakeOnly}})
+					emit(types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: r.peer, Text: r.transcript.Text, Revision: r.revision, Confidence: d.Confidence}})
 				}
 			case e, ok := <-node.Upstream:
 				if !ok {

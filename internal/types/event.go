@@ -29,12 +29,9 @@ func Is[T Event](e Event) bool {
 type EventSpeechStart struct{ SpeechEvent }
 type EventSpeechEnd struct{ SpeechEvent }
 type EventRealtimeStatus struct{ RealtimeStatus }
-type EventToolRequest struct{ ToolRequest }
 type EventRTCSignal struct{ RTCSignal }
 type EventRTCPeerAudioFrame struct{ RTCPeerAudioFrame }
 type EventRTCPeerOutputSink struct{ RTCPeerOutputSink }
-type EventConversationCommitRequest struct{ ConversationCommitRequest }
-type EventLLMRequest struct{ LLMRequest }
 type EventResponseText struct{ ResponseText }
 type EventGenerationChanged struct{ GenerationChanged }
 type EventTimelineItem struct{ TimelineItem }
@@ -48,24 +45,21 @@ type EventAudioSent struct{ AudioFrame }
 type EventLocalWakeUtterance struct{ LocalWakeUtterance }
 type EventWakeTranscription struct{ WakeTranscription }
 
-func (EventSpeechStart) isEvent()               {}
-func (EventSpeechEnd) isEvent()                 {}
-func (EventRealtimeStatus) isEvent()            {}
-func (EventToolRequest) isEvent()               {}
-func (EventRTCSignal) isEvent()                 {}
-func (EventRTCPeerAudioFrame) isEvent()         {}
-func (EventRTCPeerOutputSink) isEvent()         {}
-func (EventConversationCommitRequest) isEvent() {}
-func (EventLLMRequest) isEvent()                {}
-func (EventResponseText) isEvent()              {}
-func (EventGenerationChanged) isEvent()         {}
-func (EventTimelineItem) isEvent()              {}
-func (EventPlayableSpeech) isEvent()            {}
-func (EventAgentTimelineEnd) isEvent()          {}
-func (EventAudioFrame) isEvent()                {}
-func (EventAudioSent) isEvent()                 {}
-func (EventLocalWakeUtterance) isEvent()        {}
-func (EventWakeTranscription) isEvent()         {}
+func (EventSpeechStart) isEvent()        {}
+func (EventSpeechEnd) isEvent()          {}
+func (EventRealtimeStatus) isEvent()     {}
+func (EventRTCSignal) isEvent()          {}
+func (EventRTCPeerAudioFrame) isEvent()  {}
+func (EventRTCPeerOutputSink) isEvent()  {}
+func (EventResponseText) isEvent()       {}
+func (EventGenerationChanged) isEvent()  {}
+func (EventTimelineItem) isEvent()       {}
+func (EventPlayableSpeech) isEvent()     {}
+func (EventAgentTimelineEnd) isEvent()   {}
+func (EventAudioFrame) isEvent()         {}
+func (EventAudioSent) isEvent()          {}
+func (EventLocalWakeUtterance) isEvent() {}
+func (EventWakeTranscription) isEvent()  {}
 
 type RTCPeerAudioFrame struct {
 	PeerID     string

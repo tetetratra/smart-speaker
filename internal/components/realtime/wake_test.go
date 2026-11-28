@@ -2,11 +2,9 @@ package realtime
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -22,21 +20,29 @@ func TestRequiredModeIgnoresExternalVADAndUsesLocalText(t *testing.T) {
 	if len(r.records()) != 0 {
 		t.Fatal("呼びかけなしの音声を記録しました")
 	}
+	before := r.gen.Current()
 	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、今日の予定は", Revision: m.Revision, Confidence: 0.9}}
 	item := r.wait("conversation.item.create")["item"].(map[string]any)
 	content := item["content"].([]any)[0].(map[string]any)
 	if content["type"] != "input_text" || content["text"] != "起きて、今日の予定は" {
 		t.Fatal(item)
 	}
+	// 応答は会話の流れの判定を待ってから始める。
+	select {
+	case cmd := <-r.commands:
+		t.Fatal("判定の前に応答を始めました", cmd)
+	case <-time.After(30 * time.Millisecond):
+	}
+	r.respond(before, "")
 	r.wait("response.create")
 	records := r.records()
-	if len(records) != 1 || records[0].Source != "realtime" {
+	if len(records) != 1 || records[0].Source != "realtime" || records[0].Role != types.RoleUser {
 		t.Fatal(records)
 	}
 }
 
-// 予約は内部指示なので呼びかけなしで実行でき、モード変更の返答も読み上げない。
-func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
+// 頭脳AIのツールで呼びかけ必須モードが解除されたら、接続を作り直して、呼びかけのない発話にも応答できるようにする。
+func TestRequiredModeChangedOutsideIsAppliedToSession(t *testing.T) {
 	store, err := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
@@ -44,76 +50,24 @@ func TestQuietScheduledToolDisablesRequiredMode(t *testing.T) {
 	if _, err = store.SetRequired(true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	inbound := make(chan types.ConversationInput, 1)
-	r := newRigWithInbound(t, inbound, func(c *Config) { c.WakeMode = store })
-	inbound <- types.ExternalInput(types.ConversationRecord{Source: "automation", Text: "呼びかけ必須モードを解除して。読み上げ不要"}, nil)
-	request := r.wait("response.create")
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "job", "metadata": request["response"].(map[string]any)["metadata"]}})
-	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "job", "call_id": "mode-call", "name": "set_wake_mode", "arguments": `{"required":false}`})
-	req := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
-	var args map[string]any
-	if err = json.Unmarshal(req.Arguments, &args); err != nil {
+	r := newRig(t, func(c *Config) { c.WakeMode = store })
+	if _, err = store.SetRequired(false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	result, err := (&wakemode.Tool{Store: store}).Run(context.Background(), args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, _ := json.Marshal(result)
-	record := types.ToolResultRecord{ToolCallID: req.ToolCallID, Name: req.Name, GenerationID: req.GenerationID, Output: output}
-	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &record}}
-	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "job", "status": "completed"}})
-	update := r.wait("session.update")
 	select {
 	case r.conn = <-r.connections:
 	case <-r.ctx.Done():
 		t.Fatal(r.ctx.Err())
 	}
+	update := r.wait("session.update")
 	input := update["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)
-	if input["turn_detection"].(map[string]any)["interrupt_response"] != true || store.Snapshot(time.Now()).Required {
-		t.Fatal("予約によるモード解除が反映されませんでした")
+	if input["turn_detection"].(map[string]any)["interrupt_response"] != true {
+		t.Fatal("モード解除が反映されませんでした")
 	}
 	r.send(map[string]any{"type": "session.updated"})
-	timer := time.NewTimer(50 * time.Millisecond)
-	defer timer.Stop()
-check:
-	for {
-		select {
-		case e := <-r.events:
-			if types.Is[types.EventResponseText](e) {
-				t.Fatal("無音の予約が音声合成へ届きました")
-			}
-		case <-timer.C:
-			break check
-		}
-	}
 	// 解除後は呼びかけのない通常の発話で応答を開始できる。
 	r.utterance("ordinary")
 	r.wait("response.create")
-}
-
-// 呼びかけだけの発話もRealtimeへ送り、その応答にだけ起きていることを伝える指示を付ける。
-func TestWakeOnlyUtteranceAsksRealtimeForShortReply(t *testing.T) {
-	s, _ := wakemode.NewStore(filepath.Join(t.TempDir(), "mode.json"), wakemode.DefaultSettings())
-	m, _ := s.SetRequired(true, time.Now())
-	r := newRig(t, func(c *Config) { c.WakeMode = s })
-	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて", Revision: m.Revision, Confidence: 0.9, WakeOnly: true}}
-	item := r.wait("conversation.item.create")["item"].(map[string]any)
-	if text := item["content"].([]any)[0].(map[string]any)["text"]; text != "起きて" {
-		t.Fatal(item)
-	}
-	request, notice := r.waitResponse()
-	if !strings.Contains(notice, "呼びかけの言葉だけを言いました") {
-		t.Fatal("呼びかけだけの発話への指示がありません", notice)
-	}
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": request["metadata"]}})
-	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
-	// 本文のある次の発話には指示を持ち越さない。
-	r.node.Upstream <- types.EventLocalWakeUtterance{LocalWakeUtterance: types.LocalWakeUtterance{PeerID: "test", Text: "起きて、天気は", Revision: m.Revision, Confidence: 0.9}}
-	_, next := r.waitResponse()
-	if strings.Contains(next, "呼びかけの言葉だけを言いました") {
-		t.Fatal("本文のある発話に呼びかけだけの指示を付けました")
-	}
 }
 
 // 呼びかけ後の会話中は、接続を作り直さずに音声とクラウドの発話検出を使い、終了時に未確定の音声を捨てる。
@@ -166,7 +120,7 @@ func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newToolResponseStage(t)
+	s := newTestStage(t)
 	s.cfg.WakeMode = store
 	s.peers = map[string]bool{"test": true}
 	old := s.cfg.Generation.Current()
@@ -174,28 +128,21 @@ func TestLocalWakeInvalidatesOldAudioBeforeCancellationCompletes(t *testing.T) {
 	s.pendingOutput = map[string]bool{"old-item": true}
 	s.items = map[string]*assistantItem{"old-item": {generation: old}}
 	s.localWake(context.Background(), types.LocalWakeUtterance{PeerID: "test", Revision: mode.Revision, Text: "スピーカー、止めて"})
-	popToolCommand(t, s, "response.cancel")
+	popCommand(t, s, "response.cancel")
 	if s.cfg.Generation.Current() <= old || s.hasPendingOutput() {
 		t.Fatal("キャンセル完了前に旧音声が失効しませんでした")
 	}
-	var request types.Event
-	for len(s.node.Downstream) > 0 {
-		e := <-s.node.Downstream
-		if types.Is[types.EventConversationInput](e) && e.(types.EventConversationInput).ConversationInput.ModelShouldRespond {
-			request = e
+	// 発話はユーザーの記録として出し、会話の流れが振り分けを頼めるようにする（応答はまだ始めない）。
+	var record *types.ConversationInput
+	for len(s.transcription.Downstream) > 0 {
+		if e, ok := (<-s.transcription.Downstream).(types.EventConversationInput); ok {
+			record = &e.ConversationInput
 		}
 	}
-	if !types.Is[types.EventConversationInput](request) {
-		t.Fatal("応答依頼なし")
+	if record == nil || !record.ModelAlreadyKnows || record.ModelShouldRespond || record.UserAlreadyKnows || record.Record.Role != types.RoleUser {
+		t.Fatal("ユーザーの記録がありません", record)
 	}
-	input := request.(types.EventConversationInput).ConversationInput
-	if input.Record.GenerationID != s.cfg.Generation.Current() {
-		t.Fatal(input)
-	}
-	generation := s.cfg.Generation.Current()
-	s.active = ""
-	s.handle(context.Background(), request)
-	if s.cfg.Generation.Current() != generation {
-		t.Fatal("会話管理から戻った入力が世代を二重更新しました")
+	if record.Record.GenerationID != s.cfg.Generation.Current() {
+		t.Fatal(record)
 	}
 }

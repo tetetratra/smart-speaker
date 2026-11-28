@@ -84,8 +84,8 @@ func (r *Registry) Handlers() map[string]tools.Handler {
 	return handlers
 }
 
-// DefinitionsForRealtime は全ツールをfunction calling用に返す。
-func (r *Registry) DefinitionsForRealtime() []any {
+// Definitions は全ツールをfunction calling用に返す（頭脳AIに渡す）。
+func (r *Registry) Definitions() []any {
 	defs := make([]any, 0, len(r.entries))
 	for _, e := range r.entries {
 		if e.def == nil {

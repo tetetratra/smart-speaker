@@ -1,4 +1,4 @@
-package conversationmanager
+package conversationrecorder
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func testStage(t *testing.T) *stage {
 	return &stage{node: &graph.Stage{Downstream: make(chan types.Event, 20)}, history: history, seen: map[string]bool{}, unused: map[string]bool{}}
 }
 
-func TestRecordsOnlyUpdateHistory(t *testing.T) {
+func TestKnownRecordsAreSavedThenForwardedToFlow(t *testing.T) {
 	s := testStage(t)
 	for _, id := range []string{"speech", "reply"} {
 		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleUser, Text: id}, ModelAlreadyKnows: true, UserAlreadyKnows: true}})
@@ -32,10 +32,12 @@ func TestRecordsOnlyUpdateHistory(t *testing.T) {
 	if len(records) != 2 || records[0].ID != "speech" || records[1].ID != "reply" {
 		t.Fatal(records)
 	}
-	select {
-	case e := <-s.node.Downstream:
-		t.Fatal("記録をAPIへ送り返しました", e)
-	default:
+	// 会話の流れが次を決められるよう、保存した記録をそのまま流す。
+	for _, id := range []string{"speech", "reply"} {
+		e := (<-s.node.Downstream).(types.EventConversationInput)
+		if e.Record.ID != id || !e.ModelAlreadyKnows {
+			t.Fatal(e)
+		}
 	}
 }
 
@@ -151,11 +153,9 @@ func TestOnlyRecordsUserDoesNotKnowAreSentToScreen(t *testing.T) {
 	}
 	var sent []string
 	for len(s.node.Downstream) > 0 {
-		e := <-s.node.Downstream
-		if !types.Is[types.EventConversationRecordAdded](e) {
-			t.Fatal(e)
+		if e, ok := (<-s.node.Downstream).(types.EventConversationRecordAdded); ok {
+			sent = append(sent, e.ConversationRecord.ID)
 		}
-		sent = append(sent, e.(types.EventConversationRecordAdded).ConversationRecord.ID)
 	}
 	if strings.Join(sent, ",") != "tool" {
 		t.Fatal(sent)

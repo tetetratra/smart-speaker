@@ -102,7 +102,7 @@ func sessionUpdate(cfg Config, instructions string) map[string]any {
 		turnDetection["eagerness"] = "auto"
 	}
 	return map[string]any{"type": "session.update", "session": map[string]any{
-		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions, "tools": cfg.Tools, "tool_choice": "auto",
+		"type": "realtime", "output_modalities": []string{"text"}, "instructions": instructions,
 		"audio": map[string]any{"input": map[string]any{
 			"format":          map[string]any{"type": "audio/pcm", "rate": 24000},
 			"noise_reduction": map[string]any{"type": cfg.NoiseReduction},

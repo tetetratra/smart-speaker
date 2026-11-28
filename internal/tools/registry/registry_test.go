@@ -22,17 +22,17 @@ func TestRegistryRegistersCoreTools(t *testing.T) {
 	}
 }
 
-func TestRegistryDefinitionsForRealtimeIncludesSetWhiteboard(t *testing.T) {
+func TestRegistryDefinitionsIncludesSetWhiteboard(t *testing.T) {
 	reg := New(Config{})
 
 	found := false
-	for _, def := range reg.DefinitionsForRealtime() {
+	for _, def := range reg.Definitions() {
 		if m, ok := def.(map[string]any); ok && m["name"] == "set_whiteboard" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("DefinitionsForRealtime should include set_whiteboard")
+		t.Fatal("Definitions should include set_whiteboard")
 	}
 	if _, ok := reg.Handlers()["set_whiteboard"]; !ok {
 		t.Fatal("set_whiteboard handler should remain registered")

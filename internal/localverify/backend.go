@@ -21,17 +21,19 @@ type Backend struct {
 	conn       *websocket.Conn
 	count      int
 	text, user string
-	// whiteboard は、次の応答でモデルがホワイトボードの更新を呼ぶときの本文。呼んだら空に戻す。
-	whiteboard string
+	// notice は、直前に Realtime の会話へ足された system の知らせ（頭脳AIの話す内容など）。
+	notice string
 }
 
-// whiteboardPrefix で始まる発話には、モデルがツール（set_whiteboard）を呼ぶ応答を返す。
+// whiteboardPrefix で始まる発話は、振り分けで頭脳AIに任せ、頭脳AIがツール（set_whiteboard）を呼ぶ。
 const whiteboardPrefix = "ホワイトボード:"
 
 func New(ctx context.Context) (*Backend, http.Handler) {
 	b := &Backend{ctx: ctx}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/realtime", b.realtime)
+	mux.HandleFunc("/decisions", b.decisions)
+	mux.HandleFunc("/responses", b.responses)
 	mux.HandleFunc("/audio_query", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"speedScale":1,"outputSamplingRate":24000,"outputStereo":false}`))
@@ -66,10 +68,6 @@ func (b *Backend) Say(text string) error {
 	}
 	b.count++
 	b.text = text
-	b.whiteboard = ""
-	if content, ok := strings.CutPrefix(text, whiteboardPrefix); ok {
-		b.whiteboard = strings.TrimSpace(content)
-	}
 	b.user = fmt.Sprintf("user%d", b.count)
 	for _, event := range []any{
 		map[string]any{"type": "input_audio_buffer.speech_started", "item_id": b.user},
@@ -127,28 +125,28 @@ func (b *Backend) realtime(w http.ResponseWriter, r *http.Request) {
 		case "conversation.item.delete":
 			b.send(map[string]any{"type": "conversation.item.deleted", "item_id": m["item_id"]})
 		case "conversation.item.create":
+			if item, _ := m["item"].(map[string]any); item["role"] == "system" {
+				content, _ := item["content"].([]any)
+				if len(content) > 0 {
+					b.notice, _ = content[0].(map[string]any)["text"].(string)
+				}
+			}
 			b.send(map[string]any{"type": "conversation.item.added", "item": m["item"], "previous_item_id": m["previous_item_id"]})
 		case "response.create":
 			responseID, itemID := fmt.Sprintf("response%d", b.count), fmt.Sprintf("assistant%d", b.count)
 			metadata := m["response"].(map[string]any)["metadata"]
 			text := "確認しました。\n" + b.text + "。続けて話してください。"
+			// 頭脳AIの話す内容が届いていれば、それを伝える。
+			if _, answer, ok := strings.Cut(b.notice, brainAnswerPrefix); ok {
+				answer, _, _ = strings.Cut(answer, "\n")
+				text = answer + "。"
+			}
 			events := []any{
 				map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "metadata": metadata}},
 				map[string]any{"type": "conversation.item.added", "previous_item_id": b.user, "item": map[string]any{"id": itemID}},
 				map[string]any{"type": "response.output_text.delta", "response_id": responseID, "item_id": itemID, "delta": text},
 				map[string]any{"type": "response.output_text.done", "response_id": responseID, "item_id": itemID, "text": text},
 				map[string]any{"type": "response.done", "response": map[string]any{"id": responseID, "status": "completed"}},
-			}
-			// ホワイトボードの依頼には、まずツールを呼ぶ応答を返す。結果が届いたあとの応答で、ふつうに話す。
-			if b.whiteboard != "" {
-				responseID += "-tool"
-				arguments, _ := json.Marshal(map[string]string{"content": b.whiteboard})
-				b.whiteboard = ""
-				events = []any{
-					map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "metadata": metadata}},
-					map[string]any{"type": "response.function_call_arguments.done", "response_id": responseID, "call_id": "call_" + responseID, "name": "set_whiteboard", "arguments": string(arguments)},
-					map[string]any{"type": "response.done", "response": map[string]any{"id": responseID, "status": "completed"}},
-				}
 			}
 			for _, event := range events {
 				if err = b.send(event); err != nil {
@@ -162,6 +160,47 @@ func (b *Backend) realtime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// brainAnswerPrefix は、偽の頭脳AIが返す話す内容の書き出し。
+const brainAnswerPrefix = "頭脳AIの答え: "
+
+// decisions は Decisions API の代わり。ホワイトボードの依頼だけ頭脳AIに任せ、それ以外は Realtime がそのまま返す。
+func (b *Backend) decisions(w http.ResponseWriter, r *http.Request) {
+	var payload struct{ Input string }
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload) != nil {
+		http.Error(w, "invalid", 400)
+		return
+	}
+	choice := "respond"
+	if _, last, _ := strings.Cut(payload.Input, "## 今回のユーザーの発話\n"); strings.HasPrefix(last, whiteboardPrefix) {
+		choice = "delegate_light"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"answers": []any{map[string]any{"type": "choice", "name": "turn", "choice": choice, "confidence": 1}}})
+}
+
+// responses は頭脳AI（Responses API）の代わり。ホワイトボードの依頼なら set_whiteboard を呼び、結果が届いたら話す内容を返す。
+func (b *Backend) responses(w http.ResponseWriter, r *http.Request) {
+	var payload struct{ Input []map[string]any }
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload) != nil || len(payload.Input) == 0 {
+		http.Error(w, "invalid", 400)
+		return
+	}
+	prompt, _ := payload.Input[0]["content"].(string)
+	content := ""
+	if i := strings.LastIndex(prompt, whiteboardPrefix); i >= 0 {
+		content, _, _ = strings.Cut(prompt[i+len(whiteboardPrefix):], "\n")
+		content = strings.TrimSpace(content)
+	}
+	output := []any{map[string]any{"type": "message", "content": []any{map[string]any{"type": "output_text", "text": brainAnswerPrefix + "ホワイトボードに書いたよ"}}}}
+	if payload.Input[len(payload.Input)-1]["type"] != "function_call_output" {
+		arguments, _ := json.Marshal(map[string]string{"content": content})
+		output = []any{map[string]any{"type": "function_call", "call_id": fmt.Sprintf("call_%d", time.Now().UnixNano()), "name": "set_whiteboard", "arguments": string(arguments)}}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"output": output})
+}
+
 func toneWAV() []byte {
 	// 一文につき約1秒の合成音。実際のVOICEVOX品質はこの検証の対象外。
 	pcm := make([]byte, 48000)
