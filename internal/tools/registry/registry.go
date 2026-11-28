@@ -69,7 +69,7 @@ func New(cfg Config) *Registry {
 	return &Registry{entries: entries}
 }
 
-// Handlers はtoolcaller向けのname->handlerマップを返します。
+// Handlers はツールの実行器（execution.Executor）向けのname->handlerマップを返します。
 func (r *Registry) Handlers() map[string]tools.Handler {
 	handlers := map[string]tools.Handler{}
 	if r == nil {

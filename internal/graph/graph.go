@@ -39,7 +39,7 @@ func (g *Graph) AddNode(stage *Stage) *Node {
 	return n
 }
 
-// Connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す（例: types.EventToolRequest{}）。
+// Connect は from から to へ、events と同じ型のイベントだけを流す。events にはゼロ値を渡す（例: types.EventDecision{}）。
 func (g *Graph) Connect(from, to *Node, events ...types.Event) {
 	allowed := make(map[reflect.Type]struct{}, len(events))
 	for _, event := range events {

@@ -32,6 +32,6 @@ type runtimeServices struct {
 	// Deliver は Gateway を通して会話へ1件届ける。Claude Codeの通知・Web検索の結果・位置の変化が使う。
 	Deliver func(context.Context, types.ConversationInput) error
 	TTS     *tts.Selector
-	// History は会話履歴。会話管理が記録し、realtime と画面連携が直接読む。nil なら buildStages で作る。
+	// History は会話履歴。記録係（conversationrecorder）が記録し、realtime-response・振り分け・頭脳AI・画面連携が直接読む。nil なら buildStages で作る。
 	History *conversationhistory.Store
 }

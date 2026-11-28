@@ -82,12 +82,10 @@ type RTCPeerOutputSink struct {
 	Connected    bool
 }
 
-// ToolRequest は関数呼び出しが必要なときに発行されます。
+// ToolRequest はツール1回分の呼び出し。頭脳AIと予約ジョブのスクリプトが、ツールの実行器（execution.Executor）に渡す。
 type ToolRequest struct {
-	ResponseID   string
 	ToolCallID   string
 	Name         string
 	Arguments    json.RawMessage
 	GenerationID GenerationID
-	SequenceID   string
 }

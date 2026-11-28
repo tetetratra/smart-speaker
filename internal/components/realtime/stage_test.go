@@ -56,7 +56,7 @@ func newTestHistory(t *testing.T) *conversationhistory.Store {
 
 func createRig(t *testing.T, initialText string, inbound <-chan types.ConversationInput, options ...func(*Config)) *rig {
 	t.Helper()
-	// 会話管理のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
+	// 記録係（conversationrecorder）のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
 	dir, err := os.MkdirTemp("", "realtime-rig")
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 	managerQueue := eventqueue.New[types.Event](nil)
 	r.managerQueue = managerQueue
 	go manager.Run(ctx)
-	// 外からの入力は、gateway と同じく会話管理へイベントとして届ける。
+	// 外からの入力は、gateway と同じく記録係（conversationrecorder）へイベントとして届ける。
 	go func() {
 		for {
 			select {

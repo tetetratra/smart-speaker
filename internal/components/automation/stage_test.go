@@ -58,7 +58,7 @@ func TestSubscribableRecordRunsMatchingJob(t *testing.T) {
 	}
 }
 
-// 予約ジョブの実行結果は会話管理へ流し、購読可能にはしない。
+// 予約ジョブの実行結果は記録係（conversationrecorder）へ流し、購読可能にはしない。
 func TestDeliverEmitsNonSubscribableInput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

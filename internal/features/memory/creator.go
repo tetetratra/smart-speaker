@@ -34,7 +34,7 @@ const (
 type CreatorHookConfig struct {
 	OperationCreator operationCreator
 	Memory           memoryWriter
-	// Deliver は、メモリ化したことを知らせる記録を会話へ届ける。会話管理が保存してホワイトボードに出す。
+	// Deliver は、メモリ化したことを知らせる記録を会話へ届ける。記録係（conversationrecorder）が保存してホワイトボードに出す。
 	Deliver gateway.Deliver
 	// MemorizeAfter は、最後の記録からこの時間がたった塊をメモリ化する。0 以下なら既定値。
 	MemorizeAfter time.Duration
