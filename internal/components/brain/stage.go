@@ -120,6 +120,11 @@ func (s *stage) think(ctx context.Context, req types.BrainRequest) {
 		model = s.cfg.Light
 	}
 	started := time.Now()
+	// 何に対応する依頼かを後から追えるよう、依頼の時点で履歴の最後にある記録（ユーザーの発話や後から届いた結果）をログに残す。
+	if history := s.cfg.History.Snapshot(); len(history) > 0 {
+		last := history[len(history)-1]
+		log.Printf("brain: 依頼 %s 受付 model=%s generation=%d 対象=%s(%s) %q", req.RequestID, model.Model, req.GenerationID, last.Role, last.Source, last.Text)
+	}
 	input := []json.RawMessage{s.prompt()}
 	for step := 0; step < maxSteps; step++ {
 		if s.stale(req) {
@@ -145,6 +150,7 @@ func (s *stage) think(ctx context.Context, req types.BrainRequest) {
 		for _, c := range out.calls {
 			result := s.cfg.Executor.Execute(ctx, types.ToolRequest{ToolCallID: c.CallID, Name: c.Name, Arguments: json.RawMessage(c.Arguments), GenerationID: req.GenerationID})
 			output := string(result.Output)
+			log.Printf("brain: 依頼 %s ツール %s 引数=%s 結果=%s", req.RequestID, c.Name, c.Arguments, output)
 			// ツールの実行はユーザーがまだ知らないので、画面に出す。
 			s.emit(ctx, types.ConversationRecord{ID: "brain/" + req.RequestID + "/tool/" + c.CallID, Role: types.RoleTool, Text: c.Name + ": " + c.Arguments + " → " + output,
 				GenerationID: req.GenerationID, Source: c.Name, CreatedAt: time.Now(), Title: s.cfg.Executor.Title(c.Name, json.RawMessage(c.Arguments)),
@@ -171,6 +177,7 @@ func (s *stage) say(ctx context.Context, req types.BrainRequest, text string, si
 		text = silentText
 		metadata[types.BrainSilentMetadataKey] = true
 	}
+	log.Printf("brain: 依頼 %s 応答 %q", req.RequestID, text)
 	s.emit(ctx, types.ConversationRecord{ID: "brain/" + req.RequestID + "/" + fmt.Sprint(time.Now().UnixNano()), Role: types.RoleBackground, Text: text,
 		GenerationID: req.GenerationID, Source: types.BrainSource, Metadata: metadata, CreatedAt: time.Now()}, true)
 }
