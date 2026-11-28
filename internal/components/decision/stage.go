@@ -54,7 +54,7 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 		cfg.Endpoint = "https://api.openai.com/v1/decisions"
 	}
 	if cfg.Client == nil {
-		// 判定が返らないとユーザーは無言で待つことになるので、長く待たずに強いモデルへ回す。
+		// 判定が返らないとユーザーは無言で待つことになるので、長く待たずに頭脳AIへ回す。
 		cfg.Client = &http.Client{Timeout: 10 * time.Second}
 	}
 	s := &stage{cfg: cfg}
@@ -87,35 +87,35 @@ func (s *stage) run(ctx context.Context) {
 	}
 }
 
-// decide は判定する。API が失敗したときや答えを拒否したときは、強いモデルに任せる。
+// decide は判定する。API が失敗したときや答えを拒否したときは、頭脳AIに任せる。
 // 頭脳AIなら自分宛てでない発話にも「何も話さない」と答えられるので、無言のまま止まるより安全なため。
 func (s *stage) decide(ctx context.Context) types.DecisionChoice {
 	started := time.Now()
 	answer, err := s.call(ctx, s.input())
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("decision: 判定に失敗したため強いモデルに任せます: %v", err)
+			log.Printf("decision: 判定に失敗したため頭脳AIに任せます: %v", err)
 		}
-		return types.DecisionDelegateStrong
+		return types.DecisionDelegate
 	}
 	choice := types.DecisionChoice(answer.choice)
 	switch choice {
-	case types.DecisionRespond, types.DecisionDelegateLight, types.DecisionDelegateStrong, types.DecisionWait, types.DecisionIgnore:
+	case types.DecisionRespond, types.DecisionDelegate, types.DecisionWait, types.DecisionIgnore:
 	default:
-		log.Printf("decision: 想定外の判定 %q のため強いモデルに任せます", answer.choice)
-		choice = types.DecisionDelegateStrong
+		log.Printf("decision: 想定外の判定 %q のため頭脳AIに任せます", answer.choice)
+		choice = types.DecisionDelegate
 	}
-	// 判定に迷っているときは強いモデルに任せる。頭脳AIなら、そのまま返す・待つ・何も話さない、も選べるため。
-	if answer.confidence < lowConfidence && choice != types.DecisionDelegateStrong {
-		log.Printf("decision: 判定 %s は confidence が低いため強いモデルに任せます", choice)
-		choice = types.DecisionDelegateStrong
+	// 判定に迷っているときは頭脳AIに任せる。頭脳AIなら、そのまま返す・待つ・何も話さない、も選べるため。
+	if answer.confidence < lowConfidence && choice != types.DecisionDelegate {
+		log.Printf("decision: 判定 %s は confidence が低いため頭脳AIに任せます", choice)
+		choice = types.DecisionDelegate
 	}
 	// 振り分けの精度と待ち時間を後から確かめられるよう、確率・所要時間・キャッシュの効き具合を残す。
 	log.Printf("decision: 判定=%s confidence=%.2f 確率=%s 所要=%s 入力=%d（キャッシュ=%d、書き込み=%d）", choice, answer.confidence, answer.probabilities, time.Since(started).Round(time.Millisecond), answer.inputTokens, answer.cachedTokens, answer.cacheWriteTokens)
 	return choice
 }
 
-// lowConfidence は、判定に迷っているとみなす confidence。これより低ければ強いモデルに任せる。値は本番ログを見て決めた目安。
+// lowConfidence は、判定に迷っているとみなす confidence。これより低ければ頭脳AIに任せる。値は本番ログを見て決めた目安。
 const lowConfidence = 0.5
 
 // input は Decisions API に渡す会話を、キャッシュの境目で区切った部分に分けて返す。
@@ -141,11 +141,10 @@ const questionInstructions = `あなたは家庭用の音声アシスタント�
 音声は自動で文字起こししているため、聞き取りの誤りや、物音・テレビ・ほかの人の声が混ざることがあります。`
 
 var choices = []map[string]any{
-	{"value": string(types.DecisionRespond), "description": "挨拶・お礼・相槌・雑談・呼びかけだけなど、ツールも調べものも要らず、会話だけで返事が完結する発話。会話の中にすでに答えがある質問も含む。"},
-	{"value": string(types.DecisionDelegateLight), "description": "家電の操作、予定や天気などの取得、メモリの保存など、定型の操作をするか、取得した事実を伝えれば完了する依頼。"},
-	{"value": string(types.DecisionDelegateStrong), "description": "複数の情報を照らし合わせて判断・提案する、手順を考える、長い説明をするなど、考える必要がある依頼。軽い依頼か迷う場合もこれを選ぶ。"},
+	{"value": string(types.DecisionRespond), "description": "挨拶・お礼・雑談・呼びかけだけ、直前のやりとりへの返事など、ツールも調べものも要らず、会話だけで返事が完結する発話。"},
+	{"value": string(types.DecisionDelegate), "description": "家電の操作、予定・天気・予約ジョブ・メモリなどアプリが持つ情報の確認、調べもの、判断や提案が要る依頼。以前の会話や覚えていることを尋ねる質問（「さっきまで何の話してたっけ？」など）も含む。迷う場合もこれを選ぶ。"},
 	{"value": string(types.DecisionWait), "description": "「えっと」「うーん」のように話し始めただけで、自分への依頼の続きがありそうな発話。"},
-	{"value": string(types.DecisionIgnore), "description": "物音、テレビやほかの人の声、独り言、意味の通らない断片など、自分への依頼ではない入力。ユーザーが待つよう明示した場合も含む。"},
+	{"value": string(types.DecisionIgnore), "description": "物音、テレビやほかの人の声、独り言、意味の通らない断片など、自分への依頼ではない入力。アシスタントの答えを受けた相槌（「うん」「そうそう」「なるほど」）で、返事が要らない発話も含む。ユーザーが待つよう明示した場合も含む。"},
 }
 
 type answer struct {

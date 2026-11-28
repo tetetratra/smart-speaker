@@ -37,10 +37,10 @@ func TestDecideSendsHistoryAndReturnsChoice(t *testing.T) {
 			t.Error(r.Header)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&payload)
-		_, _ = w.Write([]byte(`{"answers":[{"type":"choice","name":"turn","choice":"delegate_light","confidence":0.9,"probabilities":[]}],"usage":{"input_tokens":10}}`))
+		_, _ = w.Write([]byte(`{"answers":[{"type":"choice","name":"turn","choice":"delegate","confidence":0.9,"probabilities":[]}],"usage":{"input_tokens":10}}`))
 	})
 	got := s.decide(context.Background())
-	if got != types.DecisionDelegateLight {
+	if got != types.DecisionDelegate {
 		t.Fatal(got)
 	}
 	part := payload["input"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
@@ -52,23 +52,23 @@ func TestDecideSendsHistoryAndReturnsChoice(t *testing.T) {
 	for _, c := range question["choices"].([]any) {
 		values = append(values, c.(map[string]any)["value"].(string))
 	}
-	if question["type"] != "choice" || strings.Join(values, ",") != "respond,delegate_light,delegate_strong,wait,ignore" {
+	if question["type"] != "choice" || strings.Join(values, ",") != "respond,delegate,wait,ignore" {
 		t.Fatal(question)
 	}
 }
 
-// 判定に失敗したり答えを拒否されたりしたら、無言で止まらないよう強いモデルに任せる。
+// 判定に失敗したり答えを拒否されたりしたら、無言で止まらないよう頭脳AIに任せる。
 func TestDecideFallsBackToStrongModel(t *testing.T) {
 	for _, body := range []string{`{"answers":[{"type":"refusal","name":"turn"}]}`, `{"answers":[{"type":"choice","choice":"unknown"}]}`, `broken`} {
 		s := testStage(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
-		if got := s.decide(context.Background()); got != types.DecisionDelegateStrong {
+		if got := s.decide(context.Background()); got != types.DecisionDelegate {
 			t.Fatal(body, got)
 		}
 	}
 	s := testStage(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "overloaded", http.StatusServiceUnavailable)
 	})
-	if got := s.decide(context.Background()); got != types.DecisionDelegateStrong {
+	if got := s.decide(context.Background()); got != types.DecisionDelegate {
 		t.Fatal(got)
 	}
 }
@@ -89,14 +89,14 @@ func TestRunReturnsDecisionForRequest(t *testing.T) {
 	}
 }
 
-// 判定に迷っている（confidence が低い）ときは、強いモデルに任せる。
+// 判定に迷っている（confidence が低い）ときは、頭脳AIに任せる。
 func TestDecideUsesStrongModelWhenConfidenceIsLow(t *testing.T) {
 	for _, body := range []string{
-		`{"answers":[{"type":"choice","choice":"delegate_light","confidence":0.3}]}`,
+		`{"answers":[{"type":"choice","choice":"delegate","confidence":0.3}]}`,
 		`{"answers":[{"type":"choice","choice":"respond","confidence":0.49}]}`,
 	} {
 		s := testStage(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
-		if got := s.decide(context.Background()); got != types.DecisionDelegateStrong {
+		if got := s.decide(context.Background()); got != types.DecisionDelegate {
 			t.Fatal(body, got)
 		}
 	}

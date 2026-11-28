@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
@@ -69,46 +68,6 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
-	s := testStage(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	s.handle(ctx, types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "request", Text: "通常入力として渡す依頼"}, nil)})
-	done, returned := make(chan struct{}), make(chan struct{})
-	go func() {
-		s.handle(ctx, types.EventConversationHistorySync{Epoch: 1, Done: done})
-		close(returned)
-	}()
-	// 保存済みの応答依頼が、読み出しマーカーより先に配送される。
-	if e := nextForwarded(s); !types.Is[types.EventConversationInput](e) {
-		t.Fatal(e)
-	}
-	if e := <-s.node.Downstream; !types.Is[types.EventConversationHistorySync](e) {
-		t.Fatal(e)
-	}
-	select {
-	case <-returned:
-		t.Fatal("読み出し前に後続処理を再開した")
-	default:
-	}
-	if records := s.history.Snapshot(); len(records) != 1 || records[0].ID != "request" {
-		t.Fatal(records)
-	}
-	close(done)
-	select {
-	case <-returned:
-	case <-ctx.Done():
-		t.Fatal("読み出し後に再開しない")
-	}
-}
-
-func TestHistorySyncCanBeCancelled(t *testing.T) {
-	s := testStage(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	s.handle(ctx, types.EventConversationHistorySync{Done: make(chan struct{})})
 }
 
 func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {

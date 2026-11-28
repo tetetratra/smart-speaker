@@ -66,7 +66,7 @@ func testStage(t *testing.T, api *fakeAPI, tool tools.Handler) *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{node: &graph.Stage{Downstream: make(chan types.Event, 20)}, cfg: Config{APIKey: "local-test", Endpoint: server.URL, Client: server.Client(),
-		Light: ModelConfig{Model: "light-model", ReasoningEffort: "low"}, Strong: ModelConfig{Model: "strong-model", ReasoningEffort: "medium"},
+		Model: "brain-model", ReasoningEffort: "low",
 		Instructions: "頭脳AIの指示", Tools: []any{map[string]any{"type": "function", "name": "switchbot_execute_scene"}},
 		Executor: execution.New(map[string]tools.Handler{"switchbot_execute_scene": tool}), History: history, Memory: memories, Generation: gen}}
 }
@@ -87,7 +87,7 @@ func TestThinkCallsToolsAndReturnsAnswer(t *testing.T) {
 	}}
 	tool := &lightTool{}
 	s := testStage(t, api, tool)
-	s.think(context.Background(), types.BrainRequest{RequestID: "req1", Model: types.BrainModelLight, GenerationID: s.cfg.Generation.Current()})
+	s.think(context.Background(), types.BrainRequest{RequestID: "req1", GenerationID: s.cfg.Generation.Current()})
 	if len(tool.calls) != 1 || tool.calls[0]["scene"] != "消灯" {
 		t.Fatal(tool.calls)
 	}
@@ -103,7 +103,7 @@ func TestThinkCallsToolsAndReturnsAnswer(t *testing.T) {
 		t.Fatal(answer)
 	}
 	first := api.payloads[0]
-	if first["model"] != "light-model" || first["reasoning"].(map[string]any)["effort"] != "low" || first["store"] != false {
+	if first["model"] != "brain-model" || first["reasoning"].(map[string]any)["effort"] != "low" || first["store"] != false {
 		t.Fatal(first)
 	}
 	prompt := first["input"].([]any)[0].(map[string]any)["content"].(string)
@@ -133,12 +133,12 @@ func TestThinkCallsToolsAndReturnsAnswer(t *testing.T) {
 func TestThinkReportsSilenceAndFailure(t *testing.T) {
 	api := &fakeAPI{replies: []string{`{"output":[]}`, `broken`}}
 	s := testStage(t, api, &lightTool{})
-	s.think(context.Background(), types.BrainRequest{RequestID: "silent", Model: types.BrainModelStrong})
+	s.think(context.Background(), types.BrainRequest{RequestID: "silent"})
 	silent := records(s)[0]
-	if silent.Record.Metadata[types.BrainSilentMetadataKey] != true || api.payloads[0]["model"] != "strong-model" {
+	if silent.Record.Metadata[types.BrainSilentMetadataKey] != true || api.payloads[0]["model"] != "brain-model" {
 		t.Fatal(silent)
 	}
-	s.think(context.Background(), types.BrainRequest{RequestID: "failed", Model: types.BrainModelStrong})
+	s.think(context.Background(), types.BrainRequest{RequestID: "failed"})
 	failed := records(s)[0]
 	if failed.Record.Text != failedText || failed.Record.Metadata[types.BrainSilentMetadataKey] != nil {
 		t.Fatal(failed)

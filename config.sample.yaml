@@ -52,22 +52,18 @@ openai:
     # endpoint: ""
 
   decisions:
-    # ユーザーの発話の振り分け（Realtime がそのまま返す・頭脳AIに任せる・待つ）に使う Decisions API のモデル。既定: "gpt-6-luna"
+    # ユーザーの発話の振り分け（Realtime がそのまま返す・頭脳AIに任せる・待つ・応答しない）に使う Decisions API のモデル。既定: "gpt-6-luna"
     # model: "gpt-6-luna"
 
     # テスト用の接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
     # endpoint: ""
 
   brain:
-    # 頭脳AI（判断とツール呼び出しを受け持つ Responses API のモデル）。
-    # 軽いモデルは、定型の操作や取得した事実を伝える依頼に使います。既定: "gpt-6-luna"
-    # light_model: "gpt-6-luna"
-    # 軽いモデルの reasoning effort（"none"・"low"・"medium" など、モデルが受け付ける値）。既定: "low"
-    # light_reasoning_effort: "low"
-    # 強いモデルは、考える必要がある依頼や、後から届いた結果・予約ジョブの remind への対応に使います。既定: "gpt-6.1-terra"
-    # strong_model: "gpt-6.1-terra"
-    # 強いモデルの reasoning effort。既定: "low"
-    # strong_reasoning_effort: "low"
+    # 頭脳AI（判断とツール呼び出しを受け持つ Responses API のモデル）。ツールが要る依頼、考える必要がある依頼、
+    # 後から届いた結果・予約ジョブの remind への対応に使います。既定: "gpt-6.1-terra"
+    # model: "gpt-6.1-terra"
+    # reasoning effort（"none"・"low"・"medium" など、モデルが受け付ける値）。既定: "low"
+    # reasoning_effort: "low"
     # テスト用の Responses API の接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
     # endpoint: ""
 

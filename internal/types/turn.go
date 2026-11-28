@@ -8,22 +8,12 @@ type DecisionChoice string
 const (
 	// DecisionRespond は、Realtime がそのまま返す。
 	DecisionRespond DecisionChoice = "respond"
-	// DecisionDelegateLight は、頭脳AIの軽いモデルに任せる。
-	DecisionDelegateLight DecisionChoice = "delegate_light"
-	// DecisionDelegateStrong は、頭脳AIの強いモデルに任せる。
-	DecisionDelegateStrong DecisionChoice = "delegate_strong"
+	// DecisionDelegate は、頭脳AIに任せる。
+	DecisionDelegate DecisionChoice = "delegate"
 	// DecisionWait は、発言の続きを待つ（何もしない）。
 	DecisionWait DecisionChoice = "wait"
 	// DecisionIgnore は、自分宛てではないので応答しない（何もしない）。
 	DecisionIgnore DecisionChoice = "ignore"
-)
-
-// BrainModel は、頭脳AIに使わせるモデルの重さ。
-type BrainModel string
-
-const (
-	BrainModelLight  BrainModel = "light"
-	BrainModelStrong BrainModel = "strong"
 )
 
 // DecisionRequest は、ユーザーの発話1回の判定依頼。今回の発話を含む会話の履歴は、decision が共有のストアから読む。
@@ -42,7 +32,6 @@ type Decision struct {
 // BrainRequest は頭脳AIへの依頼。依頼の中身は、会話の履歴（共有のストア）から頭脳AIが読み取る。
 type BrainRequest struct {
 	RequestID string
-	Model     BrainModel
 	// GenerationID は、ユーザーの発話から任せたとき、その発話の世代。後から届いた記録への対応なら0。
 	// 0でなければ、世代が進んだ時点で頭脳AIは考えるのをやめる。
 	GenerationID GenerationID

@@ -63,9 +63,6 @@ func (s *stage) emit(ctx context.Context, e types.Event) {
 
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e := e.(type) {
-	case types.EventConversationHistorySync:
-		// 接続時に realtime-response が履歴を読み終えるまで保存を止める合図。記録係から受けて、そのまま渡す。
-		s.emit(ctx, e)
 	case types.EventConversationInput:
 		s.record(ctx, e.ConversationInput)
 	case types.EventDecision:
@@ -78,7 +75,7 @@ func (s *stage) record(ctx context.Context, input types.ConversationInput) {
 	switch {
 	case !input.ModelAlreadyKnows && input.ModelShouldRespond:
 		// 後から届いた結果や知らせへの対応は、頭脳AIが会話の履歴を読んで考える。
-		s.emit(ctx, types.EventBrainRequest{BrainRequest: types.BrainRequest{RequestID: uuid.NewString(), Model: types.BrainModelStrong}})
+		s.emit(ctx, types.EventBrainRequest{BrainRequest: types.BrainRequest{RequestID: uuid.NewString()}})
 	case !input.ModelAlreadyKnows:
 		// 応答を求めない記録は、参考情報として Realtime の会話に入れるだけ。
 		s.emit(ctx, types.EventConversationInput{ConversationInput: input})
@@ -117,13 +114,9 @@ func (s *stage) decided(ctx context.Context, d types.Decision) {
 	case types.DecisionRespond:
 		s.emit(ctx, types.EventResponseRequest{ResponseRequest: types.ResponseRequest{GenerationID: t.generation}})
 		s.endTurn(ctx)
-	case types.DecisionDelegateLight, types.DecisionDelegateStrong:
-		model := types.BrainModelStrong
-		if d.Choice == types.DecisionDelegateLight {
-			model = types.BrainModelLight
-		}
+	case types.DecisionDelegate:
 		t.brainRequest = uuid.NewString()
-		s.emit(ctx, types.EventBrainRequest{BrainRequest: types.BrainRequest{RequestID: t.brainRequest, Model: model, GenerationID: t.generation}})
+		s.emit(ctx, types.EventBrainRequest{BrainRequest: types.BrainRequest{RequestID: t.brainRequest, GenerationID: t.generation}})
 		// 頭脳AIが考えている間の沈黙を埋める。頭脳AIの話す内容は、この応答の後に並ぶ。
 		s.emit(ctx, types.EventResponseRequest{ResponseRequest: types.ResponseRequest{GenerationID: t.generation, Notice: firstResponseNotice}})
 	default:
@@ -167,12 +160,10 @@ func (s *stage) endTurn(ctx context.Context) {
 	}
 }
 
-const firstResponseNotice = `頭脳AIがこの依頼に対応しています。これから調べること・考えることを、普段の口調で一言だけ伝えてください（例:「ちょっと見てみるね」「予定を確認するね」）。
-答えや推測、結果の予想は言わないでください。答えは後から届きます。`
+// firstResponseNotice と brainNotice は、応答のたびに Realtime の会話に足す知らせ。
+// 伝え方の指示は Realtime のシステムプロンプト（「頭脳AIとの分担」）に1回だけ書き、ここには毎回変わる中身だけを入れる。
+const firstResponseNotice = "頭脳AIが対応中。"
 
 func brainNotice(text string) string {
-	return "## 頭脳AIが用意した、伝える内容\n" + text + `
-
-上の内容を、そのまま読み上げられる話し言葉で、短く伝えてください。書かれていないことは足さないでください。
-直前に自分が話した前置き（「ちょっと見てみるね」など）は繰り返さないでください。内容に伝え方の指示があれば従ってください。`
+	return "## 頭脳AIが用意した内容\n" + text
 }

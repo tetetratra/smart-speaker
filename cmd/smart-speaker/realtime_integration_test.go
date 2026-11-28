@@ -29,7 +29,7 @@ func TestRealtimeConversationLocal(t *testing.T) {
 	defer fake.Close()
 	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local"},
 		DecisionsEndpoint:       fake.URL + "/decisions",
-		Brain:                   app.BrainConfig{Endpoint: fake.URL + "/responses", Light: app.BrainModelConfig{Model: "local"}, Strong: app.BrainModelConfig{Model: "local"}},
+		Brain:                   app.BrainConfig{Endpoint: fake.URL + "/responses", Model: "local"},
 		ConversationHistoryPath: filepath.Join(t.TempDir(), "conversation-history.json")}
 	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {

@@ -201,7 +201,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
 	}
 	// Realtime はツールを持たず会話だけで返事をするので、ツールの使い方を含むプラグインの指示は頭脳AIにだけ渡す。
-	stages.transcription, stages.response, err = realtime.NewStages(realtime.Config{History: historyStore, Memory: memoryStore,
+	stages.transcription, stages.response, err = realtime.NewStages(realtime.Config{
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD, NoiseReduction: cfg.RealtimeNoiseReduction,
@@ -216,8 +216,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 		return appStages{}, err
 	}
 	stages.brain, err = brain.NewStage(brain.Config{APIKey: cfg.APIKey, Endpoint: cfg.Brain.Endpoint,
-		Light:        brain.ModelConfig{Model: cfg.Brain.Light.Model, ReasoningEffort: cfg.Brain.Light.ReasoningEffort},
-		Strong:       brain.ModelConfig{Model: cfg.Brain.Strong.Model, ReasoningEffort: cfg.Brain.Strong.ReasoningEffort},
+		Model: cfg.Brain.Model, ReasoningEffort: cfg.Brain.ReasoningEffort,
 		Instructions: plugin.Instructions(cfg.BrainSystemPrompt, services.Plugins),
 		Tools:        brainTools(toolSchemas), Executor: execution.New(toolHandlers),
 		History: historyStore, Memory: memoryStore, Generation: generationStore,
@@ -304,13 +303,13 @@ func wireGraph(g *graph.Graph, s appStages) {
 	recorder, flow, decisionNode, brainNode := add(s.recorder), add(s.flow), add(s.decision), add(s.brain)
 	// 会話の記録は、すべて記録係（recorder）が保存してから会話の流れ（flow）へ渡す。
 	connect(g, transcription, recorder, types.EventConversationInput{})
-	connect(g, response, recorder, types.EventConversationInput{}, types.EventConversationHistorySync{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
+	connect(g, response, recorder, types.EventConversationInput{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
 	connect(g, brainNode, recorder, types.EventConversationInput{})
-	connect(g, recorder, flow, types.EventConversationInput{}, types.EventConversationHistorySync{})
+	connect(g, recorder, flow, types.EventConversationInput{})
 	connect(g, flow, decisionNode, types.EventDecisionRequest{})
 	connect(g, decisionNode, flow, types.EventDecision{})
 	connect(g, flow, brainNode, types.EventBrainRequest{})
-	connect(g, flow, response, types.EventResponseRequest{}, types.EventConversationInput{}, types.EventConversationHistorySync{})
+	connect(g, flow, response, types.EventResponseRequest{}, types.EventConversationInput{})
 	gw := add(s.gateway)
 	connect(g, gw, recorder, types.EventConversationInput{})
 	automation := add(s.automation)

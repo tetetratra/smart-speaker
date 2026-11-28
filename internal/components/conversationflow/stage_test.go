@@ -72,13 +72,13 @@ func TestRespondDecisionRequestsResponseAndEndsTurn(t *testing.T) {
 func TestDelegateDecisionAsksBrainAndSendsFirstResponseThenAnswer(t *testing.T) {
 	s := testStage()
 	req := s.userSaid("明日の予定も見て、どっちがいい？")
-	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegateLight}})
+	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegate}})
 	brain := s.next(t).(types.EventBrainRequest)
-	if brain.Model != types.BrainModelLight || brain.GenerationID != req.GenerationID {
+	if brain.GenerationID != req.GenerationID {
 		t.Fatal(brain)
 	}
 	first := s.next(t).(types.EventResponseRequest)
-	if !strings.Contains(first.Notice, "一言だけ") || first.GenerationID != req.GenerationID {
+	if first.Notice != firstResponseNotice || first.GenerationID != req.GenerationID {
 		t.Fatal(first)
 	}
 	s.brainAnswered(brain.RequestID, "明後日がよい", false)
@@ -100,7 +100,7 @@ func TestStaleDecisionAndAnswerAreDropped(t *testing.T) {
 	s.none(t)
 
 	req = s.userSaid("電気消して")
-	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegateStrong}})
+	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegate}})
 	brain := s.next(t).(types.EventBrainRequest)
 	s.next(t)
 	s.cfg.Generation.Next()
@@ -121,7 +121,7 @@ func TestWaitIgnoreAndSilentAnswerEndTurnWithoutResponse(t *testing.T) {
 	}
 	s := testStage()
 	req := s.userSaid("テレビの声")
-	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegateStrong}})
+	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionDelegate}})
 	brain := s.next(t).(types.EventBrainRequest)
 	s.next(t)
 	s.brainAnswered(brain.RequestID, "[何も話さない]", true)
@@ -136,7 +136,7 @@ func TestOutOfTurnAnswerIsHeldDuringTurn(t *testing.T) {
 	s := testStage()
 	s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{Role: types.RoleBackground, Source: "claude_code", Text: "終わった"}, ModelShouldRespond: true}})
 	background := s.next(t).(types.EventBrainRequest)
-	if background.GenerationID != 0 || background.Model != types.BrainModelStrong {
+	if background.GenerationID != 0 {
 		t.Fatal(background)
 	}
 	req := s.userSaid("おはよう")

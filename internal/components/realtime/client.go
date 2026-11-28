@@ -19,13 +19,11 @@ type transport struct {
 	epoch    uint64
 }
 type incoming struct {
-	epoch       uint64
-	data        []byte
-	conn        *transport
-	err         error
-	event       any
-	context     string
-	restoredIDs []string
+	epoch uint64
+	data  []byte
+	conn  *transport
+	err   error
+	event any
 }
 
 func dial(ctx context.Context, cfg Config, epoch uint64) (*transport, error) {

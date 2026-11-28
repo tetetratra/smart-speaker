@@ -76,12 +76,6 @@ func (s *stage) handle(ctx context.Context, e types.Event) {
 		s.save(ctx, input)
 		s.unused[input.Record.ID] = true
 		s.emit(ctx, types.EventConversationInput{ConversationInput: input})
-	case types.EventConversationHistorySync:
-		s.emit(ctx, e)
-		select {
-		case <-e.Done:
-		case <-ctx.Done():
-		}
 	case types.EventConversationRecordsUsed:
 		for _, id := range e.IDs {
 			delete(s.unused, id)

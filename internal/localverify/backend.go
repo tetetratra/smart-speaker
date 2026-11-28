@@ -188,7 +188,7 @@ func (b *Backend) decisions(w http.ResponseWriter, r *http.Request) {
 	}
 	choice := "respond"
 	if strings.HasPrefix(last, whiteboardPrefix) {
-		choice = "delegate_light"
+		choice = "delegate"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"answers": []any{map[string]any{"type": "choice", "name": "turn", "choice": choice, "confidence": 1}}})

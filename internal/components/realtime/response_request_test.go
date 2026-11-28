@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
@@ -128,5 +129,25 @@ func TestCommentaryOnlyResponseIsSpokenAtDone(t *testing.T) {
 	}
 	if strings.Join(spoken, ",") != "pre:ちょっと見てみるね。" || !done {
 		t.Fatal(spoken, done)
+	}
+}
+
+// セッションは、30分以上たって5分会話がないとき、または55分たったときに張り直す。
+func TestShouldRotate(t *testing.T) {
+	now := time.Now()
+	s := &stage{cfg: Config{RotateAfter: 55 * time.Minute}}
+	for _, c := range []struct {
+		age, quiet time.Duration
+		want       bool
+	}{
+		{20 * time.Minute, 10 * time.Minute, false},
+		{35 * time.Minute, 2 * time.Minute, false},
+		{35 * time.Minute, 6 * time.Minute, true},
+		{56 * time.Minute, 0, true},
+	} {
+		s.started, s.lastTalk = now.Add(-c.age), now.Add(-c.quiet)
+		if got := s.shouldRotate(now); got != c.want {
+			t.Fatal(c, got)
+		}
 	}
 }

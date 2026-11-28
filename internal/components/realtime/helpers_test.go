@@ -18,7 +18,7 @@ func newTestStage(t *testing.T) *stage {
 	gen := generation.NewStore()
 	gen.Next()
 	return &stage{
-		cfg:           Config{Generation: gen, History: newTestHistory(t)},
+		cfg:           Config{Generation: gen},
 		transcription: &graph.Stage{Downstream: make(chan types.Event, 100)},
 		response:      &graph.Stage{Downstream: make(chan types.Event, 100)},
 		transport:     &transport{commands: eventqueue.New[any](nil)},

@@ -53,18 +53,13 @@ type Config struct {
 	pluginConfigs map[string]yaml.Node
 }
 
-// BrainConfig は頭脳AIの設定。Light は定型の操作や事実を伝える依頼、Strong は考える必要がある依頼に使う。
+// BrainConfig は頭脳AIの設定。
 type BrainConfig struct {
-	Light, Strong BrainModelConfig
-	// Endpoint はテスト用の Responses API の接続先。空なら OpenAI の公式エンドポイント。
-	Endpoint string
-}
-
-// BrainModelConfig は頭脳AIのモデル1つ分の設定。
-type BrainModelConfig struct {
 	Model string
 	// ReasoningEffort は Responses API の reasoning.effort。
 	ReasoningEffort string
+	// Endpoint はテスト用の Responses API の接続先。空なら OpenAI の公式エンドポイント。
+	Endpoint string
 }
 
 // DecodePluginConfig は、config.yaml の plugins.<name> の中身を v に読み込む。
@@ -217,11 +212,9 @@ type configFile struct {
 			Endpoint string `yaml:"endpoint"`
 		} `yaml:"decisions"`
 		Brain struct {
-			LightModel            string `yaml:"light_model"`
-			LightReasoningEffort  string `yaml:"light_reasoning_effort"`
-			StrongModel           string `yaml:"strong_model"`
-			StrongReasoningEffort string `yaml:"strong_reasoning_effort"`
-			Endpoint              string `yaml:"endpoint"`
+			Model           string `yaml:"model"`
+			ReasoningEffort string `yaml:"reasoning_effort"`
+			Endpoint        string `yaml:"endpoint"`
 		} `yaml:"brain"`
 	} `yaml:"openai"`
 	Conversation struct {
@@ -343,9 +336,9 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 		DecisionsModel:             stringOr(file.OpenAI.Decisions.Model, "gpt-6-luna"),
 		DecisionsEndpoint:          strings.TrimSpace(file.OpenAI.Decisions.Endpoint),
 		Brain: BrainConfig{
-			Endpoint: strings.TrimSpace(file.OpenAI.Brain.Endpoint),
-			Light:    BrainModelConfig{Model: stringOr(file.OpenAI.Brain.LightModel, "gpt-6-luna"), ReasoningEffort: stringOr(file.OpenAI.Brain.LightReasoningEffort, "low")},
-			Strong:   BrainModelConfig{Model: stringOr(file.OpenAI.Brain.StrongModel, "gpt-6.1-terra"), ReasoningEffort: stringOr(file.OpenAI.Brain.StrongReasoningEffort, "low")},
+			Endpoint:        strings.TrimSpace(file.OpenAI.Brain.Endpoint),
+			Model:           stringOr(file.OpenAI.Brain.Model, "gpt-6.1-terra"),
+			ReasoningEffort: stringOr(file.OpenAI.Brain.ReasoningEffort, "low"),
 		},
 		WakeModeStorePath:       stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
 		WakeSettings:            wake,

@@ -5,22 +5,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
-	"github.com/tetetratra/smart-speaker/internal/conversation"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
-	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/features/wakemode"
 	"github.com/tetetratra/smart-speaker/internal/graph"
-	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
 	"github.com/tetetratra/smart-speaker/internal/types"
 	"strconv"
-	"strings"
 	"time"
 )
 
 type Config struct {
-	History                                                   *conversationhistory.Store
-	Memory                                                    *memory.Store
 	WakeMode                                                  *wakemode.Store
 	APIKey, Model, Endpoint, TranscriptionModel, Instructions string
 	TurnDetection, NoiseReduction                             string
@@ -79,14 +73,15 @@ type stage struct {
 	epoch                       uint64
 	connecting, ready, speaking bool
 	active                      string
-	restoredContext             string
 	started, lastActivity       time.Time
-	peers                       map[string]bool
-	pendingAudio                [][]byte
-	responses                   map[string]*response
-	items                       map[string]*assistantItem
-	previous                    map[string]string
-	repairs                     map[string]bool
+	// lastTalk は、ユーザーが最後に話し始めたか、最後に応答を始めた時刻。セッションを張り直すかの判定に使う。
+	lastTalk     time.Time
+	peers        map[string]bool
+	pendingAudio [][]byte
+	responses    map[string]*response
+	items        map[string]*assistantItem
+	previous     map[string]string
+	repairs      map[string]bool
 	// commentary は、前置き（phase が commentary）の item。読み上げに流さない。
 	commentary      map[string]bool
 	userGenerations map[string]types.GenerationID
@@ -116,8 +111,8 @@ func NewStages(cfg Config) (transcription, response *graph.Stage, err error) {
 	if cfg.NoiseReduction != "far_field" && cfg.NoiseReduction != "near_field" {
 		return nil, nil, fmt.Errorf("realtime: ノイズ除去はfar_fieldまたはnear_fieldを指定してください: %s", cfg.NoiseReduction)
 	}
-	if cfg.Generation == nil || cfg.History == nil {
-		return nil, nil, fmt.Errorf("realtime: 世代・履歴のStoreが必要")
+	if cfg.Generation == nil {
+		return nil, nil, fmt.Errorf("realtime: 世代のStoreが必要")
 	}
 	if cfg.RotateAfter <= 0 {
 		cfg.RotateAfter = 55 * time.Minute
@@ -223,10 +218,6 @@ func (s *stage) run(ctx context.Context) {
 			s.commentary = map[string]bool{}
 			s.userGenerations = map[string]types.GenerationID{}
 			instructions := s.cfg.Instructions
-			s.restoredContext = in.context
-			for _, id := range in.restoredIDs {
-				s.externalApplied[id] = true
-			}
 			s.wakeModeRequired = s.wakeRequired()
 			s.wakeGated = s.cfg.WakeMode != nil && s.cfg.WakeMode.Snapshot(time.Now()).Gated()
 			s.transport.send(sessionUpdate(s.cfg, instructions))
@@ -235,6 +226,9 @@ func (s *stage) run(ctx context.Context) {
 		s.serverEvent(ctx, in.data)
 	}
 }
+
+// connect は Realtime API に新しいセッションを張る。前のセッションの会話は復元しない。
+// Realtime に持たせるのは今のセッションのやりとりだけで、以前の会話や長期メモリが要る質問は頭脳AIが全履歴を読んで答える。
 func (s *stage) connect(ctx context.Context) {
 	if s.connecting || s.transport != nil {
 		return
@@ -244,36 +238,6 @@ func (s *stage) connect(ctx context.Context) {
 	s.externalRequested = nil
 	s.epoch++
 	s.status(ctx, "connecting", "")
-	// 先に発行した記録が記録係で保存されてから、共有ストアを直接読む。
-	done := make(chan struct{})
-	s.emit(ctx, types.EventConversationHistorySync{Epoch: s.epoch, Done: done})
-}
-
-func (s *stage) restore(ctx context.Context, sync types.EventConversationHistorySync) {
-	defer close(sync.Done)
-	if sync.Epoch != s.epoch || !s.connecting || s.transport != nil {
-		return
-	}
-	history := s.cfg.History.Snapshot()
-	var memories []string
-	if s.cfg.Memory != nil {
-		for _, record := range s.cfg.Memory.Snapshot() {
-			if content := strings.TrimSpace(record.Content); content != "" {
-				memories = append(memories, content)
-			}
-		}
-	}
-
-	records := make([]types.ConversationRecord, 0, len(history))
-	for _, record := range history {
-		delete(s.externalRecords, record.ID)
-		records = append(records, record)
-	}
-	ids := make([]string, 0, len(records))
-	for _, record := range records {
-		ids = append(ids, record.ID)
-	}
-	restore := conversation.RestoreContext(records, memories)
 	epoch := s.epoch
 	go func() {
 		t, err := dial(ctx, s.cfg, epoch)
@@ -283,10 +247,10 @@ func (s *stage) restore(ctx context.Context, sync types.EventConversationHistory
 			}
 			return
 		}
-		s.queue.Push(incoming{epoch: epoch, conn: t, err: err, context: restore, restoredIDs: ids})
+		s.queue.Push(incoming{epoch: epoch, conn: t, err: err})
 	}()
-
 }
+
 func (s *stage) disconnect(ctx context.Context, err error) {
 	s.epoch++ // キューに残る旧接続のイベントを、その場で失効させる。
 	if s.transport != nil {
@@ -318,8 +282,6 @@ func (s *stage) disconnect(ctx context.Context, err error) {
 }
 func (s *stage) handle(ctx context.Context, e types.Event) {
 	switch e := e.(type) {
-	case types.EventConversationHistorySync:
-		s.restore(ctx, e)
 	case types.EventConversationInput:
 		// 会話の流れは、応答を求めない記録だけを送ってくる。応答が要るものは頭脳AIが考え、応答依頼として届く。
 		input := e.ConversationInput
@@ -391,9 +353,22 @@ func (s *stage) tick(ctx context.Context, now time.Time) {
 	if !s.ready {
 		return
 	}
-	if now.Sub(s.started) >= s.cfg.RotateAfter {
+	if s.shouldRotate(now) {
 		s.rotate(ctx)
 	}
+}
+
+const (
+	// rotateAfterQuiet・quietFor：セッションを始めて rotateAfterQuiet 以上たち、quietFor 会話がなければ、張り直す。
+	// 会話が一区切りついたところで区切り、Realtime に渡す会話を小さく保つため。区切ったあとに前の話を聞かれたら、頭脳AIが答える。
+	rotateAfterQuiet = 30 * time.Minute
+	quietFor         = 5 * time.Minute
+)
+
+// shouldRotate は、セッションを張り直すかを返す。会話が続いていても、セッションの時間の上限に備えて RotateAfter（既定55分）で張り直す。
+func (s *stage) shouldRotate(now time.Time) bool {
+	age := now.Sub(s.started)
+	return age >= s.cfg.RotateAfter || (age >= rotateAfterQuiet && now.Sub(s.lastTalk) >= quietFor)
 }
 func (s *stage) rotate(ctx context.Context) {
 	s.externalApplied = map[string]bool{}

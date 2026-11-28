@@ -22,13 +22,6 @@ type ConversationInput struct {
 // EventConversationInput は会話の中身を運ぶ。
 type EventConversationInput struct{ ConversationInput }
 
-// EventConversationHistorySync は先行入力の配送と直接読み出しの順序を揃える。
-// 履歴本体は運ばず、読了時にDoneを閉じて後続の保存を再開する。
-type EventConversationHistorySync struct {
-	Epoch uint64
-	Done  chan struct{}
-}
-
 // EventConversationIdle は、会話が落ち着いた状態で無操作が続いたことを知らせる。古い履歴のメモリ化に使う。
 type EventConversationIdle struct{}
 
@@ -40,7 +33,6 @@ type EventConversationRecordsUsed struct{ IDs []string }
 type EventConversationRecordAdded struct{ ConversationRecord }
 
 func (EventConversationInput) isEvent()       {}
-func (EventConversationHistorySync) isEvent() {}
 func (EventConversationIdle) isEvent()        {}
 func (EventConversationRecordsUsed) isEvent() {}
 func (EventConversationRecordAdded) isEvent() {}

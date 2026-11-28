@@ -25,18 +25,12 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
-// ModelConfig は、軽いモデル・強いモデルそれぞれの設定。
-type ModelConfig struct {
-	Model string
-	// ReasoningEffort は Responses API の reasoning.effort（none・low・medium など）。空なら API の既定値。
-	ReasoningEffort string
-}
-
 type Config struct {
 	APIKey   string
 	Endpoint string
-	Light    ModelConfig
-	Strong   ModelConfig
+	Model    string
+	// ReasoningEffort は Responses API の reasoning.effort（none・low・medium など）。空なら API の既定値。
+	ReasoningEffort string
 	// Instructions は頭脳AIへの指示（システムプロンプトとプラグインの指示）。
 	Instructions string
 	// Tools は function calling 用のツール定義。組み込みの web_search はここに含めず、頭脳AIが足す。
@@ -65,8 +59,8 @@ func NewStage(cfg Config) (*graph.Stage, error) {
 	if cfg.History == nil || cfg.Generation == nil || cfg.Executor == nil {
 		return nil, fmt.Errorf("brain: 履歴・世代のStoreとツールの実行器が必要")
 	}
-	if cfg.Light.Model == "" || cfg.Strong.Model == "" {
-		return nil, fmt.Errorf("brain: 軽いモデルと強いモデルを指定してください")
+	if cfg.Model == "" {
+		return nil, fmt.Errorf("brain: モデルを指定してください")
 	}
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = "https://api.openai.com/v1/responses"
@@ -116,15 +110,11 @@ func (s *stage) stale(req types.BrainRequest) bool {
 // think は依頼1件を考え、話す内容を記録として返す。
 // ツールの副作用は取り消せないので、呼んだツールは記録に残す。世代が進んだら、次の API 呼び出しをせずにやめる。
 func (s *stage) think(ctx context.Context, req types.BrainRequest) {
-	model := s.cfg.Strong
-	if req.Model == types.BrainModelLight {
-		model = s.cfg.Light
-	}
 	started := time.Now()
 	// 何に対応する依頼かを後から追えるよう、依頼の時点で履歴の最後にある記録（ユーザーの発話や後から届いた結果）をログに残す。
 	if history := s.cfg.History.Snapshot(); len(history) > 0 {
 		last := history[len(history)-1]
-		log.Printf("brain: 依頼 %s 受付 model=%s generation=%d 対象=%s(%s) %q", req.RequestID, model.Model, req.GenerationID, last.Role, last.Source, last.Text)
+		log.Printf("brain: 依頼 %s 受付 generation=%d 対象=%s(%s) %q", req.RequestID, req.GenerationID, last.Role, last.Source, last.Text)
 	}
 	input := []json.RawMessage{s.prompt()}
 	for step := 0; step < maxSteps; step++ {
@@ -132,7 +122,7 @@ func (s *stage) think(ctx context.Context, req types.BrainRequest) {
 			log.Printf("brain: 依頼 %s はユーザーが話し足したため打ち切りました", req.RequestID)
 			return
 		}
-		out, err := s.call(ctx, model, input)
+		out, err := s.call(ctx, input)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -143,7 +133,7 @@ func (s *stage) think(ctx context.Context, req types.BrainRequest) {
 		}
 		input = append(input, out.items...)
 		if len(out.calls) == 0 {
-			log.Printf("brain: 依頼 %s 完了 model=%s 回数=%d 所要=%s", req.RequestID, model.Model, step+1, time.Since(started).Round(time.Millisecond))
+			log.Printf("brain: 依頼 %s 完了 回数=%d 所要=%s", req.RequestID, step+1, time.Since(started).Round(time.Millisecond))
 			text := strings.TrimSpace(out.text)
 			s.say(ctx, req, text, text == "")
 			return
@@ -240,9 +230,9 @@ type output struct {
 	text  string
 }
 
-func (s *stage) call(ctx context.Context, model ModelConfig, input []json.RawMessage) (output, error) {
+func (s *stage) call(ctx context.Context, input []json.RawMessage) (output, error) {
 	payload := map[string]any{
-		"model":        model.Model,
+		"model":        s.cfg.Model,
 		"instructions": s.cfg.Instructions,
 		"input":        input,
 		"tools":        append(append([]any{}, s.cfg.Tools...), map[string]any{"type": "web_search"}),
@@ -250,8 +240,8 @@ func (s *stage) call(ctx context.Context, model ModelConfig, input []json.RawMes
 		"store":   false,
 		"include": []string{"reasoning.encrypted_content"},
 	}
-	if model.ReasoningEffort != "" {
-		payload["reasoning"] = map[string]any{"effort": model.ReasoningEffort}
+	if s.cfg.ReasoningEffort != "" {
+		payload["reasoning"] = map[string]any{"effort": s.cfg.ReasoningEffort}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -285,7 +275,7 @@ func (s *stage) call(ctx context.Context, model ModelConfig, input []json.RawMes
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		return output{}, fmt.Errorf("応答の読み取り: %w", err)
 	}
-	log.Printf("brain: 使用量 model=%s 入力=%d（キャッシュ=%d） 出力=%d", model.Model, decoded.Usage.InputTokens, decoded.Usage.InputTokensDetails.CachedTokens, decoded.Usage.OutputTokens)
+	log.Printf("brain: 使用量 入力=%d（キャッシュ=%d） 出力=%d", decoded.Usage.InputTokens, decoded.Usage.InputTokensDetails.CachedTokens, decoded.Usage.OutputTokens)
 	var out output
 	var text strings.Builder
 	for _, raw := range decoded.Output {

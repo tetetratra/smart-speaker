@@ -37,7 +37,7 @@ func eventDetail(evt types.Event) (string, bool) {
 	case types.EventDecision:
 		return fmt.Sprintf("choice=%s, generation=%d, turn=%s", e.Choice, e.GenerationID, e.TurnID), true
 	case types.EventBrainRequest:
-		return fmt.Sprintf("model=%s, generation=%d, request=%s", e.Model, e.GenerationID, e.RequestID), true
+		return fmt.Sprintf("generation=%d, request=%s", e.GenerationID, e.RequestID), true
 	case types.EventResponseRequest:
 		return fmt.Sprintf("generation=%d, new_generation=%t, notice=%s", e.GenerationID, e.NewGeneration, quoteText(e.Notice)), true
 	case types.EventRTCSignal:

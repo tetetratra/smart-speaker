@@ -8,7 +8,6 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/conversationrecorder"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
-	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
@@ -29,6 +28,7 @@ import (
 type rig struct {
 	managerQueue *eventqueue.Queue[types.Event]
 	gen          *generation.Store
+	marks        int
 	connections  chan *websocket.Conn
 	t            *testing.T
 	ctx          context.Context
@@ -95,7 +95,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 		}
 	}))
 	t.Cleanup(server.Close)
-	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore(), History: r.history}
+	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore()}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -115,7 +115,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 			case e := <-node.Upstream:
 				to := transcription
 				switch e.(type) {
-				case types.EventResponseRequest, types.EventConversationInput, types.EventConversationHistorySync, types.EventAudioSent:
+				case types.EventResponseRequest, types.EventConversationInput, types.EventAudioSent:
 					to = response
 				}
 				select {
@@ -191,7 +191,7 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 						return
 					}
 					switch e.(type) {
-					case types.EventConversationInput, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
+					case types.EventConversationInput, types.EventConversationIdle, types.EventConversationRecordsUsed:
 						managerQueue.Push(e)
 					}
 
@@ -466,7 +466,7 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 	}
 }
 
-func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
+func TestReconnectDoesNotRestoreHistoryAndAcceptsNextTurn(t *testing.T) {
 	r := newRig(t, func(cfg *Config) { cfg.Instructions = "元のシステム指示" })
 	r.utterance("user1")
 	r.wait("response.create")
@@ -488,12 +488,22 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 		t.Fatal(update)
 	}
 	r.send(map[string]any{"type": "session.updated"})
-	restored := r.wait("conversation.item.create")["item"].(map[string]any)
-	if text := restored["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "前の会話を覚えて") {
-		t.Fatal(text)
-	}
+	// 前のセッションの会話は復元しない（以前の会話は頭脳AIが全履歴を読んで答える）。
 	r.utterance("user2")
-	request := r.wait("response.create")
+	var request map[string]any
+	for request == nil {
+		select {
+		case cmd := <-r.commands:
+			if item, _ := cmd["item"].(map[string]any); item != nil && strings.Contains(fmt.Sprint(item), "前の会話を覚えて") {
+				t.Fatal("前のセッションの会話を復元しました", cmd)
+			}
+			if cmd["type"] == "response.create" {
+				request = cmd
+			}
+		case <-r.ctx.Done():
+			t.Fatal("response.create が届かない")
+		}
+	}
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
 	}
@@ -522,34 +532,6 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 	r.send(map[string]any{"type": "session.updated"})
 }
 
-func TestStaleHistorySyncReleasesWriter(t *testing.T) {
-	s := newTestStage(t)
-	done := make(chan struct{})
-	s.handle(context.Background(), types.EventConversationHistorySync{Epoch: s.epoch - 1, Done: done})
-	select {
-	case <-done:
-	default:
-		t.Fatal("旧接続の同期で記録係が止まる")
-	}
-	noCommand(t, s)
-}
-
-func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
-	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memories.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err = memoryStore.Upsert(memory.UpsertInput{Content: "好きな季節は秋"}); err != nil {
-		t.Fatal(err)
-	}
-	r := newRig(t, func(cfg *Config) { cfg.Memory = memoryStore })
-	item := r.wait("conversation.item.create")["item"].(map[string]any)
-	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
-	if !strings.Contains(text, "好きな季節は秋") {
-		t.Fatal(text)
-	}
-}
-
 // 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
 // waitRecord は、ID の記録が保存されるまで待つ。
 func (r *rig) waitRecord(id string) {
@@ -566,15 +548,31 @@ func (r *rig) waitRecord(id string) {
 	r.t.Fatal("記録が保存されません", id, r.records())
 }
 
+// records は、それまでに記録係へ送った記録が保存されるのを待ってから、履歴を返す。
+// 記録係は届いた順に保存するので、目印の記録を送り、それが保存されたら先行の記録も保存済みとみなす。目印は返す履歴から除く。
 func (r *rig) records() []types.ConversationRecord {
-	done := make(chan struct{})
-	r.managerQueue.Push(types.EventConversationHistorySync{Done: done})
-	select {
-	case <-done:
-	case <-r.ctx.Done():
-		r.t.Fatal("履歴の保存を待てない")
+	r.marks++
+	id := fmt.Sprintf("__mark__/%d", r.marks)
+	r.managerQueue.Push(types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleSystem}, ModelAlreadyKnows: true, UserAlreadyKnows: true}})
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var records []types.ConversationRecord
+		found := false
+		for _, record := range r.history.Snapshot() {
+			if record.ID == id {
+				found = true
+			}
+			if !strings.HasPrefix(record.ID, "__mark__/") {
+				records = append(records, record)
+			}
+		}
+		if found {
+			return records
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	return r.history.Snapshot()
+	r.t.Fatal("履歴の保存を待てない")
+	return nil
 }
 
 // ユーザーの発話は、記録係から画面に送られる（チャット欄に出す）よう UserAlreadyKnows を立てない。
