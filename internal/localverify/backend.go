@@ -166,14 +166,22 @@ const brainAnswerPrefix = "頭脳AIの答え: "
 
 // decisions は Decisions API の代わり。ホワイトボードの依頼だけ頭脳AIに任せ、それ以外は Realtime がそのまま返す。
 func (b *Backend) decisions(w http.ResponseWriter, r *http.Request) {
-	var payload struct{ Input string }
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload) != nil {
+	var payload struct {
+		Input []struct {
+			Content []struct{ Text string }
+		}
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&payload) != nil || len(payload.Input) == 0 {
 		http.Error(w, "invalid", 400)
 		return
 	}
+	var input strings.Builder
+	for _, part := range payload.Input[0].Content {
+		input.WriteString(part.Text)
+	}
 	// 履歴のいちばん新しいユーザーの行（「[日時] user: 本文」）が今回の発話。
 	last := ""
-	for _, line := range strings.Split(payload.Input, "\n") {
+	for _, line := range strings.Split(input.String(), "\n") {
 		if _, text, ok := strings.Cut(line, "] user: "); ok {
 			last = text
 		}

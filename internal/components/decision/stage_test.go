@@ -43,7 +43,8 @@ func TestDecideSendsHistoryAndReturnsChoice(t *testing.T) {
 	if got != types.DecisionDelegateLight {
 		t.Fatal(got)
 	}
-	if payload["model"] != "gpt-6-luna" || !strings.Contains(payload["input"].(string), "明日の天気は？") {
+	part := payload["input"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+	if payload["model"] != "gpt-6-luna" || !strings.Contains(part["text"].(string), "明日の天気は？") || part["prompt_cache_breakpoint"] == nil {
 		t.Fatal(payload)
 	}
 	question := payload["questions"].([]any)[0].(map[string]any)
@@ -98,5 +99,26 @@ func TestDecideUsesStrongModelWhenConfidenceIsLow(t *testing.T) {
 		if got := s.decide(context.Background()); got != types.DecisionDelegateStrong {
 			t.Fatal(body, got)
 		}
+	}
+}
+
+// キャッシュの境目は、前回の入力の末尾と今回の入力の末尾に置く。先頭が変わったら末尾にだけ置く。
+func TestInputPutsCacheBreakpointAtPreviousEnd(t *testing.T) {
+	s := testStage(t, nil)
+	first := s.input()
+	if len(first) != 1 {
+		t.Fatal(first)
+	}
+	if err := s.cfg.History.Append(types.ConversationRecord{ID: "2", Role: types.RoleUser, Text: "ありがとう", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	second := s.input()
+	if len(second) != 2 || second[0] != first[0] || !strings.Contains(second[1], "ありがとう") || strings.Contains(second[1], "明日の天気は？") {
+		t.Fatal(second)
+	}
+	// 前回の入力で始まらない（古い履歴がメモリ化された）ときは、区切らない。
+	s.previous = "別の会話"
+	if third := s.input(); len(third) != 1 {
+		t.Fatal(third)
 	}
 }

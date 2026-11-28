@@ -35,6 +35,9 @@ type stage struct {
 	node  *graph.Stage
 	cfg   Config
 	tasks sync.WaitGroup
+	// previous は前回の判定に渡した会話。キャッシュの境目を置く位置を決めるのに使う。判定は並行して動くので mu で守る。
+	mu       sync.Mutex
+	previous string
 }
 
 func NewStage(cfg Config) (*graph.Stage, error) {
@@ -108,17 +111,30 @@ func (s *stage) decide(ctx context.Context) types.DecisionChoice {
 		choice = types.DecisionDelegateStrong
 	}
 	// 振り分けの精度と待ち時間を後から確かめられるよう、確率・所要時間・キャッシュの効き具合を残す。
-	log.Printf("decision: 判定=%s confidence=%.2f 確率=%s 所要=%s 入力=%d（キャッシュ=%d）", choice, answer.confidence, answer.probabilities, time.Since(started).Round(time.Millisecond), answer.inputTokens, answer.cachedTokens)
+	log.Printf("decision: 判定=%s confidence=%.2f 確率=%s 所要=%s 入力=%d（キャッシュ=%d、書き込み=%d）", choice, answer.confidence, answer.probabilities, time.Since(started).Round(time.Millisecond), answer.inputTokens, answer.cachedTokens, answer.cacheWriteTokens)
 	return choice
 }
 
 // lowConfidence は、判定に迷っているとみなす confidence。これより低ければ強いモデルに任せる。値は本番ログを見て決めた目安。
 const lowConfidence = 0.5
 
-// input は Decisions API に渡す会話。今回の発話は記録係が保存済みなので、履歴の最後のユーザーの行に入っている。
-// 履歴だけを渡すと、前回の入力全体が今回の入力の先頭とそろい、キャッシュに当たる。
-func (s *stage) input() string {
-	return conversation.RestoreContext(s.cfg.History.Snapshot(), nil)
+// input は Decisions API に渡す会話を、キャッシュの境目で区切った部分に分けて返す。
+// 今回の発話は記録係が保存済みなので、履歴の最後のユーザーの行に入っている。
+//
+// Decisions API の既定のキャッシュは境目が入力の末尾に1つだけで、入力全体が前回と同じときしか当たらない。
+// 会話の履歴は末尾に増えていくので、境目を明示し、前回の入力の末尾と今回の入力の末尾の2か所に置く。
+// 前回の末尾の境目で前回書き込んだ分に当たり、今回の末尾の境目で次回のために書き込む（実 API で確認済み）。
+func (s *stage) input() []string {
+	full := conversation.RestoreContext(s.cfg.History.Snapshot(), nil)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := s.previous
+	s.previous = full
+	// 古い履歴がメモリ化されて先頭が変わったときは、前回の分には当たらないので、末尾にだけ境目を置く。
+	if previous != "" && len(full) > len(previous) && strings.HasPrefix(full, previous) {
+		return []string{previous, full[len(previous):]}
+	}
+	return []string{full}
 }
 
 const questionInstructions = `あなたは家庭用の音声アシスタントの振り分け役です。会話の流れを踏まえ、会話の中でいちばん新しいユーザー（user）の発話に、アシスタントがどう対応するかを選んでください。
@@ -133,16 +149,21 @@ var choices = []map[string]any{
 }
 
 type answer struct {
-	choice                    string
-	confidence                float64
-	probabilities             string
-	inputTokens, cachedTokens int
+	choice                                      string
+	confidence                                  float64
+	probabilities                               string
+	inputTokens, cachedTokens, cacheWriteTokens int
 }
 
-func (s *stage) call(ctx context.Context, input string) (answer, error) {
+func (s *stage) call(ctx context.Context, parts []string) (answer, error) {
+	content := make([]map[string]any, 0, len(parts))
+	for _, part := range parts {
+		content = append(content, map[string]any{"type": "input_text", "text": part, "prompt_cache_breakpoint": map[string]any{"mode": "explicit"}})
+	}
 	payload := map[string]any{
-		"model": s.cfg.Model,
-		"input": input,
+		"model":                s.cfg.Model,
+		"input":                []map[string]any{{"role": "user", "content": content}},
+		"prompt_cache_options": map[string]any{"mode": "explicit", "ttl": "30m"},
 		"questions": []map[string]any{{
 			"type": "choice", "name": "turn", "instructions": questionInstructions, "choices": choices,
 		}},
@@ -176,7 +197,8 @@ func (s *stage) call(ctx context.Context, input string) (answer, error) {
 		Usage struct {
 			InputTokens        int `json:"input_tokens"`
 			InputTokensDetails struct {
-				CachedTokens int `json:"cached_tokens"`
+				CachedTokens     int `json:"cached_tokens"`
+				CacheWriteTokens int `json:"cache_write_tokens"`
 			} `json:"input_tokens_details"`
 		} `json:"usage"`
 	}
@@ -191,5 +213,5 @@ func (s *stage) call(ctx context.Context, input string) (answer, error) {
 	if err := json.Unmarshal(a.Choice, &choice); err != nil {
 		return answer{}, fmt.Errorf("判定の読み取り: %w", err)
 	}
-	return answer{choice: choice, confidence: a.Confidence, probabilities: string(a.Probabilities), inputTokens: decoded.Usage.InputTokens, cachedTokens: decoded.Usage.InputTokensDetails.CachedTokens}, nil
+	return answer{choice: choice, confidence: a.Confidence, probabilities: string(a.Probabilities), inputTokens: decoded.Usage.InputTokens, cachedTokens: decoded.Usage.InputTokensDetails.CachedTokens, cacheWriteTokens: decoded.Usage.InputTokensDetails.CacheWriteTokens}, nil
 }
