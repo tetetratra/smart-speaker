@@ -31,7 +31,25 @@ type Config struct {
 type response struct {
 	generation types.GenerationID
 	items      map[string]bool
+	// commentary は、まだ読み上げていない前置きの item。final は、最終回答の item が来たか。
+	commentary []*commentaryItem
+	final      bool
 }
+
+// commentaryItem は、読み上げるか決まるまで取っておく前置きの item と、その文章。
+type commentaryItem struct {
+	id, text string
+}
+
+func (r *response) commentaryItem(id string) *commentaryItem {
+	for _, c := range r.commentary {
+		if c.id == id {
+			return c
+		}
+	}
+	return nil
+}
+
 type assistantItem struct {
 	generation      types.GenerationID
 	generated, sent string

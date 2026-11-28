@@ -78,7 +78,7 @@ func TestOutOfTurnRequestWaitsForPlaybackAndStartsNewGeneration(t *testing.T) {
 	}
 }
 
-// Realtime はツールを持たないので、前置き（phase が commentary）の item は読み上げに流さない。
+// 同じ応答に最終回答があれば、前置き（phase が commentary）の item は読み上げない。
 // 前置きと最終回答が同じ文になり、二重に読み上げてしまうため。
 func TestCommentaryItemIsNotSpoken(t *testing.T) {
 	s := newTestStage(t)
@@ -86,7 +86,7 @@ func TestCommentaryItemIsNotSpoken(t *testing.T) {
 	first, _ := popResponse(t, s)
 	serverEventForTest(s, map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": first["metadata"]}})
 	for _, item := range []map[string]any{{"id": "pre", "phase": "commentary"}, {"id": "final", "phase": "final_answer"}} {
-		serverEventForTest(s, map[string]any{"type": "response.output_item.added", "response_id": "r1", "item": item})
+		serverEventForTest(s, map[string]any{"type": "response.output_item.added", "response_id": "r1", "item": map[string]any{"id": item["id"], "type": "message", "phase": item["phase"]}})
 		serverEventForTest(s, map[string]any{"type": "response.output_text.delta", "response_id": "r1", "item_id": item["id"], "delta": "ちょっと見てみるね。"})
 		serverEventForTest(s, map[string]any{"type": "response.output_text.done", "response_id": "r1", "item_id": item["id"], "text": "ちょっと見てみるね。"})
 	}
@@ -98,5 +98,35 @@ func TestCommentaryItemIsNotSpoken(t *testing.T) {
 	}
 	if strings.Join(spoken, ",") != "final:ちょっと見てみるね。" {
 		t.Fatal(spoken)
+	}
+}
+
+// 一次応答のように前置きの item だけが返った応答は、応答の終わりで前置きを読み上げる。
+func TestCommentaryOnlyResponseIsSpokenAtDone(t *testing.T) {
+	s := newTestStage(t)
+	request(s, "一次応答の指示")
+	first, _ := popResponse(t, s)
+	serverEventForTest(s, map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": first["metadata"]}})
+	serverEventForTest(s, map[string]any{"type": "response.output_item.added", "response_id": "r1", "item": map[string]any{"id": "pre", "type": "message", "phase": "commentary"}})
+	serverEventForTest(s, map[string]any{"type": "response.output_text.delta", "response_id": "r1", "item_id": "pre", "delta": "ちょっと見てみるね。"})
+	serverEventForTest(s, map[string]any{"type": "response.output_text.done", "response_id": "r1", "item_id": "pre", "text": "ちょっと見てみるね。"})
+	for len(s.response.Downstream) > 0 {
+		if e, ok := (<-s.response.Downstream).(types.EventResponseText); ok {
+			t.Fatal("応答の終わりより前に前置きを流しました", e)
+		}
+	}
+	serverEventForTest(s, map[string]any{"type": "response.done", "response": map[string]any{"id": "r1", "status": "completed"}})
+	var spoken []string
+	done := false
+	for len(s.response.Downstream) > 0 {
+		if e, ok := (<-s.response.Downstream).(types.EventResponseText); ok {
+			if e.Text != "" {
+				spoken = append(spoken, e.ItemID+":"+e.Text)
+			}
+			done = done || e.Done
+		}
+	}
+	if strings.Join(spoken, ",") != "pre:ちょっと見てみるね。" || !done {
+		t.Fatal(spoken, done)
 	}
 }

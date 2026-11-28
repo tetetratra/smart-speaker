@@ -149,36 +149,56 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		}
 		s.externalOrder = order
 	case "response.output_item.added":
-		// Realtime はツールを持たないので、前置きは要らない。前置きと最終回答が同じ文になることがあるため、前置きは読み上げない。
+		// Realtime は1回の応答で、前置き（commentary）と最終回答（final_answer）に同じ文を出すことがある。
+		// 一方で、一次応答のように前置きだけを返すこともあるので、前置きはすぐには読み上げず取っておき、
+		// 同じ応答に最終回答が来なかったときだけ、応答の終わり（response.done）で読み上げる。
+		r := s.responses[e.ResponseID]
+		if r == nil || e.Item.Type != "message" {
+			return
+		}
 		if e.Item.Phase == "commentary" {
 			s.commentary[e.Item.ID] = true
+			r.commentary = append(r.commentary, &commentaryItem{id: e.Item.ID})
+		} else {
+			r.final = true
 		}
 	case "response.output_text.delta":
 		r := s.responses[e.ResponseID]
-		if r == nil || s.commentary[e.ItemID] {
+		if r == nil {
 			return
 		}
-		item := s.items[e.ItemID]
-		if item == nil {
-			item = &assistantItem{generation: r.generation}
-			s.items[e.ItemID] = item
-			s.itemOrder = append(s.itemOrder, e.ItemID)
+		if s.commentary[e.ItemID] {
+			if c := r.commentaryItem(e.ItemID); c != nil {
+				c.text += e.Delta
+			}
+			return
 		}
-		s.pendingOutput[e.ItemID] = true
-		r.items[e.ItemID] = true
-		item.generated += e.Delta
-		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Text: e.Delta}})
+		s.outputText(ctx, r, e.ResponseID, e.ItemID, e.Delta)
 	case "response.output_text.done":
 		r := s.responses[e.ResponseID]
-		if r == nil || s.commentary[e.ItemID] {
+		if r == nil {
 			return
 		}
-		if item := s.items[e.ItemID]; item != nil && e.Text != "" {
-			item.generated = e.Text
+		if s.commentary[e.ItemID] {
+			if c := r.commentaryItem(e.ItemID); c != nil && e.Text != "" {
+				c.text = e.Text
+			}
+			return
 		}
-		s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: e.ResponseID, ItemID: e.ItemID, Done: true}})
+		s.outputDone(ctx, r, e.ResponseID, e.ItemID, e.Text)
 	case "response.done":
 		logUsage(e.Response.Usage)
+		// 最終回答がなく前置きだけだった応答は、取っておいた前置きを読み上げる。
+		if r := s.responses[e.Response.ID]; r != nil && !r.final {
+			for _, c := range r.commentary {
+				if c.text == "" {
+					continue
+				}
+				delete(s.commentary, c.id)
+				s.outputText(ctx, r, e.Response.ID, c.id, c.text)
+				s.outputDone(ctx, r, e.Response.ID, c.id, c.text)
+			}
+		}
 		if s.active == e.Response.ID {
 			s.active = ""
 		}
@@ -186,6 +206,28 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 	case "error":
 		s.disconnect(ctx, fmt.Errorf("Realtime API: %s (%s)", e.Error.Message, e.Error.Code))
 	}
+}
+
+// outputText は応答の文章の差分を読み上げへ流し、読み上げ前に止めたときの補正に使えるよう覚えておく。
+func (s *stage) outputText(ctx context.Context, r *response, responseID, itemID, delta string) {
+	item := s.items[itemID]
+	if item == nil {
+		item = &assistantItem{generation: r.generation}
+		s.items[itemID] = item
+		s.itemOrder = append(s.itemOrder, itemID)
+	}
+	s.pendingOutput[itemID] = true
+	r.items[itemID] = true
+	item.generated += delta
+	s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: responseID, ItemID: itemID, Text: delta}})
+}
+
+// outputDone は応答の文章の終わりを読み上げへ知らせる。
+func (s *stage) outputDone(ctx context.Context, r *response, responseID, itemID, text string) {
+	if item := s.items[itemID]; item != nil && text != "" {
+		item.generated = text
+	}
+	s.emit(ctx, types.EventResponseText{ResponseText: types.ResponseText{GenerationID: r.generation, ResponseID: responseID, ItemID: itemID, Done: true}})
 }
 
 // interruptedText は、モデルの発話がユーザーに遮られたことを履歴に残す記録の本文。
