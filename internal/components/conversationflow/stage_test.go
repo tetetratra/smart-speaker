@@ -55,7 +55,7 @@ func (s *stage) none(t *testing.T) {
 func TestRespondDecisionRequestsResponseAndEndsTurn(t *testing.T) {
 	s := testStage()
 	req := s.userSaid("おはよう")
-	if req.Text != "おはよう" || req.GenerationID != s.cfg.Generation.Current() {
+	if req.GenerationID != s.cfg.Generation.Current() {
 		t.Fatal(req)
 	}
 	s.handle(context.Background(), types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: types.DecisionRespond}})

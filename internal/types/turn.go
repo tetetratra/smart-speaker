@@ -26,12 +26,10 @@ const (
 	BrainModelStrong BrainModel = "strong"
 )
 
-// DecisionRequest は、ユーザーの発話1回の判定依頼。会話の履歴は decision が共有のストアから読む。
+// DecisionRequest は、ユーザーの発話1回の判定依頼。今回の発話を含む会話の履歴は、decision が共有のストアから読む。
 type DecisionRequest struct {
 	TurnID       string
 	GenerationID GenerationID
-	// Text は今回の発話の文字起こし。履歴に保存済みの記録と同じ内容。
-	Text string
 }
 
 // Decision は判定結果。

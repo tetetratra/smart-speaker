@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -176,6 +177,8 @@ func (s *stage) say(ctx context.Context, req types.BrainRequest, text string, si
 	if silent {
 		text = silentText
 		metadata[types.BrainSilentMetadataKey] = true
+	} else {
+		text = speakable(text)
 	}
 	log.Printf("brain: 依頼 %s 応答 %q", req.RequestID, text)
 	s.emit(ctx, types.ConversationRecord{ID: "brain/" + req.RequestID + "/" + fmt.Sprint(time.Now().UnixNano()), Role: types.RoleBackground, Text: text,
@@ -192,7 +195,8 @@ func (s *stage) prompt() json.RawMessage {
 			}
 		}
 	}
-	text := conversation.RestoreContext(s.cfg.History.Snapshot(), memories) + "\n" + requestInstructions
+	// 現在の日時は毎回変わるので、指示ではなく入力の末尾に置く。指示に入れると、その後ろに続く会話の履歴がキャッシュに当たらなくなるため。
+	text := conversation.RestoreContext(s.cfg.History.Snapshot(), memories) + "\n" + requestInstructions + "\n\n" + strings.TrimSpace(conversation.WithCurrentTime("", time.Now()))
 	raw, _ := json.Marshal(map[string]any{"role": "user", "content": text})
 	return raw
 }
@@ -200,6 +204,28 @@ func (s *stage) prompt() json.RawMessage {
 const requestInstructions = `## 依頼
 上の会話の最後の記録（ユーザーの発話、または後から届いた結果や知らせ）に対応してください。
 過去の会話の記録にある操作は、新しい依頼として再実行しないでください。`
+
+var (
+	// citationMarks は、組み込みの web_search が本文に埋め込む引用の印（私用領域の文字で囲まれた turn0search0 など）。
+	citationMarks = regexp.MustCompile(`\x{e200}[^\x{e201}]*\x{e201}`)
+	// parenLinks は「([prtimes.jp](https://...))」のような、出典を示す括弧書きのリンク。
+	parenLinks = regexp.MustCompile(`\s*[（(]\s*\[[^\]]*\]\([^)]*\)\s*[)）]`)
+	// links は「[文字](URL)」の形のリンク。文字だけを残す。
+	links = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	// bareURLs は、文中にそのまま書かれた URL。
+	bareURLs = regexp.MustCompile(`https?://\S+`)
+)
+
+// speakable は、話す内容から、読み上げられない引用の印・リンク・Markdown の強調を取り除く。
+// 組み込みの web_search の結果をもとにすると、プロンプトで頼んでもこれらが混ざるため。
+func speakable(text string) string {
+	text = citationMarks.ReplaceAllString(text, "")
+	text = parenLinks.ReplaceAllString(text, "")
+	text = links.ReplaceAllString(text, "$1")
+	text = bareURLs.ReplaceAllString(text, "")
+	text = strings.NewReplacer("**", "", "__", "").Replace(text)
+	return strings.TrimSpace(text)
+}
 
 type functionCall struct {
 	CallID    string `json:"call_id"`
@@ -217,7 +243,7 @@ type output struct {
 func (s *stage) call(ctx context.Context, model ModelConfig, input []json.RawMessage) (output, error) {
 	payload := map[string]any{
 		"model":        model.Model,
-		"instructions": conversation.WithCurrentTime(s.cfg.Instructions, time.Now()),
+		"instructions": s.cfg.Instructions,
 		"input":        input,
 		"tools":        append(append([]any{}, s.cfg.Tools...), map[string]any{"type": "web_search"}),
 		// 会話の状態は API 側に持たせず、毎回すべてを渡す。推論の中身は暗号化したものを受け取って次の呼び出しに戻す。

@@ -171,8 +171,15 @@ func (b *Backend) decisions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid", 400)
 		return
 	}
+	// 履歴のいちばん新しいユーザーの行（「[日時] user: 本文」）が今回の発話。
+	last := ""
+	for _, line := range strings.Split(payload.Input, "\n") {
+		if _, text, ok := strings.Cut(line, "] user: "); ok {
+			last = text
+		}
+	}
 	choice := "respond"
-	if _, last, _ := strings.Cut(payload.Input, "## 今回のユーザーの発話\n"); strings.HasPrefix(last, whiteboardPrefix) {
+	if strings.HasPrefix(last, whiteboardPrefix) {
 		choice = "delegate_light"
 	}
 	w.Header().Set("Content-Type", "application/json")

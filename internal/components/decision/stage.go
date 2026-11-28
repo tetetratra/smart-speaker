@@ -75,7 +75,7 @@ func (s *stage) run(ctx context.Context) {
 		s.tasks.Add(1)
 		go func() {
 			defer s.tasks.Done()
-			choice := s.decide(ctx, req.DecisionRequest)
+			choice := s.decide(ctx)
 			select {
 			case s.node.Downstream <- types.EventDecision{Decision: types.Decision{TurnID: req.TurnID, GenerationID: req.GenerationID, Choice: choice}}:
 			case <-ctx.Done():
@@ -86,9 +86,9 @@ func (s *stage) run(ctx context.Context) {
 
 // decide は判定する。API が失敗したときや答えを拒否したときは、強いモデルに任せる。
 // 頭脳AIなら自分宛てでない発話にも「何も話さない」と答えられるので、無言のまま止まるより安全なため。
-func (s *stage) decide(ctx context.Context, req types.DecisionRequest) types.DecisionChoice {
+func (s *stage) decide(ctx context.Context) types.DecisionChoice {
 	started := time.Now()
-	answer, err := s.call(ctx, s.input(req))
+	answer, err := s.call(ctx, s.input())
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("decision: 判定に失敗したため強いモデルに任せます: %v", err)
@@ -102,17 +102,26 @@ func (s *stage) decide(ctx context.Context, req types.DecisionRequest) types.Dec
 		log.Printf("decision: 想定外の判定 %q のため強いモデルに任せます", answer.choice)
 		choice = types.DecisionDelegateStrong
 	}
+	// 判定に迷っているときは強いモデルに任せる。頭脳AIなら、そのまま返す・待つ・何も話さない、も選べるため。
+	if answer.confidence < lowConfidence && choice != types.DecisionDelegateStrong {
+		log.Printf("decision: 判定 %s は confidence が低いため強いモデルに任せます", choice)
+		choice = types.DecisionDelegateStrong
+	}
 	// 振り分けの精度と待ち時間を後から確かめられるよう、確率・所要時間・キャッシュの効き具合を残す。
 	log.Printf("decision: 判定=%s confidence=%.2f 確率=%s 所要=%s 入力=%d（キャッシュ=%d）", choice, answer.confidence, answer.probabilities, time.Since(started).Round(time.Millisecond), answer.inputTokens, answer.cachedTokens)
 	return choice
 }
 
-// input は Decisions API に渡す会話。先頭が毎回そろうよう、履歴を古い順に並べ、今回の発話を最後に置く。
-func (s *stage) input(req types.DecisionRequest) string {
-	return conversation.RestoreContext(s.cfg.History.Snapshot(), nil) + "\n## 今回のユーザーの発話\n" + req.Text
+// lowConfidence は、判定に迷っているとみなす confidence。これより低ければ強いモデルに任せる。値は本番ログを見て決めた目安。
+const lowConfidence = 0.5
+
+// input は Decisions API に渡す会話。今回の発話は記録係が保存済みなので、履歴の最後のユーザーの行に入っている。
+// 履歴だけを渡すと、前回の入力全体が今回の入力の先頭とそろい、キャッシュに当たる。
+func (s *stage) input() string {
+	return conversation.RestoreContext(s.cfg.History.Snapshot(), nil)
 }
 
-const questionInstructions = `あなたは家庭用の音声アシスタントの振り分け役です。会話の流れを踏まえ、「今回のユーザーの発話」にアシスタントがどう対応するかを選んでください。
+const questionInstructions = `あなたは家庭用の音声アシスタントの振り分け役です。会話の流れを踏まえ、会話の中でいちばん新しいユーザー（user）の発話に、アシスタントがどう対応するかを選んでください。
 音声は自動で文字起こししているため、聞き取りの誤りや、物音・テレビ・ほかの人の声が混ざることがあります。`
 
 var choices = []map[string]any{

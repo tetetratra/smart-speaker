@@ -110,6 +110,10 @@ func TestThinkCallsToolsAndReturnsAnswer(t *testing.T) {
 	if !strings.Contains(prompt, "電気消して") || !strings.Contains(prompt, "寝室の照明はシーン名『消灯』") {
 		t.Fatal("履歴と長期メモリを渡していません", prompt)
 	}
+	// 毎回変わる日時は、キャッシュを崩さないよう指示ではなく入力の末尾に置く。
+	if first["instructions"] != "頭脳AIの指示" || !strings.Contains(prompt[strings.Index(prompt, "## 依頼"):], "## 現在の日時") {
+		t.Fatal("日時の置き場所が違います", first["instructions"])
+	}
 	var names []string
 	for _, tool := range first["tools"].([]any) {
 		m := tool.(map[string]any)
@@ -167,4 +171,17 @@ func (a advancing) Name() string { return a.tool.Name() }
 func (a advancing) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	a.gen.Next()
 	return a.tool.Run(ctx, args)
+}
+
+// 話す内容から、組み込みの web_search が混ぜる引用の印・出典のリンク・Markdown の強調を取り除く。
+func TestSpeakableRemovesCitationsLinksAndEmphasis(t *testing.T) {
+	for in, want := range map[string]string{
+		"本セールは、**12月7日（月）23時59分まで**。([example.com](https://example.com/a?utm_source=openai))": "本セールは、12月7日（月）23時59分まで。",
+		"在庫は変わるよ。 \ue200cite\ue202turn0search0\ue202turn1search0\ue201":                       "在庫は変わるよ。",
+		"詳しくは[公式サイト](https://example.com)を見てね。https://example.com/b":                          "詳しくは公式サイトを見てね。",
+	} {
+		if got := speakable(in); got != want {
+			t.Fatalf("%q => %q", in, got)
+		}
+	}
 }

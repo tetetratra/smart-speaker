@@ -96,7 +96,7 @@ func (s *stage) startTurn(ctx context.Context, record types.ConversationRecord) 
 		return
 	}
 	s.turn = &turn{id: uuid.NewString(), generation: record.GenerationID}
-	s.emit(ctx, types.EventDecisionRequest{DecisionRequest: types.DecisionRequest{TurnID: s.turn.id, GenerationID: record.GenerationID, Text: record.Text}})
+	s.emit(ctx, types.EventDecisionRequest{DecisionRequest: types.DecisionRequest{TurnID: s.turn.id, GenerationID: record.GenerationID}})
 }
 
 // current は、判定や話す内容が今のターンのもので、まだ世代が進んでいないかを返す。
