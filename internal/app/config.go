@@ -34,17 +34,32 @@ type Config struct {
 	RealtimeNoiseReduction     string
 	RealtimeEndpoint           string
 	RealtimeTranscriptionModel string
-	Memory                     MemoryConfig
-	SystemPrompt               string
-	ConversationIdleTimeout    time.Duration
-	TTSProvider                string
-	ElevenLabs                 ElevenLabsConfig
-	Voicevox                   VoicevoxConfig
-	RTCIceAdvertiseIPs         []string
-	WSAddr                     string
-	WebDistDir                 string
+	// DecisionsModel は、発話の振り分けに使う Decisions API のモデル。DecisionsEndpoint はテスト用の接続先。
+	DecisionsModel    string
+	DecisionsEndpoint string
+	Brain             BrainConfig
+	Memory            MemoryConfig
+	// SystemPrompt は Realtime（ユーザーと話す音声のモデル）へ、BrainSystemPrompt は頭脳AIへ渡すシステムプロンプト。
+	SystemPrompt            string
+	BrainSystemPrompt       string
+	ConversationIdleTimeout time.Duration
+	TTSProvider             string
+	ElevenLabs              ElevenLabsConfig
+	Voicevox                VoicevoxConfig
+	RTCIceAdvertiseIPs      []string
+	WSAddr                  string
+	WebDistDir              string
 	// pluginConfigs は config.yaml の plugins の下の、プラグインの名前ごとの設定。中身はプラグインが読む。
 	pluginConfigs map[string]yaml.Node
+}
+
+// BrainConfig は頭脳AIの設定。
+type BrainConfig struct {
+	Model string
+	// ReasoningEffort は Responses API の reasoning.effort。
+	ReasoningEffort string
+	// Endpoint はテスト用の Responses API の接続先。空なら OpenAI の公式エンドポイント。
+	Endpoint string
 }
 
 // DecodePluginConfig は、config.yaml の plugins.<name> の中身を v に読み込む。
@@ -192,6 +207,15 @@ type configFile struct {
 			TranscriptionModel string `yaml:"transcription_model"`
 			Endpoint           string `yaml:"endpoint"`
 		} `yaml:"realtime"`
+		Decisions struct {
+			Model    string `yaml:"model"`
+			Endpoint string `yaml:"endpoint"`
+		} `yaml:"decisions"`
+		Brain struct {
+			Model           string `yaml:"model"`
+			ReasoningEffort string `yaml:"reasoning_effort"`
+			Endpoint        string `yaml:"endpoint"`
+		} `yaml:"brain"`
 	} `yaml:"openai"`
 	Conversation struct {
 		IdleTimeoutSeconds *int `yaml:"idle_timeout_seconds"`
@@ -302,21 +326,29 @@ func buildConfig(file configFile, getenv func(string) string) (Config, error) {
 	return Config{
 		APIKey:                     apiKey,
 		SystemPrompt:               joinPrompts(defaultSystemPrompt, file.AdditionalSystemPrompt),
+		BrainSystemPrompt:          joinPrompts(defaultBrainPrompt, file.AdditionalSystemPrompt),
 		RealtimeModel:              stringOr(file.OpenAI.Realtime.Model, "gpt-realtime-2.1"),
 		RealtimeVAD:                stringOr(file.OpenAI.Realtime.VAD, "semantic_vad"),
 		RealtimeNoiseReduction:     stringOr(file.OpenAI.Realtime.NoiseReduction, "far_field"),
 		RealtimeEndpoint:           strings.TrimSpace(file.OpenAI.Realtime.Endpoint),
 		RealtimeTranscriptionModel: stringOr(file.OpenAI.Realtime.TranscriptionModel, "gpt-4o-mini-transcribe"),
 		ResponsesModel:             responsesModel,
-		WakeModeStorePath:          stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
-		WakeSettings:               wake,
-		LocalSTTEndpoint:           stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
-		WakeEnergyThreshold:        energyThreshold,
-		AutomationStorePath:        stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
-		ConversationHistoryPath:    filepath.Join(dataDir, "conversation-history.json"),
-		Memory:                     memoryCfg,
-		ConversationIdleTimeout:    idleTimeout,
-		TTSProvider:                stringOr(file.TTS.Provider, "voicevox"),
+		DecisionsModel:             stringOr(file.OpenAI.Decisions.Model, "gpt-6-luna"),
+		DecisionsEndpoint:          strings.TrimSpace(file.OpenAI.Decisions.Endpoint),
+		Brain: BrainConfig{
+			Endpoint:        strings.TrimSpace(file.OpenAI.Brain.Endpoint),
+			Model:           stringOr(file.OpenAI.Brain.Model, "gpt-6.1-terra"),
+			ReasoningEffort: stringOr(file.OpenAI.Brain.ReasoningEffort, "low"),
+		},
+		WakeModeStorePath:       stringOr(file.Wake.StorePath, filepath.Join(dataDir, "wake-mode.json")),
+		WakeSettings:            wake,
+		LocalSTTEndpoint:        stringOr(file.Wake.LocalSTTEndpoint, "http://local-stt:8000/transcribe"),
+		WakeEnergyThreshold:     energyThreshold,
+		AutomationStorePath:     stringOr(file.Automations.StorePath, filepath.Join(dataDir, "automations.json")),
+		ConversationHistoryPath: filepath.Join(dataDir, "conversation-history.json"),
+		Memory:                  memoryCfg,
+		ConversationIdleTimeout: idleTimeout,
+		TTSProvider:             stringOr(file.TTS.Provider, "voicevox"),
 		ElevenLabs: ElevenLabsConfig{
 			APIKey:  env("ELEVENLABS_API_KEY"),
 			VoiceID: strings.TrimSpace(file.TTS.ElevenLabs.VoiceID),

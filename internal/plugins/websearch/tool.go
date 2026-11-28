@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	toolName = "web_search"
+	// ToolName はツール名。頭脳AIには組み込みの web_search を渡すので、このツールは渡さない（main の brainTools）。
+	ToolName = "web_search"
 
 	toolDescription = `Web検索が必要な最新情報・外部情報を調べます。
 検索したい内容をqueryに自然言語で書いてください。
@@ -25,7 +26,7 @@ const (
 	queryDescription = `検索の依頼文言（例：今日の◯◯関連のニュースを教えて）`
 
 	// source は後から届ける結果の記録の Source。ツールの記録と同じく、ツール名にする。
-	source = toolName
+	source = ToolName
 
 	acceptedInstructions = "呼び出しの前に一言伝えていれば、何も話さずwait_for_userで待機してください。まだ伝えていなければ、「調べてみるね」「ちょっと見てみるね」のような短い一言だけにしてください。結果を予想したり、結果が届くまでの流れを説明したりしないでください。結果は後で[Web検索の結果]として届きます。"
 	resultInstructions   = "依頼していたWeb検索が終わりました。まずset_whiteboardで結果の要点をホワイトボードに書き、その成功後に口頭で要点を短く伝えてください。ホワイトボードに書くときは、「書いたよ」「書いてから伝えるね」のように、書くこと自体を口に出さないでください。口頭では、調べた内容の要点だけを伝えてください。「明日は晴れで、最高気温は20度くらい」のように、何の結果かが要点の文の中で分かるようにし、「結果が届いたよ」のような話し始めの一言は付けないでください。依頼のときに伝え方の指示（読み上げ不要、ホワイトボードに書くだけ、など）があれば従ってください。取り消された依頼や既に説明済みの内容なら説明せず、wait_for_userで待機してください。"
@@ -66,7 +67,7 @@ func NewTool(cfg Config) *Tool {
 	return &Tool{client: client, deliver: cfg.Deliver, appContext: cfg.AppContext}
 }
 
-func (t *Tool) Name() string { return toolName }
+func (t *Tool) Name() string { return ToolName }
 
 func (t *Tool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if t.client == nil {
@@ -148,7 +149,7 @@ func encode(value any) string {
 func (t *Tool) Definition() map[string]any {
 	return map[string]any{
 		"type":        "function",
-		"name":        toolName,
+		"name":        ToolName,
 		"description": toolDescription,
 		"parameters": map[string]any{
 			"type": "object",

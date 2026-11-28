@@ -69,7 +69,7 @@ func New(cfg Config) *Registry {
 	return &Registry{entries: entries}
 }
 
-// Handlers はtoolcaller向けのname->handlerマップを返します。
+// Handlers はツールの実行器（execution.Executor）向けのname->handlerマップを返します。
 func (r *Registry) Handlers() map[string]tools.Handler {
 	handlers := map[string]tools.Handler{}
 	if r == nil {
@@ -84,8 +84,8 @@ func (r *Registry) Handlers() map[string]tools.Handler {
 	return handlers
 }
 
-// DefinitionsForRealtime は全ツールをfunction calling用に返す。
-func (r *Registry) DefinitionsForRealtime() []any {
+// Definitions は全ツールをfunction calling用に返す（頭脳AIに渡す）。
+func (r *Registry) Definitions() []any {
 	defs := make([]any, 0, len(r.entries))
 	for _, e := range r.entries {
 		if e.def == nil {

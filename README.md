@@ -3,6 +3,7 @@
 スマートフォンのブラウザを音声入力・音声再生の端末として使う、Web ベースのスマートスピーカーです。
 
 ブラウザのマイク音声を WebRTC で Go サーバーへ送り、サーバーが OpenAI の Realtime API と会話します。
+発話ごとに Decisions API で振り分け、ツールや判断が要る依頼は頭脳AI（Responses API）に任せて、その内容を Realtime が話し言葉にして伝えます。
 返答のテキストは VOICEVOX（または ElevenLabs）で音声にして、WebRTC でブラウザへ返して再生します。
 
 ## 主な機能
@@ -41,7 +42,7 @@ docker compose up --build
 |---|---|
 | `cmd/smart-speaker` | サーバーの起動処理と部品をつなぐ配線、読み上げ音声の選択などの HTTP API |
 | `cmd/local-verify-realtime` | 外部 API を使わずに動かす確認用のサーバー |
-| `internal/` | 会話処理（`components/realtime` など）、ツールの登録と実行（`tools/`）、会話の状態の保存（`states/`） |
+| `internal/` | 会話処理（`components/realtime`・`conversationflow`・`decision`・`brain` など）、ツールの登録と実行（`tools/`）、会話の状態の保存（`states/`） |
 | `internal/features/<名前>` | 本体に組み込む機能（長期メモリ・呼びかけ・予約ジョブ・ホワイトボード）。ストア・ツール・HTTP など 1 つの機能の部品を 1 つのディレクトリにまとめ、`cmd/smart-speaker` が直接つなぐ |
 | `internal/plugin`、`internal/plugins/<名前>` | プラグインの受け口と、各プラグイン（config で有効にし、Plugin interface だけで本体とつながる機能） |
 | `web/` | ブラウザの画面（React）。`web/src` を、画面の切り替えと配線（`app/`）、本体の機能（`features/<名前>`）、任意機能（`plugins/<名前>`）、機能に依存しない土台（`shared/`）に分ける。依存は `app/` → `features/`・`plugins/` → `shared/` の一方向にする |
@@ -61,7 +62,8 @@ flowchart LR
     browser{{"ブラウザ<br/>web/"}}
     chat["wschat<br/>画面連携"]
     localStt{{"local-stt<br/>ローカル文字起こし"}}
-    rt["realtime<br/>Realtime連携"]
+    rtIn["realtime-transcription<br/>Realtime連携（音声入力・文字起こし）"]
+    rtOut["realtime-response<br/>Realtime連携（応答生成）"]
     openaiRealtime{{"OpenAI Realtime API<br/>wss://api.openai.com/v1/realtime"}}
     elevenLabs{{"ElevenLabs API<br/>https://api.elevenlabs.io"}}
     voicevox{{"VOICEVOX<br/>http://voicevox:50021"}}
@@ -89,24 +91,26 @@ flowchart LR
     browser <==>|"WebSocket<br/>画面・WebRTC制御"| chat
     output ==>|"WebRTC<br/>応答音声"| browser
     wake <==>|"HTTP<br/>文字起こし"| localStt
-    rt <==>|"WebSocket<br/>会話セッション"| openaiRealtime
+    rtIn <==>|"WebSocket<br/>会話セッション（rtIn と rtOut で1本を共有）"| openaiRealtime
+    rtOut <==>|"WebSocket<br/>会話セッション（共有）"| openaiRealtime
     chat -->|"EventRTCSignal<br/>WebRTC制御"| peer
     peer -->|"EventRTCSignal<br/>WebRTC制御"| chat
     peer -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先"| wake
     peer -->|"EventRTCPeerOutputSink<br/>音声送信先"| output
-    wake -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先<br/>EventLocalWakeUtterance<br/>呼びかけ判定済み発話"| rt
+    wake -->|"EventRTCPeerAudioFrame<br/>マイク音声フレーム<br/>EventRTCPeerOutputSink<br/>音声送信先<br/>EventLocalWakeUtterance<br/>呼びかけ判定済み発話"| rtIn
     wake -->|"EventWakeTranscription<br/>呼びかけ文字起こし結果"| chat
-    rt -->|"EventResponseText<br/>応答テキスト"| segment
+    rtOut -->|"EventResponseText<br/>応答テキスト"| segment
     segment -->|"EventTimelineItem<br/>発話項目<br/>EventAgentTimelineEnd<br/>応答終了"| ttsNode
     ttsNode -->|"EventPlayableSpeech<br/>合成音声<br/>EventAgentTimelineEnd<br/>応答終了"| frame
     frame -->|"EventAudioFrame<br/>音声フレーム"| pace
     pace -->|"EventAudioFrame<br/>音声フレーム"| output
-    output -->|"EventAudioSent<br/>音声送信済み"| rt
+    output -->|"EventAudioSent<br/>音声送信済み"| rtOut
     output -->|"EventAudioSent<br/>音声送信済み"| chat
-    rt -->|"EventGenerationChanged<br/>応答世代の変更<br/>EventSpeechStart<br/>発話開始<br/>EventSpeechEnd<br/>発話終了<br/>EventRealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
+    rtIn -->|"EventGenerationChanged<br/>応答世代の変更<br/>EventSpeechStart<br/>発話開始<br/>EventSpeechEnd<br/>発話終了<br/>EventRealtimeStatus<br/>Realtime接続状態<br/>SessionReset<br/>セッションリセット"| chat
     ttsNode <==>|"HTTPS<br/>音声合成"| elevenLabs
     ttsNode <==>|"HTTP<br/>音声合成"| voicevox
-    rt <-.->|"世代の更新・判定"| generationStore
+    rtIn <-.->|"世代の更新・判定"| generationStore
+    rtOut <-.->|"世代の更新・判定"| generationStore
     generationStore -.->|"古い世代の破棄"| segment
     generationStore -.->|"古い世代の破棄"| ttsNode
     generationStore -.->|"古い世代の破棄"| frame
@@ -114,20 +118,27 @@ flowchart LR
     generationStore -.->|"古い世代の破棄"| output
     generationStore -.->|"古い世代の破棄"| chat
     wake <-.->|"呼びかけ判定"| wakeModeStore
-    rt <-.->|"状態の参照、会話中の延長"| wakeModeStore
+    rtIn <-.->|"状態の参照、会話中の延長"| wakeModeStore
     ttsSelectionStore -.->|"使う音声合成"| ttsNode
     browser <-.->|"参照・切替"| ttsSelectionStore
 ```
 
 ### 会話
 
+ユーザーの発話ごとに、会話の流れ（conversationflow）が振り分け（decision）を頼み、その判定で、Realtime がそのまま返すか、頭脳AI（brain）に任せるかを決めます。
+記録はすべて記録係（conversationrecorder）が保存してから会話の流れへ渡すので、振り分けと頭脳AIが読む履歴には、今回の発話や頭脳AIの話す内容が入っています。
+
 ```mermaid
 flowchart LR
-    manager["conversationmanager<br/>会話管理"]
+    recorder["conversationrecorder<br/>会話の記録"]
+    flow["conversationflow<br/>会話の流れ"]
+    decision["decision<br/>振り分け"]
+    brain["brain<br/>頭脳AI"]
+    openaiDecisions{{"OpenAI Decisions API<br/>https://api.openai.com/v1/decisions"}}
     openaiResponses{{"OpenAI Responses API<br/>https://api.openai.com/v1/responses"}}
-    rt["realtime<br/>Realtime連携"]
-    tool["toolcaller<br/>ツール実行"]
-    webSearchTool("【Web検索】<br/>web_search")
+    rtIn["realtime-transcription<br/>Realtime連携（音声入力・文字起こし）"]
+    rtOut["realtime-response<br/>Realtime連携（応答生成）"]
+    toolset["ツール<br/>（下の図）"]
     scheduler["automation<br/>予約ジョブ"]
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
@@ -143,27 +154,35 @@ flowchart LR
         automationStore[("automations<br/>予約ジョブ")]
     end
 
-    manager <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
-    rt -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>ユーザーの発話・ツールの記録<br/>EventConversationInput{ModelAlreadyKnows: true, UserAlreadyKnows: true}<br/>モデルの発話・遮られた記録などの記録<br/>EventConversationInput{ModelShouldRespond: true}<br/>ローカルの呼びかけ判定を通った発話<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| manager
-    manager --->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼・ローカルの呼びかけ判定を通った発話<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rt
-    rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
-    tool --->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
-    manager -->|"EventConversationInput{Subscribable: true}<br/>購読可能な記録（schedule.source が一致するジョブを動かす）<br/>※会話に入れた記録はすべて流れ、購読可能なものだけを使う"| scheduler
+    recorder <==>|"HTTPS<br/>メモリ抽出"| openaiResponses
+    decision <==>|"HTTPS<br/>発話の振り分け"| openaiDecisions
+    brain <==>|"HTTPS<br/>推論・ツール呼び出しの指示・組み込みの web_search"| openaiResponses
+    rtIn -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>ユーザーの発話（ローカルの呼びかけ判定を通った発話も）"| recorder
+    rtOut -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>モデルの発話・遮られた記録<br/><br/>EventConversationHistorySync<br/>会話履歴の読み出し同期<br/>EventConversationIdle<br/>無操作の継続<br/>EventConversationRecordsUsed<br/>参照済みの外部記録"| recorder
+    brain -->|"EventConversationInput{ModelAlreadyKnows: true}<br/>ツールの記録・話す内容"| recorder
+    recorder -->|"EventConversationInput<br/>保存した記録（すべて）<br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| flow
+    flow -->|"EventDecisionRequest<br/>ユーザーの発話の判定依頼"| decision
+    decision -->|"EventDecision<br/>そのまま返す・軽い/強いモデルに任せる・もう少し聞く・応答しない"| flow
+    flow -->|"EventBrainRequest<br/>判定で任せた依頼<br/>応答を求める記録（ModelShouldRespond）への対応"| brain
+    brain -->|"ツール呼び出し"| toolset
+    flow -->|"EventResponseRequest<br/>応答依頼（一次応答・頭脳AIの話す内容・そのまま返す）<br/>※ターン中に届いたターンの外の依頼は、ターンが終わってから流す<br/><br/>EventConversationInput{}<br/>応答を求めない記録（参考情報）<br/>EventConversationHistorySync<br/>会話履歴の読み出し同期"| rtOut
+    recorder -->|"EventConversationInput{Subscribable: true}<br/>購読可能な記録（schedule.source が一致するジョブを動かす）<br/>※会話に入れた記録はすべて流れ、購読可能なものだけを使う"| scheduler
     scheduler -->|"ジョブのスクリプトを実行"| runner
     runner -->|"remind・ツールの呼び出しと結果・スクリプトの失敗"| scheduler
-    scheduler -->|"EventConversationInput{ModelShouldRespond: true}<br/>remind<br/>EventConversationInput{}<br/>スクリプトから呼んだツールの記録・スクリプトの失敗"| manager
-    tool -->|"呼び出し<br/>受け付けだけ返る"| webSearchTool
-    runner -->|"スクリプトからの呼び出し"| webSearchTool
-    webSearchTool -->|"Deliver<br/>後から届く検索結果"| gateway
+    scheduler -->|"EventConversationInput{ModelShouldRespond: true}<br/>remind<br/>EventConversationInput{}<br/>スクリプトから呼んだツールの記録・スクリプトの失敗"| recorder
+    toolset -->|"Deliver<br/>Claude Codeの通知・後から届く検索結果"| gateway
     locationAPI -->|"Deliver<br/>居場所の変化"| gateway
     hub2Watcher <==>|"HTTPS<br/>温度・湿度・明るさの取得"| switchBot
     hub2Watcher -->|"Deliver<br/>温度・湿度・明るさの段階の変化"| gateway
-    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所・温度・湿度・明るさの変化"| manager
-    manager <-.->|"記録、無操作が続いたときに<br/>時間がたった・大きくなりすぎた古い会話を取り出し"| historyStore
-    historyStore -.->|"接続時の文脈復元"| rt
-    memoryStore -.->|"接続時の文脈"| rt
-    manager <-.->|"古い会話からの抽出結果"| memoryStore
-    manager -->|"EventConversationRecordAdded<br/>画面に出す記録の追加"| chat
+    gateway -->|"EventConversationInput{}<br/>会話への情報追加<br/>EventConversationInput{ModelShouldRespond: true}<br/>会話への応答依頼<br/>EventConversationInput{Subscribable: true}<br/>居場所・温度・湿度・明るさの変化"| recorder
+    recorder <-.->|"記録、無操作が続いたときに<br/>時間がたった・大きくなりすぎた古い会話を取り出し"| historyStore
+    historyStore -.->|"判定に渡す全履歴"| decision
+    historyStore -.->|"推論に渡す全履歴"| brain
+    memoryStore -.->|"推論に渡す長期メモリ"| brain
+    historyStore -.->|"接続時の文脈復元"| rtOut
+    memoryStore -.->|"接続時の文脈"| rtOut
+    recorder <-.->|"古い会話からの抽出結果"| memoryStore
+    recorder -->|"EventConversationRecordAdded<br/>画面に出す記録の追加"| chat
     chat ==>|"WebSocket<br/>記録の追加<br/>（ユーザーの発話は吹き出し、それ以外はホワイトボード）"| browser
     scheduler <-.->|"期限の来た予約の読み出し・次回時刻の保存"| automationStore
 ```
@@ -172,8 +191,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    rt["realtime<br/>Realtime連携"]
-    tool["toolcaller<br/>ツール実行"]
+    brain["brain<br/>頭脳AI"]
     scheduler["automation<br/>予約ジョブ"]
     runner("script.Runner<br/>スクリプト実行")
     gateway["gateway<br/>グラフの外との境目"]
@@ -210,9 +228,7 @@ flowchart LR
     locationStore[("【現在地】<br/>userlocation<br/>ユーザーの居場所")]
     browser{{"ブラウザ<br/>web/"}}
 
-    rt -->|"EventToolRequest<br/>ツール実行依頼"| tool
-    tool -->|"EventConversationCommitRequest<br/>ツール結果の会話反映依頼"| rt
-    tool -->|"ツール呼び出し"| toolset
+    brain -->|"ツール呼び出し（Web検索は組み込みの web_search を使うので、web_search ツールは渡さない）"| toolset
     scheduler -->|"ジョブのスクリプトを実行"| runner
     runner -->|"スクリプトからのツール呼び出し"| toolset
 

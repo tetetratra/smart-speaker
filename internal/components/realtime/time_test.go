@@ -8,6 +8,7 @@ import (
 
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
+	"github.com/tetetratra/smart-speaker/internal/types"
 )
 
 // 日時は指示ではなく会話の末尾に応答ごとに足し、指示を応答ごとに変えない。
@@ -28,7 +29,7 @@ func TestResponseAddsTimeNoticeInsteadOfChangingInstructions(t *testing.T) {
 		return command.(map[string]any)
 	}
 	before := time.Now()
-	s.wantResponse = true
+	s.pendingRequests = []types.ResponseRequest{{GenerationID: s.cfg.Generation.Current()}}
 	s.maybeRespond(context.Background())
 	notice := pop()
 	item := notice["item"].(map[string]any)
@@ -49,7 +50,7 @@ func TestResponseAddsTimeNoticeInsteadOfChangingInstructions(t *testing.T) {
 
 	// 次の応答でも、前の知らせは消さずに新しい知らせを足す。
 	s.active = ""
-	s.wantResponse = true
+	s.pendingRequests = []types.ResponseRequest{{GenerationID: s.cfg.Generation.Current()}}
 	s.maybeRespond(context.Background())
 	if next := pop(); next["type"] != "conversation.item.create" {
 		t.Fatalf("次の応答の前に日時を足していません: %v", next)

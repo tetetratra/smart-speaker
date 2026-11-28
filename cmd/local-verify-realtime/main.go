@@ -50,6 +50,10 @@ func main() {
 openai:
   realtime:
     endpoint: %q
+  decisions:
+    endpoint: %q
+  brain:
+    endpoint: %q
 conversation:
   idle_timeout_seconds: 0
 memory:
@@ -58,7 +62,7 @@ tts:
   provider: voicevox
   voicevox:
     endpoint: %q
-`, *addr, "ws://"+*fixtureAddr+"/realtime", filepath.Join(dir, "memories.json"), base)
+`, *addr, "ws://"+*fixtureAddr+"/realtime", base+"/decisions", base+"/responses", filepath.Join(dir, "memories.json"), base)
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		log.Fatal(err)
 	}

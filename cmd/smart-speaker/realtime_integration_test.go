@@ -27,7 +27,10 @@ func TestRealtimeConversationLocal(t *testing.T) {
 	backend, handler := localverify.New(ctx)
 	fake := httptest.NewServer(handler)
 	defer fake.Close()
-	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local"}, ConversationHistoryPath: filepath.Join(t.TempDir(), "conversation-history.json")}
+	cfg := app.Config{APIKey: "local", ResponsesModel: "local", RealtimeEndpoint: strings.Replace(fake.URL, "http", "ws", 1) + "/realtime", TTSProvider: "voicevox", Voicevox: app.VoicevoxConfig{Endpoint: fake.URL}, Memory: app.MemoryConfig{Model: "local"},
+		DecisionsEndpoint:       fake.URL + "/decisions",
+		Brain:                   app.BrainConfig{Endpoint: fake.URL + "/responses", Model: "local"},
+		ConversationHistoryPath: filepath.Join(t.TempDir(), "conversation-history.json")}
 	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memory.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -245,4 +248,26 @@ func TestRealtimeConversationLocal(t *testing.T) {
 		t.Fatal("再生停止通知が届かなかった")
 	}
 	t.Logf("割り込み→世代更新・再生停止→履歴補正→世代%vの音声送信を確認", firstGeneration+1)
+
+	// 頭脳AIに任せる依頼は、一次応答のあと、頭脳AIがツールを呼んで用意した内容を伝える。
+	if err = backend.Say("ホワイトボード: 買い物メモ"); err != nil {
+		t.Fatal(err)
+	}
+	var whiteboard, answered bool
+	for !whiteboard || !answered {
+		m := read()
+		switch m["type"] {
+		case "conversation_records":
+			for _, record := range m["records"].([]any) {
+				if r := record.(map[string]any); r["role"] == "tool" && strings.Contains(fmt.Sprint(r), "set_whiteboard") {
+					whiteboard = true
+				}
+			}
+		case "playback_progress":
+			if strings.Contains(fmt.Sprint(m["text"]), "ホワイトボードに書いたよ") {
+				answered = true
+			}
+		}
+	}
+	t.Log("振り分け→頭脳AIのツール呼び出し（set_whiteboard）→話す内容の読み上げを確認")
 }

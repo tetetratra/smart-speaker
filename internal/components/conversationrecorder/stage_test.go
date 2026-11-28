@@ -1,4 +1,4 @@
-package conversationmanager
+package conversationrecorder
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
@@ -22,7 +21,7 @@ func testStage(t *testing.T) *stage {
 	return &stage{node: &graph.Stage{Downstream: make(chan types.Event, 20)}, history: history, seen: map[string]bool{}, unused: map[string]bool{}}
 }
 
-func TestRecordsOnlyUpdateHistory(t *testing.T) {
+func TestKnownRecordsAreSavedThenForwardedToFlow(t *testing.T) {
 	s := testStage(t)
 	for _, id := range []string{"speech", "reply"} {
 		s.handle(context.Background(), types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleUser, Text: id}, ModelAlreadyKnows: true, UserAlreadyKnows: true}})
@@ -32,10 +31,12 @@ func TestRecordsOnlyUpdateHistory(t *testing.T) {
 	if len(records) != 2 || records[0].ID != "speech" || records[1].ID != "reply" {
 		t.Fatal(records)
 	}
-	select {
-	case e := <-s.node.Downstream:
-		t.Fatal("記録をAPIへ送り返しました", e)
-	default:
+	// 会話の流れが次を決められるよう、保存した記録をそのまま流す。
+	for _, id := range []string{"speech", "reply"} {
+		e := (<-s.node.Downstream).(types.EventConversationInput)
+		if e.Record.ID != id || !e.ModelAlreadyKnows {
+			t.Fatal(e)
+		}
 	}
 }
 
@@ -67,46 +68,6 @@ func TestInputIsSavedBeforeForwardingAndDeliveryIsNotStored(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestHistorySyncPreservesDeliveryAndReadOrder(t *testing.T) {
-	s := testStage(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	s.handle(ctx, types.EventConversationInput{ConversationInput: types.ExternalInput(types.ConversationRecord{ID: "request", Text: "通常入力として渡す依頼"}, nil)})
-	done, returned := make(chan struct{}), make(chan struct{})
-	go func() {
-		s.handle(ctx, types.EventConversationHistorySync{Epoch: 1, Done: done})
-		close(returned)
-	}()
-	// 保存済みの応答依頼が、読み出しマーカーより先に配送される。
-	if e := nextForwarded(s); !types.Is[types.EventConversationInput](e) {
-		t.Fatal(e)
-	}
-	if e := <-s.node.Downstream; !types.Is[types.EventConversationHistorySync](e) {
-		t.Fatal(e)
-	}
-	select {
-	case <-returned:
-		t.Fatal("読み出し前に後続処理を再開した")
-	default:
-	}
-	if records := s.history.Snapshot(); len(records) != 1 || records[0].ID != "request" {
-		t.Fatal(records)
-	}
-	close(done)
-	select {
-	case <-returned:
-	case <-ctx.Done():
-		t.Fatal("読み出し後に再開しない")
-	}
-}
-
-func TestHistorySyncCanBeCancelled(t *testing.T) {
-	s := testStage(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	s.handle(ctx, types.EventConversationHistorySync{Done: make(chan struct{})})
 }
 
 func TestIdlePassesOnlyUnusedRecordIDsAndKeepsHistory(t *testing.T) {
@@ -151,11 +112,9 @@ func TestOnlyRecordsUserDoesNotKnowAreSentToScreen(t *testing.T) {
 	}
 	var sent []string
 	for len(s.node.Downstream) > 0 {
-		e := <-s.node.Downstream
-		if !types.Is[types.EventConversationRecordAdded](e) {
-			t.Fatal(e)
+		if e, ok := (<-s.node.Downstream).(types.EventConversationRecordAdded); ok {
+			sent = append(sent, e.ConversationRecord.ID)
 		}
-		sent = append(sent, e.(types.EventConversationRecordAdded).ConversationRecord.ID)
 	}
 	if strings.Join(sent, ",") != "tool" {
 		t.Fatal(sent)

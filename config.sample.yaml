@@ -31,7 +31,7 @@ rtc:
   #   - 192.168.0.10
 
 openai:
-  # 長い履歴の要約・Web検索に使う Responses API のモデル（メモリの抽出は memory.model）。
+  # 長い履歴の要約・予約ジョブから呼ぶWeb検索に使う Responses API のモデル（メモリの抽出は memory.model、頭脳AIは brain）。
   # 既定: "gpt-5.4-nano-2026-03-17"
   # responses_model: "gpt-5.4-nano-2026-03-17"
 
@@ -49,6 +49,22 @@ openai:
     # transcription_model: "gpt-4o-mini-transcribe"
 
     # テスト用の WebSocket 接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
+    # endpoint: ""
+
+  decisions:
+    # ユーザーの発話の振り分け（Realtime がそのまま返す・頭脳AIに任せる・待つ・応答しない）に使う Decisions API のモデル。既定: "gpt-6-luna"
+    # model: "gpt-6-luna"
+
+    # テスト用の接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
+    # endpoint: ""
+
+  brain:
+    # 頭脳AI（判断とツール呼び出しを受け持つ Responses API のモデル）。ツールが要る依頼、考える必要がある依頼、
+    # 後から届いた結果・予約ジョブの remind への対応に使います。既定: "gpt-6.1-terra"
+    # model: "gpt-6.1-terra"
+    # reasoning effort（"none"・"low"・"medium" など、モデルが受け付ける値）。既定: "low"
+    # reasoning_effort: "low"
+    # テスト用の Responses API の接続先。通常は指定しません。既定: なし（OpenAI の公式エンドポイント）
     # endpoint: ""
 
 conversation:

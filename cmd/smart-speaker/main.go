@@ -14,14 +14,16 @@ import (
 	"github.com/tetetratra/smart-speaker/internal/components/audioframe"
 	"github.com/tetetratra/smart-speaker/internal/components/audiopace"
 	"github.com/tetetratra/smart-speaker/internal/components/automation"
-	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
+	"github.com/tetetratra/smart-speaker/internal/components/brain"
+	"github.com/tetetratra/smart-speaker/internal/components/conversationflow"
+	"github.com/tetetratra/smart-speaker/internal/components/conversationrecorder"
+	"github.com/tetetratra/smart-speaker/internal/components/decision"
 	"github.com/tetetratra/smart-speaker/internal/components/gateway"
 	"github.com/tetetratra/smart-speaker/internal/components/generationfilter"
 	"github.com/tetetratra/smart-speaker/internal/components/realtime"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcout"
 	"github.com/tetetratra/smart-speaker/internal/components/rtcpeer"
 	"github.com/tetetratra/smart-speaker/internal/components/speechsegment"
-	"github.com/tetetratra/smart-speaker/internal/components/toolcaller"
 	"github.com/tetetratra/smart-speaker/internal/components/tts"
 	"github.com/tetetratra/smart-speaker/internal/components/wakegate"
 	"github.com/tetetratra/smart-speaker/internal/features/automations"
@@ -87,7 +89,7 @@ func main() {
 		log.Fatal(err)
 	}
 	services.Automations.SetSources(plugin.Sources(services.Plugins))
-	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず会話管理へ送る。
+	// 予約ジョブはグラフのコンポーネントで、実行結果は gateway を通さず記録係へ送る。
 	// Runner はコンポーネントより先に作るので、コンポーネントだけ先に作って送り口を渡す。
 	services.AutomationStage = automation.New(services.Automations)
 	services.WakeMode, err = wakemode.NewStore(cfg.WakeModeStorePath, cfg.WakeSettings)
@@ -140,11 +142,11 @@ func closeStages(stages ...*graph.Stage) {
 }
 
 type appStages struct {
-	chat, rtcpeer, realtime, manager, segment, tts, frame, pace, tool, wakegate, output, gateway, automation *graph.Stage
+	chat, rtcpeer, transcription, response, recorder, flow, decision, brain, segment, tts, frame, pace, wakegate, output, gateway, automation *graph.Stage
 }
 
 func (s appStages) all() []*graph.Stage {
-	return []*graph.Stage{s.chat, s.rtcpeer, s.realtime, s.manager, s.segment, s.tts, s.frame, s.pace, s.tool, s.wakegate, s.output, s.gateway, s.automation}
+	return []*graph.Stage{s.chat, s.rtcpeer, s.transcription, s.response, s.recorder, s.flow, s.decision, s.brain, s.segment, s.tts, s.frame, s.pace, s.wakegate, s.output, s.gateway, s.automation}
 }
 
 func ttsConfig(cfg app.Config) tts.Config {
@@ -198,14 +200,31 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 	if toolHandlers == nil {
 		toolSchemas, toolHandlers = buildToolRegistry(cfg, memoryStore, services)
 	}
-	stages.realtime, err = realtime.NewStage(realtime.Config{History: historyStore, Memory: memoryStore,
+	// Realtime はツールを持たず会話だけで返事をするので、ツールの使い方を含むプラグインの指示は頭脳AIにだけ渡す。
+	stages.transcription, stages.response, err = realtime.NewStages(realtime.Config{
 		WakeMode: services.WakeMode,
 		APIKey:   cfg.APIKey, Model: cfg.RealtimeModel, Endpoint: cfg.RealtimeEndpoint, TranscriptionModel: cfg.RealtimeTranscriptionModel,
 		TurnDetection: cfg.RealtimeVAD, NoiseReduction: cfg.RealtimeNoiseReduction,
-		Instructions: plugin.Instructions(cfg.SystemPrompt, services.Plugins), Generation: generationStore, Tools: toolSchemas,
-		ToolTitle:   execution.New(toolHandlers).Title,
+		Instructions: cfg.SystemPrompt, Generation: generationStore,
 		IdleTimeout: cfg.ConversationIdleTimeout,
 	})
+	if err != nil {
+		return appStages{}, err
+	}
+	stages.decision, err = decision.NewStage(decision.Config{APIKey: cfg.APIKey, Model: cfg.DecisionsModel, Endpoint: cfg.DecisionsEndpoint, History: historyStore})
+	if err != nil {
+		return appStages{}, err
+	}
+	stages.brain, err = brain.NewStage(brain.Config{APIKey: cfg.APIKey, Endpoint: cfg.Brain.Endpoint,
+		Model: cfg.Brain.Model, ReasoningEffort: cfg.Brain.ReasoningEffort,
+		Instructions: plugin.Instructions(cfg.BrainSystemPrompt, services.Plugins),
+		Tools:        brainTools(toolSchemas), Executor: execution.New(toolHandlers),
+		History: historyStore, Memory: memoryStore, Generation: generationStore,
+	})
+	if err != nil {
+		return appStages{}, err
+	}
+	stages.flow, err = conversationflow.NewStage(conversationflow.Config{Generation: generationStore})
 	if err != nil {
 		return appStages{}, err
 	}
@@ -213,7 +232,7 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 	if services.AutomationStage != nil {
 		stages.automation = services.AutomationStage.Stage()
 	}
-	stages.manager = conversationmanager.NewStage(conversationmanager.Config{History: historyStore,
+	stages.recorder = conversationrecorder.NewStage(conversationrecorder.Config{History: historyStore,
 		OnIdle: func(ctx context.Context, keep map[string]bool) {
 			memoryCreatorHook.MemorizeOld(ctx, historyStore, keep)
 		},
@@ -232,7 +251,6 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 	if err != nil {
 		return appStages{}, err
 	}
-	stages.tool = toolcaller.NewStage(toolHandlers)
 	for _, stage := range []*graph.Stage{stages.segment, stages.tts, stages.frame, stages.pace, stages.chat, stages.output} {
 		if stage != nil {
 			generationfilter.Attach(stage, generationStore)
@@ -245,9 +263,21 @@ func buildStages(cfg app.Config, chatStage *graph.Stage, memoryStore *memory.Sto
 		return appStages{}, err
 	}
 	stages.tts.Name = "tts"
-	stages.tool.Name = "toolcaller"
 	stages.rtcpeer.Name = "rtcpeer"
 	return stages, nil
+}
+
+// brainTools は頭脳AIに渡すツール定義を返す。Web検索は Responses API 組み込みの web_search を頭脳AIが使うので、
+// 結果が後から届く web_search プラグインのツールは渡さない（予約ジョブのスクリプトからは引き続き呼べる）。
+func brainTools(definitions []any) []any {
+	result := make([]any, 0, len(definitions))
+	for _, definition := range definitions {
+		if tool, ok := definition.(map[string]any); ok && tool["name"] == websearch.ToolName {
+			continue
+		}
+		result = append(result, definition)
+	}
+	return result
 }
 
 func buildToolRegistry(cfg app.Config, memoryStore *memory.Store, services runtimeServices) ([]any, map[string]tools.Handler) {
@@ -257,7 +287,7 @@ func buildToolRegistry(cfg app.Config, memoryStore *memory.Store, services runti
 		Memory:      memoryStore,
 		PluginTools: plugin.Tools(services.Plugins),
 	})
-	return reg.DefinitionsForRealtime(), reg.Handlers()
+	return reg.Definitions(), reg.Handlers()
 }
 
 func wireGraph(g *graph.Graph, s appStages) {
@@ -267,35 +297,42 @@ func wireGraph(g *graph.Graph, s appStages) {
 		}
 		return g.AddNode(st)
 	}
-	chat, peer, rt := add(s.chat), add(s.rtcpeer), add(s.realtime)
-	manager := add(s.manager)
-	connect(g, rt, manager, types.EventConversationInput{}, types.EventConversationHistorySync{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
-	connect(g, manager, rt, types.EventConversationInput{}, types.EventConversationHistorySync{})
+	chat, peer := add(s.chat), add(s.rtcpeer)
+	// transcription と response は、Realtime API の1本の会話セッションを共有する2つのコンポーネント。
+	transcription, response := add(s.transcription), add(s.response)
+	recorder, flow, decisionNode, brainNode := add(s.recorder), add(s.flow), add(s.decision), add(s.brain)
+	// 会話の記録は、すべて記録係（recorder）が保存してから会話の流れ（flow）へ渡す。
+	connect(g, transcription, recorder, types.EventConversationInput{})
+	connect(g, response, recorder, types.EventConversationInput{}, types.EventConversationIdle{}, types.EventConversationRecordsUsed{})
+	connect(g, brainNode, recorder, types.EventConversationInput{})
+	connect(g, recorder, flow, types.EventConversationInput{})
+	connect(g, flow, decisionNode, types.EventDecisionRequest{})
+	connect(g, decisionNode, flow, types.EventDecision{})
+	connect(g, flow, brainNode, types.EventBrainRequest{})
+	connect(g, flow, response, types.EventResponseRequest{}, types.EventConversationInput{})
 	gw := add(s.gateway)
-	connect(g, gw, manager, types.EventConversationInput{})
+	connect(g, gw, recorder, types.EventConversationInput{})
 	automation := add(s.automation)
-	connect(g, manager, automation, types.EventConversationInput{})
-	connect(g, automation, manager, types.EventConversationInput{})
-	connect(g, manager, chat, types.EventConversationRecordAdded{})
+	connect(g, recorder, automation, types.EventConversationInput{})
+	connect(g, automation, recorder, types.EventConversationInput{})
+	connect(g, recorder, chat, types.EventConversationRecordAdded{})
 	output := add(s.output)
 	connect(g, peer, output, types.EventRTCPeerOutputSink{})
-	segment, ttsNode, frame, pace, tool := add(s.segment), add(s.tts), add(s.frame), add(s.pace), add(s.tool)
+	segment, ttsNode, frame, pace := add(s.segment), add(s.tts), add(s.frame), add(s.pace)
 	connect(g, chat, peer, types.EventRTCSignal{})
 	connect(g, peer, chat, types.EventRTCSignal{})
 	wake := add(s.wakegate)
 	connect(g, peer, wake, types.EventRTCPeerAudioFrame{}, types.EventRTCPeerOutputSink{})
-	connect(g, wake, rt, types.EventRTCPeerAudioFrame{}, types.EventRTCPeerOutputSink{}, types.EventLocalWakeUtterance{})
+	connect(g, wake, transcription, types.EventRTCPeerAudioFrame{}, types.EventRTCPeerOutputSink{}, types.EventLocalWakeUtterance{})
 	connect(g, wake, chat, types.EventWakeTranscription{})
-	connect(g, rt, segment, types.EventResponseText{})
+	connect(g, response, segment, types.EventResponseText{})
 	connect(g, segment, ttsNode, types.EventTimelineItem{}, types.EventAgentTimelineEnd{})
 	connect(g, ttsNode, frame, types.EventPlayableSpeech{}, types.EventAgentTimelineEnd{})
 	connect(g, frame, pace, types.EventAudioFrame{})
 	connect(g, pace, output, types.EventAudioFrame{})
 	connect(g, output, chat, types.EventAudioSent{})
-	connect(g, output, rt, types.EventAudioSent{})
-	connect(g, rt, chat, types.EventGenerationChanged{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
-	connect(g, rt, tool, types.EventToolRequest{})
-	connect(g, tool, rt, types.EventConversationCommitRequest{})
+	connect(g, output, response, types.EventAudioSent{})
+	connect(g, transcription, chat, types.EventGenerationChanged{}, types.EventSpeechStart{}, types.EventSpeechEnd{}, types.EventRealtimeStatus{})
 }
 
 // buildPlugins は本体に組み込むプラグインを作る。並び順はツールの並び順になる。

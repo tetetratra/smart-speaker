@@ -36,7 +36,7 @@ func HistoryOnly(raw json.RawMessage) bool {
 	return json.Unmarshal(raw, &value) == nil && value.Delivery == "history_only"
 }
 
-// ExternalInput は、会話の外から届いた入力を、会話管理へ渡す形にする。
+// ExternalInput は、会話の外から届いた入力を、記録係（conversationrecorder）へ渡す形にする。
 // deliveryContext はツールの実行や agent-bridge が運ぶ通知の context（JSON）。
 // history_only なら情報追加だけ、それ以外は応答も依頼する。delivery は制御情報なので履歴には残さず、
 // ほかの項目（予約ジョブの識別情報など）は記録の付随情報として残す。

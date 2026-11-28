@@ -5,10 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/tetetratra/smart-speaker/internal/components/conversationmanager"
+	"github.com/tetetratra/smart-speaker/internal/components/conversationrecorder"
 	"github.com/tetetratra/smart-speaker/internal/components/generationcontroller"
 	"github.com/tetetratra/smart-speaker/internal/eventqueue"
-	"github.com/tetetratra/smart-speaker/internal/features/memory"
 	"github.com/tetetratra/smart-speaker/internal/graph"
 	"github.com/tetetratra/smart-speaker/internal/states/conversationhistory"
 	"github.com/tetetratra/smart-speaker/internal/states/generation"
@@ -24,8 +23,12 @@ import (
 	"time"
 )
 
+// rig は、偽の Realtime API サーバーと記録係（conversationrecorder）をつないで、文字起こしと応答生成の2つのコンポーネントを動かす。
+// 会話の流れ（conversationflow）の代わりに、応答を求めない記録だけを応答生成側へ渡し、utterance では応答依頼を送る。
 type rig struct {
 	managerQueue *eventqueue.Queue[types.Event]
+	gen          *generation.Store
+	marks        int
 	connections  chan *websocket.Conn
 	t            *testing.T
 	ctx          context.Context
@@ -37,13 +40,10 @@ type rig struct {
 }
 
 func newRig(t *testing.T, options ...func(*Config)) *rig {
-	return newRigWithInitialText(t, "", options...)
+	return createRig(t, "", nil, options...)
 }
 func newRigWithInbound(t *testing.T, inbound <-chan types.ConversationInput, options ...func(*Config)) *rig {
 	return createRig(t, "", inbound, options...)
-}
-func newRigWithInitialText(t *testing.T, initialText string, options ...func(*Config)) *rig {
-	return createRig(t, initialText, nil, options...)
 }
 func newTestHistory(t *testing.T) *conversationhistory.Store {
 	t.Helper()
@@ -56,7 +56,7 @@ func newTestHistory(t *testing.T) *conversationhistory.Store {
 
 func createRig(t *testing.T, initialText string, inbound <-chan types.ConversationInput, options ...func(*Config)) *rig {
 	t.Helper()
-	// 会話管理のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
+	// 記録係（conversationrecorder）のゴルーチンは停止の直後まで保存しうるため、t.TempDirの厳密な後片付けを避ける。まれに一時ディレクトリが残っても構わない。
 	dir, err := os.MkdirTemp("", "realtime-rig")
 	if err != nil {
 		t.Fatal(err)
@@ -95,20 +95,42 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 		}
 	}))
 	t.Cleanup(server.Close)
-	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore(), History: r.history}
+	cfg := Config{APIKey: "local-test", Endpoint: strings.Replace(server.URL, "http", "ws", 1), Generation: generation.NewStore()}
 	for _, option := range options {
 		option(&cfg)
 	}
-	node, err := NewStage(cfg)
+	r.gen = cfg.Generation
+	transcription, response, err := NewStages(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// テストからは1つの入口に送り、イベントの種類で文字起こし側か応答生成側へ振り分ける。
+	node := &graph.Stage{Upstream: make(chan types.Event)}
 	r.node = node
-	manager := conversationmanager.NewStage(conversationmanager.Config{History: r.history})
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e := <-node.Upstream:
+				to := transcription
+				switch e.(type) {
+				case types.EventResponseRequest, types.EventConversationInput, types.EventAudioSent:
+					to = response
+				}
+				select {
+				case to.Upstream <- e:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	manager := conversationrecorder.NewStage(conversationrecorder.Config{History: r.history})
 	managerQueue := eventqueue.New[types.Event](nil)
 	r.managerQueue = managerQueue
 	go manager.Run(ctx)
-	// 外からの入力は、gateway と同じく会話管理へイベントとして届ける。
+	// 外からの入力は、gateway と同じく記録係（conversationrecorder）へイベントとして届ける。
 	go func() {
 		for {
 			select {
@@ -144,45 +166,48 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 				if !ok {
 					return
 				}
+				// 会話の流れと同じく、応答を求めない記録と履歴の同期だけを応答生成側へ渡す。
+				if input, ok := e.(types.EventConversationInput); ok && (input.ModelAlreadyKnows || input.ModelShouldRespond) {
+					continue
+				}
 				select {
-				case node.Upstream <- e:
+				case response.Upstream <- e:
 				case <-ctx.Done():
 					return
 				}
 			}
 		}
 	}()
-	go node.Run(ctx)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case e, ok := <-node.Downstream:
-				if !ok {
+	go transcription.Run(ctx)
+	go response.Run(ctx)
+	for _, out := range []*graph.Stage{transcription, response} {
+		go func(out *graph.Stage) {
+			for {
+				select {
+				case <-ctx.Done():
 					return
-				}
-				switch e.(type) {
-				case types.EventConversationInput, types.EventConversationHistorySync, types.EventConversationIdle, types.EventConversationRecordsUsed:
-					managerQueue.Push(e)
-				}
+				case e, ok := <-out.Downstream:
+					if !ok {
+						return
+					}
+					switch e.(type) {
+					case types.EventConversationInput, types.EventConversationIdle, types.EventConversationRecordsUsed:
+						managerQueue.Push(e)
+					}
 
-				select {
-				case r.events <- e:
-				case <-ctx.Done():
-					return
+					select {
+					case r.events <- e:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
-		}
-	}()
+		}(out)
+	}
 	if initialText == "__offline__" {
 		return r
 	}
-	if initialText == "" {
-		node.Upstream <- types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{PeerID: "test", Connected: true}}
-	} else {
-		node.Upstream <- types.EventLLMRequest{LLMRequest: types.LLMRequest{Text: initialText}}
-	}
+	node.Upstream <- types.EventRTCPeerOutputSink{RTCPeerOutputSink: types.RTCPeerOutputSink{PeerID: "test", Connected: true}}
 	select {
 	case r.conn = <-connected:
 	case <-ctx.Done():
@@ -211,14 +236,8 @@ func createRig(t *testing.T, initialText string, inbound <-chan types.Conversati
 	if _, specified := session["reasoning"]; specified {
 		t.Fatal("推論量はAPIのデフォルトに任せます", session)
 	}
-	foundWait := false
-	for _, definition := range session["tools"].([]any) {
-		if definition.(map[string]any)["name"] == waitToolName {
-			foundWait = true
-		}
-	}
-	if !foundWait {
-		t.Fatal("待機ツールがAPIに渡されていません")
+	if _, ok := session["tools"]; ok {
+		t.Fatal("Realtime にツールを渡しています。ツールは頭脳AIだけが持ちます", session["tools"])
 	}
 	instructions, _ := session["instructions"].(string)
 	if strings.Contains(instructions, "Asia/Tokyo") || !strings.Contains(instructions, cfg.Instructions) {
@@ -286,10 +305,24 @@ func (r *rig) event(want types.Event) types.Event {
 		}
 	}
 }
+
+// utterance はユーザーが1回話したことにし、会話の流れが「Realtime がそのまま返す」と判定したときと同じく、応答依頼を送る。
 func (r *rig) utterance(id string) {
+	before := r.gen.Current()
 	r.send(map[string]any{"type": "input_audio_buffer.speech_started", "item_id": id})
 	r.send(map[string]any{"type": "input_audio_buffer.speech_stopped", "item_id": id})
 	r.send(map[string]any{"type": "input_audio_buffer.committed", "item_id": id})
+	r.respond(before, "")
+}
+
+// respond は、世代が before から進むのを待ってから、今の世代への応答依頼を送る。
+func (r *rig) respond(before types.GenerationID, notice string) {
+	r.t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for r.gen.Current() == before && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	r.node.Upstream <- types.EventResponseRequest{ResponseRequest: types.ResponseRequest{GenerationID: r.gen.Current(), Notice: notice}}
 }
 func (r *rig) response(id, item, text string, metadata any) {
 	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": id, "metadata": metadata}})
@@ -336,143 +369,6 @@ func TestAudioInputAndLateTranscriptPreserveResponseGeneration(t *testing.T) {
 	}
 	t.Fatal("記録が揃いません", r.records())
 }
-
-// 応答は区切りごとに記録し、送り終える前にユーザーが話し始めたら、遮られたことを1件記録する。
-func TestInterruptedResponseKeepsSentSegmentsAndRecordsInterruption(t *testing.T) {
-	r := newRig(t)
-	r.utterance("user1")
-	req := r.wait("response.create")
-	r.response("r1", "a1", "一文目。二文目。", req["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText{})
-	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", SegmentID: "s1", Final: true, Text: "一文目。"}}
-	r.waitRecord("1/s1")
-	r.utterance("user2")
-	r.wait("conversation.item.delete")
-	// ユーザーが続けて話しても、遮られた記録は1件だけにする。
-	r.utterance("user3")
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		var got []string
-		for _, record := range r.records() {
-			got = append(got, record.Role+":"+record.Text)
-		}
-		want := []string{types.RoleAgent + ":一文目。", types.RoleSystem + ":" + interruptedText}
-		if len(got) == len(want) && got[0] == want[0] && got[1] == want[1] {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("記録が想定と違います", r.records())
-}
-
-// 全文を送り終えた応答のあとに話し始めても、遮られたとは記録しない。
-func TestFullySentResponseIsNotRecordedAsInterrupted(t *testing.T) {
-	r := newRig(t)
-	r.utterance("user1")
-	req := r.wait("response.create")
-	r.response("r1", "a1", "こんにちは。", req["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText{})
-	r.node.Upstream <- types.EventAudioSent{AudioFrame: types.AudioFrame{GenerationID: 1, ItemID: "a1", SegmentID: "s1", Final: true, Text: "こんにちは。"}}
-	r.waitRecord("1/s1")
-	r.utterance("user2")
-	r.wait("response.create")
-	for _, record := range r.records() {
-		if record.Role == types.RoleSystem {
-			t.Fatal("全文を送り終えたのに遮られたと記録しました", r.records())
-		}
-	}
-}
-func TestRepairCompletesBeforeNextResponse(t *testing.T) {
-	r := newRig(t)
-	r.utterance("user1")
-	request := r.wait("response.create")
-	r.response("response1", "assistant1", "未送信の文章。", request["response"].(map[string]any)["metadata"])
-	r.event(types.EventResponseText{})
-	r.utterance("user2")
-	deleted := r.wait("conversation.item.delete")
-	if deleted["item_id"] != "assistant1" {
-		t.Fatal(deleted)
-	}
-	replacement := r.wait("conversation.item.create")
-	item := replacement["item"].(map[string]any)
-	// 反映通知を受けるまでは次のresponse.createを送らない。
-	select {
-	case cmd := <-r.commands:
-		t.Fatalf("補正確認前に送信した: %v", cmd)
-	case <-time.After(30 * time.Millisecond):
-	}
-	r.send(map[string]any{"type": "conversation.item.deleted", "item_id": "assistant1"})
-	r.send(map[string]any{"type": "conversation.item.added", "item": item})
-	next := r.wait("response.create")
-	if next["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "2" {
-		t.Fatal(next)
-	}
-}
-func TestOldToolResultStartsCurrentResponseAfterAcknowledgement(t *testing.T) {
-	r := newRig(t)
-	r.utterance("user1")
-	req := r.wait("response.create")
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
-	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "test", "arguments": "{}"})
-	r.event(types.EventToolRequest{})
-	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "r1"}})
-	r.utterance("user2")
-	for {
-		change := r.event(types.EventGenerationChanged{}).(types.EventGenerationChanged).GenerationChanged
-		if change.GenerationID == 2 {
-			break
-		}
-	}
-	ack := r.wait("response.create")
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "ack", "metadata": ack["response"].(map[string]any)["metadata"]}})
-	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "ack", "status": "completed"}})
-	result := types.ToolResultRecord{ToolCallID: "call1", Name: "test", GenerationID: 1, Output: json.RawMessage(`{"ok":true}`)}
-	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
-	r.wait("conversation.item.create")
-	records := r.records()
-	found := false
-	for _, rec := range records {
-		if rec.Role == types.RoleTool && rec.Output == `{"ok":true}` {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal(records)
-	}
-	next, notice := r.waitResponse()
-	if next["metadata"].(map[string]any)["generation"] != "2" || !strings.Contains(notice, "call1") {
-		t.Fatal("旧結果を現在の世代で説明する指示がありません", next)
-	}
-}
-
-func TestToolCallArrivingAfterGenerationChangeIsExecuted(t *testing.T) {
-	r := newRig(t)
-	r.utterance("user1")
-	req := r.wait("response.create")
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
-	// 引数が確定する前にユーザーが話し始め、世代が進む。
-	r.utterance("user2")
-	for {
-		change := r.event(types.EventGenerationChanged{}).(types.EventGenerationChanged).GenerationChanged
-		if change.GenerationID == 2 {
-			break
-		}
-	}
-	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
-	tool := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
-	if tool.ToolCallID != "call1" || tool.GenerationID != 1 {
-		t.Fatal(tool)
-	}
-}
-func TestInitialTextIsRetainedWhileConnecting(t *testing.T) {
-	r := newRigWithInitialText(t, "初回の質問")
-	cmd := r.wait("conversation.item.create")
-	item := cmd["item"].(map[string]any)
-	if item["content"].([]any)[0].(map[string]any)["text"] != "初回の質問" {
-		t.Fatal(cmd)
-	}
-	r.wait("response.create")
-}
 func TestAPIErrorLeavesPendingStateAndStopsOldPlayback(t *testing.T) {
 	r := newRig(t)
 	r.utterance("user1")
@@ -495,14 +391,14 @@ func TestAPIErrorLeavesPendingStateAndStopsOldPlayback(t *testing.T) {
 }
 func TestIdleNotifiesConversationManagerOnceWithoutReset(t *testing.T) {
 	ctx := context.Background()
-	s := &stage{cfg: Config{IdleTimeout: time.Millisecond, RotateAfter: time.Hour}, lastActivity: time.Now().Add(-time.Second), started: time.Now(), ready: true, transport: &transport{}, node: &graph.Stage{Downstream: make(chan types.Event, 10)}}
+	s := &stage{cfg: Config{IdleTimeout: time.Millisecond, RotateAfter: time.Hour}, lastActivity: time.Now().Add(-time.Second), started: time.Now(), ready: true, transport: &transport{}, response: &graph.Stage{Downstream: make(chan types.Event, 10)}}
 	s.tick(ctx, time.Now())
-	if e := <-s.node.Downstream; !types.Is[types.EventConversationIdle](e) {
+	if e := <-s.response.Downstream; !types.Is[types.EventConversationIdle](e) {
 		t.Fatal(e)
 	}
 	s.tick(ctx, time.Now())
 	select {
-	case e := <-s.node.Downstream:
+	case e := <-s.response.Downstream:
 		t.Fatal("リセットまたは二重通知", e)
 	default:
 	}
@@ -517,21 +413,22 @@ func TestQueuedOldConnectionEventsAreIgnoredImmediatelyAfterDisconnect(t *testin
 	gen := generation.NewStore()
 	gen.Next()
 	s := &stage{cfg: Config{Generation: gen}, controller: generationcontroller.New(gen), queue: eventqueue.New[incoming](nil), epoch: 1, ready: true, peers: map[string]bool{}, responses: map[string]*response{"old": {generation: 1}}, items: map[string]*assistantItem{}, pendingOutput: map[string]bool{}}
-	s.node = &graph.Stage{Upstream: make(chan types.Event), Downstream: make(chan types.Event, 10)}
+	s.transcription = &graph.Stage{Upstream: make(chan types.Event), Downstream: make(chan types.Event, 10)}
+	s.response = &graph.Stage{Upstream: make(chan types.Event), Downstream: make(chan types.Event, 10)}
 	s.queue.Push(incoming{epoch: 1, err: fmt.Errorf("接続切断")})
 	s.queue.Push(incoming{epoch: 1, data: []byte(`{"type":"response.output_text.delta","response_id":"old","item_id":"late","delta":"旧接続の後着"}`)})
 	s.queue.Push(incoming{epoch: 1, data: []byte(`{"type":"session.updated"}`)})
 	done := make(chan struct{})
 	go func() { s.run(ctx); close(done) }()
 	select {
-	case <-s.node.Downstream:
+	case <-s.transcription.Downstream:
 	case <-ctx.Done():
 		t.Fatal("切断通知なし")
 	}
 	// タイマーイベントを後続に入れ、旧データをすべて処理した後に終了する。
 	s.queue.Push(incoming{event: time.Now()})
 	select {
-	case e := <-s.node.Downstream:
+	case e := <-s.transcription.Downstream:
 		if !types.Is[types.EventGenerationChanged](e) {
 			t.Fatal(e)
 		}
@@ -569,7 +466,7 @@ func TestFullySentParagraphsDoNotTriggerInterruptionRepair(t *testing.T) {
 	}
 }
 
-func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
+func TestReconnectDoesNotRestoreHistoryAndAcceptsNextTurn(t *testing.T) {
 	r := newRig(t, func(cfg *Config) { cfg.Instructions = "元のシステム指示" })
 	r.utterance("user1")
 	r.wait("response.create")
@@ -591,12 +488,22 @@ func TestReconnectRestoresTextHistoryAndAcceptsNextTurn(t *testing.T) {
 		t.Fatal(update)
 	}
 	r.send(map[string]any{"type": "session.updated"})
-	restored := r.wait("conversation.item.create")["item"].(map[string]any)
-	if text := restored["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "前の会話を覚えて") {
-		t.Fatal(text)
-	}
+	// 前のセッションの会話は復元しない（以前の会話は頭脳AIが全履歴を読んで答える）。
 	r.utterance("user2")
-	request := r.wait("response.create")
+	var request map[string]any
+	for request == nil {
+		select {
+		case cmd := <-r.commands:
+			if item, _ := cmd["item"].(map[string]any); item != nil && strings.Contains(fmt.Sprint(item), "前の会話を覚えて") {
+				t.Fatal("前のセッションの会話を復元しました", cmd)
+			}
+			if cmd["type"] == "response.create" {
+				request = cmd
+			}
+		case <-r.ctx.Done():
+			t.Fatal("response.create が届かない")
+		}
+	}
 	if request["response"].(map[string]any)["metadata"].(map[string]any)["generation"] != "3" {
 		t.Fatal(request)
 	}
@@ -625,83 +532,6 @@ func TestRotationWaitsForAudioSendCompletion(t *testing.T) {
 	r.send(map[string]any{"type": "session.updated"})
 }
 
-func TestReadResultPromptsOptionalWhiteboardAndThenReturnsToSpeech(t *testing.T) {
-	r := newRig(t, func(cfg *Config) {
-		cfg.Tools = []any{map[string]any{"type": "function", "name": "set_whiteboard", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]any{"type": "string"}}}}}
-	})
-	r.utterance("user1")
-	initial := r.wait("response.create")
-	created := func(id string, req map[string]any) {
-		r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": id, "metadata": req["response"].(map[string]any)["metadata"]}})
-	}
-	call := func(responseID, callID, name string) {
-		r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": responseID, "call_id": callID, "name": name, "arguments": "{}"})
-		r.event(types.EventToolRequest{})
-		r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": responseID}})
-	}
-	result := func(callID, name, output string) {
-		p := types.ToolResultRecord{ToolCallID: callID, Name: name, GenerationID: 1, Output: json.RawMessage(output)}
-		r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &p}}
-		r.wait("conversation.item.create")
-	}
-	created("r1", initial)
-	call("r1", "search1", "web_search")
-	result("search1", "web_search", `{"result":"明日の天気"}`)
-	followup, notice := r.waitResponse()
-	required := map[string]any{"response": followup}
-	if followup["tool_choice"] != nil || !strings.Contains(notice, "口頭説明より先に") {
-		t.Fatal("表示の必要性を判断する指示がありません", required)
-	}
-	created("r2", required)
-	call("r2", "board1", "set_whiteboard")
-	result("board1", "set_whiteboard", `{"updated":true}`)
-	speech := r.wait("response.create")
-	if _, forced := speech["response"].(map[string]any)["tool_choice"]; forced {
-		t.Fatal("表示後もホワイトボードを繰り返す", speech)
-	}
-	created("r3", speech)
-	r.send(map[string]any{"type": "response.done", "response": map[string]any{"id": "r3"}})
-	r.utterance("user2")
-	manual := r.wait("response.create")
-	if manual["response"].(map[string]any)["tool_choice"] != nil {
-		t.Fatal("追加の表示依頼で不要なツールが強制されました", manual)
-	}
-	created("r4", manual)
-	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r4", "call_id": "board-detail", "name": "set_whiteboard", "arguments": `{"content":"取得済みの予報を詳しく表示"}`})
-	detail := r.event(types.EventToolRequest{}).(types.EventToolRequest).ToolRequest
-	if detail.Name != "set_whiteboard" || detail.GenerationID != 2 || string(detail.Arguments) != `{"content":"取得済みの予報を詳しく表示"}` {
-		t.Fatalf("追加表示の呼び出しが受理されませんでした: %#v", detail)
-	}
-}
-
-func TestStaleHistorySyncReleasesWriter(t *testing.T) {
-	s := newToolResponseStage(t)
-	done := make(chan struct{})
-	s.handle(context.Background(), types.EventConversationHistorySync{Epoch: s.epoch - 1, Done: done})
-	select {
-	case <-done:
-	default:
-		t.Fatal("旧接続の同期で会話管理が止まる")
-	}
-	noToolCommand(t, s)
-}
-
-func TestConnectReadsLongTermMemoryDirectly(t *testing.T) {
-	memoryStore, err := memory.NewStore(filepath.Join(t.TempDir(), "memories.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err = memoryStore.Upsert(memory.UpsertInput{Content: "好きな季節は秋"}); err != nil {
-		t.Fatal(err)
-	}
-	r := newRig(t, func(cfg *Config) { cfg.Memory = memoryStore })
-	item := r.wait("conversation.item.create")["item"].(map[string]any)
-	text := item["content"].([]any)[0].(map[string]any)["text"].(string)
-	if !strings.Contains(text, "好きな季節は秋") {
-		t.Fatal(text)
-	}
-}
-
 // 記録の観測時には保存・配送を待つ。配送を担当するgoroutine自体は待機させない。
 // waitRecord は、ID の記録が保存されるまで待つ。
 func (r *rig) waitRecord(id string) {
@@ -718,57 +548,35 @@ func (r *rig) waitRecord(id string) {
 	r.t.Fatal("記録が保存されません", id, r.records())
 }
 
+// records は、それまでに記録係へ送った記録が保存されるのを待ってから、履歴を返す。
+// 記録係は届いた順に保存するので、目印の記録を送り、それが保存されたら先行の記録も保存済みとみなす。目印は返す履歴から除く。
 func (r *rig) records() []types.ConversationRecord {
-	done := make(chan struct{})
-	r.managerQueue.Push(types.EventConversationHistorySync{Done: done})
-	select {
-	case <-done:
-	case <-r.ctx.Done():
-		r.t.Fatal("履歴の保存を待てない")
-	}
-	return r.history.Snapshot()
-}
-
-func TestToolRecordsCarryDisplayFields(t *testing.T) {
-	r := newRig(t, func(cfg *Config) {
-		cfg.ToolTitle = func(name string, arguments json.RawMessage) string { return name + "のタイトル" }
-	})
-	r.utterance("user1")
-	req := r.wait("response.create")
-	r.send(map[string]any{"type": "response.created", "response": map[string]any{"id": "r1", "metadata": req["response"].(map[string]any)["metadata"]}})
-	r.send(map[string]any{"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "call1", "name": "set_whiteboard", "arguments": `{"content":"メモ"}`})
-	r.event(types.EventToolRequest{})
-	result := types.ToolResultRecord{ToolCallID: "call1", Name: "set_whiteboard", Output: json.RawMessage(`{"content":"メモ"}`)}
-	// 結果が出るまでは記録しない。
-	for _, record := range r.records() {
-		if record.Role == types.RoleTool || record.Role == types.RoleBackground {
-			t.Fatal("結果が出る前にツールを記録しました", record)
-		}
-	}
-	r.node.Upstream <- types.EventConversationCommitRequest{ConversationCommitRequest: types.ConversationCommitRequest{ToolResult: &result}}
+	r.marks++
+	id := fmt.Sprintf("__mark__/%d", r.marks)
+	r.managerQueue.Push(types.EventConversationInput{ConversationInput: types.ConversationInput{Record: types.ConversationRecord{ID: id, Role: types.RoleSystem}, ModelAlreadyKnows: true, UserAlreadyKnows: true}})
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		var tools []types.ConversationRecord
-		for _, record := range r.records() {
-			if record.Role == types.RoleTool || record.Role == types.RoleBackground {
-				tools = append(tools, record)
+		var records []types.ConversationRecord
+		found := false
+		for _, record := range r.history.Snapshot() {
+			if record.ID == id {
+				found = true
+			}
+			// 待ち合わせの目印と、セッション開始の目印（別のテストで確かめる）は除く。
+			if !strings.HasPrefix(record.ID, "__mark__/") && record.Source != types.SessionStartSource {
+				records = append(records, record)
 			}
 		}
-		if len(tools) > 0 {
-			// 呼び出しと結果を1件で持つ。
-			call := tools[0]
-			if len(tools) != 1 || call.Role != types.RoleTool || call.Text != `set_whiteboard: {"content":"メモ"} → {"content":"メモ"}` || call.Source != "set_whiteboard" || call.CallID != "call1" ||
-				call.Arguments != `{"content":"メモ"}` || call.Output != `{"content":"メモ"}` || call.Title != "set_whiteboardのタイトル" {
-				t.Fatal(tools)
-			}
-			return
+		if found {
+			return records
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("ツールの記録がありません", r.records())
+	r.t.Fatal("履歴の保存を待てない")
+	return nil
 }
 
-// ユーザーの発話とテキスト入力は、会話管理から画面に送られる（チャット欄に出す）よう UserAlreadyKnows を立てない。
+// ユーザーの発話は、記録係から画面に送られる（チャット欄に出す）よう UserAlreadyKnows を立てない。
 // 文字起こしが空の発話は見せる中身がないので立てる。
 func TestUserUtteranceRecordsAreShownOnScreen(t *testing.T) {
 	userInput := func(r *rig) types.ConversationInput {
@@ -780,12 +588,6 @@ func TestUserUtteranceRecordsAreShownOnScreen(t *testing.T) {
 		}
 	}
 	r := newRig(t)
-	r.node.Upstream <- types.EventLLMRequest{LLMRequest: types.LLMRequest{Text: "テキストの質問"}}
-	if input := userInput(r); input.Record.Text != "テキストの質問" || input.UserAlreadyKnows {
-		t.Fatal("テキスト入力が画面に出ません", input)
-	}
-
-	r = newRig(t)
 	r.utterance("user1")
 	r.wait("response.create")
 	r.send(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "user1", "transcript": "おはよう"})

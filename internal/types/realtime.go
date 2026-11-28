@@ -41,8 +41,6 @@ func EventGeneration(e Event) (uint64, bool) {
 	switch p := e.(type) {
 	case EventResponseText:
 		return uint64(p.GenerationID), true
-	case EventToolRequest:
-		return uint64(p.GenerationID), true
 	case EventTimelineItem:
 		return uint64(p.GenerationID), true
 	case EventPlayableSpeech:
@@ -63,8 +61,6 @@ type LocalWakeUtterance struct {
 	PeerID, Text string
 	Revision     uint64
 	Confidence   float64
-	// WakeOnlyは呼びかけだけで依頼の本文がない発話。起きていることを短く伝える応答にする。
-	WakeOnly bool
 }
 
 // WakeTranscriptionの結果の種類。

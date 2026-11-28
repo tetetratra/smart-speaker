@@ -34,14 +34,14 @@ func eventDetail(evt types.Event) (string, bool) {
 		return formatSpeechEventDetail(e.SpeechEvent), true
 	case types.EventConversationRecordAdded:
 		return formatRecordDetail(e.ConversationRecord), true
-	case types.EventToolRequest:
-		return formatToolRequestDetail(e.ToolRequest), true
+	case types.EventDecision:
+		return fmt.Sprintf("choice=%s, generation=%d, turn=%s", e.Choice, e.GenerationID, e.TurnID), true
+	case types.EventBrainRequest:
+		return fmt.Sprintf("generation=%d, request=%s", e.GenerationID, e.RequestID), true
+	case types.EventResponseRequest:
+		return fmt.Sprintf("generation=%d, new_generation=%t, notice=%s", e.GenerationID, e.NewGeneration, quoteText(e.Notice)), true
 	case types.EventRTCSignal:
 		return formatRTCSignalDetail(e.RTCSignal), true
-	case types.EventConversationCommitRequest:
-		return formatCommitRequestDetail(e.ConversationCommitRequest), true
-	case types.EventLLMRequest:
-		return formatLLMRequestDetail(e.LLMRequest), true
 	case types.EventTimelineItem:
 		return formatTimelineItemDetail(e.TimelineItem), true
 	case types.EventPlayableSpeech:
@@ -91,17 +91,6 @@ func formatRecordDetail(record types.ConversationRecord) string {
 
 const recordDetailChars = 40
 
-func formatToolRequestDetail(req types.ToolRequest) string {
-	args := string(req.Arguments)
-	parts := []string{
-		fmt.Sprintf("name=%s", req.Name),
-		fmt.Sprintf("arguments=%s", quoteText(args)),
-		fmt.Sprintf("args_bytes=%d", len(req.Arguments)),
-		fmt.Sprintf("generation=%d", req.GenerationID),
-	}
-	return strings.Join(parts, ", ")
-}
-
 func formatSpeechEventDetail(speech types.SpeechEvent) string {
 	parts := []string{
 		fmt.Sprintf("at=%s", speech.CapturedAt.Format(time.RFC3339Nano)),
@@ -110,21 +99,6 @@ func formatSpeechEventDetail(speech types.SpeechEvent) string {
 		parts = append(parts, fmt.Sprintf("source=%s", speech.Source))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func formatCommitRequestDetail(req types.ConversationCommitRequest) string {
-	parts := []string{
-		fmt.Sprintf("text=%s", quoteText(req.Text)),
-		fmt.Sprintf("generation=%d", req.GenerationID),
-	}
-	if req.ToolResult != nil {
-		parts = append(parts, fmt.Sprintf("tool=%s", req.ToolResult.Name))
-	}
-	return strings.Join(parts, ", ")
-}
-
-func formatLLMRequestDetail(req types.LLMRequest) string {
-	return fmt.Sprintf("role=%s, text=%s, generation=%d, request_id=%s", req.Role, quoteText(req.Text), req.GenerationID, req.RequestID)
 }
 
 func formatTimelineItemDetail(item types.TimelineItem) string {

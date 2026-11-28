@@ -13,7 +13,7 @@ import (
 
 const currentVersion = 1
 
-// Store は会話履歴の正本です。会話管理が記録し、再接続時の文脈の復元と古い履歴のメモリ化に使います。
+// Store は会話履歴の正本です。記録係（conversationrecorder）が記録し、再接続時の文脈の復元と古い履歴のメモリ化に使います。
 // 複数日の会話を再起動後も引き継ぐため、変更のたびにファイルへ保存します。
 type Store struct {
 	mu      sync.RWMutex
