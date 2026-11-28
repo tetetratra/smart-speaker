@@ -562,7 +562,8 @@ func (r *rig) records() []types.ConversationRecord {
 			if record.ID == id {
 				found = true
 			}
-			if !strings.HasPrefix(record.ID, "__mark__/") {
+			// 待ち合わせの目印と、セッション開始の目印（別のテストで確かめる）は除く。
+			if !strings.HasPrefix(record.ID, "__mark__/") && record.Source != types.SessionStartSource {
 				records = append(records, record)
 			}
 		}

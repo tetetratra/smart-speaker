@@ -163,8 +163,8 @@ func (s *stage) endTurn(ctx context.Context) {
 
 // firstResponseNotice と brainNotice は、応答のたびに Realtime の会話に足す知らせ。
 // 伝え方の指示は Realtime のシステムプロンプト（「頭脳AIとの分担」）に1回だけ書き、ここには毎回変わる中身だけを入れる。
-const firstResponseNotice = "頭脳AIが対応中。"
+const firstResponseNotice = "答えを用意中。"
 
 func brainNotice(text string) string {
-	return "## 頭脳AIが用意した内容\n" + text
+	return "## 用意した内容\n" + text
 }

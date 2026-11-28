@@ -122,3 +122,14 @@ func TestInputPutsCacheBreakpointAtPreviousEnd(t *testing.T) {
 		t.Fatal(third)
 	}
 }
+
+// 振り分けには、最後のセッション開始の目印より後の会話（Realtime と同じ範囲）だけを渡す。
+func TestCurrentSessionStartsAfterLastMarker(t *testing.T) {
+	records := []types.ConversationRecord{{ID: "old"}, {ID: "m1", Source: types.SessionStartSource}, {ID: "a"}, {ID: "m2", Source: types.SessionStartSource}, {ID: "b"}}
+	if got := currentSession(records); len(got) != 1 || got[0].ID != "b" {
+		t.Fatal(got)
+	}
+	if got := currentSession(records[:1]); len(got) != 1 {
+		t.Fatal("目印がなければすべてを渡します", got)
+	}
+}

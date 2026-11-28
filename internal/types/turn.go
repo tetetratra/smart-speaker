@@ -59,6 +59,10 @@ func (EventResponseRequest) isEvent() {}
 // RealtimeSource は、ユーザーの発話・モデルの応答など、Realtime 連携が中身を作った記録の Source。
 const RealtimeSource = "realtime"
 
+// SessionStartSource は、Realtime の会話セッションを張ったことを示す目印の記録の Source。
+// Realtime はセッションをまたいで会話を覚えていないので、振り分けにはこの目印より後の会話だけを渡す。
+const SessionStartSource = "realtime_session"
+
 // BrainSource は、頭脳AIが出した「話す内容」の記録の Source。
 const BrainSource = "brain"
 

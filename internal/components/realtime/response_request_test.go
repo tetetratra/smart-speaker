@@ -151,3 +151,18 @@ func TestShouldRotate(t *testing.T) {
 		}
 	}
 }
+
+// セッションを張ったら、振り分けが今のセッションの範囲を読めるよう、目印の記録を画面に出さずに残す。
+func TestSessionStartIsRecorded(t *testing.T) {
+	r := newRig(t)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, record := range r.history.Snapshot() {
+			if record.Source == types.SessionStartSource {
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("セッション開始の目印がありません", r.history.Snapshot())
+}

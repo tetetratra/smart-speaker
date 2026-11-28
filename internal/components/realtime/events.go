@@ -63,6 +63,8 @@ func (s *stage) serverEvent(ctx context.Context, data []byte) {
 		s.ready = true
 		s.started = time.Now()
 		s.connecting = false
+		// 振り分けが Realtime と同じ範囲（今のセッションのやりとり）を読めるよう、セッションの始まりを履歴に残す。画面には出さない。
+		s.saveRecord(ctx, types.ConversationRecord{ID: fmt.Sprintf("%d/session", s.epoch), Role: types.RoleSystem, Text: "[音声AIの会話セッションを開始]", Source: types.SessionStartSource, CreatedAt: s.started}, true)
 		for _, pcm := range s.pendingAudio {
 			if s.wakeGated {
 				break

@@ -118,6 +118,18 @@ func (s *stage) decide(ctx context.Context) types.DecisionChoice {
 // lowConfidence は、判定に迷っているとみなす confidence。これより低ければ頭脳AIに任せる。値は本番ログを見て決めた目安。
 const lowConfidence = 0.5
 
+// currentSession は、履歴のうち、Realtime の今のセッション（最後のセッション開始の目印より後）の記録だけを返す。
+// 振り分けで知りたいのは「Realtime が今持っている情報で答えられるか」なので、Realtime と同じ範囲だけを渡す。
+// 目印がまだなければ（このしくみを入れる前の履歴）、すべてを返す。
+func currentSession(records []types.ConversationRecord) []types.ConversationRecord {
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].Source == types.SessionStartSource {
+			return records[i+1:]
+		}
+	}
+	return records
+}
+
 // input は Decisions API に渡す会話を、キャッシュの境目で区切った部分に分けて返す。
 // 今回の発話は記録係が保存済みなので、履歴の最後のユーザーの行に入っている。
 //
@@ -125,7 +137,7 @@ const lowConfidence = 0.5
 // 会話の履歴は末尾に増えていくので、境目を明示し、前回の入力の末尾と今回の入力の末尾の2か所に置く。
 // 前回の末尾の境目で前回書き込んだ分に当たり、今回の末尾の境目で次回のために書き込む（実 API で確認済み）。
 func (s *stage) input() []string {
-	full := conversation.RestoreContext(s.cfg.History.Snapshot(), nil)
+	full := conversation.RestoreContext(currentSession(s.cfg.History.Snapshot()), nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	previous := s.previous
@@ -137,12 +149,14 @@ func (s *stage) input() []string {
 	return []string{full}
 }
 
-const questionInstructions = `あなたは家庭用の音声アシスタントの振り分け役です。会話の流れを踏まえ、会話の中でいちばん新しいユーザー（user）の発話に、アシスタントがどう対応するかを選んでください。
+const questionInstructions = `あなたは家庭用の音声アシスタントの振り分け役です。音声で話すAIはツールを持たず、渡した会話（今の会話セッションのやりとり）しか知りません。
+会話の中でいちばん新しいユーザー（user）の発話に、音声で話すAIがそのまま答えられるか、裏の頭脳AIに任せるべきかなどを選んでください。
+会話には、頭脳AIが前に用意した内容（background(brain) の行。「話すこと」と「参考」）も含まれます。音声で話すAIはこれも知っています。
 音声は自動で文字起こししているため、聞き取りの誤りや、物音・テレビ・ほかの人の声が混ざることがあります。`
 
 var choices = []map[string]any{
-	{"value": string(types.DecisionRespond), "description": "挨拶・お礼・雑談・呼びかけだけ、直前のやりとりへの返事など、ツールも調べものも要らず、会話だけで返事が完結する発話。"},
-	{"value": string(types.DecisionDelegate), "description": "家電の操作、予定・天気・予約ジョブ・メモリなどアプリが持つ情報の確認、調べもの、判断や提案が要る依頼。以前の会話や覚えていることを尋ねる質問（「さっきまで何の話してたっけ？」など）も含む。迷う場合もこれを選ぶ。"},
+	{"value": string(types.DecisionRespond), "description": "挨拶・お礼・雑談・呼びかけだけ、直前のやりとりの続き（「他には？」「それって？」「じゃあそれで」）など、新しい操作や調べものが要らず、渡した会話（頭脳AIが前に用意した内容も含む）の範囲で答えられる発話。"},
+	{"value": string(types.DecisionDelegate), "description": "家電の操作、予定・天気・予約ジョブ・メモリなどアプリが持つ情報の確認、調べもの、判断や提案が要る依頼。渡した会話にない、以前の話や覚えていることを尋ねる質問も含む。迷う場合もこれを選ぶ。"},
 	{"value": string(types.DecisionWait), "description": "「えっと」「うーん」のように話し始めただけで、自分への依頼の続きがありそうな発話。"},
 	{"value": string(types.DecisionIgnore), "description": "物音、テレビやほかの人の声、独り言、意味の通らない断片など、自分への依頼ではない入力。アシスタントの答えを受けた相槌（「うん」「そうそう」「なるほど」）で、返事が要らない発話も含む。ユーザーが待つよう明示した場合も含む。"},
 }
